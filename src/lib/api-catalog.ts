@@ -254,7 +254,7 @@ export const API_CATALOG = [
   {
     method: 'GET', path: '/api/arcgis', group: 'geo', summary: 'ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/services/…/(Feature|Map)Server/<n>/query, SSRF-guarded)',
     params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, 'any public …/rest/services/…/(Feature|Map)Server[/n] URL'), q('bbox', 'string', false, 'west,south,east,north')],
-    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', '(user-supplied public ArcGIS server)'], forwardsUserInput: true, osiris: true, owner: 'panels-recon',
+    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', '(user-supplied public ArcGIS server)'], forwardsUserInput: true, osiris: true, rateLimit: { limit: 20, windowS: 60 }, owner: 'panels-recon',
   },
 
   // ── flight paths ───────────────────────────────────────────────────────────────

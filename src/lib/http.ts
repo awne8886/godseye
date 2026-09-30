@@ -68,6 +68,8 @@ export class HttpError extends Error {
   ) {
     super(message);
     this.name = 'HttpError';
+    // Never carry a key in an error that may be logged (TfL app_key, NVD apiKey…).
+    if (url) (this as { url: string }).url = redactUrl(url);
   }
 }
 
@@ -79,8 +81,25 @@ const FORBIDDEN_HEADERS = [
 ];
 /** Browser product tokens: a GODSEYE UA with a browser suffix is still UA spoofing. */
 const BROWSER_UA = /mozilla|chrome|safari|applewebkit|gecko|edg\/|opr\//i;
-/** Credentials that must never follow a redirect to another origin. */
-const CREDENTIAL_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'x-api-key', 'auth-key', 'api-key', 'x-ai-key', 'x-windy-api-key', 'x-ucdp-access-token'];
+/**
+ * On a cross-origin redirect only these headers are kept; everything else (keys, tokens, cookies,
+ * provider-specific credential headers present or future) is dropped.
+ */
+const CROSS_ORIGIN_SAFE_HEADERS = new Set(['accept', 'accept-encoding', 'accept-language', 'user-agent', 'content-type', 'content-length', 'if-none-match', 'if-modified-since']);
+/** Query parameters redacted from URLs in error messages and logs. */
+const SECRET_PARAM = /^(app_?key|api_?key|apikey|key|token|access_?token|auth|signature|sig|client_secret|password)$/i;
+
+/** A URL safe to put in an error or a log line: secret-looking query values replaced. */
+export function redactUrl(u: string | URL): string {
+  try {
+    const url = new URL(u);
+    for (const k of [...url.searchParams.keys()]) if (SECRET_PARAM.test(k)) url.searchParams.set(k, 'REDACTED');
+    if (url.password) url.password = 'REDACTED';
+    return url.toString();
+  } catch {
+    return String(u);
+  }
+}
 const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const MAX_RETRY_AFTER_MS = 10_000;
@@ -287,7 +306,7 @@ export async function httpRequest(input: string | URL, opts: HttpOptions = {}): 
             throw new HttpError('Refusing to follow an https → http downgrade', 'redirect', next.toString(), res.status);
           }
           if (next.origin !== url.origin) {
-            hopHeaders = Object.fromEntries(Object.entries(hopHeaders).filter(([k]) => !CREDENTIAL_HEADERS.includes(k)));
+            hopHeaders = Object.fromEntries(Object.entries(hopHeaders).filter(([k]) => CROSS_ORIGIN_SAFE_HEADERS.has(k)));
           }
           // Fetch semantics: 301/302/303 after a non-GET become a bodiless GET (never replay a POST body).
           const m = hopOpts.method ?? 'GET';

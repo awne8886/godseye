@@ -206,9 +206,12 @@ describe('http client hardening', () => {
   });
 
   it('strips credentials on cross-origin redirects but keeps them same-origin', async () => {
-    await httpText(`${b1}/cross`, { headers: { Authorization: 'Bearer secret', 'Auth-Key': 'k' } });
+    await httpText(`${b1}/cross`, { headers: { Authorization: 'Bearer secret', 'Auth-Key': 'k', 'Ocp-Apim-Subscription-Key': 'tfl', 'Accept-Language': 'en' } });
     expect(got['b/landing']!.authorization).toBeUndefined();
     expect(got['b/landing']!['auth-key']).toBeUndefined();
+    // Allow-list, not deny-list: a provider-specific key header nobody listed is dropped too.
+    expect(got['b/landing']!['ocp-apim-subscription-key']).toBeUndefined();
+    expect(got['b/landing']!['accept-language']).toBe('en');
     await httpText(`${b1}/same`, { headers: { Authorization: 'Bearer secret' } });
     expect(got['a/landing']!.authorization).toBe('Bearer secret');
   });

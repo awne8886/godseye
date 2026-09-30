@@ -41,6 +41,21 @@ export interface SseOptions {
 
 const encoder = new TextEncoder();
 
+/**
+ * Process-wide cap on bytes queued for slow SSE clients. Per-client caps alone multiply by the
+ * number of clients (2000 × 8 MB); past this budget, a client that is itself behind by more than
+ * the stream's high-water mark is dropped first.
+ */
+const GLOBAL_MAX_BUFFERED = Number(process.env.SSE_MAX_BUFFERED_BYTES) || 256 * 1024 * 1024;
+const HIGH_WATER = 256 * 1024;
+const GS = globalThis as unknown as { __godseyeSseQueued?: { bytes: number } };
+const queuedTotal = (GS.__godseyeSseQueued ??= { bytes: 0 });
+
+/** Bytes currently queued across every SSE stream in this process (for /api/health and tests). */
+export function sseQueuedBytes(): number {
+  return queuedTotal.bytes;
+}
+
 export function encodeFrame(event: string, data: unknown, id?: string | number): Uint8Array {
   return encoder.encode(sseFrame(event, data, id));
 }
@@ -67,11 +82,19 @@ export function sseResponse(
   let deadline: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
   let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
+  let myQueued = 0;
+  const account = () => {
+    const q = ctrl ? Math.max(0, HIGH_WATER - (ctrl.desiredSize ?? HIGH_WATER)) : 0;
+    queuedTotal.bytes += q - myQueued;
+    myQueued = q;
+  };
 
   /** Idempotent: every exit path funnels through here. `drop` discards queued bytes. */
   const close = (drop = false) => {
     if (closed) return;
     closed = true;
+    queuedTotal.bytes -= myQueued;
+    myQueued = 0;
     clearInterval(heartbeat);
     clearTimeout(deadline);
     req.signal.removeEventListener('abort', onAbort);
@@ -93,12 +116,14 @@ export function sseResponse(
   const sendRaw: SseSendRaw = (bytes) => {
     if (closed || !ctrl) return false;
     // enqueue() never throws on back-pressure: check the queue ourselves and drop stalled clients.
-    if ((ctrl.desiredSize ?? 0) < -maxBufferedBytes) {
+    account();
+    if ((ctrl.desiredSize ?? 0) < -maxBufferedBytes || (queuedTotal.bytes > GLOBAL_MAX_BUFFERED && myQueued > HIGH_WATER)) {
       close(true);
       return false;
     }
     try {
       ctrl.enqueue(bytes);
+      account();
       return true;
     } catch {
       close();
@@ -129,7 +154,7 @@ export function sseResponse(
         close();
       },
     },
-    new ByteLengthQueuingStrategy({ highWaterMark: 256 * 1024 }),
+    new ByteLengthQueuingStrategy({ highWaterMark: HIGH_WATER }),
   );
   return new Response(stream, { headers: SSE_HEADERS });
 }

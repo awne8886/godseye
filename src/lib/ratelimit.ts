@@ -27,6 +27,8 @@ function cleanIp(v: string | null | undefined): string | null {
   if (s.startsWith('[')) s = s.slice(1, s.indexOf(']'));
   else if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(s)) s = s.split(':')[0]!;
   if (s.toLowerCase().startsWith('::ffff:') && net.isIPv4(s.slice(7))) s = s.slice(7);
+  // A zone id (`fe80::1%eth0`) is meaningless off-link and breaks key derivation: drop it.
+  if (s.includes('%')) s = s.slice(0, s.indexOf('%'));
   return net.isIP(s) ? s : null;
 }
 
@@ -66,14 +68,14 @@ export function getClientIp(headers: Headers, trust: IpTrust = ipTrustFromEnv())
 }
 
 /** Bucket key for an IP: IPv4 as-is, IPv6 by its /64 (one subscriber usually owns a whole /64). */
-export function ipBucketKey(ip: string): string {
+export function ipBucketKey(ip: string, prefix: 64 | 48 = 64): string {
   if (!net.isIPv6(ip)) return ip;
   const full = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
   const [head = '', tail] = full.split('::');
   const h = head ? head.split(':') : [];
   const t = tail !== undefined && tail ? tail.split(':') : [];
   const groups = tail === undefined ? h : [...h, ...Array<string>(8 - h.length - t.length).fill('0'), ...t];
-  return `${groups.slice(0, 4).join(':')}::/64`;
+  return prefix === 48 ? `${groups.slice(0, 3).join(':')}::/48` : `${groups.slice(0, 4).join(':')}::/64`;
 }
 
 export interface RateLimitResult {
@@ -165,8 +167,14 @@ export interface RateLimitOptions {
 
 export async function checkRateLimit(bucket: string, ip: string, limit: number, windowS: number, failClosed = false): Promise<RateLimitResult> {
   let hit: RateLimitHit;
+  let key: string;
   try {
-    hit = await store().hit(`${bucket}:${ipBucketKey(ip)}`, windowS * 1000);
+    key = `${bucket}:${ipBucketKey(ip)}`;
+  } catch {
+    key = `${bucket}:unknown`; // a malformed IP shares one bucket; it never gets a free pass
+  }
+  try {
+    hit = await store().hit(key, windowS * 1000);
   } catch {
     return { allowed: !failClosed, limit, remaining: failClosed ? 0 : limit, resetAt: Date.now() + windowS * 1000 };
   }
@@ -179,7 +187,14 @@ export const DEFAULT_LIMIT = { limit: 120, windowS: 60 } as const;
 /** Returns a 429 Response when over the limit, otherwise null. */
 export async function rateLimit(req: Request, route: string, opts: RateLimitOptions = DEFAULT_LIMIT): Promise<Response | null> {
   const ip = getClientIp(req.headers);
-  const r = await checkRateLimit(opts.bucket ?? route, ip, opts.limit, opts.windowS, opts.failClosed);
+  const bucket = opts.bucket ?? route;
+  let r = await checkRateLimit(bucket, ip, opts.limit, opts.windowS, opts.failClosed);
+  // Costly fail-closed routes (AI, scanner) also cap a whole IPv6 /48 at 8× the per-/64 limit, so
+  // one tunnel-broker allocation cannot mint 65,536 fresh buckets.
+  if (r.allowed && opts.failClosed && net.isIPv6(ip)) {
+    const agg = await checkRateLimit(`${bucket}:48`, ipBucketKey(ip, 48), opts.limit * 8, opts.windowS, true);
+    if (!agg.allowed) r = { ...agg, limit: opts.limit };
+  }
   if (r.allowed) return null;
   const retryAfter = Math.max(1, Math.ceil((r.resetAt - Date.now()) / 1000));
   return apiError(429, 'rate_limited', `Limit is ${opts.limit} requests per ${opts.windowS} s for this endpoint.`, {

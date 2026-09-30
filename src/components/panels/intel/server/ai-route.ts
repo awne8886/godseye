@@ -7,7 +7,7 @@
  */
 import 'server-only';
 import { z } from 'zod';
-import { apiError, json } from '@/lib/respond';
+import { apiError, json, readBodyCapped } from '@/lib/respond';
 import type { AiOverviewResponse } from '@/lib/types';
 import { answer, selectProvider, type AiResult, type Preference } from './ai';
 import type { Prompt } from './ai-context';
@@ -22,15 +22,17 @@ export function userKeyFrom(req: Request): string | null {
 }
 
 export async function readBody<S extends z.ZodType>(req: Request, schema: S): Promise<{ ok: true; data: z.infer<S> } | { ok: false; response: Response }> {
-  const len = Number(req.headers.get('content-length') ?? '0');
-  if (len > MAX_BODY_BYTES) return { ok: false, response: apiError(413, 'payload_too_large', `Body exceeds ${MAX_BODY_BYTES} bytes.`) };
-  let raw: string;
+  // JSON only: a cross-site "simple" POST (text/plain) cannot reach the model without a preflight.
+  if (!/^application\/json\b/i.test(req.headers.get('content-type') ?? '')) {
+    return { ok: false, response: apiError(415, 'unsupported_media_type', 'Send the body as application/json.') };
+  }
+  let raw: string | null;
   try {
-    raw = await req.text();
+    raw = await readBodyCapped(req, MAX_BODY_BYTES);
   } catch {
     return { ok: false, response: apiError(400, 'invalid_request', 'Unreadable body.') };
   }
-  if (raw.length > MAX_BODY_BYTES) return { ok: false, response: apiError(413, 'payload_too_large', `Body exceeds ${MAX_BODY_BYTES} bytes.`) };
+  if (raw === null) return { ok: false, response: apiError(413, 'payload_too_large', `Body exceeds ${MAX_BODY_BYTES} bytes.`) };
   let parsed: unknown;
   try {
     parsed = raw ? JSON.parse(raw) : {};

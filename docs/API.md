@@ -1379,7 +1379,7 @@ ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/
 | | |
 |---|---|
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
-| Rate limit | 120 requests per 1 min per client IP; default |
+| Rate limit | 20 requests per 1 min per client IP |
 | Response | `ArcgisResponse` |
 | Upstreams | `www.arcgis.com`, `(user-supplied public ArcGIS server)` |
 | Forwards user input upstream | Yes (listed on /privacy) |

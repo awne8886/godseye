@@ -15,7 +15,7 @@
  * Owner: lead. Server-only.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { HttpError, errorReason } from './http';
 
@@ -50,7 +50,16 @@ export interface SnapshotStore {
 }
 
 // ── Memory ──────────────────────────────────────────────────────────────────────
-type Entry = { v: StoredSnapshot<unknown>; expires: number };
+type Entry = { v: StoredSnapshot<unknown>; expires: number; bytes: number };
+
+/** Rough in-memory cost of a snapshot (its JSON length); unserialisable data counts as 1 KB. */
+function sizeOf(v: unknown): number {
+  try {
+    return JSON.stringify(v)?.length ?? 0;
+  } catch {
+    return 1024;
+  }
+}
 
 /** In-process locks with owner tokens (shared by MemoryStore and FileStore). */
 class LocalLocks {
@@ -76,14 +85,27 @@ export class MemoryStore implements SnapshotStore {
   /** Pinned entries (feed snapshots): bounded only by the number of feeds. */
   private readonly pinned = new Map<string, Entry>();
   private readonly locks = new LocalLocks();
-  constructor(private readonly maxEntries = 1000) {}
+  private bytes = 0;
+  /**
+   * `maxEntries` and `maxBytes` bound the LRU part (per-query caches keyed by user input); pinned
+   * feed snapshots are bounded by the number of feeds and never evicted.
+   */
+  constructor(
+    private readonly maxEntries = 1000,
+    private readonly maxBytes = Number(process.env.SNAPSHOT_MEMORY_MAX_BYTES) || 256 * 1024 * 1024,
+  ) {}
+  private drop(key: string) {
+    const e = this.map.get(key);
+    if (e) this.bytes -= e.bytes;
+    this.map.delete(key);
+  }
 
   async get<T>(key: string) {
     const pinned = this.pinned.get(key);
     const e = pinned ?? this.map.get(key);
     if (!e) return null;
     if (e.expires < Date.now()) {
-      this.map.delete(key);
+      this.drop(key);
       this.pinned.delete(key);
       return null;
     }
@@ -94,19 +116,25 @@ export class MemoryStore implements SnapshotStore {
     return e.v as StoredSnapshot<T>;
   }
   async set<T>(key: string, value: StoredSnapshot<T>, retentionMs: number, opts: SetOptions = {}) {
-    const entry = { v: value as StoredSnapshot<unknown>, expires: Date.now() + retentionMs };
-    this.map.delete(key);
+    const entry = { v: value as StoredSnapshot<unknown>, expires: Date.now() + retentionMs, bytes: opts.pinned ? 0 : sizeOf(value) };
+    this.drop(key);
     this.pinned.delete(key);
     if (opts.pinned) {
       this.pinned.set(key, entry);
       return;
     }
+    if (entry.bytes > this.maxBytes) return; // larger than the whole budget: never cached
     this.map.set(key, entry);
-    while (this.map.size > this.maxEntries) this.map.delete(this.map.keys().next().value!);
+    this.bytes += entry.bytes;
+    while (this.map.size > this.maxEntries || this.bytes > this.maxBytes) this.drop(this.map.keys().next().value!);
   }
   async delete(key: string) {
-    this.map.delete(key);
+    this.drop(key);
     this.pinned.delete(key);
+  }
+  /** Bytes held by the evictable (per-query) part. */
+  get evictableBytes() {
+    return this.bytes;
   }
   async acquire(key: string, ttlMs: number) {
     return this.locks.acquire(key, ttlMs);
@@ -123,34 +151,86 @@ export class MemoryStore implements SnapshotStore {
 export class FileStore implements SnapshotStore {
   readonly kind = 'filesystem' as const;
   private readonly locks = new LocalLocks();
-  constructor(private readonly dir: string) {}
+  private writes = 0;
+  /**
+   * Pinned feed snapshots live in `<dir>/pinned`; everything else (per-query caches) in `<dir>/lru`,
+   * swept every 200 writes: expired files deleted, then the oldest beyond `maxFiles`.
+   */
+  constructor(
+    private readonly dir: string,
+    private readonly maxFiles = Number(process.env.SNAPSHOT_MAX_FILES) || 20_000,
+  ) {}
 
-  private file(key: string) {
-    return path.join(this.dir, `${createHash('sha1').update(key).digest('hex')}.json`);
+  private file(key: string, pinned?: boolean) {
+    const name = `${createHash('sha1').update(key).digest('hex')}.json`;
+    return pinned === undefined ? name : path.join(this.dir, pinned ? 'pinned' : 'lru', name);
+  }
+
+  /** Delete expired and excess per-query entries (never pinned feed snapshots). */
+  async sweep(now = Date.now()): Promise<number> {
+    const lru = path.join(this.dir, 'lru');
+    let names: string[];
+    try {
+      names = (await readdir(lru)).filter((n) => n.endsWith('.json'));
+    } catch {
+      return 0;
+    }
+    const live: { name: string; mtime: number }[] = [];
+    let removed = 0;
+    for (const name of names) {
+      const f = path.join(lru, name);
+      try {
+        const raw = JSON.parse(await readFile(f, 'utf8')) as { expires: number };
+        if (raw.expires < now) {
+          await rm(f, { force: true });
+          removed++;
+          continue;
+        }
+        live.push({ name, mtime: (await stat(f)).mtimeMs });
+      } catch {
+        await rm(f, { force: true });
+        removed++;
+      }
+    }
+    if (live.length > this.maxFiles) {
+      live.sort((a, b) => a.mtime - b.mtime);
+      for (const { name } of live.slice(0, live.length - this.maxFiles)) {
+        await rm(path.join(lru, name), { force: true });
+        removed++;
+      }
+    }
+    return removed;
   }
   async get<T>(key: string) {
-    try {
-      const file = this.file(key);
-      const raw = JSON.parse(await readFile(file, 'utf8')) as { key: string; expires: number; v: StoredSnapshot<T> };
-      if (raw.key !== key) return null;
-      if (raw.expires < Date.now()) {
-        await rm(file, { force: true }); // expired entries never accumulate on disk
-        return null;
+    for (const pinned of [true, false]) {
+      const file = this.file(key, pinned);
+      try {
+        const raw = JSON.parse(await readFile(file, 'utf8')) as { key: string; expires: number; v: StoredSnapshot<T> };
+        if (raw.key !== key) continue;
+        if (raw.expires < Date.now()) {
+          await rm(file, { force: true }); // expired entries never accumulate on disk
+          return null;
+        }
+        return raw.v;
+      } catch {
+        /* not in this tier */
       }
-      return raw.v;
-    } catch {
-      return null;
     }
+    return null;
   }
-  async set<T>(key: string, value: StoredSnapshot<T>, retentionMs: number) {
-    await mkdir(this.dir, { recursive: true });
-    const target = this.file(key);
+  async set<T>(key: string, value: StoredSnapshot<T>, retentionMs: number, opts: SetOptions = {}) {
+    const pinned = !!opts.pinned;
+    const target = this.file(key, pinned);
+    await mkdir(path.dirname(target), { recursive: true });
     const tmp = `${target}.${randomUUID()}.tmp`;
     await writeFile(tmp, JSON.stringify({ key, expires: Date.now() + retentionMs, v: value }));
     await rename(tmp, target);
+    await rm(this.file(key, !pinned), { force: true });
+    if (!pinned && ++this.writes % 200 === 0) void this.sweep().catch(() => undefined);
   }
   async delete(key: string) {
-    await rm(this.file(key), { force: true });
+    await rm(this.file(key, true), { force: true });
+    await rm(this.file(key, false), { force: true });
   }
   async acquire(key: string, ttlMs: number) {
     return this.locks.acquire(key, ttlMs);

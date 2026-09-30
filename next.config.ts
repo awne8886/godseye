@@ -15,6 +15,8 @@ const nextConfig: NextConfig = {
   // Type errors must fail the build (OSIRIS shipped with this off).
   typescript: { ignoreBuildErrors: false },
   serverExternalPackages: ['ioredis'],
+  // Recorded upstream fixtures, worktrees and coverage are test material, never part of the server image.
+  outputFileTracingExcludes: { '*': ['**/__fixtures__/**', '.claude/**', 'coverage/**', 'test-results/**', 'playwright-report/**'] },
   turbopack: {
     // satellite.js 7.1's pthreads WASM build spawns itself as a Worker, which hangs Turbopack's
     // build; GODSEYE uses the single-threaded path, so the multi-thread entry resolves to nothing.

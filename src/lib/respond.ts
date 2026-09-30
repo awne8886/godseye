@@ -158,6 +158,48 @@ export function parseQuery<S extends z.ZodType>(req: Request, schema: S): { ok: 
 type Handler<C> = (req: Request, ctx: C) => Promise<Response> | Response;
 
 /**
+ * Read at most `max` bytes of a request body, streaming (a missing or false Content-Length cannot
+ * make the server buffer more). Returns null when the body is larger.
+ */
+export async function readBodyCapped(req: Request, max: number): Promise<string | null> {
+  const declared = Number(req.headers.get('content-length') ?? '0');
+  if (declared > max) return null;
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Browser requests from another site are refused on state-changing/costly methods: a page elsewhere
+ * must not spend this operator's AI key or quotas through its visitors. Server-to-server clients
+ * (SDK ingest) send neither header and are unaffected.
+ */
+export function isCrossSite(req: Request): boolean {
+  const site = req.headers.get('sec-fetch-site');
+  if (site) return site !== 'same-origin' && site !== 'none';
+  const origin = req.headers.get('origin');
+  if (!origin || origin === 'null') return origin === 'null';
+  try {
+    const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(req.url).host;
+    return new URL(origin).host !== host;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Wrap a route handler with a per-route rate limit and a uniform 500 (details go to the server
  * log only). `route` is the catalogue path (templated, e.g. `/api/airports/{code}`); the limit,
  * shared bucket and fail-closed flag come from its catalogue entry unless `limit` overrides them.
@@ -168,6 +210,9 @@ export function withRoute<C = unknown>(route: string, handler: Handler<C>, limit
     throw new Error(`withRoute('${route}'): not in API_CATALOG (src/lib/api-catalog.ts); ask the lead to add it`);
   }
   return async (req, ctx) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && isCrossSite(req)) {
+      return apiError(403, 'cross_site_request', 'This endpoint only accepts requests from this site.');
+    }
     const { rateLimit, DEFAULT_LIMIT } = await import('./ratelimit');
     const entry = catalogEntry(route, req.method === 'POST' ? 'POST' : 'GET');
     const limited = await rateLimit(req, route, limit ?? entry?.rateLimit ?? DEFAULT_LIMIT);
