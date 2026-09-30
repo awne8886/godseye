@@ -85,7 +85,7 @@ export default function ArcgisPanel(_: PanelProps) {
             <Import size={14} aria-hidden />
           </HudButton>
         </div>
-        <Prose>Any public Feature/Map Server layer. Fetched by this server (public addresses only), up to 1000 features.</Prose>
+        <Prose>A public Feature/Map Server layer on an ArcGIS host (*.arcgis.com, *.arcgisonline.com, or a host the operator allows). Fetched by this server, up to 1000 features.</Prose>
       </form>
       {err && <ErrorLine error={err.error} detail={err.detail} />}
       {err?.providers && <ProviderChips providers={err.providers} />}
@@ -129,9 +129,15 @@ export default function ArcgisPanel(_: PanelProps) {
                 {it.snippet && <p className="line-clamp-2 font-sans text-[12px] text-[var(--text-secondary)]">{it.snippet}</p>}
                 <div className="mt-1 flex items-center gap-2">
                   <span className="flex-1 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">{it.owner ?? 'unknown owner'}</span>
-                  <HudButton tone="cyan" disabled={busy !== null} onClick={() => void importLayer(it.url, it.title)}>
-                    <Import size={13} aria-hidden /> {busy === it.url ? 'Importing…' : 'Import'}
-                  </HudButton>
+                  {it.importable === false ? (
+                    <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]" title={`${hostOf(it.url)} is not on this server's ArcGIS host allow-list`}>
+                      Host not allowed
+                    </span>
+                  ) : (
+                    <HudButton tone="cyan" disabled={busy !== null} onClick={() => void importLayer(it.url, it.title)}>
+                      <Import size={13} aria-hidden /> {busy === it.url ? 'Importing…' : 'Import'}
+                    </HudButton>
+                  )}
                 </div>
               </li>
             ))}
@@ -141,4 +147,12 @@ export default function ArcgisPanel(_: PanelProps) {
       )}
     </div>
   );
+}
+
+function hostOf(u: string): string {
+  try {
+    return new URL(u).host;
+  } catch {
+    return 'This host';
+  }
 }

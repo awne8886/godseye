@@ -4,9 +4,10 @@ import type * as RateLimitModule from '@/lib/ratelimit';
 import { DirectionsResponse } from '@/lib/schemas';
 import { fixture, upstream } from '@/components/panels/recon/__fixtures__/mock-http';
 import { error, freshState, get } from '@/components/panels/recon/__fixtures__/route-helpers';
-import { decodePolyline, elevationProfile, osrmInstruction, valhallaRequest } from '@/components/panels/recon/server/directions';
+import { SNAP_LIMIT_M, decodePolyline, elevationProfile, osrmInstruction, snapGap, unreachableDetail, valhallaRequest } from '@/components/panels/recon/server/directions';
 
-// Fixtures: Valhalla /route (auto, Berlin, 2 alternates), /height, OSRM driving (Berlin), 2026-09-30.
+// Fixtures: Valhalla /route (auto, Berlin, 2 alternates), /height, OSRM driving (Berlin), 2026-09-30;
+// OSRM driving Berlin → New York (overview=simplified) and Valhalla error 154 for the same pair, 2026-09-30.
 vi.mock('@/lib/http', async (orig) => (await import('@/components/panels/recon/__fixtures__/mock-http')).mockHttp(await orig<typeof HttpModule>()));
 vi.mock('@/lib/ratelimit', async (orig) => ({ ...(await orig<typeof RateLimitModule>()), providerBucket: () => ({ take: async () => undefined }) }));
 
@@ -88,11 +89,44 @@ describe('GET /api/directions', () => {
     expect(upstream.calls.some((c) => c.url.startsWith('https://routing.openstreetmap.de/routed-foot/route/v1/driving/13.380000,52.520000;13.420000,52.500000'))).toBe(true);
   });
 
-  it('answers 503 with both engines listed when no route is available', async () => {
+  it('answers 503 with both engines listed when no engine answers', async () => {
     upstream.on('valhalla1', { status: 400 });
-    upstream.on('router.project-osrm.org', { json: { code: 'NoRoute', routes: [] } });
+    upstream.on('router.project-osrm.org', { status: 502 });
     const body = await error(await call(BERLIN), 503);
     expect(Object.keys(body.providers)).toEqual(['valhalla', 'osrm']);
+  });
+
+  it('answers 422 no_route when OSRM says NoRoute', async () => {
+    upstream.on('valhalla1', { status: 400 });
+    upstream.on('router.project-osrm.org', { json: { code: 'NoRoute', message: 'Impossible route between points', routes: [] } });
+    const body = await error(await call(BERLIN), 422);
+    expect(body.error).toBe('no_route');
+    expect(body.unreachable).toMatchObject({ role: 'destination', distanceM: null });
+    expect(Object.keys(body.providers)).toEqual(['valhalla', 'osrm']);
+  });
+
+  // R4-M1 (was r4-snap.repro.test.ts): live on 2026-09-30 Valhalla refused (error 154, > 1,500 km) and
+  // OSRM "routed" Berlin → New York to Cabo da Roca, snapping the destination 5,534,234 m away.
+  it('R4-M1: Berlin → New York is refused as no_route, not routed to Portugal', async () => {
+    upstream.on('valhalla1.openstreetmap.de/route', { status: 400, json: fixture('valhalla-error-154-berlin-newyork.json') });
+    upstream.on('router.project-osrm.org/route/v1/driving/13.380000,52.520000;-74.000000,40.700000', { json: fixture('osrm-driving-berlin-newyork.json') });
+    const res = await call('?from=52.52,13.38&to=40.7,-74');
+    const body = await error(res, 422);
+    expect(body).toMatchObject({ error: 'no_route', unreachable: { index: 1, role: 'destination' } });
+    expect(body.unreachable.distanceM).toBeGreaterThan(5_000_000);
+    expect(body.detail).toMatch(/No road route between these points: .* 5,534 km from the destination/);
+    expect(body.routes).toBeUndefined();
+    expect(body.providers.valhalla).toMatchObject({ ok: false, error: 'http_400' });
+    expect(body.providers.osrm.ok).toBe(true);
+  });
+
+  it('refuses a Valhalla route whose end is far from the requested destination and asks OSRM', async () => {
+    // Valhalla's Berlin trip ends at 52.50,13.42; ask for a destination ~11 km east of that.
+    upstream.on('valhalla1.openstreetmap.de/route', { json: fixture('valhalla-auto-berlin.json') });
+    upstream.on('router.project-osrm.org', { json: { code: 'NoRoute', routes: [] } });
+    const body = await error(await call('?from=52.52,13.38&to=52.50,13.58'), 422);
+    expect(body.unreachable.role).toBe('destination');
+    expect(body.unreachable.distanceM).toBeGreaterThan(SNAP_LIMIT_M);
   });
 
   it('validates points, modes and via count', async () => {
@@ -113,6 +147,17 @@ describe('directions helpers', () => {
 
   it('builds avoid options as Valhalla preferences', () => {
     expect(valhallaRequest([{ lat: 1, lng: 2 }, { lat: 3, lng: 4 }], 'bike', { tolls: false, highways: true, ferries: false }).costing_options).toEqual({ bicycle: { use_highways: 0 } });
+  });
+
+  it('snapGap accepts a route that reaches every point and names the worst one otherwise', () => {
+    const route = { distanceM: 1, durationS: 1, geometry: { type: 'LineString' as const, coordinates: [[13.38, 52.52], [13.40, 52.51], [13.42, 52.5]] }, steps: [], hasToll: false, hasHighway: false, hasFerry: false };
+    const pts = [{ lat: 52.52, lng: 13.38 }, { lat: 52.51, lng: 13.4 }, { lat: 52.5, lng: 13.42 }];
+    expect(snapGap(pts, route)).toBeNull();
+    expect(snapGap(pts, route, [4.8, null, 30])).toBeNull();
+    expect(snapGap(pts, route, [4.8, null, 5_534_234])).toEqual({ index: 2, role: 'destination', distanceM: 5_534_234 });
+    expect(snapGap([pts[0]!, { lat: 52.8, lng: 13.4 }, pts[2]!], route)).toMatchObject({ index: 1, role: 'via' });
+    expect(snapGap([{ lat: 53, lng: 13.38 }, pts[2]!], route)).toMatchObject({ index: 0, role: 'start' });
+    expect(unreachableDetail({ index: 1, role: 'via', distanceM: 6200 })).toContain('6.2 km from via point 1');
   });
 
   it('computes ascent and descent', () => {
