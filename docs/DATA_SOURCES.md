@@ -212,9 +212,23 @@ hosts (everything goes through `/api`), except RainViewer tiles and CDSE quicklo
 | CDSE STAC `stac.dataspace.copernicus.eu/v1/search?collections=sentinel-2-l2a&bbox=-0.2,51.4,0,51.6&limit=1` | 200 · 3.56 s · 72 kB per item | `*` | none | Copernicus open data ("Contains modified Copernicus Sentinel data") | `datetime`, `sortby=-properties.datetime` works on GET (4.1 s, 12 items over Paris/10 days). `assets.thumbnail.href` = `datahub.creodias.eu/odata/v1/Assets(<uuid>)/$value` → **301 to `zipper.creodias.eu`** (200, CORS `*`, 2.7 s); the card uses the zipper URL directly (next/image follows no redirects). |
 | RainViewer `api.rainviewer.com/public/weather-maps.json` | 200 · 0.77 s · 818 B | `*` | none | RainViewer API terms (free, attribution) | `host=https://tilecache.rainviewer.com`, `radar.past[13]` (10-min spacing, `{time (epoch s), path}`), **`radar.nowcast=[]`, `satellite.infrared=[]`** (§6.2); tiles z ≤ 7, 100 req/IP/min. |
 
-Not wired (no key available to verify): OpenAQ v3 (`OPENAQ_API_KEY`, `X-API-Key` header) and WAQI
-(`WAQI_TOKEN`, token only accepted in the query string). `/api/air-quality` reports them as
-`skipped: not-configured` (or `disabled` when a key is set).
+Not wired: OpenAQ v3 and WAQI (keyed; no key available to verify). They are not offered as
+capabilities and `/api/air-quality` reports only Open-Meteo.
+
+#### Re-probe 2026-09-30 22:45–22:55 UTC (Phase 3 round 1, same UA, `Origin: https://example.org`)
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| gpsjam `gpsjam.org/data/manifest.csv` | 200 · 0.59 s · 8.4 kB | none | latest `2026-09-29,false,549,merged` |
+| USGS `…/summary/2.5_day.geojson` | 200 · 0.29 s · 4.4 kB gzip (38 quakes) | `*` | unchanged shape |
+| FIRMS `SUOMI_VIIRS_C2_Global_24h.csv` | 200 · 0.58 s · 6.7 MB (82 535 rows) | none | unchanged header |
+| Open-Meteo AQ `…/air-quality?latitude=48.85&longitude=2.35&current=pm2_5,us_aqi` | 200 · 0.56 s · 235 B | `*` | `current.time` "2026-09-30T22:00" (zone-less GMT) |
+| adsb.lol `api.adsb.lol/v2/point/{lat}/{lng}/250` (fixture source for live NACp tests; the app reads aircraft only from the in-process flights feed) | 200 · 0.43–0.69 s · 0.1–12 kB | none | ODbL 1.0 · `ac[].{hex,lat,lon,nac_p,seen_pos}`, `now` (ms). Night-time sample: Kuwait/Gulf (29.5, 48.0) 18 aircraft → one r4 cell `84536e1ffffffff` with 5 NACp reporters, one at NACp 0; Baltic (55.5, 21.0) 32 aircraft, 12 at NACp ≤ 4 but no cell with ≥ 3 reporters. |
+
+Live NACp binning reads `FlightsSnapshot.records[].{lat,lng,nacP,seenAt}` (aviation `nacP` = readsb
+`nac_p`), drops positions older than 300 s, and reports `live_nacp` `ok:false` with
+`flights_feed_not_running` / `no_flights_snapshot` / `no_recent_positions` / `nacp_not_reported`
+instead of a zero count when the binning could not run.
 
 ## layers-space — probe log
 

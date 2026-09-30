@@ -15,6 +15,8 @@ import { useHazardData } from './useHazardData';
 
 const count = (b: SentinelResponse) => b.items.length;
 const MIN_ZOOM = 6;
+/** Machine reason published while below MIN_ZOOM; the HUD renders it as "ZOOM ≥ 6". */
+const SENTINEL_IDLE_REASON = `zoom_min_${MIN_ZOOM}`;
 
 export default function SentinelLayer() {
   // Camera events only need the loaded map (not the first `idle`).
@@ -34,7 +36,8 @@ export default function SentinelLayer() {
     };
   }, [map]);
 
-  const data = useHazardData<SentinelResponse>('sentinel', url, count);
+  // Below MIN_ZOOM nothing is fetched: publish idle "zoom_min_6" (HUD: "ZOOM ≥ 6"), not ACQUIRING.
+  const data = useHazardData<SentinelResponse>('sentinel', url, count, map ? SENTINEL_IDLE_REASON : undefined);
   const items = url ? data?.items : undefined;
   const byId = useRef(new Map<string, SentinelScene>());
   useEffect(() => {

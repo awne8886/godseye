@@ -3,8 +3,15 @@
  * Intel Feed event mappers. Pure; unit-tested. Owner: layers-hazards.
  */
 import { fieldIndex, type Cell } from '@/lib/columnar';
-import { FIRE_FIELDS } from '@/lib/schemas/hazards';
+import type { FIRE_FIELDS } from '@/lib/schemas/hazards';
 import type { MapToken } from '@/lib/tokens';
+
+/**
+ * Column order of `/api/fires` rows. Mirrors `FIRE_FIELDS` in `src/lib/schemas/hazards.ts` without
+ * importing it: this module is client-side and must not pull zod into the bundle (perf B1).
+ * `shared.test.ts` asserts the two stay identical; the type below fails to compile if they drift.
+ */
+export const FIRE_ROW_FIELDS = ['id', 'lat', 'lng', 'frpMw', 'brightnessK', 'confidence', 'dayNight', 'satellite', 'seenAt'] as const satisfies typeof FIRE_FIELDS;
 import type { AirQuality, Earthquake, FeedEvent, GpsJamCell, WeatherEvent } from '@/lib/types';
 
 /**
@@ -45,9 +52,11 @@ export function aqiCategory(usAqi: number | null): { label: string; token: MapTo
 
 /** gpsjam's own colour thresholds: ≤ 2 % low, ≤ 10 % medium, above that high. */
 export function jamLevel(cell: Pick<GpsJamCell, 'badRatio'>): { label: 'LOW' | 'MEDIUM' | 'HIGH'; token: MapToken; alpha: number } {
-  if (cell.badRatio > 0.1) return { label: 'HIGH', token: '--map-seismic-high', alpha: 0.62 };
-  if (cell.badRatio > 0.02) return { label: 'MEDIUM', token: '--map-seismic-low', alpha: 0.5 };
-  return { label: 'LOW', token: '--map-air-quality', alpha: 0.35 };
+  // Fills stay translucent so aircraft drawn above remain visible (visual-qa M11): ≤ .35 for the
+  // elevated classes, ≤ .12 for the low class.
+  if (cell.badRatio > 0.1) return { label: 'HIGH', token: '--map-seismic-high', alpha: 0.35 };
+  if (cell.badRatio > 0.02) return { label: 'MEDIUM', token: '--map-seismic-low', alpha: 0.24 };
+  return { label: 'LOW', token: '--map-air-quality', alpha: 0.1 };
 }
 
 export function weatherToken(e: Pick<WeatherEvent, 'type'>): MapToken {
@@ -141,7 +150,7 @@ export function aqLabel(a: AirQuality): string {
 }
 
 // ── FIRE_FIELDS rows ─────────────────────────────────────────────────────────────
-export const FIRE_IDX = fieldIndex(FIRE_FIELDS);
+export const FIRE_IDX = fieldIndex(FIRE_ROW_FIELDS);
 const IDX = FIRE_IDX;
 
 /** One columnar fire row → the object a card shows (observedAt = overpass time). */

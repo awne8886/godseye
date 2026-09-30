@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { FeedEvent } from '@/lib/schemas';
+import { FIRE_FIELDS, FeedEvent } from '@/lib/schemas';
 import type { Earthquake, WeatherEvent } from '@/lib/types';
 import { MAP_TOKENS } from '@/lib/tokens';
-import { aqiCategory, fireEvents, fireRadiusPx, fireRowObject, isSignificantQuake, jamLevel, magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken, weatherEvents, weatherToken } from './shared';
+import { FIRE_ROW_FIELDS, aqiCategory, fireEvents, fireRadiusPx, fireRowObject, isSignificantQuake, jamLevel, magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken, weatherEvents, weatherToken } from './shared';
 
 const quake = (over: Partial<Earthquake>): Earthquake => ({
   id: 'us1',
@@ -60,5 +60,19 @@ describe('Intel Feed events', () => {
     expect(fe).toHaveLength(1);
     expect(fe[0]!.severity).toBe('high');
     expect(FeedEvent.safeParse(fe[0]).success).toBe(true);
+  });
+});
+
+describe('zod-free fire column order', () => {
+  it('FIRE_ROW_FIELDS mirrors the FIRE_FIELDS contract exactly', () => {
+    expect([...FIRE_ROW_FIELDS]).toEqual([...FIRE_FIELDS]);
+  });
+});
+
+describe('GPS-interference fills stay translucent (visual-qa M11)', () => {
+  it('keeps elevated classes ≤ .35 and the low class ≤ .12', () => {
+    expect(jamLevel({ badRatio: 0.5 }).alpha).toBeLessThanOrEqual(0.35);
+    expect(jamLevel({ badRatio: 0.05 }).alpha).toBeLessThanOrEqual(0.35);
+    expect(jamLevel({ badRatio: 0.01 }).alpha).toBeLessThanOrEqual(0.12);
   });
 });

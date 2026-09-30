@@ -30,9 +30,19 @@ async function load<T>(url: string, signal: AbortSignal): Promise<HazardResult<T
 }
 
 /**
- * @param count  entity count for the rail badge (null → not counted)
+ * Status published while a layer deliberately fetches nothing (`url === null`, e.g. Sentinel below
+ * its minimum zoom): idle, no count, with a machine reason the HUD can show ("ZOOM ≥ 6") instead of
+ * a perpetual ACQUIRING.
  */
-export function useHazardData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null) {
+export function idleStatus(reason: string) {
+  return { state: 'idle' as const, count: null, fetchedAt: null, observedAt: null, error: reason, providers: undefined };
+}
+
+/**
+ * @param count       entity count for the rail badge (null → not counted)
+ * @param idleReason  reason published while `url` is null (see idleStatus)
+ */
+export function useHazardData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null, idleReason?: string) {
   const update = useLayerStatusStore((s) => s.update);
   const q = useQuery({
     queryKey: ['hazards', url],
@@ -42,10 +52,14 @@ export function useHazardData<T>(layer: LayerId, url: string | null, count: (bod
     placeholderData: (prev) => prev,
   });
 
-  const result = q.data;
+  const result = url === null ? undefined : q.data;
   const failed = q.isError;
   const loading = q.isPending && url !== null;
   useEffect(() => {
+    if (url === null) {
+      if (idleReason) update(layer, idleStatus(idleReason));
+      return;
+    }
     if (loading) {
       update(layer, { state: 'loading' });
       return;
@@ -78,7 +92,7 @@ export function useHazardData<T>(layer: LayerId, url: string | null, count: (bod
       error: undefined,
       providers,
     });
-  }, [layer, result, failed, loading, update, count]);
+  }, [layer, url, idleReason, result, failed, loading, update, count]);
 
   useEffect(() => () => update(layer, { state: 'idle', count: null }), [layer, update]);
 
