@@ -41,4 +41,38 @@ describe('aviation frame', () => {
     expect(layers.map((l) => l.id)).toEqual(['aviation-trails', 'aviation-h3', 'aviation-emergency', 'aviation-highlight']);
     expect(buildLayers({ frame: newFrame([]), view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 0, dataVersion: 0, colorMode: 'bucket', theme: 'HORUS', watched: [], tracks: new Map(), selectedId: null, cells: null, toSelection: aircraftSelection })).toBeNull();
   });
+
+  it('ticks without re-running per-aircraft accessors: stable data, versions bump only on change (perf M4)', () => {
+    const many = Array.from({ length: 2_000 }, (_, i) => rec(`c${String(i).padStart(5, '0')}`, (i % 40) - 20, 40 + (i % 20), { seenAt: 1000 + (i % 90) }));
+    const f = newFrame(many);
+    advanceFrame(f, 1010_000, new Set(['commercial']), true, [0, 50]);
+    const data = f.data;
+    const vis = f.visVersion;
+    const before = f.pos[0];
+    advanceFrame(f, 1011_000, new Set(['commercial']), true, [0, 50]);
+    expect(f.data).toBe(data); // same deck data object → no full attribute rebuild
+    expect(f.visVersion).toBe(vis);
+    expect(f.pos[0]).not.toBe(before); // positions still advance
+    // Crossing the 60 s cap settles an aircraft once: frozen and never advanced again.
+    const fz = f.frozenVersion;
+    advanceFrame(f, 1075_000, new Set(['commercial']), true, [0, 50]);
+    expect(f.frozenVersion).toBeGreaterThan(fz);
+    const settled = f.pos[0];
+    advanceFrame(f, 1200_000, new Set(['commercial']), true, [0, 50]);
+    expect(f.pos[0]).toBe(settled);
+    expect(f.frozen[0]).toBe(1);
+    // A camera move that changes the visible set swaps the data object.
+    advanceFrame(f, 1200_000, new Set(['commercial']), true, [180, -50]);
+    expect(f.data).not.toBe(data);
+  });
+
+  it('matches the great-circle dead-reckoning of codec.deadReckon', async () => {
+    const { deadReckon } = await import('../codec');
+    const r = rec('d00001', -73.8, 40.6, { trackDeg: 47, gsKt: 480, seenAt: 1000 });
+    const f = newFrame([r]);
+    advanceFrame(f, 1042_000, new Set(['commercial']), false, [0, 0]);
+    const d = deadReckon(r, 1042_000);
+    expect(f.pos[0]).toBeCloseTo(d.lng, 9);
+    expect(f.pos[1]).toBeCloseTo(d.lat, 9);
+  });
 });

@@ -10,8 +10,29 @@ import type { Attribution } from '@/lib/types';
 import { coverageTiles, sweepOrder } from './tiles';
 import { fetchAdsbfiMil, fetchGlobal, fetchOpenSky, fetchReapi, fetchTile } from './server/providers';
 import { runSweep, type FlightsSnapshot } from './server/sweep';
+import { TileSweeper, type TileResult } from './server/tile-sweeper';
 
 const SWEEP_TILES = sweepOrder(coverageTiles());
+/** On a cold start, let the worker read a first handful of tiles (≤ 8 s) before the first snapshot. */
+const FIRST_DRAIN_WAIT_MS = 8_000;
+const FIRST_DRAIN_TILES = 6;
+
+const G = globalThis as unknown as { __godseyeTileSweeper?: TileSweeper };
+function sweeper(): TileSweeper {
+  return (G.__godseyeTileSweeper ??= new TileSweeper({ tiles: SWEEP_TILES, fetchTile }));
+}
+
+async function drainTiles(cold: boolean, signal: AbortSignal): Promise<TileResult[]> {
+  const s = sweeper();
+  if (cold) await s.waitFor(FIRST_DRAIN_TILES, FIRST_DRAIN_WAIT_MS, signal);
+  return s.drain();
+}
+
+/** Stop the background tile worker (process shutdown; tests start each case from a cold worker). */
+export function stopTileSweeper(): void {
+  G.__godseyeTileSweeper?.stop();
+  delete G.__godseyeTileSweeper;
+}
 
 export const ADSBLOL_ATTRIBUTION: Attribution = {
   text: 'Aircraft data © adsb.lol contributors, ODbL 1.0',
@@ -29,9 +50,9 @@ function attributions(env: Record<string, string | undefined> = process.env): At
 }
 
 /**
- * Live aircraft. Each run sweeps ~25 s of adsb.lol tiles (one start every 1.2 s) and starts one
- * TTL after the previous run ended (the poller checks every 2 s), so the whole grid is re-read
- * about every 3 min while the global lists refresh every 30 s; every record carries its own
+ * Live aircraft. A background worker reads adsb.lol tiles back to back (≤ 1 in flight, one start
+ * per 1.2 s; dense tiles more often, every tile within 165 s); each run, one TTL after the last,
+ * merges the tiles that arrived plus the global lists (every 30 s). Every record carries its own
  * observation time, and the feed shows LIVE / its age honestly between runs.
  */
 export const flightsFeed = defineFeed<FlightsSnapshot>({
@@ -51,7 +72,7 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
       ctx.previous,
       {
         tiles: SWEEP_TILES,
-        fetchTile,
+        drainTiles: () => drainTiles(ctx.previous === null, ctx.signal),
         fetchGlobal,
         fetchReapi,
         fetchOpenSky: (signal) => fetchOpenSky(process.env, signal),

@@ -30,7 +30,8 @@ const { flightsBody } = await import('@/features/aviation/server/view');
 const { normalizeAdsbResponse } = await import('@/features/aviation/adsb');
 
 describe('GET /api/flights/stream', () => {
-  afterAll(() => {
+  afterAll(async () => {
+    (await import('@/features/aviation/feeds')).stopTileSweeper();
     vi.useRealTimers();
   });
 
