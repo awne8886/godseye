@@ -30,6 +30,7 @@ product), adsb.fi `/api/v2/mil` (`ADSBFI_PERSONAL_USE=true`, 1 req/s, personal n
 
 Coverage: 86 tiles of 250 nm (hex lattice laid out for 230 nm so circles overlap) over the busiest
 airspace, one request start every 1.2 s through `providerBucket('api.adsb.lol', 1/1.2)`, ≤ 1 in
-flight, ~13 s of tiles per 15 s feed run → a full sweep every ~2 min; global lists every 30 s;
-aircraft not re-observed for 240 s are dropped. Sparse regions (Africa interior, oceans outside the
+flight, ~25 s of tiles per feed run, next run one 15 s TTL later → a full sweep about every
+170 s (measured first cold slice: 2 182 aircraft in 16 s); global lists every 30 s;
+aircraft not re-observed for 300 s are dropped. Sparse regions (Africa interior, oceans outside the
 NAT tracks, Russia, South America outside the south-east) are not covered by the keyless path.

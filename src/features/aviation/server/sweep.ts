@@ -18,14 +18,20 @@ import { RateLimitedError, type GlobalKey } from './providers';
 export const FLIGHT_SOURCES = ['adsblol_tiles', 'adsblol_mil', 'adsblol_ladd', 'adsblol_pia', 'adsblol_reapi', 'opensky', 'adsbfi_mil'] as const;
 export type FlightSource = (typeof FLIGHT_SOURCES)[number];
 
-/** Aircraft not re-observed for this long are dropped (one full sweep is ≤ 180 s). */
-export const PRUNE_AFTER_S = 240;
+/** Aircraft not re-observed for this long are dropped (one full sweep takes ~170–270 s). */
+export const PRUNE_AFTER_S = 300;
 /** Global lists (/v2/mil, /v2/ladd, /v2/pia, adsb.fi mil) are refreshed at most this often. */
 export const GLOBAL_EVERY_MS = 30_000;
 /** OpenSky standard account: 4 credits per global call, 4 000 a day → one call per 86.4 s. */
 export const OPENSKY_EVERY_MS = 90_000;
-/** Wall-clock budget for tile requests in one run (the feed's deadline is larger). */
-export const SLICE_BUDGET_MS = 13_000;
+/**
+ * Wall-clock budget for tile requests in one run (the feed's deadline is larger). The next run starts
+ * one TTL (15 s) after this one ends, so a 25 s slice keeps the grid busy ~60 % of the time: one
+ * start per 1.2 s → a full 86-tile sweep every ~170 s. The first run after a cold start is short
+ * (FIRST_SLICE_BUDGET_MS) so the first map paint does not wait for a long slice.
+ */
+export const SLICE_BUDGET_MS = 25_000;
+export const FIRST_SLICE_BUDGET_MS = 8_000;
 
 export interface TileState {
   at: number | null;
@@ -170,7 +176,7 @@ export async function runSweep(prev: FlightsSnapshot | null, deps: SweepDeps, si
   } else {
     record('adsblol_reapi', skippedProvider('not-configured'));
     const t0 = now();
-    const budget = deps.sliceBudgetMs ?? SLICE_BUDGET_MS;
+    const budget = deps.sliceBudgetMs ?? (prev ? SLICE_BUDGET_MS : FIRST_SLICE_BUDGET_MS);
     let lastError: unknown = null;
     if (snap.backoffUntil <= now()) {
       if (snap.cursor === 0 || snap.sweepStartedAt === null) snap.sweepStartedAt = now();

@@ -29,9 +29,10 @@ function attributions(env: Record<string, string | undefined> = process.env): At
 }
 
 /**
- * Live aircraft. Each run sweeps ~13 s of adsb.lol tiles (one start every 1.2 s), so the whole
- * grid is re-read every ~2 min while the global lists refresh every 30 s; every record carries
- * its own observation time. Polled every 15 s while anyone reads it.
+ * Live aircraft. Each run sweeps ~25 s of adsb.lol tiles (one start every 1.2 s) and starts one
+ * TTL after the previous run ended (the poller checks every 2 s), so the whole grid is re-read
+ * about every 3 min while the global lists refresh every 30 s; every record carries its own
+ * observation time, and the feed shows LIVE / its age honestly between runs.
  */
 export const flightsFeed = defineFeed<FlightsSnapshot>({
   key: 'flights',
@@ -39,7 +40,8 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
   kind: 'live',
   attribution: attributions(),
   note: `adsb.lol keyless coverage: ${SWEEP_TILES.length} tiles of 250 nm over the busiest airspace; sparse regions are not covered`,
-  deadlineMs: 45_000,
+  pollMs: 2_000,
+  deadlineMs: 55_000,
   retryAfterErrorMs: 20_000,
   maxObservationAgeMs: 180_000,
   count: (d) => d.records.length,
