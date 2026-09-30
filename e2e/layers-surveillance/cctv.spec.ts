@@ -4,7 +4,8 @@ import { expect, test, type Page } from '@playwright/test';
  * CCTV layer (layers-surveillance): cameras render when the operators are live, clicking one opens
  * the camera card and viewer with operator, licence and "Report / remove this camera", and
  * /cameras-notice loads cleanly. Runs against the live /api/cctv; when every provider of a region
- * is down the route must answer SOURCE OFFLINE (503) and the render checks are skipped.
+ * is down the route must answer SOURCE OFFLINE (503) and the render checks are skipped. A region
+ * whose providers all need a key the server lacks is "not configured" (200), never requested by the UI.
  */
 
 type Row = (string | number | null)[];
@@ -83,6 +84,32 @@ test.describe('cctv layer', () => {
     await expect(viewer.getByTestId('camera-licence')).not.toBeEmpty();
     await expect(viewer.getByTestId('camera-report')).toBeVisible();
     await expect(viewer.getByTestId('viewer-observed')).not.toBeEmpty();
+  });
+});
+
+test.describe('keyless instance', () => {
+  test('never requests a key-only camera region and gets no 5xx from /api/cctv (R1-M5)', async ({ page }) => {
+    const health = await (await page.request.get('/api/health')).json();
+    test.skip(health.capabilities?.tfl?.enabled === true, 'TFL_APP_KEY configured on this server');
+    const direct = await page.request.get('/api/cctv?region=uk');
+    expect(direct.status()).toBe(200);
+    const body = await direct.json();
+    expect(body.disabledRegions).toEqual(['uk']);
+    expect(body.providers.tfl.skipped).toBe('not-configured');
+    const bad: string[] = [];
+    const asked: string[] = [];
+    page.on('response', (r) => {
+      if (!r.url().includes('/api/cctv')) return;
+      asked.push(r.url());
+      // 503 is reserved for real upstream outages of configured providers (legitimate, asserted elsewhere).
+      if (r.status() >= 500 && r.status() !== 503) bad.push(`${r.status()} ${r.url()}`);
+    });
+    await page.goto('/?c=51.5000,-0.1200,9&layers=cctv');
+    await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 30_000 });
+    await expect.poll(() => asked.some((u) => u.includes('/api/cctv?region=')), { timeout: 30_000 }).toBe(true);
+    await page.waitForTimeout(3_000);
+    expect(asked.filter((u) => u.includes('region=uk'))).toEqual([]);
+    expect(bad).toEqual([]);
   });
 });
 

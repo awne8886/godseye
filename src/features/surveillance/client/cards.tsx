@@ -49,8 +49,11 @@ export function CameraCard({ selection }: CardProps) {
   );
 }
 
-export function liveLabel(live: boolean | null): string {
-  return live === true ? 'LIVE NOW (checked)' : live === false ? 'NOT LIVE AT LAST CHECK' : 'LIVE STATUS UNKNOWN';
+/** Live status with the time it was checked (never LIVE without an observed check time). */
+export function liveLabel(live: boolean | null, checkedAt: string | null = null): string {
+  const at = checkedAt ? ` · CHECKED ${checkedAt.slice(11, 16)}Z` : '';
+  if (live === true) return checkedAt ? `LIVE${at}` : 'LIVE STATUS UNKNOWN';
+  return live === false ? `NOT LIVE${at}` : 'LIVE STATUS UNKNOWN';
 }
 
 export function NewsChannelCard({ selection }: CardProps) {
@@ -61,7 +64,8 @@ export function NewsChannelCard({ selection }: CardProps) {
       <dl>
         <Row label="HQ">{[ch.city, ch.country].filter(Boolean).join(', ')}</Row>
         <Row label="Category">{ch.category}</Row>
-        <Row label="Status">{liveLabel(ch.live)}</Row>
+        <Row label="Status" testId="news-live">{liveLabel(ch.live, ch.observedAt)}</Row>
+        {ch.observedAt && <Row label="Checked">{isoShort(ch.observedAt)}</Row>}
         <Row label="Playback">{ch.embedAllowed ? 'Official embed' : 'Opens on YouTube'}</Row>
       </dl>
       <div className="flex flex-wrap items-center gap-3">

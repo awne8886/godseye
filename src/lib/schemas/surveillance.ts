@@ -65,6 +65,11 @@ export const CctvResponse = columnarResponse(CAMERA_FIELDS).extend({
   regions: z.array(z.string()),
   pendingRegions: z.array(z.string()),
   counts: z.record(z.string(), z.number().int().nonnegative()),
+  /**
+   * Requested regions whose every provider needs a key this instance does not have: not an
+   * outage, just not configured (their providers report `skipped: 'not-configured'`).
+   */
+  disabledRegions: z.array(z.string()).optional(),
 });
 
 export const StreamStatusResponse = z.object({
@@ -85,14 +90,23 @@ export const NewsChannel = EntityBase.extend({
   embedAllowed: z.boolean(),
   category: z.enum(['mainstream', 'government', 'finance', 'conflict', 'state']),
   language: z.string(),
-  /** Result of the runtime live check (null before the first check). */
+  /**
+   * Result of the runtime live check (null before the first check or when the page could not be
+   * read). `observedAt` is the time of that check, null when it produced no answer.
+   */
   live: z.boolean().nullable(),
 });
 
 export const LiveNewsResponse = Envelope.extend({ items: z.array(NewsChannel) });
 
+/**
+ * Where camera removal requests go on this instance: the operator's GODSEYE_CONTACT (email or
+ * https URL) when set, else the GODSEYE project's public issue tracker.
+ */
+export const RemovalContact = z.object({ kind: z.enum(['tracker', 'email', 'url']), href: z.string() });
+
 /** GET /api/cctv/providers */
-export const CameraProvidersResponse = Envelope.extend({ items: z.array(CameraProvider) });
+export const CameraProvidersResponse = Envelope.extend({ items: z.array(CameraProvider), removal: RemovalContact.optional() });
 
 /** GET /api/cctv/resolve */
 export const CameraResolveResponse = z.object({
