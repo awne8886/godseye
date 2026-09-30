@@ -1,3 +1,4 @@
+import type * as Ssrf from '@/lib/ssrf';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FX, text } from '@/features/surveillance/server/__fixtures__';
 import { done, fresh, jpeg, req } from '@/features/surveillance/server/__fixtures__/helpers';
@@ -8,7 +9,7 @@ vi.mock('@/features/surveillance/server/loaders', async () => {
   return { LOADERS: fixtureLoaders() };
 });
 vi.mock('@/lib/ssrf', async (orig) => {
-  const real = await orig<typeof import('@/lib/ssrf')>();
+  const real = await orig<typeof Ssrf>();
   const { FX: fx, text: t } = await import('@/features/surveillance/server/__fixtures__');
   return {
     ...real,
