@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { useUiStore } from '@/lib/store';
@@ -40,7 +40,8 @@ describe('Flight Watch panel', () => {
     });
     const panel = screen.getByTestId('flight-watch');
     expect(panel.textContent).toContain('4CAFC4');
-    expect(panel.textContent).toContain('SOURCE OFFLINE');
+    // The 503 resolves asynchronously; under a loaded test run it can land after the first tick.
+    await waitFor(() => expect(panel.textContent).toContain('SOURCE OFFLINE'));
     expect(panel.textContent).toContain('FEED OFFLINE');
     expect(panel.textContent).not.toContain('NO LONGER IN THE LIVE FEED'); // an outage is not a departure
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop watching 4CAFC4' })));
