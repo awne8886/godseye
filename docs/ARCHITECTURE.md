@@ -227,5 +227,5 @@ CI (`.github/workflows/ci.yml`) runs on every push and pull request: lint, typec
 ≥ 80 % line coverage on `src/lib`, `src/app/api` and `src/features/flight-paths`, a production build,
 Playwright e2e, Lighthouse CI (`lighthouserc.json`: performance ≥ 0.85, accessibility = 1,
 LCP ≤ 2.5 s, CLS ≤ 0.1, TBT ≤ 300 ms, desktop preset, median of three runs) and `pnpm audit --prod`
-failing on high or critical advisories. `CHECK_CATALOG_COMPLETENESS` is off until every catalogue route
-exists.
+failing on high or critical advisories. `CHECK_CATALOG_COMPLETENESS=1` makes CI fail when a catalogued
+route has no route file.

@@ -18,7 +18,7 @@ env:
   NEXT_TELEMETRY_DISABLED: "1"
   # Switch: "1" makes src/lib/api-catalog.test.ts require a route file for every catalogue entry.
   # Off until every Phase 2 route has merged; the lead flips it (TODO.md).
-  CHECK_CATALOG_COMPLETENESS: "0"
+  CHECK_CATALOG_COMPLETENESS: "1"
 
 jobs:
   quality:

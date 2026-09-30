@@ -63,8 +63,8 @@ describe('.github/workflows/ci.yml', () => {
     for (const u of uses) expect(u, u).toMatch(/^[\w.-]+\/[\w.-]+@[0-9a-f]{40}$/);
   });
 
-  it('documents the catalogue completeness switch, currently off', () => {
-    expect(wf.env.CHECK_CATALOG_COMPLETENESS).toBe('0');
+  it('enforces catalogue completeness (every catalogued route exists)', () => {
+    expect(wf.env.CHECK_CATALOG_COMPLETENESS).toBe('1');
   });
 });
 

@@ -180,5 +180,5 @@ Kept current by the lead after every phase. The build is done when this file is 
 ## Known gaps carried into Phase 1–2
 - [ ] map-engine: tune label density at z 3–5 (state/oblast labels crowd the view)
 - [x] pages-docs-privacy-ops: `/docs` and `/privacy` (Link prefetch 404 until built)
-- [ ] lead: flip `CHECK_CATALOG_COMPLETENESS=1` in CI once every catalogue route exists
+- [x] lead: flip `CHECK_CATALOG_COMPLETENESS=1` in CI once every catalogue route exists
 - [ ] lead: add each builder's reported operator media hosts to `src/config/hosts.ts` (CSP)
