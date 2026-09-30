@@ -2,10 +2,11 @@
  * OSIRIS's four-bucket aircraft classifier, rule for rule (docs/reference/03 §1,
  * ../reference/osiris src/app/api/flights/route.ts `classifyFlight`). Isomorphic and pure.
  *
- * The only adaptation: OSIRIS reads the emitter category as OpenSky's numeric `category_os`
- * (extended=1). readsb/adsb.lol send the same DO-260 emitter category as a string (`A3`), so it is
- * mapped onto OpenSky's numbering first (`emitterToOpenSky`) and the rules run unchanged. Note that
- * OpenSky 14 is "UAV" (ADS-B B6); OSIRIS treats it as military and so does this port.
+ * OSIRIS reads the emitter category only as OpenSky's numeric `category_os` (extended=1), which
+ * exists on OpenSky state vectors alone; on readsb rows (its adsb.fi source, our adsb.lol source)
+ * the field is undefined and every `category_os` test is dead. To reproduce OSIRIS's result on the
+ * same data, readsb rows are classified with `categoryOs: null` (adsb.ts) and only OpenSky rows pass
+ * their numeric category. Note that OpenSky 14 is "UAV"; OSIRIS treats it as military, as does this port.
  */
 import type { z } from 'zod';
 import type { AircraftBucket } from '@/lib/schemas/aviation';
