@@ -88,10 +88,14 @@ export function useNativeLayers(sourceId: string, data: GeoJSON.FeatureCollectio
   useEffect(() => {
     if (!map) return;
     const ensure = () => {
-      if (!map.getStyle()) return;
-      if (!map.getSource(sourceId)) map.addSource(sourceId, { type: 'geojson', data: dataRef.current ?? { type: 'FeatureCollection', features: [] } });
-      const before = firstSymbolId(map);
-      for (const l of layersRef.current) if (!map.getLayer(l.id)) map.addLayer({ ...l, source: sourceId } as LayerSpecification, before);
+      try {
+        if (!map.getStyle()) return;
+        if (!map.getSource(sourceId)) map.addSource(sourceId, { type: 'geojson', data: dataRef.current ?? { type: 'FeatureCollection', features: [] } });
+        const before = firstSymbolId(map);
+        for (const l of layersRef.current) if (!map.getLayer(l.id)) map.addLayer({ ...l, source: sourceId } as LayerSpecification, before);
+      } catch {
+        // The style is mid-(re)load: retried on the next styledata/idle event.
+      }
     };
     ensure();
     const enter = () => (map.getCanvas().style.cursor = 'pointer');
@@ -102,8 +106,10 @@ export function useNativeLayers(sourceId: string, data: GeoJSON.FeatureCollectio
       map.on('mouseleave', id, leave);
     }
     map.on('styledata', ensure);
+    map.on('idle', ensure);
     return () => {
       map.off('styledata', ensure);
+      map.off('idle', ensure);
       for (const id of ids) {
         map.off('mouseenter', id, enter);
         map.off('mouseleave', id, leave);
