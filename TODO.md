@@ -71,15 +71,15 @@ Kept current by the lead after every phase. The build is done when this file is 
       builders have explicit `tools:`; route names match the catalogue (aliases noted)
 
 ## Phase 1 follow-ups for Phase 2 builders
-- [ ] design-system-hud: apply `defaultLayersFor(capabilities)` once /api/health loads, before the first URL write
+- [x] design-system-hud: apply `defaultLayersFor(capabilities)` once /api/health loads, before the first URL write
 - [ ] map-engine: build the worker URL from `maplibregl.getVersion()`; store `normalizeLng` camera
-- [ ] layers-aviation: trim/upper-case callsigns; emit the compact FLIGHT_FIELDS row + `sources`
-- [ ] layers-hazards: fires as FIRE_FIELDS columnar; Sentinel quicklooks by final (zipper) URL, no redirects
+- [x] layers-aviation: trim/upper-case callsigns; emit the compact FLIGHT_FIELDS row + `sources`
+- [x] layers-hazards: fires as FIRE_FIELDS columnar; Sentinel quicklooks by final (zipper) URL, no redirects
 - [ ] layers-threats-network: GDACS `geteventlist/SEARCH?eventlist=…` (MAP returns 400); lower-case alert
       levels, `url.report`; GDELT zip URLs upgraded to https; Cloudflare origins as points unless a target exists
 - [ ] layers-surveillance: TfL mp4 via plain `<video src>` (no CORS); cameras carry `source`
 - [ ] feature-flight-paths: `LocalTime` with offsets (`etaTz`), never offset-less local strings
-- [ ] pages-docs-privacy-ops: compile `docs/DATA_SOURCES.md` from `docs/data-sources/*.md`; Dockerfile runs
+- [x] pages-docs-privacy-ops: compile `docs/DATA_SOURCES.md` from `docs/data-sources/*.md`; Dockerfile runs
       `pnpm build` (prebuild vendors the worker) and copies `public/` into the standalone image; compose Caddy
       overwrites XFF (`header_up X-Forwarded-For {remote_host}`); ARCHITECTURE.md records the accepted
       trade-offs (CSP `'unsafe-inline'` for Next inline scripts, `worker-src blob:` for MapLibre's module
@@ -87,39 +87,59 @@ Kept current by the lead after every phase. The build is done when this file is 
 - [ ] lead (Phase 3): scope the §11 branding grep to shipped UI/docs (the HORUS preset is required by §5;
       the MIT NOTICE must credit OSIRIS; internal `osiris` catalogue flags are not branding)
 
+## Phase 2 wave A — merged (map-engine, design-system-hud, layers-aviation, layers-space, layers-hazards, pages-docs-privacy-ops)
+- [x] All six branches merged; lint, typecheck, 687 unit tests, build green after every merge
+- [x] Shared-file requests applied (tokens, IMAGE_HOSTS, LayerStatus.attribution, agentRules off, sandbox proxy for
+      Playwright, Turbopack alias for satellite.js multi-thread WASM, docs scripts, js-yaml, image-size 2.0.4 override)
+- [ ] map-engine (integration round): ONE click router (deck + native + CPU hit-testers → `choosePick`), aviation and
+      hazards migrated off their own `map.on('click')`; `ready` after load; tokens re-read on `godseye:style`
+- [ ] map-engine (integration round): startup performance — CI Lighthouse on `/` is 0.61 / TBT 1710 ms (need ≥ 0.85 / ≤ 300 ms)
+- [ ] map-engine: merged-main e2e regressions (terrain → mercator at z ≥ 10, double-right-click dossier, OSM
+      attribution on mobile); worker URL from `maplibregl.getVersion()`; label density z 3–5; imagery chips vs mobile nav
+- [ ] design-system-hud (integration round): MAP|SAT control, scale bar + cursor readout from `src/lib/map/cursor.ts`,
+      terrain status, `LayerStatus.attribution` in flyouts/sources panel, real cards/panels end-to-end, label-in-name,
+      space e2e locators
+- [ ] layers-aviation: full adsb.lol sweep takes ~170 s, so most aircraft render frozen/dimmed (honest but sparse) —
+      find a keyless cadence that keeps positions ≤ 60 s where possible; flight-route `basis: 'observed'` via traces
+- [ ] layers-space: verify the 8 unverified CelesTrak group names; satellite IconLayer (mission glyphs) instead of
+      ScatterplotLayer; catalogue 3.18 MB (cap at ~21.9k rows) — split by group if the catalogue grows
+- [ ] layers-hazards: NWS alerts without geometry are `unplacedAlerts` until the zone cache fills (120/refresh);
+      OpenAQ/WAQI keyed adapters unwired (no keys to test) — shown as skipped: not-configured
+- [ ] pages-docs-privacy-ops follow-up: README screenshots (Phase 3); confirm the Lighthouse desktop preset choice
+
 ## Phase 0 build items per builder (Phase 2 owners)
 ### map-engine
-- [ ] `setMissingStyleImageResolver` for `circle-11` (gold SDF dot); drop `fill-pattern` on `landcover_wood`
-- [ ] Explicit `sources.openmaptiles.attribution = BASEMAP_ATTRIBUTION`; per-source attribution Esri/GIBS/Terrarium
+- [x] `setMissingStyleImageResolver` for `circle-11` (gold SDF dot); drop `fill-pattern` on `landcover_wood`
+- [x] Explicit `sources.openmaptiles.attribution = BASEMAP_ATTRIBUTION`; per-source attribution Esri/GIBS/Terrarium
 - [ ] SAT basemap: `store.basemap` → Esri World_Imagery raster (256, maxzoom 19) beneath labels; MAP|SAT toggle
-- [ ] Night lights (Black Marble 2016, GIBS maxzoom 8) via `addProtocol('godseye-night')` alpha from solar
+- [x] Night lights (Black Marble 2016, GIBS maxzoom 8) via `addProtocol('godseye-night')` alpha from solar
       elevation, LRU + 2-concurrency + abort, refresh 5 min, label "BLACK MARBLE 2016 · REFERENCE"
-- [ ] Terrain (Terrarium) + draped layer order; mercator while terrain on; `<Map projection>` gets effective projection
-- [ ] 3D buildings (minzoom 14.5, `hide_3d != true`, tokenised paint); geometry worker `src/workers/geometry.ts`
+- [x] Terrain (Terrarium) + draped layer order; mercator while terrain on; `<Map projection>` gets effective projection
+- [x] 3D buildings (minzoom 14.5, `hide_3d != true`, tokenised paint); geometry worker `src/workers/geometry.ts`
 - [ ] Far-side filter with camera altitude (`acos(R/(R+alt))`); pick routing via `choosePick`; `webglcontextlost`
       handling + context fallback ladder; pitch ease on projection switch; GIBS true-colour date chip (yesterday UTC)
 - [ ] Double right-click (500 ms/12 px) and long-press → `openDossier`; label density at z 3–5
 ### design-system-hud
-- [ ] Tool strip, panel host (`openPanel`/`pinnedPanels`), entity-card frame, key handler + help overlay from
+- [x] Tool strip, panel host (`openPanel`/`pinnedPanels`), entity-card frame, key handler + help overlay from
       `KEY_BINDINGS` (G also disables terrain), cmdk palette (tools/panels/layers/presets + "Dossier at map centre")
-- [ ] Share, settings (persisted slice), Style Studio (writes `godseye:theme`, presets as `:root[data-theme]`
+- [x] Share, settings (persisted slice), Style Studio (writes `godseye:theme`, presets as `:root[data-theme]`
       incl. EMBER/MONO/NVG and the researched muted fixes per preset), Ghost last
 - [ ] Telemetry SOLAR + Kp, MAP|SAT segmented + scale bar, cursor readout (3 s debounce, 0.1° cache), hint line
-- [ ] Status bar: ticker, ONLINE, LEDs; STATUS LIVE only with ≥ 1 live layer; layer count excludes hidden capabilities
-- [ ] Splash readiness = map idle + first two core feeds; wordmark visible in SSR (LCP)
-- [ ] Mobile nav (7 tabs, 44 px, safe-area) + sheets from `MOBILE_SHEETS`; ≥ 24 px targets everywhere
-- [ ] Tokens: panel-rgb/alpha, glass-1/2/3, radius-control/chip, ease-hud, durations, z scale; instrument chrome
+- [x] Status bar: ticker, ONLINE, LEDs; STATUS LIVE only with ≥ 1 live layer; layer count excludes hidden capabilities
+- [x] Splash readiness = map idle + first two core feeds; wordmark visible in SSR (LCP)
+- [x] Mobile nav (7 tabs, 44 px, safe-area) + sheets from `MOBILE_SHEETS`; ≥ 24 px targets everywhere
+- [x] Tokens: panel-rgb/alpha, glass-1/2/3, radius-control/chip, ease-hud, durations, z scale; instrument chrome
       (chip opacity 1); header strap without opacity .4
 ### layers-aviation
-- [ ] adsb.lol tiles (alt_baro "ground", space-padded flight, emergency "none"), mil/ladd/pia merge (no-position
+- [x] adsb.lol tiles (alt_baro "ground", space-padded flight, emergency "none"), mil/ladd/pia merge (no-position
       rows counted, not drawn), columnar < 4 MB; drop airplanes.live; hexdb route path fix + stale label
-- [ ] adsbdb identity + thumbnail (never stored), Flight Watch (`watchedFlights` ≤ 6), trails for watched aircraft
+- [x] adsbdb identity + thumbnail (never stored), Flight Watch (`watchedFlights` ≤ 6), trails for watched aircraft
 ### layers-space
-- [ ] CelesTrak OMM with error counter + last-good; SatNOGS TLE fallback labelled; 6-digit NORAD ids
-- [ ] SWPC: append `Z` to Kp/RTSW times; RTSW active filter; Bt/Bz from rtsw_mag_1m; X-ray class 0.1–0.8 nm;
+- [x] CelesTrak OMM with error counter + last-good; SatNOGS TLE fallback labelled; 6-digit NORAD ids
+- [x] SWPC: append `Z` to Kp/RTSW times; RTSW active filter; Bt/Bz from rtsw_mag_1m; X-ray class 0.1–0.8 nm;
       alerts `issue_datetime` → ISO; ISS position + SPACE panel (official NASA stream)
 ### layers-hazards
-- [ ] USGS, FIRMS (VIIRS confidence words, MODIS 0–100, columnar), EONET, NWS (zone geometry lookup cached 30 d),
+- [x] USGS, FIRMS (VIIRS confidence words, MODIS 0–100, columnar), EONET, NWS (zone geometry lookup cached 30 d),
       GDACS geteventlist, NHC cones (mapservices.weather.noaa.gov), GVP RSS (ISO-8859-1), Open-Meteo AQ
       (`openmeteo` capability), RainViewer, GPS jam (gpsjam daily H3, bad > 0 cells, columnar), Sentinel (CDSE STAC)
 ### layers-surveillance
@@ -149,7 +169,7 @@ Kept current by the lead after every phase. The build is done when this file is 
       winds aloft multi-coordinate single request + 1 h grid cache (`skipped: 'budget'` when limited); planner,
       live aircraft on route, track my flight (`flightIdent`)
 ### pages-docs-privacy-ops
-- [ ] `/docs` (from API_CATALOG) and `/privacy`; CI workflow; Docker; DATA_SOURCES.md licences (abuse.ch, InternetDB,
+- [x] `/docs` (from API_CATALOG) and `/privacy`; CI workflow; Docker; DATA_SOURCES.md licences (abuse.ch, InternetDB,
       ip-api, OpenSanctions, TeleGeography, gpsjam, OpenFlights ODbL)
 
 ## Upstream risks to design around (from probes, 2026-09-30)
@@ -159,6 +179,6 @@ Kept current by the lead after every phase. The build is done when this file is 
 
 ## Known gaps carried into Phase 1–2
 - [ ] map-engine: tune label density at z 3–5 (state/oblast labels crowd the view)
-- [ ] pages-docs-privacy-ops: `/docs` and `/privacy` (Link prefetch 404 until built)
+- [x] pages-docs-privacy-ops: `/docs` and `/privacy` (Link prefetch 404 until built)
 - [ ] lead: flip `CHECK_CATALOG_COMPLETENESS=1` in CI once every catalogue route exists
 - [ ] lead: add each builder's reported operator media hosts to `src/config/hosts.ts` (CSP)
