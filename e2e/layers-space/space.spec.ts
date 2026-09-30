@@ -5,6 +5,25 @@ import { expect, test, type Page } from '@playwright/test';
  * reports SOURCE OFFLINE for the catalogue, so a firewalled sandbox never fakes a pass or a failure.
  */
 
+/**
+ * Open the SPACE panel the way a visitor would: the right tool strip on desktop, the MARKETS tab's
+ * sheet on phones (MOBILE_SHEETS.markets = markets + space). Returns false when no launcher exists.
+ */
+async function openSpace(page: Page, isMobile: boolean): Promise<boolean> {
+  if (isMobile) {
+    const tab = page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'MARKETS' });
+    if ((await tab.count()) === 0) return false;
+    await tab.click();
+    const sheetTab = page.getByRole('tablist', { name: 'Sheet sections' }).getByRole('tab', { name: 'SPACE' });
+    if (await sheetTab.count()) await sheetTab.click();
+    return true;
+  }
+  const tool = page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'SPACE', exact: true });
+  if ((await tool.count()) === 0) return false;
+  await tool.click();
+  return true;
+}
+
 async function bootGlobe(page: Page, path: string) {
   await page.goto(path);
   await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 30_000 });
@@ -23,7 +42,8 @@ test('satellites: the catalogue loads, propagates and is counted per category wh
   page.on('pageerror', (e) => errors.push(e.message));
   await bootGlobe(page, '/?layers=satellites');
   await page.getByRole('button', { name: 'SPACE TRACKING' }).click();
-  const flyout = page.getByRole('dialog', { name: 'SPACE TRACKING' });
+  // Rail flyouts are disclosures (button aria-expanded + aria-controls → region "<GROUP> layers").
+  const flyout = page.getByRole('region', { name: 'SPACE TRACKING layers' });
   const allRow = flyout.getByRole('button', { name: /All Satellites/ });
   await expect(allRow).toHaveAttribute('aria-pressed', 'true');
   await expect(allRow).toContainText(/\d/, { timeout: 30_000 });
@@ -32,11 +52,9 @@ test('satellites: the catalogue loads, propagates and is counted per category wh
   expect(errors).toEqual([]);
 });
 
-test('SPACE panel opens with the official NASA stream and the ISS readout', async ({ page }) => {
+test('SPACE panel opens with the official NASA stream and the ISS readout', async ({ page, isMobile }) => {
   await bootGlobe(page, '/');
-  const tool = page.getByRole('button', { name: /^SPACE$/ });
-  test.skip((await tool.count()) === 0, 'the HUD tool strip (design-system-hud) is not mounted in this build');
-  await tool.click();
+  test.skip(!(await openSpace(page, isMobile)), 'the HUD tool strip (design-system-hud) is not mounted in this build');
   const panel = page.getByTestId('space-panel');
   await expect(panel).toBeVisible();
   await expect(panel.locator('iframe')).toHaveAttribute('src', /^https:\/\/www\.youtube-nocookie\.com\/embed\/awQzjn72bI0\?/);
@@ -44,13 +62,11 @@ test('SPACE panel opens with the official NASA stream and the ISS readout', asyn
   await expect(panel.getByText(/ISS · NORAD 25544/)).toBeVisible();
 });
 
-test('satellite card shows the PROPAGATED badge and the element epoch', async ({ page, request }) => {
+test('satellite card shows the PROPAGATED badge and the element epoch', async ({ page, request, isMobile }) => {
   const api = await request.get('/api/satellites');
   test.skip(api.status() === 503, 'CelesTrak and SatNOGS are both offline from this network');
   await bootGlobe(page, '/?layers=satellites');
-  const tool = page.getByRole('button', { name: /^SPACE$/ });
-  test.skip((await tool.count()) === 0, 'the HUD tool strip / card host (design-system-hud) is not mounted in this build');
-  await tool.click();
+  test.skip(!(await openSpace(page, isMobile)), 'the HUD tool strip / card host (design-system-hud) is not mounted in this build');
   const track = page.getByRole('button', { name: /Track ISS on globe/ });
   await expect(track).toBeEnabled({ timeout: 30_000 });
   await track.click();

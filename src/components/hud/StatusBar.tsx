@@ -13,7 +13,7 @@ import type { LayerId } from '@/lib/layer-registry';
 import { useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import type { TickerResponse } from '@/lib/types';
-import { useVisibleLayers } from './hooks';
+import { useApiRoute, useVisibleLayers } from './hooks';
 
 function subscribeOnline(cb: () => void) {
   window.addEventListener('online', cb);
@@ -46,7 +46,9 @@ interface TickerItem {
 }
 
 function useTickerItems(): TickerItem[] {
+  const tickerRoute = useApiRoute('/api/ticker');
   const ticker = useQuery({
+    enabled: tickerRoute,
     queryKey: ['ticker'],
     queryFn: async ({ signal }) => {
       const r = await fetch('/api/ticker', { signal });

@@ -1,14 +1,9 @@
 /**
- * Pure helpers for the scale bar and cursor readout. Owner: design-system-hud.
+ * Scale-bar labels in the visitor's units and cursor formatting, on top of map-engine's
+ * metersPerPixel()/scaleBar() (src/lib/map/cursor.ts). Pure. Owner: design-system-hud.
  */
+import { metersPerPixel, scaleBar as metricScaleBar } from '@/lib/map/cursor';
 import type { Settings } from '@/lib/store';
-
-const EARTH_CIRCUMFERENCE_M = 40_075_016.686;
-
-/** Ground metres per CSS pixel at a latitude for MapLibre's 512 px world tile. */
-export function metersPerPixel(lat: number, zoom: number): number {
-  return (EARTH_CIRCUMFERENCE_M * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** zoom);
-}
 
 const NICE = [1, 2, 3, 5];
 
@@ -25,31 +20,21 @@ export interface ScaleBar {
   label: string;
 }
 
-/** A round distance that fits in `maxPx`, in the visitor's units (aviation = nautical miles). */
-export function scaleBar(mpp: number, maxPx: number, units: Settings['units']): ScaleBar | null {
+/** A round distance that fits in `maxPx` at the view centre, in metric, imperial or aviation (NM) units. */
+export function scaleBarFor(lat: number, zoom: number, maxPx: number, units: Settings['units']): ScaleBar | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(zoom)) return null;
+  const mpp = metersPerPixel(lat, zoom);
   if (!(mpp > 0) || !Number.isFinite(mpp)) return null;
-  const maxM = mpp * maxPx;
   if (units === 'metric') {
-    if (maxM >= 1000) {
-      const km = niceBelow(maxM / 1000);
-      return { widthPx: (km * 1000) / mpp, label: `${km.toLocaleString('en-US')} KM` };
-    }
-    const m = niceBelow(maxM);
-    return { widthPx: m / mpp, label: `${m} M` };
+    const { meters, px } = metricScaleBar(lat, zoom, maxPx);
+    return { widthPx: px, label: meters >= 1000 ? `${(meters / 1000).toLocaleString('en-US')} KM` : `${meters} M` };
   }
-  if (units === 'imperial') {
-    const mi = maxM / 1609.344;
-    if (mi >= 1) {
-      const n = niceBelow(mi);
-      return { widthPx: (n * 1609.344) / mpp, label: `${n.toLocaleString('en-US')} MI` };
-    }
-    const ft = niceBelow(maxM / 0.3048);
-    return { widthPx: (ft * 0.3048) / mpp, label: `${ft} FT` };
-  }
-  const nm = maxM / 1852;
-  if (nm >= 1) {
-    const n = niceBelow(nm);
-    return { widthPx: (n * 1852) / mpp, label: `${n.toLocaleString('en-US')} NM` };
+  const maxM = mpp * maxPx;
+  const big = units === 'imperial' ? 1609.344 : 1852;
+  const unit = units === 'imperial' ? 'MI' : 'NM';
+  if (maxM / big >= 1) {
+    const n = niceBelow(maxM / big);
+    return { widthPx: (n * big) / mpp, label: `${n.toLocaleString('en-US')} ${unit}` };
   }
   const ft = niceBelow(maxM / 0.3048);
   return { widthPx: (ft * 0.3048) / mpp, label: `${ft} FT` };

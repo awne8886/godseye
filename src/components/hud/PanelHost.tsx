@@ -6,7 +6,7 @@
  * Owner: design-system-hud.
  */
 import { AnimatePresence, motion } from 'motion/react';
-import { createElement, useCallback, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import { createElement, useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { panelFor } from '@/features/registry';
 import { MOBILE_SHEETS, type PanelId } from '@/lib/tool-registry';
 import { useUiStore } from '@/lib/store';
@@ -106,6 +106,30 @@ function useDockWidth() {
   return { width, handle };
 }
 
+/**
+ * Keep docked panels clear of MapLibre's bottom-right stack (attribution + map-engine's imagery
+ * chips), whose height changes with the imagery on screen. Returns the bottom offset in px.
+ */
+export function useBottomRightClearance(minPx = 40): number {
+  const [bottom, setBottom] = useState(minPx);
+  useEffect(() => {
+    const measure = () => {
+      const el = document.querySelector('.maplibregl-ctrl-bottom-right');
+      const top = el && el.childElementCount ? el.getBoundingClientRect().top : window.innerHeight;
+      const next = Math.max(minPx, Math.round(window.innerHeight - top + 8));
+      setBottom((b) => (b === next ? b : next));
+    };
+    measure();
+    const t = setInterval(measure, 1000);
+    window.addEventListener('resize', measure);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('resize', measure);
+    };
+  }, [minPx]);
+  return bottom;
+}
+
 export default function PanelHost() {
   const openPanel = useUiStore((s) => s.openPanel);
   const pinned = useUiStore((s) => s.pinnedPanels);
@@ -117,7 +141,8 @@ export default function PanelHost() {
   const side = openPanel && !MODAL_PANELS.has(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
   const pinnedShown = pinned.filter((p) => !MODAL_PANELS.has(p) && isPanelAvailable(p, bt));
   const dock = useDockWidth();
-  const widthVar = { '--panel-width': `${dock.width}px` } as CSSProperties;
+  const clearance = useBottomRightClearance();
+  const widthVar = { '--panel-width': `${dock.width}px`, bottom: `${clearance}px` } as CSSProperties;
 
   return (
     <>
@@ -134,7 +159,7 @@ export default function PanelHost() {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.22, ease: EASE }}
-                className="fixed bottom-10 right-16 top-16 z-[var(--z-docked)] w-[var(--panel-width)]"
+                className="fixed right-16 top-16 z-[var(--z-docked)] w-[var(--panel-width)]"
                 style={side === 'dossier' ? { ...widthVar, zIndex: 'var(--z-dossier)' } : widthVar}
               >
                 <div {...dock.handle} className="absolute -left-1.5 top-1/2 z-10 h-16 w-3 -translate-y-1/2 cursor-ew-resize rounded-full hover:bg-[rgba(var(--gold-rgb),0.25)] focus-visible:bg-[rgba(var(--gold-rgb),0.25)]" />
@@ -144,7 +169,7 @@ export default function PanelHost() {
           </AnimatePresence>
           {pinnedShown.length > 0 && (
             <div
-              className="fixed bottom-10 top-16 z-[var(--z-docked)] flex w-[var(--panel-width)] flex-col gap-3"
+              className="fixed top-16 z-[var(--z-docked)] flex w-[var(--panel-width)] flex-col gap-3"
               style={{ ...widthVar, right: side ? 'calc(4rem + var(--panel-width) + var(--panel-gap))' : '4rem' }}
               aria-label="Pinned panels"
               role="group"

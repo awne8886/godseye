@@ -50,7 +50,7 @@ export default function Splash() {
           role="status"
           aria-live="polite"
           aria-label={`${APP_NAME} loading: ${SPLASH_STAGES[stage]}`}
-          className="fixed inset-0 z-[var(--z-splash)] grid place-items-center bg-[radial-gradient(ellipse_at_center,var(--bg-secondary)_0%,var(--bg-void)_70%)]"
+          className="pointer-events-none fixed inset-0 z-[var(--z-splash)] grid place-items-center bg-[radial-gradient(ellipse_at_center,var(--bg-secondary)_0%,var(--bg-void)_70%)]"
           exit={{ opacity: 0, scale: 1.04, transition: { duration: 0.7, ease: [0.4, 0, 0.2, 1] } }}
         >
           <div className="flex flex-col items-center">
