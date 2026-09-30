@@ -39,8 +39,10 @@ async function clickCentreUntil(page: Page, done: () => Promise<boolean>) {
 test('SPACE tool opens the registered SPACE panel in the instrument frame', async ({ page, isMobile }) => {
   await boot(page, '/');
   if (isMobile) {
+    // The MARKETS tab's sheet holds MARKETS and SPACE; with MARKETS not deployed SPACE opens directly.
     await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'MARKETS' }).click();
-    await page.getByRole('tablist', { name: 'Sheet sections' }).getByRole('tab', { name: 'SPACE' }).click();
+    const tab = page.getByRole('tablist', { name: 'Sheet sections' }).getByRole('tab', { name: 'SPACE' });
+    if (await tab.count()) await tab.click();
   } else {
     const tool = page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'SPACE', exact: true });
     await expect(tool).toHaveAttribute('title', 'Live from Space — 24/7 video downlink from the ISS');
