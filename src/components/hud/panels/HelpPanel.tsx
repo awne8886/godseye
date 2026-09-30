@@ -20,7 +20,7 @@ export function ShortcutTable() {
       <tbody>
         {KEY_BINDINGS.map((b) => (
           <tr key={`${b.action}-${b.display}`} data-action={b.action}>
-            <td className="w-[40%] pr-3 align-top">
+            <td className="w-[132px] pr-3 align-top">
               <kbd className="hud-text inline-block min-w-[28px] rounded-[var(--radius-chip)] border border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.06)] px-1.5 py-0.5 text-center text-[11px] text-[var(--gold-light)]">
                 {b.display}
               </kbd>

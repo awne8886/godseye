@@ -7,7 +7,7 @@
  */
 import { AnimatePresence, motion } from 'motion/react';
 import { Ghost, Settings2, SlidersHorizontal } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LAYER_GROUPS, type LayerGroupId, type LayerId } from '@/lib/layer-registry';
 import { useUiStore } from '@/lib/store';
 import { useVisibleLayers } from './hooks';
@@ -28,7 +28,18 @@ export default function LayerRail() {
   const layers = useVisibleLayers();
   const groups = LAYER_GROUPS.filter((g) => layers.some((l) => l.group === g.id));
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const railRef = useRef<HTMLElement>(null);
   const shown = pinned ?? hover;
+
+  // A pinned flyout closes on a click anywhere outside the rail (and on ESC via the key handler).
+  useEffect(() => {
+    if (!pinned) return;
+    const onDown = (e: PointerEvent) => {
+      if (railRef.current && !railRef.current.contains(e.target as Node)) setPinned(null);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [pinned, setPinned]);
 
   const enter = (g: LayerGroupId) => {
     if (timer.current) clearTimeout(timer.current);
@@ -40,7 +51,7 @@ export default function LayerRail() {
   };
 
   return (
-    <nav aria-label="Map layers" className="glass-rail fixed bottom-7 left-0 top-0 z-[var(--z-rail)] hidden w-12 flex-col items-center gap-1 pb-3 pt-24 md:flex">
+    <nav ref={railRef} aria-label="Map layers" className="glass-rail fixed bottom-7 left-0 top-0 z-[var(--z-rail)] hidden w-12 flex-col items-center gap-1 pb-3 pt-24 md:flex">
       {groups.map((g) => {
         const Icon = iconFor(g.icon);
         const inGroup = layers.filter((l) => l.group === g.id);

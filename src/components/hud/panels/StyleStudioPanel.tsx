@@ -193,6 +193,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
       description="Live UI tokens: presets, colours, map colours and effects. Saved in this browser."
       onClose={onClose}
       overlay={false}
+      hideTitle
       className="bottom-10 left-3 right-3 top-20 md:left-[58px] md:right-auto md:top-auto md:max-h-[min(80vh,760px)] md:w-[360px]"
     >
       <div className="flex items-center gap-1 px-4 pb-2 pt-3">
