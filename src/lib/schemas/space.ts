@@ -5,7 +5,7 @@
  * NORAD ids are therefore plain integers that may exceed 99999.
  */
 import { z } from 'zod';
-import { Envelope, IsoTime, Lat, Lng, columnarResponse } from './common';
+import { Envelope, IsoTime, Lat, Lng, Providers, columnarResponse } from './common';
 
 export const SatCategory = z.enum(['comms', 'military', 'navigation', 'earth_obs', 'science', 'other']);
 
@@ -63,6 +63,10 @@ export const Mission = z.object({
 export const SatellitesResponse = columnarResponse(SATELLITE_FIELDS).extend({
   missions: z.array(Mission),
   categoryCounts: z.record(SatCategory, z.number().int().nonnegative()),
+  /** Where the elements came from: CelesTrak OMM, or the labelled SatNOGS TLE fallback. (layers-space) */
+  catalogueSource: z.enum(['celestrak', 'satnogs-fallback']).optional(),
+  /** Human note shown with the layer (e.g. why the fallback is in use). (layers-space) */
+  note: z.string().optional(),
 });
 
 /** Position computed by the propagation worker (never sent by the server). */
@@ -89,6 +93,12 @@ export const OrbitResponse = z.object({
   /** Each segment is `[lng, lat, altKm][]`. */
   segments: z.array(z.array(z.tuple([Lng, Lat, z.number()])).max(2_000)).max(8),
   timestamp: IsoTime,
+  /** Epoch of the element set the track was propagated from (layers-space). */
+  elementsEpoch: IsoTime.optional(),
+  /** Catalogue provider of those elements, e.g. `celestrak` or `satnogs`. (layers-space) */
+  source: z.string().optional(),
+  /** Status of the catalogue feed the elements came from (lookups report providers). (layers-space) */
+  providers: Providers.optional(),
 });
 
 export const KpReading = z.object({
@@ -129,4 +139,18 @@ export const IssResponse = Envelope.extend({
   altKm: z.number(),
   velocityKmH: z.number(),
   visibility: z.enum(['daylight', 'eclipsed']).nullable(),
+  /**
+   * Ground track PROPAGATED (SGP4) from NORAD 25544's published elements, not observed: from 45 min
+   * before to 90 min after `anchoredAt`, split at the antimeridian. Null when the catalogue has no
+   * ISS elements yet. (layers-space)
+   */
+  groundTrack: z
+    .object({
+      anchoredAt: IsoTime,
+      elementsEpoch: IsoTime,
+      source: z.string(),
+      segments: z.array(z.array(z.tuple([Lng, Lat, z.number()])).max(2_000)).max(8),
+    })
+    .nullable()
+    .optional(),
 });
