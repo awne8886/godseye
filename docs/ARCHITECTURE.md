@@ -108,7 +108,16 @@ It is the single inventory that drives:
 - `withRoute()` rate limits (a route missing from the catalogue throws in development and tests);
 - the route-existence test (`CHECK_CATALOG_COMPLETENESS=1`).
 
-`EXCLUDED_OSIRIS_ROUTES` records the OSIRIS endpoints deliberately not replicated, with reasons.
+`EXCLUDED_OSIRIS_ROUTES` records the reference project's endpoints deliberately not replicated, with reasons.
+
+`/docs` is a static server component (readable without JavaScript). Endpoint details sit in closed
+`<details>` elements inside `content-visibility: auto` cards, so the ~80-card page stays cheap to style
+and lay out. One client island (`src/app/docs/interactive.tsx`) adds reading progress, scroll-spy on the
+section nav, a ⌘K / Ctrl-K / `/` endpoint palette (shortcuts from `src/lib/keyboard.ts`) and the
+"Send request" console: GET only, URLs built by `buildTryUrl()` from the catalogue path with
+percent-encoded values and re-checked to stay on the page's origin under `/api/`, same-origin
+credentials, status + headers + body (event streams: the first three events, then the console closes
+the stream).
 
 ### Upstream etiquette
 
@@ -189,7 +198,7 @@ Preferences persist in `localStorage` (`godseye:settings`, `godseye:theme`), rea
 - **`x-real-ip` is opt-in.** Many PaaS edges pass a client-sent `X-Real-IP` through untouched, so trusting
   it by default would let clients choose their own rate-limit bucket. Operators whose proxy overwrites it
   set `TRUST_PROXY_HEADER=x-real-ip` (the bundled Caddyfile overwrites both headers).
-- **Muted text token `#848178`.** OSIRIS's `#5C5A54` measures about 3:1; GODSEYE raises
+- **Muted text token `#848178`.** The reference project's `#5C5A54` measures about 3:1; GODSEYE raises
   `--text-muted` to `#848178`, which clears 4.5:1 on the primary background, the tertiary surface and the
   glass panels, at the cost of a slightly brighter secondary hierarchy.
 - **HSTS `preload` is opt-in** (`HSTS_PRELOAD=true`). Preload commits the whole registrable domain to
@@ -203,10 +212,14 @@ Preferences persist in `localStorage` (`godseye:settings`, `godseye:theme`), rea
 ## Deployment
 
 - **Docker Compose (recommended):** `Dockerfile` builds a multi-stage `node:22-alpine` image
-  (`pnpm install --frozen-lockfile`, `pnpm build`, standalone output + `.next/static` + `public/`,
-  non-root user `godseye`, `HEALTHCHECK` on `/api/health`). `docker-compose.yml` runs it behind Caddy
-  (automatic TLS, `header_up X-Forwarded-For {remote_host}`, no access log) with a snapshot volume, and
-  an optional `redis` profile. The app port is never published.
+  (base pinned by digest; `pnpm install --frozen-lockfile`, `pnpm build`, standalone output +
+  `.next/static` + `public/`, non-root user `godseye` (uid 1001, no login shell, npm/corepack removed),
+  `HEALTHCHECK` on `/api/health`). `docker-compose.yml` runs it behind Caddy (automatic TLS,
+  `header_up X-Forwarded-For {remote_host}`, zstd/gzip for JSON and HTML but never
+  `text/event-stream`, no access log) with a snapshot volume, and an optional `redis` profile. Every
+  service has `read_only: true`, `no-new-privileges`, `cap_drop: [ALL]` (Caddy adds back only
+  `NET_BIND_SERVICE`) and a PID limit; the app writes only to `/data` and tmpfs mounts at `/tmp` and
+  `/app/.next/cache`. The app port is never published.
 - **Multiple instances:** set `REDIS_URL`; snapshots, single-writer locks and rate limits then live in
   Redis.
 - **Any other reverse proxy** must overwrite `X-Forwarded-For` (nginx: `proxy_set_header X-Forwarded-For
@@ -225,9 +238,12 @@ Preferences persist in `localStorage` (`godseye:settings`, `godseye:theme`), rea
 | `tools/compile-data-sources.ts` | Compiles `docs/DATA_SOURCES.md` from `docs/data-sources/*.md` plus the licence summary. |
 | `tools/ts-loader.mjs` | Resolve hook so Node's built-in TypeScript support can run the tools above against app modules. |
 
-CI (`.github/workflows/ci.yml`) runs on every push and pull request: lint, typecheck, unit tests with
-≥ 80 % line coverage on `src/lib`, `src/app/api` and `src/features/flight-paths`, a production build,
-Playwright e2e, Lighthouse CI (`lighthouserc.json`: performance ≥ 0.85, accessibility = 1,
+CI (`.github/workflows/ci.yml`) runs on every push and pull request: a placeholder grep over LICENSE,
+README and `docs/` (pattern in the workflow; the research pack and the contract are exempt), lint,
+typecheck, unit tests with ≥ 80 % line coverage on `src/lib`, `src/app/api` and
+`src/features/flight-paths`, a production build, Playwright e2e inside the official Playwright image
+(pinned by digest; per-test budget 150 s so the 90 s first-canvas waits under SwiftShader can finish),
+Lighthouse CI on a separate build (`lighthouserc.json`: performance ≥ 0.85, accessibility = 1,
 LCP ≤ 2.5 s, CLS ≤ 0.1, TBT ≤ 300 ms, desktop preset, median of three runs) and `pnpm audit --prod`
 failing on high or critical advisories. `CHECK_CATALOG_COMPLETENESS=1` makes CI fail when a catalogued
 route has no route file.

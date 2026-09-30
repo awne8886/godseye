@@ -73,6 +73,72 @@ test.describe('/docs', () => {
   });
 });
 
+test.describe('/docs interactive', () => {
+  test('"Send request" calls this origin only and shows status, headers and body', async ({ page, baseURL }) => {
+    const origin = new URL(baseURL!).origin;
+    const offOrigin: string[] = [];
+    page.on('request', (r) => {
+      if (r.resourceType() === 'fetch' && new URL(r.url()).origin !== origin) offOrigin.push(r.url());
+    });
+    await page.goto('/docs');
+    await expect(page.locator('html[data-docs-interactive]')).toBeAttached();
+    const card = page.locator('article#get-api-health');
+    await card.getByRole('button', { name: 'Send request' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('GET /api/health', { exact: true })).toBeVisible();
+    const answered = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/health');
+    await dialog.getByRole('button', { name: 'Send request' }).click();
+    const res = await answered;
+    expect(new URL(res.url()).origin).toBe(origin);
+    await expect(dialog.getByText(new RegExp(`^${res.status()} `))).toBeVisible();
+    await expect(dialog.getByText(/Response headers \(\d+\)/)).toBeVisible();
+    await expect(dialog.getByLabel('Response body')).toContainText('capabilities');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    expect(offOrigin).toEqual([]);
+  });
+
+  test('the try-it form is pre-filled from the catalogue example and refuses missing required values', async ({ page }) => {
+    await page.goto('/docs');
+    await expect(page.locator('html[data-docs-interactive]')).toBeAttached();
+    await page.locator('article#get-api-aircraft').getByRole('button', { name: 'Send request' }).click();
+    const dialog = page.getByRole('dialog');
+    const icao = dialog.getByLabel(/icao24/);
+    await expect(icao).toHaveValue('4ca2b3');
+    await expect(dialog.getByText('GET /api/aircraft?icao24=4ca2b3')).toBeVisible();
+    await icao.fill('');
+    await expect(dialog.getByText('icao24 is required.')).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Send request' })).toBeDisabled();
+  });
+
+  test('⌘K / Ctrl-K palette finds an endpoint and jumps to it', async ({ page }) => {
+    await page.goto('/docs');
+    await expect(page.locator('html[data-docs-interactive]')).toBeAttached();
+    await page.keyboard.press('ControlOrMeta+k');
+    const palette = page.getByRole('dialog', { name: 'Search endpoints' });
+    await expect(palette).toBeVisible();
+    await palette.getByRole('combobox').fill('region dossier');
+    await expect(palette.getByRole('option').first()).toContainText('/api/region-dossier');
+    await page.keyboard.press('Enter');
+    await expect(palette).toBeHidden();
+    await expect(page).toHaveURL(/#get-api-region-dossier$/);
+    await expect(page.locator('article#get-api-region-dossier')).toBeFocused();
+    await expect(page.locator('article#get-api-region-dossier details')).toHaveAttribute('open', '');
+  });
+
+  test('reading progress and scroll-spy follow the scroll position', async ({ page }) => {
+    await page.goto('/docs');
+    await expect(page.locator('html[data-docs-interactive]')).toBeAttached();
+    const bar = page.getByRole('progressbar', { name: 'Reading progress' });
+    await expect(bar).toHaveAttribute('aria-valuenow', '0');
+    const nav = page.getByRole('navigation', { name: 'API sections' });
+    await nav.getByRole('link', { name: 'Capabilities' }).click();
+    await expect(nav.getByRole('link', { name: 'Capabilities' })).toHaveAttribute('aria-current', 'location');
+    await expect.poll(async () => Number(await bar.getAttribute('aria-valuenow'))).toBeGreaterThan(50);
+  });
+});
+
 test.describe('/privacy', () => {
   test('lists every upstream that receives user input, with landmarks and no console errors', async ({ page }) => {
     const errors = watchErrors(page);
