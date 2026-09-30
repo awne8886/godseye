@@ -70,7 +70,7 @@ describe('exampleHref', () => {
   it('appends query examples and builds from required parameter examples', () => {
     expect(exampleHref(byPath('/api/earthquakes'))).toBe('/api/earthquakes?feed=4.5_day');
     expect(exampleHref(byPath('/api/health'))).toBe('/api/health');
-    expect(exampleHref(byPath('/api/cctv/proxy'))).toBe('/api/cctv/proxy?id=tfl-00001.06514');
+    expect(exampleHref(byPath('/api/cctv/proxy'))).toBe('/api/cctv/proxy?id=hktd-H429F');
   });
   it('never links POSTs, streams or endpoints missing an example', () => {
     expect(exampleHref(byPath('/api/ai/overview', 'POST'))).toBeNull();

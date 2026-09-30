@@ -361,7 +361,7 @@ Public camera catalogue by region (columnar, < 4 MB per response)
 | Upstreams | `api.tfl.gov.uk`, `cwwp2.dot.ca.gov`, `caltrans-gis.dot.ca.gov`, `wsdot.wa.gov`, `its.txdot.gov`, `tdcctv.data.one.gov.hk`, `api.data.gov.sg`, `tie.digitraffic.fi`, `api.trafikinfo.trafikverket.se`, `(other public camera operators per the provider registry)` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
-| Example | `GET /api/cctv?region=uk` |
+| Example | `GET /api/cctv?region=us-west` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
@@ -396,11 +396,11 @@ Stills-only frame proxy (exact-prefix allow-list, no storage)
 | Upstreams | `(camera operators, allow-listed)` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
-| Example | `GET /api/cctv/proxy?id=tfl-00001.06514` |
+| Example | `GET /api/cctv/proxy?id=hktd-H429F` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `id` | query | string | yes | Camera id from the catalogue (e.g. `tfl-00001.06514`) |
+| `id` | query | string | yes | Camera id from the catalogue (e.g. `hktd-H429F`) |
 
 ### `GET /api/cctv/resolve`
 
