@@ -79,6 +79,21 @@ function tick(hub: SseHub) {
   });
 }
 
+/**
+ * Per-client SSE buffer for /api/flights/stream (SEC-m7): room for exactly one connect snapshot
+ * plus one delta, sized from the aircraft count. Measured 2026-09-30: 9.5k rows = 0.50–1.1 MB of
+ * JSON (~116 B/row); 160 B/row leaves headroom for long callsigns/registrations. Clamped to
+ * 1–4 MB (4 MB is the bulk-response cap), so the worst case per slow consumer is 4 MB, not 8 MB,
+ * and the lead's process-wide SSE budget (src/lib/sse.ts) still applies on top.
+ */
+export const STREAM_BYTES_PER_ROW = 160;
+export const STREAM_BUFFER_MIN = 1024 * 1024;
+export const STREAM_BUFFER_MAX = 4 * 1024 * 1024;
+export function streamBufferBytes(aircraft: number): number {
+  const need = Math.ceil(aircraft * STREAM_BYTES_PER_ROW * 1.25) + 64 * 1024;
+  return Math.min(STREAM_BUFFER_MAX, Math.max(STREAM_BUFFER_MIN, need));
+}
+
 export function flightsHub(): SseHub {
   const hub = getHub('flights', () => snapshotPayload(flightsFeed.peek()));
   if (!state.timer) {

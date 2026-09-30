@@ -28,9 +28,26 @@ export interface ProviderDef {
   capability?: CapabilityId;
   /** IANA zone of timestamps the operator publishes without an offset (TxDOT snapshot times). */
   timeZone?: string;
+  /**
+   * Operators that publish frames as single files at the host root (no image directory): one
+   * exact-path rule derived from the catalogued still URL, only when its file name matches the
+   * operator's pattern (never a `/` root rule). Probed 2026-09-30.
+   */
+  fileRules?: (still: URL) => AllowRule[];
 }
 
 const r = (host: string, pathPrefix: string): AllowRule => ({ host, pathPrefix });
+
+/** Exact-file rule when `still` is on `host` and its path matches `pattern` (else none). */
+const exactFile = (host: string, pattern: RegExp, to: (path: string, m: RegExpMatchArray) => string = (p) => p) => (still: URL): AllowRule[] => {
+  if (still.hostname !== host || still.protocol !== 'https:') return [];
+  const m = still.pathname.match(pattern);
+  return m ? [r(host, to(still.pathname, m))] : [];
+};
+
+/** WSDOT image directories seen in the camera KML (2026-09-30); `/traffic/` holds map icons only. */
+const WSDOT_DIRS = ['nw', 'sw', 'nc', 'sc', 'SC', 'orflow', 'ORFlow', 'rweather', 'spokane', 'airports', 'wsf'];
+const THB_HOSTS = Array.from({ length: 8 }, (_, i) => `cctv-ss0${i + 1}.thb.gov.tw`);
 
 const DISTRICTS = Array.from({ length: 12 }, (_, i) => i + 1);
 
@@ -45,7 +62,8 @@ export const PROVIDERS: readonly ProviderDef[] = [
       attribution_string: 'Camera images and video: Caltrans CWWP2', terms_url: 'https://dot.ca.gov/conditions-of-use',
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    rules: [...DISTRICTS.map((d) => r('cwwp2.dot.ca.gov', `/data/d${d}/cctv/image/`)), r('wzmedia.dot.ca.gov', '/')],
+    // Stills per district directory; HLS playlists (status probe only) under /D<n>/ on wzmedia.
+    rules: [...DISTRICTS.map((d) => r('cwwp2.dot.ca.gov', `/data/d${d}/cctv/image/`)), ...DISTRICTS.map((d) => r('wzmedia.dot.ca.gov', `/D${d}/`))],
   },
   {
     region: 'us-west',
@@ -56,7 +74,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
       attribution_string: 'Camera images: WSDOT', terms_url: 'https://wsdot.wa.gov/traffic/api/',
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    rules: [r('images.wsdot.wa.gov', '/')],
+    rules: WSDOT_DIRS.map((d) => r('images.wsdot.wa.gov', `/${d}/`)),
   },
   {
     region: 'us-west',
@@ -91,8 +109,13 @@ export const PROVIDERS: readonly ProviderDef[] = [
       attribution_string: 'Camera images: MDOT Mi Drive', terms_url: 'https://mdotjboss.state.mi.us/MiDrive/map',
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    // Thumbnails 301 to the full frame at the host root; both hops are MDOT's camera image host.
-    rules: [r('micamerasimages.net', '/')],
+    // Thumbnails (/thumbs/<cam>.flv.jpg) 301 to the full frame at the host root (/<cam>.jpg): that one
+    // file is allowed per camera; two cameras publish a root /image-<n>-<n>-<n>.jpg directly.
+    rules: [r('micamerasimages.net', '/thumbs/')],
+    fileRules: (u) => [
+      ...exactFile('micamerasimages.net', /^\/thumbs\/([a-z]+_cam_\d{1,6})\.flv\.jpg$/, (_p, m) => `/${m[1]}.jpg`)(u),
+      ...exactFile('micamerasimages.net', /^\/image-\d{1,12}-\d{2}-\d{2}\.jpg$/)(u),
+    ],
   },
   {
     region: 'canada',
@@ -124,7 +147,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
       list_endpoint: 'https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/a3309088-5fd4-4d34-8297-77c8301840ac/resource/4a568300-c7f8-496d-b150-dff6f5dc6d4f/download/traffic-camera-list-4326.geojson',
       frame_url_template: 'https://opendata.toronto.ca/transportation/tmc/rescucameraimages/CameraImages/loc{REC_ID}.jpg',
       stream_type: 'jpg', licence: 'Open Government Licence – Toronto',
-      attribution_string: 'Contains information licensed under the Open Government Licence – Toronto', terms_url: 'https://open.toronto.ca/open-data-license/',
+      attribution_string: 'Contains information licensed under the Open Government Licence – Toronto', terms_url: 'https://open.toronto.ca/open-data-licence/',
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
     rules: [r('opendata.toronto.ca', '/transportation/tmc/rescucameraimages/CameraImages/')],
@@ -183,7 +206,9 @@ export const PROVIDERS: readonly ProviderDef[] = [
       stream_type: 'jpg', licence: 'CC BY 4.0', attribution_string: 'Source: Fintraffic / digitraffic.fi, license CC 4.0 BY',
       terms_url: 'https://www.digitraffic.fi/en/terms-of-service/', key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    rules: [r('weathercam.digitraffic.fi', '/')],
+    // Frames are root files named by preset id (/C0150301.jpg).
+    rules: [],
+    fileRules: exactFile('weathercam.digitraffic.fi', /^\/[A-Z]\d{5,10}\.jpg$/),
   },
   {
     region: 'nordics',
@@ -217,7 +242,9 @@ export const PROVIDERS: readonly ProviderDef[] = [
       attribution_string: 'Traffic snapshots: Transport Department, HKSAR Government, via DATA.GOV.HK', terms_url: 'https://data.gov.hk/en/terms-and-conditions',
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    rules: [r('tdcctv.data.one.gov.hk', '/')],
+    // Frames are root files named by camera key (/AID01101.JPG).
+    rules: [],
+    fileRules: exactFile('tdcctv.data.one.gov.hk', /^\/[A-Z0-9]{3,12}\.JPG$/),
   },
   {
     region: 'asia',
@@ -239,7 +266,9 @@ export const PROVIDERS: readonly ProviderDef[] = [
       attribution_string: 'Directorate General of Highways, MOTC (2026), Open Government Data License v1.0 — https://data.gov.tw/license',
       terms_url: 'https://data.gov.tw/license', key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    rules: Array.from({ length: 8 }, (_, i) => r(`cctv-ss0${i + 1}.thb.gov.tw`, '/')),
+    // Each encoder serves `/<stake>/snapshot`; only that path of a catalogued camera is allowed.
+    rules: [],
+    fileRules: (u) => (THB_HOSTS.includes(u.hostname) ? exactFile(u.hostname, /^\/[A-Za-z0-9+.-]{1,48}\/snapshot$/)(u) : []),
   },
   {
     region: 'oceania',
@@ -314,6 +343,32 @@ const BY_ID = new Map(PROVIDERS.map((p) => [p.row.id, p]));
 
 export function providerDef(id: string): ProviderDef | null {
   return BY_ID.get(id) ?? null;
+}
+
+/** Allow rules for one catalogued URL: the provider's directory rules plus its exact-file rule. */
+export function rulesFor(def: ProviderDef, url: string): readonly AllowRule[] {
+  if (!def.fileRules) return def.rules;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return def.rules;
+  }
+  return [...def.rules, ...def.fileRules(u)];
+}
+
+/** True when the provider can serve frames through the proxy at all (directory or file rules). */
+export function hasFrameRules(def: ProviderDef): boolean {
+  return def.rules.length > 0 || def.fileRules !== undefined;
+}
+
+/**
+ * Regions whose every provider needs a capability that is off: served as "not configured"
+ * (200, no rows, providers skipped) — never as an outage.
+ */
+export function regionDisabled(region: CctvRegion, enabled: (c: CapabilityId) => boolean): boolean {
+  const defs = providersIn(region);
+  return defs.length > 0 && defs.every((d) => d.capability !== undefined && !enabled(d.capability));
 }
 
 export function providersIn(region: CctvRegion): ProviderDef[] {

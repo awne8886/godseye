@@ -40,6 +40,19 @@ export async function settledRows(jobs: Promise<Camera[]>[]): Promise<Camera[]> 
   return ok.flatMap((r) => r.value);
 }
 
+export const TFL_JAMCAM_URL = 'https://api.tfl.gov.uk/Place/Type/JamCam';
+
+/**
+ * TfL's Unified API reads `app_key` from a request header as well as the query string (probed
+ * 2026-09-30: a bogus key in the header is rejected with "Invalid app_key", so the header is
+ * honoured). The key therefore never appears in a URL, an HttpError or a log line; http.ts drops
+ * the header on any cross-origin redirect.
+ */
+export function tflKeyHeaders(env: Record<string, string | undefined> = process.env): Record<string, string> {
+  const key = (env.TFL_APP_KEY ?? '').trim().replace(/[^\w-]/g, '');
+  return key ? { app_key: key } : {};
+}
+
 type In<F extends (raw: never, ...rest: never[]) => unknown> = Parameters<F>[0];
 
 export const LOADERS: Record<string, Loader> = {
@@ -77,11 +90,7 @@ export const LOADERS: Record<string, Loader> = {
     ),
   // Moved 2026: drivebc.ca/api/webcams → www.drivebc.ca/api/webcams/ (both old forms 301).
   drivebc: async (signal) => A.parseDriveBc(await getJson<In<typeof A.parseDriveBc>>('https://www.drivebc.ca/api/webcams/', opts(signal))),
-  tfl: async (signal) => {
-    const key = process.env.TFL_APP_KEY?.trim() ?? '';
-    // TfL's Unified API takes the key as a query parameter (upstream request only; never echoed).
-    return A.parseTfl(await getJson<In<typeof A.parseTfl>>(`https://api.tfl.gov.uk/Place/Type/JamCam?app_key=${encodeURIComponent(key)}`, opts(signal)));
-  },
+  tfl: async (signal) => A.parseTfl(await getJson<In<typeof A.parseTfl>>(TFL_JAMCAM_URL, opts(signal, { headers: tflKeyHeaders() }))),
   dgt: async (signal) => A.parseDgt(await getJson<In<typeof A.parseDgt>>('https://www.dgt.es/.content/.assets/json/camaras.json', opts(signal))),
   // Moved 2026: /api/cameras → /api/cameras/ (301).
   rws: async (signal) => A.parseRws(await getJson<In<typeof A.parseRws>>('https://api.rwsverkeersinfo.nl/api/cameras/', opts(signal))),

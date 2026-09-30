@@ -4,7 +4,8 @@
  * bakes in no secrets; Caddy overwrites X-Forwarded-For; Lighthouse CI keeps the contract thresholds;
  * the README documents every optional variable and capability.
  */
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -35,7 +36,7 @@ function loadYaml(source: string): unknown {
 }
 
 type Step = { uses?: string; run?: string; with?: Record<string, unknown>; if?: string };
-type Job = { 'runs-on': string; steps: Step[] };
+type Job = { 'runs-on': string; steps: Step[]; container?: { image: string; options?: string } };
 type Workflow = { on: Record<string, unknown>; permissions: Record<string, string>; env: Record<string, string>; jobs: Record<string, Job> };
 
 describe('.github/workflows/ci.yml', () => {
@@ -49,10 +50,20 @@ describe('.github/workflows/ci.yml', () => {
   });
 
   it('runs every quality gate', () => {
-    for (const cmd of ['pnpm install --frozen-lockfile', 'pnpm lint', 'pnpm typecheck', 'pnpm test:coverage', 'pnpm build', 'pnpm e2e', 'pnpm lhci', 'pnpm audit --prod --audit-level high']) {
+    for (const cmd of ['pnpm install --frozen-lockfile', 'pnpm lint', 'pnpm typecheck', 'pnpm test:coverage', 'pnpm build', 'pnpm lhci', 'pnpm audit --prod --audit-level high']) {
       expect(runs, cmd).toContain(cmd);
     }
-    expect(runs.some((r) => r.includes('playwright install --with-deps chromium'))).toBe(true);
+    // e2e runs in the official Playwright image (same version as @playwright/test, pinned by digest),
+    // with a per-test budget above the 90 s map-canvas waits in e2e/map-engine/helpers.ts.
+    const pkg = JSON.parse(read('package.json')) as { devDependencies: Record<string, string> };
+    const e2e = wf.jobs.e2e!;
+    const version = pkg.devDependencies['@playwright/test']!;
+    expect(e2e.container?.image.startsWith(`mcr.microsoft.com/playwright:v${version}-noble@sha256:`)).toBe(true);
+    expect(e2e.container?.image).toMatch(/@sha256:[0-9a-f]{64}$/);
+    const e2eRun = e2e.steps.map((s) => s.run ?? '').find((r) => r.startsWith('pnpm e2e'));
+    const budget = Number(/--timeout=(\d+)/.exec(e2eRun ?? '')?.[1]);
+    expect(budget).toBeGreaterThan(90_000);
+    expect(read('e2e/map-engine/helpers.ts')).toContain('timeout: 90_000');
     // Sandbox-only switches never reach CI.
     expect(read('.github/workflows/ci.yml')).not.toMatch(/E2E_IGNORE_HTTPS_ERRORS|PLAYWRIGHT_CHROMIUM_EXECUTABLE/);
   });
@@ -66,10 +77,68 @@ describe('.github/workflows/ci.yml', () => {
   it('enforces catalogue completeness (every catalogued route exists)', () => {
     expect(wf.env.CHECK_CATALOG_COMPLETENESS).toBe('1');
   });
+
+  it('fails the build on placeholder text in LICENSE, README and docs', () => {
+    const quality = wf.jobs.quality!.steps.map((s) => s.run ?? '').join('\n');
+    expect(quality).toContain(`grep -rnP ${PLACEHOLDER_PCRE_QUOTED}`);
+    expect(quality).toContain('--exclude-dir=reference --exclude=OPUS_5_5_BUILD_PROMPT.md');
+  });
+});
+
+/** The CI grep pattern (PCRE); "TODO.md" as a file name is allowed. */
+const PLACEHOLDER_PCRE = String.raw`(?i:none yet)|\bTODO\b(?!\.md)|\bFIXME\b|\bTBD\b|(?i:lorem ipsum)`;
+const PLACEHOLDER_PCRE_QUOTED = `'${PLACEHOLDER_PCRE}'`;
+
+describe('shipped docs carry no placeholders', () => {
+  const files = ['LICENSE', 'README.md'];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(path.join(root, dir))) {
+      const rel = path.join(dir, name);
+      if (rel === path.join('docs', 'reference') || name === 'OPUS_5_5_BUILD_PROMPT.md') continue;
+      if (statSync(path.join(root, rel)).isDirectory()) walk(rel);
+      else if (name.endsWith('.md')) files.push(rel);
+    }
+  };
+  walk('docs');
+  // Same rule as the CI grep, in JavaScript regex syntax (inline (?i:) groups spelled out).
+  const bad = /none yet|lorem ipsum/i;
+  const badCase = /\bTODO\b(?!\.md)|\bFIXME\b|\bTBD\b/;
+
+  it.each(files)('%s', (f) => {
+    const hits = read(f)
+      .split('\n')
+      .map((line, i) => `${i + 1}: ${line}`)
+      .filter((line) => bad.test(line) || badCase.test(line));
+    expect(hits).toEqual([]);
+  });
+
+  it('agrees with the CI grep where GNU grep -P is available', () => {
+    let out = '';
+    try {
+      out = execFileSync('grep', ['-rnP', PLACEHOLDER_PCRE, 'LICENSE', 'README.md', 'docs', '--exclude-dir=reference', '--exclude=OPUS_5_5_BUILD_PROMPT.md'], { cwd: root, encoding: 'utf8' });
+    } catch (e) {
+      // Exit 1 = no match (pass); 2 = grep without PCRE support (the in-process check above still ran).
+      if ((e as { status?: number }).status !== 1) return;
+    }
+    expect(out).toBe('');
+  });
 });
 
 describe('docker-compose.yml, Caddyfile and Dockerfile', () => {
-  type Service = { image?: string; build?: unknown; ports?: string[]; expose?: string[]; profiles?: string[]; environment?: Record<string, string> };
+  type Service = {
+    image?: string;
+    build?: unknown;
+    ports?: string[];
+    expose?: string[];
+    profiles?: string[];
+    environment?: Record<string, string>;
+    read_only?: boolean;
+    tmpfs?: string[];
+    security_opt?: string[];
+    cap_drop?: string[];
+    cap_add?: string[];
+    user?: string;
+  };
   const compose = loadYaml(read('docker-compose.yml')) as { services: Record<string, Service> };
 
   it('publishes only Caddy; the app is reachable from the compose network only', () => {
@@ -81,6 +150,29 @@ describe('docker-compose.yml, Caddyfile and Dockerfile', () => {
     expect(redis?.profiles).toEqual(['redis']);
     expect(redis?.ports).toBeUndefined();
     expect(app?.environment?.TRUSTED_PROXY_HOPS).toBe('1');
+  });
+
+  it('hardens every container: read-only rootfs, no-new-privileges, all capabilities dropped (SEC-m10)', () => {
+    for (const [name, svc] of Object.entries(compose.services)) {
+      expect(svc.read_only, name).toBe(true);
+      expect(svc.security_opt, name).toContain('no-new-privileges:true');
+      expect(svc.cap_drop, name).toEqual(['ALL']);
+    }
+    const { app, caddy, redis } = compose.services;
+    expect(app?.cap_add).toBeUndefined();
+    expect(caddy?.cap_add).toEqual(['NET_BIND_SERVICE']);
+    expect(redis?.cap_add).toBeUndefined();
+    expect(redis?.user).toBe('999:999');
+    // The app's only writable paths: the /data volume, /tmp and the next/image cache (owned by uid 1001).
+    expect(app?.tmpfs).toEqual(['/tmp:size=64m,mode=1777', '/app/.next/cache:size=256m,uid=1001,gid=1001,mode=0700']);
+  });
+
+  it('Caddy compresses JSON and pages but never event streams', () => {
+    const caddyfile = read('Caddyfile');
+    expect(caddyfile).toMatch(/^\s*encode zstd gzip \{/m);
+    expect(caddyfile).toContain('header Content-Type application/json*');
+    expect(caddyfile).toContain('header Content-Type text/html*');
+    expect(caddyfile).not.toMatch(/header Content-Type text\/(\*|event-stream)/);
   });
 
   it('Caddy overwrites the client-IP headers and streams SSE unbuffered', () => {
@@ -100,6 +192,14 @@ describe('docker-compose.yml, Caddyfile and Dockerfile', () => {
     expect(instructions).not.toMatch(/next build/);
     for (const copy of ['/app/.next/standalone ./', '/app/.next/static ./.next/static', '/app/public ./public']) expect(df).toContain(copy);
     expect(df).toMatch(/^USER godseye$/m);
+    // Base image pinned by digest; no package managers or login shell at run time; the cache dir
+    // pre-created for the tmpfs that a read-only root filesystem needs.
+    expect(df).toMatch(/^ARG NODE_IMAGE=node:22-alpine@sha256:[0-9a-f]{64}$/m);
+    expect(df).toContain('-s /sbin/nologin');
+    expect(df).toContain('rm -rf /usr/local/lib/node_modules/npm');
+    expect(df).toContain('chown godseye:godseye /data /app/.next/cache');
+    const runtime = df.slice(df.indexOf('AS runner'));
+    expect(runtime).not.toMatch(/corepack enable|RUN pnpm/);
     expect(df).toMatch(/HEALTHCHECK[\s\S]*\/api\/health/);
     expect(df).not.toMatch(/^(ENV|ARG)\s+[^\n]*(KEY|TOKEN|SECRET|PASSWORD)/im);
     const ignore = read('.dockerignore').split('\n');

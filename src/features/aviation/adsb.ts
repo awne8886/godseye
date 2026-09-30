@@ -11,7 +11,7 @@
  *    `rr_lat`/`rr_lon` rough receiver guesses): they are counted as `noPosition`, never drawn.
  *  - `seen_pos` is seconds since the position was received, relative to the response's `now` (ms).
  */
-import { airlineCodeOf, classifyAircraft, emitterToOpenSky, isHelicopter, type Bucket } from './classify';
+import { airlineCodeOf, classifyAircraft, isHelicopter, type Bucket } from './classify';
 
 /** The subset of a readsb jv2 aircraft object that GODSEYE reads. */
 export interface AdsbRow {
@@ -92,6 +92,11 @@ export function cleanCallsign(flight: string | null | undefined): string | null 
   return CALLSIGN_RE.test(cs) ? cs : null;
 }
 
+/** The callsign as OSIRIS's classifier reads it: trimmed and upper-cased, no validity filter. */
+function rawCallsign(flight: string | null | undefined): string | null {
+  return (flight ?? '').trim().toUpperCase() || null;
+}
+
 export function emergencyOf(squawk: string | null): FlightRecord['emergency'] {
   return squawk && EMERGENCY_SQUAWKS.has(squawk) ? (squawk as FlightRecord['emergency']) : null;
 }
@@ -128,7 +133,6 @@ export function normalizeAdsbRow(row: AdsbRow, nowMs: number, source: string): N
   const squawkRaw = row.squawk?.trim() ?? '';
   const squawk = SQUAWK_RE.test(squawkRaw) ? squawkRaw : null;
   const category = row.category && /^[A-D][0-7]$/.test(row.category) ? row.category : null;
-  const categoryOs = emitterToOpenSky(category);
   const callsign = cleanCallsign(row.flight);
   const dbFlags = num(row.dbFlags);
   const seenPos = num(row.seen_pos) ?? num(row.seen) ?? 0;
@@ -141,8 +145,13 @@ export function normalizeAdsbRow(row: AdsbRow, nowMs: number, source: string): N
       callsign,
       registration: row.r?.trim() || null,
       typeCode,
-      bucket: classifyAircraft({ typeCode, callsign, dbFlags, categoryOs, altFt, gsKt }),
-      isHelicopter: isHelicopter(typeCode, categoryOs),
+      // OSIRIS's `category_os` tests only ever fire on OpenSky state vectors: readsb rows carry no
+      // `category_os`, so on this data its classifier runs on type, callsign, dbFlags and speed alone.
+      // Feeding the readsb emitter category in would move typed business jets (A3) to commercial.
+      // The classifier sees the callsign exactly as OSIRIS does (trimmed, upper-cased, unfiltered).
+      bucket: classifyAircraft({ typeCode, callsign: rawCallsign(row.flight), dbFlags, categoryOs: null, altFt, gsKt }),
+      // Icon only (not a bucket rule): a rotorcraft emitter category (A7) draws the helicopter silhouette.
+      isHelicopter: isHelicopter(typeCode, category === 'A7' ? 8 : null),
       onGround,
       lat: round(lat, 5),
       lng: round(lng, 5),
@@ -200,13 +209,9 @@ export function mergeRecords(lists: readonly (readonly FlightRecord[])[]): Map<s
       if (flags === winner.dbFlags) {
         out.set(r.id, winner);
       } else {
-        const typeCode = winner.typeCode;
-        const categoryOs = emitterToOpenSky(winner.category);
-        out.set(r.id, {
-          ...winner,
-          dbFlags: flags,
-          bucket: classifyAircraft({ typeCode, callsign: winner.callsign, dbFlags: flags, categoryOs, altFt: winner.altFt, gsKt: winner.gsKt }),
-        });
+        // The only classifier input dbFlags feed is bit 1 (military, rule 1); every other rule is
+        // unchanged, so the winner's own bucket stands unless the merged flags add that bit.
+        out.set(r.id, { ...winner, dbFlags: flags, bucket: flags !== null && flags & 1 ? 'military' : winner.bucket });
       }
     }
   }

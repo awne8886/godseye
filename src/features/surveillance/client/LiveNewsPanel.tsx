@@ -30,7 +30,7 @@ export default function LiveNewsPanel(_: PanelProps) {
   const setChannel = useSurveillanceUi((s) => s.setChannel);
   const autoplay = useUiStore((s) => s.settings.previewAutoplay);
   const items = q.data?.ok ? q.data.body.items : [];
-  const liveCount = items.filter((c) => c.live === true).length;
+  const liveCount = items.filter((c) => c.live === true && c.observedAt).length;
   usePanelChip(q.isPending ? 'LOADING' : q.data?.ok ? `${liveCount} LIVE · ${items.length} CHANNELS` : 'SOURCE OFFLINE', q.data?.ok ? 'live' : q.isPending ? 'busy' : 'error');
   const current = channel ?? items.find((c) => c.embedAllowed && c.live === true) ?? null;
   const src = current ? embedSrc(current, autoplay) : null;
@@ -52,7 +52,7 @@ export default function LiveNewsPanel(_: PanelProps) {
             />
           </div>
           <figcaption className="font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-secondary)]">
-            {current.name} · {liveLabel(current.live)} · official channel
+            {current.name} · {liveLabel(current.live, current.observedAt)} · official channel
           </figcaption>
         </figure>
       ) : (
@@ -64,7 +64,7 @@ export default function LiveNewsPanel(_: PanelProps) {
             <div className="min-w-0">
               <p className="truncate font-mono text-[11px] uppercase tracking-[.08em] text-[var(--text-primary)]">{c.name}</p>
               <p className="font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-muted)]">
-                {[c.city, c.country].filter(Boolean).join(', ')} · {c.live === true ? 'LIVE' : c.live === false ? 'NOT LIVE' : 'UNKNOWN'}
+                {[c.city, c.country].filter(Boolean).join(', ')} · {liveLabel(c.live, c.observedAt)}
               </p>
             </div>
             {c.embedAllowed ? (

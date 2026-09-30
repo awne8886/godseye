@@ -8,12 +8,12 @@ import { H3HexagonLayer } from '@deck.gl/geo-layers';
 import type { LayersList, PickingInfo } from '@deck.gl/core';
 import { latLngToCell } from 'h3-js';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
-import { isFacing, splitAtAntimeridian, type LngLatTuple } from '@/lib/geo';
+import { splitAtAntimeridian, type LngLatTuple } from '@/lib/geo';
 import { readCssColor, type MapToken, type Rgba } from '@/lib/tokens';
 import type { Selection } from '@/lib/layer-host';
 import type { FlightRecord } from '../adsb';
 import type { Bucket } from '../classify';
-import { deadReckon } from '../codec';
+import { BUCKETS, MAX_DEAD_RECKON_S } from '../codec';
 import type { TrackPoint } from '../trace';
 import { aircraftAtlas } from './icons';
 import { SdfIconLayer } from './SdfIconLayer';
@@ -38,26 +38,153 @@ export interface Frame {
   /** Indices (into records) currently drawn. */
   visible: Uint32Array;
   count: number;
+  /** Visible aircraft past the dead-reckoning cap (drawn frozen and dimmed). */
+  staleVisible: number;
+  /** Bumped whenever the visible index list changes (per-index accessors must re-run). */
+  visVersion: number;
+  /** Bumped whenever an aircraft crosses the 60 s cap (colours must re-run). */
+  frozenVersion: number;
+  /** Stable deck `data` for the icon layer; replaced only when the visible list changes. */
+  data: { length: number };
+  // Per-record constants, computed once per snapshot (no per-tick objects).
+  bucket: Uint8Array;
+  /** Unit vector of the observed position (far-side test by dot product). */
+  unit: Float64Array;
+  seen: Float64Array;
+  /** sinφ, cosφ, λ (rad), sinθ, cosθ, speed (km/s) for movers; speed 0 = never moves. */
+  motion: Float64Array;
+  /** 1 once the position and the frozen flag are final (past the cap, or never moving and frozen). */
+  settled: Uint8Array;
+  /** Lazily built hex → record index (trails of watched aircraft). */
+  idIndex: Map<string, number> | null;
+  /** Cached ring indices, keyed by visVersion + watched + selection. */
+  rings: { key: string; emergencies: number[]; highlighted: number[] } | null;
 }
+
+const BUCKET_INDEX = Object.fromEntries(BUCKETS.map((b, i) => [b, i])) as Record<Bucket, number>;
+/** Scratch bucket mask, reused every tick. */
+const WANT = new Uint8Array(BUCKETS.length);
+const D2R = Math.PI / 180;
+const R2D = 180 / Math.PI;
+const EARTH_RADIUS_KM = 6371.0088;
+const KT_TO_KMS = 1.852 / 3600;
+/** Aircraft beyond this angle from the camera centre are on the far side of the globe. */
+const FACING_DEG = 88;
+const COS_FACING = Math.cos(FACING_DEG * D2R);
 
 export function newFrame(records: FlightRecord[]): Frame {
-  return { records, pos: new Float64Array(records.length * 2), frozen: new Uint8Array(records.length), visible: new Uint32Array(records.length), count: 0 };
+  const n = records.length;
+  const f: Frame = {
+    records,
+    pos: new Float64Array(n * 2),
+    frozen: new Uint8Array(n),
+    visible: new Uint32Array(n),
+    count: 0,
+    staleVisible: 0,
+    visVersion: 0,
+    frozenVersion: 0,
+    data: { length: 0 },
+    bucket: new Uint8Array(n),
+    unit: new Float64Array(n * 3),
+    seen: new Float64Array(n),
+    motion: new Float64Array(n * 6),
+    settled: new Uint8Array(n),
+    idIndex: null,
+    rings: null,
+  };
+  for (let i = 0; i < n; i++) {
+    const r = records[i]!;
+    const φ = r.lat * D2R;
+    const λ = r.lng * D2R;
+    const cφ = Math.cos(φ);
+    f.pos[i * 2] = r.lng;
+    f.pos[i * 2 + 1] = r.lat;
+    f.bucket[i] = BUCKET_INDEX[r.bucket];
+    f.unit[i * 3] = cφ * Math.cos(λ);
+    f.unit[i * 3 + 1] = cφ * Math.sin(λ);
+    f.unit[i * 3 + 2] = Math.sin(φ);
+    f.seen[i] = r.seenAt;
+    const moves = !r.onGround && r.gsKt !== null && r.trackDeg !== null && r.gsKt > 0;
+    const m = i * 6;
+    f.motion[m] = Math.sin(φ);
+    f.motion[m + 1] = cφ;
+    f.motion[m + 2] = λ;
+    f.motion[m + 3] = moves ? Math.sin(r.trackDeg! * D2R) : 0;
+    f.motion[m + 4] = moves ? Math.cos(r.trackDeg! * D2R) : 0;
+    f.motion[m + 5] = moves ? r.gsKt! * KT_TO_KMS : 0;
+  }
+  return f;
 }
 
-/** Dead-reckon every record to `now` and rebuild the visible index (active buckets, camera-facing side of the globe). */
-export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>, globe: boolean, center: LngLatTuple): void {
-  let n = 0;
-  for (let i = 0; i < f.records.length; i++) {
-    const r = f.records[i]!;
-    const p = deadReckon(r, now);
-    f.pos[i * 2] = p.lng;
-    f.pos[i * 2 + 1] = p.lat;
-    f.frozen[i] = p.frozen ? 1 : 0;
-    if (!buckets.has(r.bucket)) continue;
-    if (globe && !isFacing(center, [p.lng, p.lat], 88)) continue;
-    f.visible[n++] = i;
+/** Position of record i after `dt` seconds along its great circle (same maths as geo.destination). */
+function reckon(f: Frame, i: number, dt: number): void {
+  const m = i * 6;
+  const v = f.motion[m + 5]!;
+  if (v <= 0 || dt <= 0) {
+    f.pos[i * 2] = f.records[i]!.lng;
+    f.pos[i * 2 + 1] = f.records[i]!.lat;
+    return;
   }
-  f.count = n;
+  const sφ1 = f.motion[m]!;
+  const cφ1 = f.motion[m + 1]!;
+  const δ = (v * dt) / EARTH_RADIUS_KM;
+  const sδ = Math.sin(δ);
+  const cδ = Math.cos(δ);
+  const sφ2 = sφ1 * cδ + cφ1 * sδ * f.motion[m + 4]!;
+  const λ2 = f.motion[m + 2]! + Math.atan2(f.motion[m + 3]! * sδ * cφ1, cδ - sφ1 * sφ2);
+  let lng = λ2 * R2D;
+  lng = ((((lng + 180) % 360) + 360) % 360) - 180;
+  f.pos[i * 2] = lng;
+  f.pos[i * 2 + 1] = Math.asin(sφ2) * R2D;
+}
+
+/**
+ * Dead-reckon the drawn aircraft to `now` (§0: own track and speed, at most MAX_DEAD_RECKON_S) and
+ * rebuild the visible index (active buckets, camera-facing side of the globe). Allocation-free per
+ * tick: aircraft outside the active buckets or on the far side are not advanced, and aircraft past
+ * the 60 s cap are settled once (frozen, drawn stale) and skipped afterwards.
+ */
+export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>, globe: boolean, center: LngLatTuple): void {
+  const want = WANT;
+  for (let b = 0; b < BUCKETS.length; b++) want[b] = buckets.has(BUCKETS[b]!) ? 1 : 0;
+  const cφ = Math.cos(center[1] * D2R);
+  const cx = cφ * Math.cos(center[0] * D2R);
+  const cy = cφ * Math.sin(center[0] * D2R);
+  const cz = Math.sin(center[1] * D2R);
+  const nowS = now / 1000;
+  let n = 0;
+  let changed = false;
+  let froze = false;
+  let stale = 0;
+  for (let i = 0; i < f.records.length; i++) {
+    const b = f.bucket[i]!;
+    if (!want[b]) continue;
+    if (globe && f.unit[i * 3]! * cx + f.unit[i * 3 + 1]! * cy + f.unit[i * 3 + 2]! * cz < COS_FACING) continue;
+    if (f.visible[n] !== i) {
+      f.visible[n] = i;
+      changed = true;
+    }
+    n++;
+    if (f.settled[i]) {
+      if (f.frozen[i]) stale++;
+      continue;
+    }
+    const age = Math.max(0, nowS - f.seen[i]!);
+    reckon(f, i, Math.min(age, MAX_DEAD_RECKON_S));
+    if (age > MAX_DEAD_RECKON_S) {
+      f.frozen[i] = 1;
+      f.settled[i] = 1;
+      froze = true;
+      stale++;
+    }
+  }
+  f.staleVisible = stale;
+  if (n !== f.count || changed) {
+    f.count = n;
+    f.visVersion++;
+    f.data = { length: n };
+  }
+  if (froze) f.frozenVersion++;
 }
 
 export interface H3Cell {
@@ -149,7 +276,7 @@ export function buildLayers(o: BuildOptions): LayersList | null {
       out.push(
         new SdfIconLayer({
           id: 'aviation-icons',
-          data: { length: f.count },
+          data: f.data,
           iconAtlas: atlas.canvas as unknown as string,
           iconMapping: atlas.mapping,
           getIcon: (_: unknown, { index }: { index: number }) => iconFor(rec(index)),
@@ -170,25 +297,32 @@ export function buildLayers(o: BuildOptions): LayersList | null {
           // Read by the map's click/hover router (src/lib/map/picking.ts); no own onClick handler,
           // so a GPU pick and the CPU hit-test of the same aircraft still open one card.
           toSelection: (info: PickingInfo) => (info.index < 0 ? null : o.toSelection(rec(info.index), at(info.index, [0, 0]))),
+          // Positions move every tick; everything else only when the snapshot, the visible list,
+          // the frozen set or the view settings change (no per-second O(n) accessor re-runs).
           updateTriggers: {
             getPosition: [o.tick],
-            getAngle: [o.tick, bearing],
-            getColor: [o.tick, o.colorMode, o.theme],
-            getIcon: [o.tick],
-            getSize: [o.tick],
+            getAngle: [o.dataVersion, f.visVersion, bearing],
+            getColor: [o.dataVersion, f.visVersion, f.frozenVersion, o.colorMode, o.theme],
+            getIcon: [o.dataVersion, f.visVersion],
+            getSize: [o.dataVersion, f.visVersion],
           },
         }),
       );
     }
   }
 
-  const emergencies: number[] = [];
-  const highlighted: number[] = [];
-  for (let k = 0; k < f.count; k++) {
-    const r = f.records[f.visible[k]!]!;
-    if (r.emergency) emergencies.push(k);
-    if (r.id === o.selectedId || o.watched.includes(r.id)) highlighted.push(k);
+  const ringKey = `${o.dataVersion}|${f.visVersion}|${o.selectedId ?? ''}|${o.watched.join(',')}`;
+  if (f.rings?.key !== ringKey) {
+    const emergencies: number[] = [];
+    const highlighted: number[] = [];
+    for (let k = 0; k < f.count; k++) {
+      const r = f.records[f.visible[k]!]!;
+      if (r.emergency) emergencies.push(k);
+      if (r.id === o.selectedId || o.watched.includes(r.id)) highlighted.push(k);
+    }
+    f.rings = { key: ringKey, emergencies, highlighted };
   }
+  const { emergencies, highlighted } = f.rings;
   const ring = (id: string, data: number[], color: Rgba, radius: number, width: number) =>
     new ScatterplotLayer<number>({
       id,
@@ -215,7 +349,8 @@ export function buildLayers(o: BuildOptions): LayersList | null {
     const track = o.tracks.get(hex);
     if (!track?.length) continue;
     const pts: LngLatTuple[] = track.map((p) => [p.lng, p.lat]);
-    const live = f.records.findIndex((r) => r.id === hex);
+    f.idIndex ??= new Map(f.records.map((r, i) => [r.id, i]));
+    const live = f.idIndex.get(hex) ?? -1;
     if (live >= 0) pts.push([f.pos[live * 2]!, f.pos[live * 2 + 1]!]);
     for (const seg of splitAtAntimeridian(pts)) paths.push({ path: seg });
   }

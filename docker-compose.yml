@@ -27,14 +27,34 @@ services:
       - "3000"
     volumes:
       - snapshots:/data
+    # Hardening: read-only root filesystem (writes go to the /data volume and two tmpfs mounts),
+    # no capabilities, no privilege escalation, an init process that forwards signals, bounded PIDs.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=256m,uid=1001,gid=1001,mode=0700
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    init: true
+    pids_limit: 512
 
   caddy:
+    # Pin by digest in production (docker buildx imagetools inspect caddy:2-alpine).
     image: caddy:2-alpine
     restart: unless-stopped
+    # Runs as root inside the container only to bind :80/:443; every other capability is dropped.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 256
     depends_on:
       app:
         condition: service_healthy
@@ -50,9 +70,19 @@ services:
       - caddy_config:/config
 
   redis:
+    # Pin by digest in production (docker buildx imagetools inspect redis:8-alpine).
     image: redis:8-alpine
     profiles: ["redis"]
     restart: unless-stopped
+    # Start directly as the image's redis user (uid 999) so the entrypoint needs no chown/setuid
+    # capabilities; nothing is persisted, so /data is a tmpfs and the root filesystem is read-only.
+    user: "999:999"
+    read_only: true
+    tmpfs:
+      - /data:size=16m,uid=999,gid=999
+    cap_drop:
+      - ALL
+    pids_limit: 128
     # Cache only: no persistence; every key GODSEYE writes has a TTL, so evict among those.
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "512mb", "--maxmemory-policy", "volatile-lru"]
     expose:

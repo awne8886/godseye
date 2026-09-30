@@ -40,4 +40,8 @@ describe('/privacy', () => {
     expect(html.match(/<h1[ >]/g)?.length).toBe(1);
     expect(html).toContain('<main id="main"');
   });
+
+  it('renders no reference-project branding', () => {
+    expect(html).not.toMatch(/osiris/i);
+  });
 });

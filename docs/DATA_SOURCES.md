@@ -44,6 +44,14 @@ off; licence-gated sources stay off until the operator opts in (see `.env.exampl
 | RainViewer | Weather radar frames | Free API with attribution link; max zoom 7 | Always on | <https://www.rainviewer.com/api.html> |
 | Telegram public channels | Live Alerts | Content licensing terms prohibit using platform data to train or develop AI models | Low-volume previews; never used for training | <https://telegram.org/tos/content-licensing> |
 | TfL Unified API | London cameras (optional key) | Transport Data Service terms; "Powered by TfL Open Data" | tfl capability (TFL_APP_KEY) | <https://tfl.gov.uk/corporate/terms-and-conditions/transport-data-service> |
+| SatNOGS DB (Libre Space Foundation) | Satellite catalogue fallback (TLE) | CC BY-SA 4.0 (per the layers-space probe log; the about page names a Creative Commons licence): attribution, and share-alike for redistributed derivatives | Used only when CelesTrak fails; attributed in the satellites feed | <https://db.satnogs.org/about/> |
+| Wikipedia (REST page summaries) | Region Dossier extracts | Text CC BY-SA 4.0: attribution with a link to the article; adapted text stays share-alike | Always on; extract shown with its article link and a CC BY-SA label | <https://en.wikipedia.org/wiki/Wikipedia:Copyrights> |
+| NASA FIRMS (LANCE) | Fire pixels | NASA open data; FIRMS asks for the acknowledgement "We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System (FIRMS) …" | Always on; FIRMS/LANCE cited in the feed attribution | <https://www.earthdata.nasa.gov/data/tools/firms> |
+| Copernicus Sentinel-2 (CDSE STAC) | Sentinel scenes around a point | Free, full and open Sentinel data; credit "Copernicus Sentinel data [year]" ("Contains modified …" when processed). The legal notice is a PDF (200 on 2026-09-30; wording not machine-extracted here) | Always on; scenes carry the credit "Contains modified Copernicus Sentinel data, processed by ESA" | <https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice> |
+| GDACS (EC JRC / UN OCHA) | Disaster alerts, severe weather | JRC disclaimer and copyright notice: information "purely indicative and should not be used for any decision making without alternate sources"; attribution to GDACS | Always on, attributed | <https://www.gdacs.org/About/termofuse.aspx> |
+| INFORM Risk Index (EC JRC) | Country risk | CC BY 4.0 (per the layers-threats-network probe log) | Always on, attributed | <https://drmkc.jrc.ec.europa.eu/inform-index> |
+| World Bank Worldwide Governance Indicators | Country risk (political stability) | CC BY 4.0, the World Bank data catalogue default licence | Always on, attributed | <https://datacatalog.worldbank.org/public-licenses> |
+| Yahoo Finance chart endpoint | Market quotes and candles | Unofficial, undocumented endpoint with no data licence; Yahoo terms forbid "commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" | Low volume, cached; every quote flagged unofficial; may stop without notice | <https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html> |
 
 ## Probe logs
 
@@ -308,6 +316,15 @@ and `-H 'Origin: http://localhost:3000'` for CORS. Recorded bodies (trimmed) liv
 | `https://hexdb.io/api/v1/route/icao/BAW117` | 200 | 0.42 s | `*` | keyless | `{flight, route 'EGLL-KJFK', updatetime 1333306563}` — **2012**: labelled stale with its update time; miss = 404 `{"status":"404","error":"Route not found."}`; §6.2: the `/route/callsign/` path is gone | `/api/flight-route` fallback 3 |
 | `https://hexdb.io/api/v1/airport/icao/EGLL` | 200 | 0.57 s | `*` | keyless, `max-age=14400` | `{country_code, region_name, iata, icao, airport, latitude, longitude}` | coordinates for hexdb routes |
 
+Re-probed 2026-09-30 22:42–22:43 UTC (Phase 3 round 1), same UA and Origin:
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/point/51.5/-0.1/100` ×6, 1.2 s apart | 200 ×6 | 0.63–1.08 s | none (no ACAO) | 71 aircraft at night, ~41 kB; no rate-limit or Retry-After headers on 200; `seen_pos` median 0.27 s, max 57.7 s |
+| `https://api.adsb.lol/v2/point/40.7/-74.0/250` | 200 | 2.15 s | none | 932 aircraft, 477 kB; `seen_pos` median 0.28 s / p90 4.6 s; 15 rows kept as `__fixtures__/adsblol-point-classify.json` (classifier table test: GL5T/GLF5 under A3 → jet, E55P/LJ45 under A2 → jet, A1 designator callsigns → commercial, A6 at 5 000 ft with a registration callsign → private, EC35 A7 → private + helicopter) |
+| `https://vrs-standing-data.adsb.lol/routes/BA/BAW123.json` | 200 | 0.28 s | `*` | `airport_codes 'EGLL-OTHH'` (LHR→DOH): the R2 off-route example, now rejected by the 1.5 × route-length gate when the aircraft is over the Pacific |
+| `https://api.adsbdb.com/v0/aircraft/A71329` | 200 | 0.69 s | `*` | Global 7500 `GL7T`, N555MZ, owner Phenix Jet (US) — the R2-M1 example; OSIRIS buckets it `jet` |
+
 Not used: `api.airplanes.live` (403 "contact us" on every endpoint, docs/reference/25 §15);
 adsb.lol `/api/0/routeset` (non-functional, §6.2). Keyed/licensed adapters (not probed here, no
 credentials): `re-api.adsb.lol/?all_with_pos&jv2` (`ADSBLOL_REAPI=true`, feeder IP only; 403 from
@@ -317,9 +334,21 @@ product), adsb.fi `/api/v2/mil` (`ADSBFI_PERSONAL_USE=true`, 1 req/s, personal n
 
 Coverage: 86 tiles of 250 nm (hex lattice laid out for 230 nm so circles overlap) over the busiest
 airspace, one request start every 1.2 s through `providerBucket('api.adsb.lol', 1/1.2)`, ≤ 1 in
-flight, ~25 s of tiles per feed run, next run one 15 s TTL later → a full sweep about every
-170 s (measured first cold slice: 2 182 aircraft in 16 s); global lists every 30 s;
-aircraft not re-observed for 300 s are dropped. Sparse regions (Africa interior, oceans outside the
+flight (`adsblolSerial`, shared with the global lists). Since Phase 3 round 1 (R2-M2) one background
+worker (`server/tile-sweeper.ts`) reads tiles back to back instead of 25 s slices separated by a 15 s
+idle TTL (~60 % duty → full sweep 170–270 s, 50–78 % of positions older than the 60 s
+dead-reckoning cap); dense tiles are re-read more often (`(count + 1) × age`), every tile within
+165 s, and a 429 backs off for at least its `Retry-After`. Simulated with 86 skewed tiles at
+1.5 s/request: 38 % of aircraft behind a tile read > 60 s ago vs 54 % for round-robin at the same
+rate (`tile-sweeper.test.ts`). Upstream `seen_pos` is not the cause: median 0.28 s, p90 4.6 s,
+max 57 s over 932 rows. Global lists every 30 s; aircraft not re-observed for 300 s are dropped.
+The real fix for full-world freshness is the `ADSBLOL_REAPI` feeder upgrade (one request per run).
+Live check 2026-09-30 23:12–23:17 UTC (production build on :3150, cold start, sampled every 20 s):
+share of rows older than 60 s was 0.5–4 % for the first minute and 40–79 % at 3–5 min, median age
+57–114 s, 8.1k aircraft. api.adsb.lol answered `http_429` in 7 of 16 samples. At least two other
+GODSEYE servers were sweeping from the same sandbox egress IP at the same time; whether those 429s
+carried `Retry-After` was not captured. The exponential back-off (15 s … 5 min) then dominates the sweep. A single
+deployment per IP should see fewer 429s. This was not measured here. Sparse regions (Africa interior, oceans outside the
 NAT tracks, Russia, South America outside the south-east) are not covered by the keyless path.
 
 ### layers-hazards
@@ -516,6 +545,28 @@ CBC's page had neither marker (→ `live: null`, unknown). Embeds use
 `https://www.youtube-nocookie.com/embed/live_stream?channel=<id>` only for the 7 broadcasters that
 allow embedding (OSIRIS's verified split); the other 7 open on YouTube. RT is excluded (Rumble only).
 
+#### Phase 3 round 1 re-probes (2026-09-30 22:20–22:55 UTC, same honest UA)
+
+| Probe | Result | Used for |
+|---|---|---|
+| TfL `api.tfl.gov.uk/Place/Type/JamCam`, no key | 200 · 0.53 s · 1.15 MB · ACAO `*` | Keyless tier still answers; the row stays keyed as the contract requires (`TFL_APP_KEY`). |
+| TfL same URL, `?app_key=bogus0000` | 429 · 0.45 s · "Invalid app_key is provided." | — |
+| TfL same URL, header `app_key: bogus0000` | 429 · 0.21 s · "Invalid app_key is provided." | **The header is honoured** → the loader sends `app_key` as a header; the key is never in a URL (SEC-m4). |
+| TfL same URL, header `Ocp-Apim-Subscription-Key: bogus0000` | 200 (header ignored) | Not used. |
+| Caltrans `cwwp2.dot.ca.gov/data/d7/cctv/cctvStatusD07.json` | 200 · 3.14 s · 1.85 MB · ACAO `*` | HLS URLs across d1–d12: 2 300 under `wzmedia.dot.ca.gov/D<n>/`, 1 at the root (`/EB91WO57.STREAM…`, now refused → still fallback). |
+| `wzmedia.dot.ca.gov/D7/CCTV-196.stream/playlist.m3u8` | 200 · 0.73 s · 128 B · `application/vnd.apple.mpegurl` | Rule narrowed `/` → `/D1/`…`/D12/`. |
+| Caltrans still `…/d7/cctv/image/i110196avenue26offramp/…jpg` | 200 · 0.69 s · 34 kB · image/jpeg | unchanged rule. |
+| WSDOT KML | 200 · 1.15 s · 568 kB | Image directories seen: `nw` 756, `sw` 221, `orflow` 181, `rweather` 110, `airports` 99, `spokane` 75, `nc` 62, `sc` 57, `wsf/…` 45, `SC` 13, `ORFlow` 11, `traffic` 3 (map icons only). Rule narrowed `/` → those 11 directories. |
+| `images.wsdot.wa.gov/nw/525vc00694.jpg`, `/ORFlow/005vc12750.jpg` | 200 · 1.09 s · 78 kB / 200 · 0.94 s · 80 kB · image/jpeg | — |
+| MDOT list | 200 · 0.98 s · 543 kB | Stills: 714 `/thumbs/<x>_cam_<n>.flv.jpg`, 2 root `/image-<n>-<n>-<n>.jpg`. |
+| `micamerasimages.net/thumbs/semtoc_cam_253.flv.jpg?item=1` | 301 → `/semtoc_cam_253.jpg?item=1` → 200 · 0.34 s · 55 kB | Rule narrowed `/` → `/thumbs/` + one exact root file per camera (its redirect target). |
+| `micamerasimages.net/image-000705102-00-04.jpg?bucket=ftp` | 200 · 0.40 s · 38 kB | exact-file rule. |
+| `weathercam.digitraffic.fi/C0150200.jpg` | 200 · 0.53 s · 9.9 kB | Root files → exact-file rule `/[A-Z]\d{5,10}.jpg` (was `/`). |
+| `tdcctv.data.one.gov.hk/AID01101.JPG`; HK list | 200 · 1.26 s · 6.7 kB; list 200 · 1.13 s · 405 kB (1 013 keys, all root `/<KEY>.JPG`) | Exact-file rule (was `/`). |
+| THB list; `cctv-ss02.thb.gov.tw/T74-3+903/snapshot` | 200 · 2.23 s · 430 kB (ss01–ss08 only); 200 · 1.01 s · 10 kB image/jpeg | Exact `/<stake>/snapshot` rule on ss01–ss08 (was `/`). |
+| Trafikverket `api.trafikinfo.trafikverket.se/v2/Images/data/road.infrastructure.camera/TrafficFlowCamera_39636115.jpg` | 200 · 1.43 s · 29 kB · image/jpeg | Rule unchanged (directory prefix). |
+| `open.toronto.ca/open-data-license/` vs `/open-data-licence/` | 404 · 0.44 s vs 200 · 0.49 s | Toronto `terms_url` fixed to `open-data-licence`. |
+
 ### layers-threats-network
 
 Probed **2026-09-30 20:02–20:10 UTC** from the build sandbox with
@@ -688,6 +739,36 @@ repository is not enabled for this session"); tags were resolved with `git ls-re
 | `pnpm/action-setup` | v6.1.0 | `ea17c68df8912ef543352723c149a84f56e3d413` |
 | `actions/upload-artifact` | v7.0.1 | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
 | `GoogleChrome/lighthouse-ci` | (not used as an action; `@lhci/cli` runs from devDependencies) | HEAD `ebee453dad3f` |
+
+### Licence links added to the licence summary (probed 2026-09-30 22:42–22:56 UTC)
+
+Same honest User-Agent; `curl -I -L` (HEAD), falling back to GET where HEAD is refused. CORS not relevant.
+
+| URL | Status | Latency | What the page says (verified text) |
+|---|---|---|---|
+| `https://db.satnogs.org/about/` | 200 | 0.99 s | names a Creative Commons licence for the DB; CC BY-SA 4.0 per the layers-space probe log |
+| `https://creativecommons.org/licenses/by-sa/4.0/` | 200 | 0.25 s | licence text |
+| `https://en.wikipedia.org/wiki/Wikipedia:Copyrights` | 200 | 0.17 s | text under "Creative Commons Attribution-ShareAlike 4.0 International License" |
+| `https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use` | 200 | 0.22 s | Wikimedia terms of use |
+| `https://www.earthdata.nasa.gov/data/tools/firms` | 200 | 0.80 s | "We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System (FIRMS) …" |
+| `https://firms.modaps.eosdis.nasa.gov/` | 200 | 0.38 s | FIRMS home |
+| `https://www.earthdata.nasa.gov/engage/open-data-services-software/data-use-guidance` | 404 | 1.03 s | dead; not linked |
+| `https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice` | 200 | 0.54 s | PDF; text not extracted |
+| `https://dataspace.copernicus.eu/terms-and-conditions` | 200 | 1.14 s | CDSE terms |
+| `https://www.gdacs.org/About/termofuse.aspx` | 200 | 0.53 s | "this information is purely indicative and should not be used for any decision making without alternate sources of information" |
+| `https://drmkc.jrc.ec.europa.eu/inform-index` | 200 | 1.09 s | INFORM home; CC BY 4.0 per the layers-threats-network probe log |
+| `https://datacatalog.worldbank.org/public-licenses` | HEAD 404, GET 200 | 0.41 s | "Creative Commons Attribution 4.0 International license (CC-BY 4.0)" is the default for its datasets |
+| `https://www.worldbank.org/en/about/legal/terms-of-use-for-datasets` | 200 (redirects to `/ext/en/legal/terms-conditions`) | 0.45 s | general terms |
+| `https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html` | 200 | 0.38 s | "You may not in connection with the Services engage in commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" |
+| `https://libre.space/licenses/` | 200 (redirects to `www.libre.space/`) | 1.04 s | home page, no licence text; not linked |
+
+### Container images pinned in the Dockerfile and CI (resolved 2026-09-30)
+
+| Image | Digest | How resolved |
+|---|---|---|
+| `node:22-alpine` | `sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402` | `registry-1.docker.io` manifest HEAD (multi-arch index), 22:53 UTC |
+| `mcr.microsoft.com/playwright:v1.63.0-noble` | `sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27` | `mcr.microsoft.com` manifest HEAD, 22:56 UTC |
+| `caddy:2-alpine`, `redis:8-alpine` | not pinned | Docker Hub answered 429 (anonymous pull-rate limit) from the sandbox; compose comments say how to pin |
 
 ## panels-alerts-markets-dossier-graph — probe log
 

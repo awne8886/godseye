@@ -6,15 +6,26 @@
  */
 import { ExternalLink, Flag } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { REPO_URL } from '@/lib/config';
 import type { Camera, CameraProvider } from '@/lib/types';
 import { removalUrl } from './rows';
+import { useRemovalContact } from './useProviders';
 
 export const safeHttp = (u: unknown): string | null => (typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null);
 
 export const isoShort = (s: string | null) => (s ? `${s.slice(0, 10)} ${s.slice(11, 19)}Z` : null);
 
+/** Values longer than this read as prose (Inter, sentence case, left-aligned block) — §7. */
+export const PROSE_VALUE_CHARS = 32;
+
 export function Row({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
+  if (typeof children === 'string' && children.length > PROSE_VALUE_CHARS) {
+    return (
+      <div className="flex flex-col gap-0.5 py-[3px]" data-testid={testId}>
+        <dt className="font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-muted)]">{label}</dt>
+        <dd className="font-sans text-[12px] normal-case leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">{children}</dd>
+      </div>
+    );
+  }
   return (
     <div className="flex items-baseline justify-between gap-3 py-[3px]" data-testid={testId}>
       <dt className="shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-muted)]">{label}</dt>
@@ -58,9 +69,11 @@ export function ProviderBlock({ provider }: { provider: CameraProvider | null | 
 }
 
 export function ReportLink({ camera, provider }: { camera: Pick<Camera, 'id' | 'name' | 'providerId'>; provider: CameraProvider | null | undefined }) {
+  const contact = useRemovalContact();
   return (
     <a
-      href={removalUrl(REPO_URL, camera, provider?.operator ?? null, provider?.terms_url ?? null)}
+      href={removalUrl(contact, camera, provider?.operator ?? null, provider?.terms_url ?? null)}
+      title={contact.kind === 'tracker' ? 'Opens a prefilled issue on the GODSEYE project tracker' : 'The operator of this instance handles removals'}
       target="_blank"
       rel="noopener noreferrer"
       data-testid="camera-report"

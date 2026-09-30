@@ -5,6 +5,7 @@
 import type { Cell } from '@/lib/columnar';
 import { CAMERA_FIELDS } from '@/lib/schemas/surveillance';
 import type { Camera } from '@/lib/types';
+import { removalHref, type RemovalContact } from '../shared';
 
 export const IDX = Object.fromEntries(CAMERA_FIELDS.map((f, i) => [f, i])) as Record<(typeof CAMERA_FIELDS)[number], number>;
 
@@ -28,8 +29,11 @@ export function rowToCamera(row: readonly Cell[]): Camera {
   };
 }
 
-/** GitHub issue link prefilled for a camera removal request (no server-side storage). */
-export function removalUrl(repo: string, c: Pick<Camera, 'id' | 'name' | 'providerId'>, operator: string | null, terms: string | null): string {
+/**
+ * Prefilled removal request (no server-side storage): a mail to the instance operator's
+ * GODSEYE_CONTACT, the contact URL as published, or a GitHub issue on the project tracker.
+ */
+export function removalUrl(contact: RemovalContact, c: Pick<Camera, 'id' | 'name' | 'providerId'>, operator: string | null, terms: string | null): string {
   const title = `Camera removal request: ${c.id}`;
   const body = [
     `Camera id: ${c.id}`,
@@ -43,5 +47,5 @@ export function removalUrl(repo: string, c: Pick<Camera, 'id' | 'name' | 'provid
   ]
     .filter((l) => l !== null)
     .join('\n');
-  return `${repo}/issues/new?${new URLSearchParams({ title, body, labels: 'camera-removal' }).toString()}`;
+  return removalHref(contact, title, body);
 }

@@ -31,6 +31,7 @@ vi.mock('@/lib/http', async (orig) => {
 });
 
 const { GET } = await import('./route');
+const { stopTileSweeper } = await import('@/features/aviation/feeds');
 
 const call = (qs = '') => GET(new Request(`http://localhost/api/flights${qs}`), undefined);
 
@@ -42,9 +43,11 @@ describe('GET /api/flights', () => {
     clearL1();
     setStore(new MemoryStore());
     mode.fail = false;
+    stopTileSweeper();
   });
 
   afterAll(() => {
+    stopTileSweeper();
     vi.useRealTimers();
   });
 

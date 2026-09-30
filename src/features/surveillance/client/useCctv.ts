@@ -3,16 +3,19 @@
  * Loads the camera catalogue one region per request (each < 4 MB), retries only regions reported
  * in `pendingRegions` (15 s, then 30 s, then 45 s), refreshes every 30 min while the tab is
  * visible, and mirrors the merged honest state into the `cctv` layer status (SOURCE OFFLINE with
- * last-good time when every region fails). Rows stay columnar; the layer reads them by index.
+ * last-good time when every region fails). Regions whose every provider needs a key that
+ * /api/health reports off are never requested; their providers show as skipped "not-configured"
+ * (the flyout's "needs key") instead of an outage. Rows stay columnar; the layer reads them by index.
  * Owner: layers-surveillance.
  */
 import { useQueries } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
+import { useHealth } from '@/components/hud/hooks';
 import { LAYERS } from '@/lib/layer-registry';
 import { useLayerStatusStore } from '@/lib/layer-host';
 import type { Cell } from '@/lib/columnar';
 import type { Attribution, FeedMeta, Providers } from '@/lib/types';
-import { CCTV_REGIONS, type CctvRegion } from '../shared';
+import { CCTV_REGIONS, KEYED_REGIONS, requestableRegions, type CctvRegion } from '../shared';
 
 export interface RegionPayload {
   fields: string[];
@@ -47,13 +50,23 @@ export interface CctvData {
   regionsLoaded: number;
 }
 
+/** Providers of regions skipped for a missing key, reported like the server does. */
+export function needsKeyProviders(regions: readonly CctvRegion[]): Providers {
+  const out: Providers = {};
+  for (const r of regions) for (const k of KEYED_REGIONS[r] ?? []) out[k.provider] = { ok: false, count: 0, ms: 0, age_s: null, skipped: 'not-configured' };
+  return out;
+}
+
 export function useCctv(enabled: boolean): CctvData | null {
   const update = useLayerStatusStore((s) => s.update);
+  const caps = useHealth().data?.capabilities;
+  const { active, needsKey } = useMemo(() => requestableRegions(caps), [caps]);
+  const needsKeyId = needsKey.join(',');
   const queries = useQueries({
     queries: CCTV_REGIONS.map((region) => ({
       queryKey: ['cctv', region],
       queryFn: ({ signal }: { signal: AbortSignal }) => loadRegion(region, signal),
-      enabled,
+      enabled: enabled && active.includes(region),
       staleTime: REFRESH_MS,
       refetchInterval: REFRESH_MS,
       refetchIntervalInBackground: false,
@@ -62,7 +75,8 @@ export function useCctv(enabled: boolean): CctvData | null {
     })),
   });
 
-  const ok = queries.map((q) => (q.data?.ok ? q.data.body : null));
+  // A region that became not-configured keeps no stale rows.
+  const ok = queries.map((q, i) => (q.data?.ok && active.includes(CCTV_REGIONS[i]!) ? q.data.body : null));
   const key = ok.map((b) => b?.meta.fetchedAt ?? '-').join('|');
 
   const merged = useMemo<CctvData | null>(() => {
@@ -80,7 +94,7 @@ export function useCctv(enabled: boolean): CctvData | null {
   useEffect(() => {
     if (!enabled) return;
     const bodies = ok.filter((b): b is RegionPayload => b !== null);
-    const providers: Providers = {};
+    const providers: Providers = needsKeyProviders(needsKey);
     for (const b of [...failedBodies, ...bodies]) Object.assign(providers, b.providers ?? {});
     const attribution: Attribution[] = [];
     const seen = new Set<string>();
@@ -113,7 +127,7 @@ export function useCctv(enabled: boolean): CctvData | null {
       attribution,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, key, loading, settled, failedBodies.length, update]);
+  }, [enabled, key, loading, settled, failedBodies.length, needsKeyId, update]);
 
   return merged;
 }
