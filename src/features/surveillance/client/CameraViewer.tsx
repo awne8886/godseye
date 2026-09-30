@@ -232,7 +232,8 @@ export function CameraViewerBody({ camera }: { camera: Camera }) {
       </div>
 
       <dl>
-        <Row label="Image time" testId="viewer-observed">
+        {/* Last-Modified from the operator is when the frame file was updated, which can trail the capture time. */}
+        <Row label={frameAt ? 'Frame updated' : 'Image time'} testId="viewer-observed">
           {mode === 'hls' ? 'Live stream (no frame time)' : shownAt ? `${isoShort(shownAt)}` : 'Time not published by operator'}
         </Row>
         {mode === 'jpg' && <Row label="Refresh">{`every ${everyS} s (operator minimum)`}</Row>}
