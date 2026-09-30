@@ -25,12 +25,27 @@ import { createDoubleRightClick, createLongPress } from '@/lib/map/gestures';
 import { BLACK_MARBLE_LABEL, ESRI_LABEL, gibsTrueColorLabel } from '@/lib/map/imagery';
 import { geometryClient } from '@/lib/map/geometry-client';
 import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
-import { collectCandidates, routePick, type PickMap } from '@/lib/map/picking';
+import { collectCandidates, routePick, setHoverPointer, type PickMap } from '@/lib/map/picking';
+import { basemapChipText, createBasemapHealth, type BasemapHealth } from '@/lib/map/basemap-health';
+import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
+import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
 import { onceStyleLoaded, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { useAfterIdle, useSticky } from '@/lib/map/defer';
 import { installMissingImageResolver } from '@/lib/map/style-images';
-import { BASEMAP_ATTRIBUTION, BASEMAP_STYLE_URL, IMAGERY_BEFORE_ID, firstLabelLayerId, paintDiff, themedBasemap, transformStyle } from '@/lib/map/style-transform';
+import {
+  BASEMAP_ATTRIBUTION,
+  BASEMAP_SOURCE_ID,
+  BASEMAP_STYLE_URL,
+  IMAGERY_BEFORE_ID,
+  firstLabelLayerId,
+  inlineTileJson,
+  paintDiff,
+  parseTileJson,
+  themedBasemap,
+  tileJsonUrl,
+  transformStyle,
+} from '@/lib/map/style-transform';
 import { attachTerrain, TERRAIN_MAX_PITCH, TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
 import { CONTEXT_ATTRIBUTE_LADDER, effectiveProjection, GLOBE_SKY, initialCamera, normalizeCamera, projectionPitchEase } from '@/lib/map/view';
 import { useUiStore } from '@/lib/store';
@@ -70,7 +85,14 @@ const cssVar = (name: string) => (typeof document === 'undefined' ? '' : getComp
 async function loadBasemap(signal: AbortSignal): Promise<StyleSpecification> {
   const res = await fetch(BASEMAP_STYLE_URL, { signal, credentials: 'omit' });
   if (!res.ok) throw new Error(`basemap style HTTP ${res.status}`);
-  const raw = (await res.json()) as StyleSpecification;
+  let raw = (await res.json()) as StyleSpecification;
+  // Inline the vector TileJSON so its failure is retried with the style (no blank globe).
+  const tj = tileJsonUrl(raw);
+  if (tj) {
+    const r = await fetch(tj, { signal, credentials: 'omit' });
+    if (!r.ok) throw new Error(`basemap TileJSON HTTP ${r.status}`);
+    raw = inlineTileJson(raw, parseTileJson(await r.json(), tj));
+  }
   rawBasemap = raw;
   return transformStyle(raw, themedBasemap(cssVar));
 }
@@ -174,14 +196,27 @@ export default function MapView() {
 
   // flyTo requests (ts-stamped so identical targets re-fire, each served once — a map rebuilt by
   // the context ladder does not re-fly to an old target); longitudes wrapped first.
+  // Applied once the style is parsed (`style.load`), never waiting for tiles; a request issued
+  // earlier stays pending in the store; the boot intro never overrides an explicit request.
   const servedFly = useRef(0);
   useEffect(() => {
     const map = mapRef.current;
-    if (!flyTo || !map || !loaded || servedFly.current === flyTo.ts) return;
-    servedFly.current = flyTo.ts;
-    const { lng, lat, zoom, pitch, bearing, durationMs } = flyTo;
+    const req = nextCameraRequest(flyTo, loaded && !!map, servedFly.current);
+    if (!req || !map) return;
+    servedFly.current = req.ts;
+    const { lng, lat, zoom, pitch, bearing, durationMs } = req;
     map.flyTo({ center: [normalizeLng(lng), lat], zoom, pitch, bearing, duration: reducedMotion() ? 0 : (durationMs ?? 2000), essential: false });
   }, [flyTo, loaded]);
+
+  // `?dossier=lat,lng` deep link without `?c=`: frame the dossier target once the style is parsed.
+  const framedDossier = useRef(false);
+  useEffect(() => {
+    if (!loaded || framedDossier.current) return;
+    framedDossier.current = true;
+    const ui = useUiStore.getState();
+    const cam = dossierDeepLinkCamera(ui);
+    if (cam) ui.requestFlyTo(cam);
+  }, [loaded]);
 
   const labelAnchor = useMemo(() => (style ? firstLabelLayerId(style) : undefined), [style]);
   const imageryAnchor = useMemo(() => (style?.layers.some((l) => l.id === IMAGERY_BEFORE_ID) ? IMAGERY_BEFORE_ID : labelAnchor), [style, labelAnchor]);
@@ -306,6 +341,8 @@ export default function MapView() {
 
   const onClick = useCallback(
     (e: MapLayerMouseEvent) => {
+      // Primary button only: right/middle clicks never run a (GPU) pick.
+      if (!isPrimaryClick(e.originalEvent)) return;
       const sel = routePick(pickAt(e.target, e.point.x, e.point.y));
       if (sel) useSelectionStore.getState().select(sel);
     },
@@ -318,17 +355,22 @@ export default function MapView() {
       const { lng, lat } = e.lngLat;
       const map = e.target;
       const { x, y } = e.point;
+      const idle = hoverAllowed(e.originalEvent);
       cancelAnimationFrame(hoverFrame.current);
       hoverFrame.current = requestAnimationFrame(() => {
         publishCursor({ lng: normalizeLng(lng), lat, zoom: map.getZoom() });
-        if (map.isMoving()) return;
-        map.getCanvas().style.cursor = pickAt(map, x, y, true).length ? 'pointer' : '';
+        // No hover pick while a button is held (drag/rotate/right-press) or the camera moves.
+        if (!idle || map.isMoving()) return;
+        const hit = pickAt(map, x, y, true).length > 0;
+        setHoverPointer(hit);
+        map.getCanvas().style.cursor = hit ? 'pointer' : '';
       });
     },
     [pickAt],
   );
   const onMouseOut = useCallback(() => {
     cancelAnimationFrame(hoverFrame.current);
+    setHoverPointer(false);
     publishCursor(null);
   }, []);
 
@@ -390,14 +432,58 @@ export default function MapView() {
   // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
   const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
 
+  // Honest basemap state: repeated tile failures → BASEMAP OFFLINE (last observed tile) + backoff retry.
+  const [basemapHealth, setBasemapHealth] = useState<BasemapHealth | null>(null);
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !loaded) return;
+    const el = map.getContainer();
+    const health = createBasemapHealth();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let shown: BasemapHealth['state'] = 'ok';
+    el.dataset.basemapState = 'ok';
+    const publish = (h: BasemapHealth) => {
+      if (h.state === shown) return;
+      shown = h.state;
+      el.dataset.basemapState = h.state;
+      setBasemapHealth(h.state === 'offline' ? h : null);
+    };
+    const onError = (e: maplibregl.ErrorEvent) => {
+      if ((e as { sourceId?: string }).sourceId !== BASEMAP_SOURCE_ID) return;
+      const h = health.tileError();
+      publish(h);
+      if (h.retryInMs === null || timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        health.retried();
+        if (map.getSource(BASEMAP_SOURCE_ID)) map.refreshTiles(BASEMAP_SOURCE_ID);
+      }, h.retryInMs);
+    };
+    const onData = (e: maplibregl.MapSourceDataEvent) => {
+      if (e.sourceId !== BASEMAP_SOURCE_ID || !e.tile) return;
+      clearTimeout(timer);
+      timer = undefined;
+      publish(health.tileLoaded(Date.now()));
+    };
+    map.on('error', onError);
+    map.on('sourcedata', onData);
+    return () => {
+      clearTimeout(timer);
+      map.off('error', onError);
+      map.off('sourcedata', onData);
+    };
+  }, [loaded]);
+
   const chips = useMemo(() => {
     const out: ImageryChip[] = [];
+    const basemapText = basemapHealth ? basemapChipText(basemapHealth) : null;
+    if (basemapText) out.push({ id: 'basemap', text: basemapText });
     if (dayNight && nightLightsSupported()) out.push({ id: 'night', text: BLACK_MARBLE_LABEL });
     if (trueColor) out.push({ id: 'gibs', text: gibsTrueColorLabel(gibsDate) });
     if (satellite) out.push({ id: 'esri', text: ESRI_LABEL });
     if (terrainOn) out.push({ id: 'terrain', text: TERRAIN_STATUS_TEXT[terrainStatus] });
     return out;
-  }, [dayNight, trueColor, satellite, terrainOn, terrainStatus, gibsDate]);
+  }, [basemapHealth, dayNight, trueColor, satellite, terrainOn, terrainStatus, gibsDate]);
 
   if (failure === 'webgl') return <WebGLFallback reason="webgl" />;
   if (!style) return failure === 'style' ? <WebGLFallback reason="style" /> : null;
@@ -414,7 +500,7 @@ export default function MapView() {
         sky={GLOBE_SKY}
         minZoom={1.2}
         maxZoom={18}
-        maxPitch={terrainOn ? TERRAIN_MAX_PITCH : DEFAULT_MAX_PITCH}
+        maxPitch={terrainOn && terrainEngaged ? TERRAIN_MAX_PITCH : DEFAULT_MAX_PITCH}
         canvasContextAttributes={CONTEXT_ATTRIBUTE_LADDER[attempt]}
         attributionControl={{ compact: false, customAttribution: BASEMAP_ATTRIBUTION }}
         dragRotate
@@ -432,6 +518,8 @@ export default function MapView() {
         style={{ position: 'absolute', inset: 0 }}
       >
         <ImageryLayers beforeId={imageryAnchor} satellite={satellite} trueColor={trueColor} gibsDate={gibsDate} />
+        {/* Mounted from the start (hidden layers draw nothing and link no program) so they stay
+            under the deck layers inserted later at the same label anchor. */}
         <BuildingsLayer beforeId={labelAnchor} visible={buildings} />
         <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
         {deferred && hasDeckLayers && <DeckOverlay beforeId={labelAnchor} />}

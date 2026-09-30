@@ -8,6 +8,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Layer, Source } from 'react-map-gl/maplibre';
+import { useSticky } from '@/lib/map/defer';
 import {
   ESRI_ATTRIBUTION,
   ESRI_LAYER_ID,
@@ -34,33 +35,33 @@ export function useGibsDate(): string {
 
 export default function ImageryLayers({ beforeId, satellite, trueColor, gibsDate }: { beforeId?: string; satellite: boolean; trueColor: boolean; gibsDate: string }) {
   const gibsTiles = useMemo(() => gibsTrueColorTiles(gibsDate), [gibsDate]);
+  // Each source is added the first time its view is used, then only toggled (no remounts).
+  const esriMounted = useSticky(satellite);
+  const gibsMounted = useSticky(trueColor);
   return (
     <>
-      <Source id={ESRI_SOURCE_ID} type="raster" tiles={ESRI_TILES} tileSize={256} maxzoom={ESRI_MAX_ZOOM} attribution={ESRI_ATTRIBUTION}>
-        <Layer
-          id={ESRI_LAYER_ID}
-          type="raster"
-          beforeId={beforeId}
-          layout={{ visibility: satellite ? 'visible' : 'none' }}
-          paint={{ 'raster-opacity': 1, 'raster-fade-duration': 150 }}
-        />
-      </Source>
-      <Source
-        id={GIBS_TRUECOLOR_SOURCE_ID}
-        type="raster"
-        tiles={gibsTiles}
-        tileSize={256}
-        maxzoom={GIBS_TRUECOLOR_MAX_ZOOM}
-        attribution={GIBS_TRUECOLOR_ATTRIBUTION}
-      >
-        <Layer
-          id={GIBS_TRUECOLOR_LAYER_ID}
-          type="raster"
-          beforeId={beforeId}
-          layout={{ visibility: trueColor ? 'visible' : 'none' }}
-          paint={{ 'raster-opacity': 0.92, 'raster-fade-duration': 150 }}
-        />
-      </Source>
+      {esriMounted && (
+        <Source id={ESRI_SOURCE_ID} type="raster" tiles={ESRI_TILES} tileSize={256} maxzoom={ESRI_MAX_ZOOM} attribution={ESRI_ATTRIBUTION}>
+          <Layer
+            id={ESRI_LAYER_ID}
+            type="raster"
+            beforeId={beforeId}
+            layout={{ visibility: satellite ? 'visible' : 'none' }}
+            paint={{ 'raster-opacity': 1, 'raster-fade-duration': 150 }}
+          />
+        </Source>
+      )}
+      {gibsMounted && (
+        <Source id={GIBS_TRUECOLOR_SOURCE_ID} type="raster" tiles={gibsTiles} tileSize={256} maxzoom={GIBS_TRUECOLOR_MAX_ZOOM} attribution={GIBS_TRUECOLOR_ATTRIBUTION}>
+          <Layer
+            id={GIBS_TRUECOLOR_LAYER_ID}
+            type="raster"
+            beforeId={beforeId}
+            layout={{ visibility: trueColor ? 'visible' : 'none' }}
+            paint={{ 'raster-opacity': 0.92, 'raster-fade-duration': 150 }}
+          />
+        </Source>
+      )}
     </>
   );
 }

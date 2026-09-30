@@ -168,7 +168,10 @@ export interface CollectOptions {
 export function collectCandidates(map: PickMap, point: { x: number; y: number }, opts: CollectOptions = {}): PickCandidate[] {
   const radius = opts.radiusPx ?? 4;
   let deck: DeckPickInfo[] = [];
-  if (overlay) {
+  if (opts.hover && hoverFeed) {
+    // deck already ran its once-per-frame hover pick (autoHighlight): reuse it, no second GPU pick.
+    deck = hoverInfo ? [hoverInfo] : [];
+  } else if (overlay) {
     try {
       deck = opts.hover
         ? [overlay.pickObject({ x: point.x, y: point.y, radius })].filter((i): i is DeckPickInfo => !!i)
@@ -201,6 +204,22 @@ let overlay: PickOverlay | null = null;
 
 export function setPickOverlay(o: PickOverlay | null): void {
   overlay = o;
+  if (!o) {
+    hoverFeed = false;
+    hoverInfo = null;
+  }
+}
+
+let hoverFeed = false;
+let hoverInfo: DeckPickInfo | null = null;
+
+/**
+ * deck's own hover result (its `onHover`), published by the deck host. While a feed is active the
+ * hover path of `collectCandidates` reuses it instead of running a second GPU pick per frame.
+ */
+export function setDeckHoverInfo(info: DeckPickInfo | null): void {
+  hoverFeed = true;
+  hoverInfo = info && info.object !== undefined && info.object !== null ? info : null;
 }
 
 export function getPickOverlay(): PickOverlay | null {
@@ -213,4 +232,19 @@ export function resetPicking(): void {
   nativeResolvers.clear();
   hitTesters.clear();
   overlay = null;
+  hoverFeed = false;
+  hoverInfo = null;
+  hoverPointer = false;
+}
+
+let hoverPointer = false;
+
+/** The host's hover verdict ("something selectable under the pointer"), read by deck's getCursor. */
+export function setHoverPointer(on: boolean): void {
+  hoverPointer = on;
+}
+
+/** Cursor for the shared canvas: `pointer` over a selectable entity, else MapLibre's own (grab). */
+export function hoverCursor(): string {
+  return hoverPointer ? 'pointer' : '';
 }
