@@ -79,6 +79,17 @@ describe('GET /api/flight-route', () => {
     expect(body.distanceKm).toBeGreaterThan(5000);
   });
 
+  it('rejects a route when the aircraft is > 1.5 × its length from both endpoints (found:false)', async () => {
+    // EGLL→KJFK is ~5 540 km; the aircraft is over the south-west Pacific, > 8 300 km from both.
+    const body = await (await call('?callsign=BAW117&lat=-30&lng=160&speed=450')).json();
+    expect(FlightRouteResponse.safeParse(body).success).toBe(true);
+    expect(body).toMatchObject({ found: false, implausible: true, origin: null, destination: null, basis: null, progress: null });
+    // Near one endpoint but off the corridor: still a (schedule-basis) route, not rejected.
+    const near = await (await call('?callsign=BAW117&lat=41.9&lng=12.5&speed=450')).json();
+    expect(near).toMatchObject({ found: true, basis: 'schedule' });
+    expect(near.implausible).toBeUndefined();
+  });
+
   it('falls back to adsbdb, then hexdb labelled stale with its update time', async () => {
     mode.down.add('vrs-standing-data.adsb.lol');
     const a = await (await call('?callsign=BAW117')).json();

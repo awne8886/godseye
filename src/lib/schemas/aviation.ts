@@ -150,6 +150,11 @@ export const FlightRouteResponse = z.object({
   sourceUpdatedAt: IsoTime.nullable().optional(),
   /** True when the only answer is an old record (hexdb fallback older than 180 days): shown as STALE. */
   stale: z.boolean().optional(),
+  /**
+   * True when a source listed a route for this callsign but the aircraft is more than 1.5 × the
+   * route length from both endpoints (OSIRIS plausibility rule): `found` is false, no FROM/TO shown.
+   */
+  implausible: z.boolean().optional(),
   providers: Envelope.shape.providers,
   timestamp: IsoTime,
 });

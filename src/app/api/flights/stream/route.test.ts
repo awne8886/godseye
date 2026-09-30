@@ -25,7 +25,9 @@ vi.mock('@/lib/http', async (orig) => {
 });
 
 const { GET } = await import('./route');
-const { diffRows } = await import('@/features/aviation/server/stream');
+const { diffRows, streamBufferBytes } = await import('@/features/aviation/server/stream');
+const { flightsBody } = await import('@/features/aviation/server/view');
+const { normalizeAdsbResponse } = await import('@/features/aviation/adsb');
 
 describe('GET /api/flights/stream', () => {
   afterAll(() => {
@@ -55,6 +57,16 @@ describe('GET /api/flights/stream', () => {
     expect(data.meta.feed).toBe('flights');
     expect(data.providers.adsblol_tiles.ok).toBe(true);
     expect(data.rows.length).toBeGreaterThan(0);
+  });
+
+  it('sizes the per-client SSE buffer for one snapshot, capped at 4 MB (SEC-m7)', () => {
+    const records = normalizeAdsbResponse(point as never, 'adsblol_tiles', point.now).records;
+    const bytes = JSON.stringify(flightsBody({ records, noPosition: [] } as never)).length;
+    // The real snapshot bytes per row fit the budget with room for a delta.
+    expect(streamBufferBytes(records.length)).toBeGreaterThan(bytes);
+    expect(streamBufferBytes(0)).toBe(1024 * 1024);
+    expect(streamBufferBytes(10_000)).toBeLessThan(2.2 * 1024 * 1024);
+    expect(streamBufferBytes(1_000_000)).toBe(4 * 1024 * 1024);
   });
 
   it('diffs rows by observation time and reports retired ids', () => {

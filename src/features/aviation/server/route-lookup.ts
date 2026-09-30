@@ -160,6 +160,17 @@ export function routeProgress(o: Airport, d: Airport, pos: Position | null): Pic
   return { basis: 'corridor', status: moving ? 'airborne' : 'unknown', progress: moving ? Math.round((along / total) * 1000) / 1000 : null, distanceKm: distance };
 }
 
+/** OSIRIS: a route is rejected when the aircraft is farther than this × route length from both ends. */
+export const IMPLAUSIBLE_FACTOR = 1.5;
+
+/** True when `pos` is > 1.5 × the o→d great-circle length from both endpoints (docs/reference/03 §5). */
+export function isImplausible(o: Airport, d: Airport, pos: Pick<Position, 'lat' | 'lng'> | null): boolean {
+  if (!pos) return false;
+  const here: LngLatTuple = [pos.lng, pos.lat];
+  const limit = distanceKm([o.lng, o.lat], [d.lng, d.lat]) * IMPLAUSIBLE_FACTOR;
+  return distanceKm([o.lng, o.lat], here) > limit && distanceKm([d.lng, d.lat], here) > limit;
+}
+
 export interface RouteDeps {
   vrs: (cs: string) => Promise<RouteCandidate | null>;
   adsbdb: (cs: string) => Promise<RouteCandidate | null>;
@@ -200,6 +211,12 @@ export async function flightRoute(cs: string, pos: Position | null, deps: RouteD
   const here: LngLatTuple | null = pos ? [pos.lng, pos.lat] : null;
   const [o, d] = pickLeg(s.candidate.airports, here);
   const updated = s.candidate.updatedAt;
+  // Judge the whole listed route (first → last stop), not just the nearest leg.
+  const first = s.candidate.airports[0]!;
+  const last = s.candidate.airports[s.candidate.airports.length - 1]!;
+  if (isImplausible(first, last, pos) && isImplausible(o, d, pos)) {
+    return { ...base, found: false, implausible: true, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: s.candidate.source };
+  }
   return {
     ...base,
     found: true,

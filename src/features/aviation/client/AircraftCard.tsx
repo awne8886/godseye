@@ -196,6 +196,8 @@ export default function AircraftCard({ selection }: CardProps) {
               {route.data.stale && route.data.sourceUpdatedAt ? ` · STALE RECORD ${route.data.sourceUpdatedAt.slice(0, 10)}` : ''}
             </p>
           </>
+        ) : route.data?.implausible ? (
+          <p className="text-[var(--text-muted)]">LISTED ROUTE DOES NOT MATCH POSITION</p>
         ) : (
           <p className="text-[var(--text-muted)]">NO SCHEDULED ROUTE</p>
         )}
