@@ -75,10 +75,10 @@ Kept current by the lead after every phase. The build is done when this file is 
 - [ ] map-engine: build the worker URL from `maplibregl.getVersion()`; store `normalizeLng` camera
 - [x] layers-aviation: trim/upper-case callsigns; emit the compact FLIGHT_FIELDS row + `sources`
 - [x] layers-hazards: fires as FIRE_FIELDS columnar; Sentinel quicklooks by final (zipper) URL, no redirects
-- [ ] layers-threats-network: GDACS `geteventlist/SEARCH?eventlist=…` (MAP returns 400); lower-case alert
+- [x] layers-threats-network: GDACS `geteventlist/SEARCH?eventlist=…` (MAP returns 400); lower-case alert
       levels, `url.report`; GDELT zip URLs upgraded to https; Cloudflare origins as points unless a target exists
-- [ ] layers-surveillance: TfL mp4 via plain `<video src>` (no CORS); cameras carry `source`
-- [ ] feature-flight-paths: `LocalTime` with offsets (`etaTz`), never offset-less local strings
+- [x] layers-surveillance: TfL mp4 via plain `<video src>` (no CORS); cameras carry `source`
+- [x] feature-flight-paths: `LocalTime` with offsets (`etaTz`), never offset-less local strings
 - [x] pages-docs-privacy-ops: compile `docs/DATA_SOURCES.md` from `docs/data-sources/*.md`; Dockerfile runs
       `pnpm build` (prebuild vendors the worker) and copies `public/` into the standalone image; compose Caddy
       overwrites XFF (`header_up X-Forwarded-For {remote_host}`); ARCHITECTURE.md records the accepted
@@ -91,12 +91,12 @@ Kept current by the lead after every phase. The build is done when this file is 
 - [x] All six branches merged; lint, typecheck, 687 unit tests, build green after every merge
 - [x] Shared-file requests applied (tokens, IMAGE_HOSTS, LayerStatus.attribution, agentRules off, sandbox proxy for
       Playwright, Turbopack alias for satellite.js multi-thread WASM, docs scripts, js-yaml, image-size 2.0.4 override)
-- [ ] map-engine (integration round): ONE click router (deck + native + CPU hit-testers → `choosePick`), aviation and
+- [x] map-engine (integration round): ONE click router (deck + native + CPU hit-testers → `choosePick`), aviation and
       hazards migrated off their own `map.on('click')`; `ready` after load; tokens re-read on `godseye:style`
 - [ ] map-engine (integration round): startup performance — CI Lighthouse on `/` is 0.61 / TBT 1710 ms (need ≥ 0.85 / ≤ 300 ms)
 - [ ] map-engine: merged-main e2e regressions (terrain → mercator at z ≥ 10, double-right-click dossier, OSM
       attribution on mobile); worker URL from `maplibregl.getVersion()`; label density z 3–5; imagery chips vs mobile nav
-- [ ] design-system-hud (integration round): MAP|SAT control, scale bar + cursor readout from `src/lib/map/cursor.ts`,
+- [x] design-system-hud (integration round): MAP|SAT control, scale bar + cursor readout from `src/lib/map/cursor.ts`,
       terrain status, `LayerStatus.attribution` in flyouts/sources panel, real cards/panels end-to-end, label-in-name,
       space e2e locators
 - [ ] layers-aviation: full adsb.lol sweep takes ~170 s, so most aircraft render frozen/dimmed (honest but sparse) —
@@ -106,6 +106,24 @@ Kept current by the lead after every phase. The build is done when this file is 
 - [ ] layers-hazards: NWS alerts without geometry are `unplacedAlerts` until the zone cache fills (120/refresh);
       OpenAQ/WAQI keyed adapters unwired (no keys to test) — shown as skipped: not-configured
 - [ ] pages-docs-privacy-ops follow-up: README screenshots (Phase 3); confirm the Lighthouse desktop preset choice
+
+## Phase 2 wave B + integration — merged (surveillance, threats-network, alerts/markets/dossier/graph, recon, flight paths)
+- [x] All five branches + both integration rounds merged; 1,113 unit tests, lint, typecheck, build green;
+      every catalogued route mounted (`CHECK_CATALOG_COMPLETENESS=1` in CI)
+- [x] Cross-builder links: aircraft card → PATHS, palette route/flight commands, SCM alerts only on live risk
+- [ ] CI red: desktop e2e (HUD panel launchers, Style Studio, double-right-click dossier) and Lighthouse on `/`
+      (0.61 perf / 1.7 s TBT on the last measured run; the space client's 3 MB satellites parse + clone should
+      move into `src/workers/tle-propagate.ts`)
+- [ ] layers-surveillance: IBI 511, Windy, INDOT, MLIT, Edmonton, Via Lietuva not wired; Trafikverket untested live
+- [ ] layers-threats-network: polygon clicks (zones, risk, frontlines, cables) unverified in the sandbox; alert
+      pins not yet counted in conflict zones; AIS relay + Cloudflare untested live (keys); DeepState proxying
+      needs the operator's approval — keep `deepstate` off by default and say so in docs
+- [ ] panels-alerts: true token streaming for chat needs a streaming reader in `http.ts` (lead); alert pins
+      import hazards' `useGeoJsonLayers` (move to a shared map helper)
+- [ ] panels-recon: drawn shapes/routes/ArcGIS layers clickable via `drawn_shape` (kind added); sweep limited to
+      /28–/32 by the catalogue
+- [ ] feature-flight-paths: AeroAPI unwired, FAA airways skipped (quota); comet head / pulsing endpoints / reverse
+      arc / route clicks; panel title "FLIGHT PATHS" per §8
 
 ## Phase 0 build items per builder (Phase 2 owners)
 ### map-engine
@@ -143,29 +161,29 @@ Kept current by the lead after every phase. The build is done when this file is 
       GDACS geteventlist, NHC cones (mapservices.weather.noaa.gov), GVP RSS (ISO-8859-1), Open-Meteo AQ
       (`openmeteo` capability), RainViewer, GPS jam (gpsjam daily H3, bad > 0 cells, columnar), Sentinel (CDSE STAC)
 ### layers-surveillance
-- [ ] CCTV keyless providers (Caltrans paged, WSDOT KML, TxDOT new shape, HK TD, LTA, Digitraffic gzip, DriveBC/RWS
+- [x] CCTV keyless providers (Caltrans paged, WSDOT KML, TxDOT new shape, HK TD, LTA, Digitraffic gzip, DriveBC/RWS
       new URLs, NZTA, Trafikverket, …); keyed TfL/511/Seoul/Windy behind capabilities; excluded list honoured
-- [ ] `/cameras-notice` page + "Report / remove this camera" on every feed + region link-out-only mode (§0.7)
-- [ ] Stills-only `/api/cctv/proxy` with exact prefixes; `/api/cctv` lat/lng region select + ETag; live news `/live`
+- [x] `/cameras-notice` page + "Report / remove this camera" on every feed + region link-out-only mode (§0.7)
+- [x] Stills-only `/api/cctv/proxy` with exact prefixes; `/api/cctv` lat/lng region select + ETag; live news `/live`
       resolved server-side; report any new media host for `src/config/hosts.ts`
 ### layers-threats-network
-- [ ] GDELT https + multi-window export; GDACS; conflict zones (15 Natural Earth polygons, events at own coords);
+- [x] GDELT https + multi-window export; GDACS; conflict zones (15 Natural Earth polygons, events at own coords);
       INFORM retry; WGI iso3 join; nuclear Wikidata + OSIRIS merge with seismic/conflict flags
-- [ ] URLhaus conditional GET; Feodo honest single live C2; ThreatFox as INDICATOR; never resolve attacker domains;
+- [x] URLhaus conditional GET; Feodo honest single live C2; ThreatFox as INDICATOR; never resolve attacker domains;
       co-located points spread, no mesh; `nc_sources` gate; ports WPI + NE; IODA; cables
 ### panels-alerts-markets-dossier-graph
-- [ ] /api/ticker (USGS M ≥ 4 + Binance fallback, per-quote observedAt); markets (Binance/Coinbase/Kraken first,
+- [x] /api/ticker (USGS M ≥ 4 + Binance fallback, per-quote observedAt); markets (Binance/Coinbase/Kraken first,
       CoinGecko only keyed); sessions (12 exchanges); SCM section from maritime feed
-- [ ] Alerts: Telegram channel list, ToI/TASS SOURCE OFFLINE, SCMP http redirect refused; desktop Intel Feed
-- [ ] Dossier (`dossierTarget`), entity graph (QID/OpenSanctions person nodes only), AI: key header only, no-store,
+- [x] Alerts: Telegram channel list, ToI/TASS SOURCE OFFLINE, SCMP http redirect refused; desktop Intel Feed
+- [x] Dossier (`dossierTarget`), entity graph (QID/OpenSanctions person nodes only), AI: key header only, no-store,
       never logged; drop citations not in the prompt; SDK ingest Bearer timingSafeEqual + body cap
 ### panels-recon
-- [ ] Search (Photon debounce/cache → Nominatim queue), directions (lat,lng + via + mode aliases), draw, ArcGIS any
+- [x] Search (Photon debounce/cache → Nominatim queue), directions (lat,lng + via + mode aliases), draw, ArcGIS any
       public Feature/MapServer via `safeFetch`, OSINT passive tools (crt.sh 20 s + 1 retry), scanner (key in
       Authorization header, pinned IP, passive default, active behind `SCANNER_ALLOW_ACTIVE`), World Remote without
       RTCPeerConnection/localhost probing
 ### feature-flight-paths
-- [ ] OurAirports + mwgg + VRS routes; FAA airways build-time snapshot; METAR/TAF (999999 → null, error-in-body);
+- [x] OurAirports + mwgg + VRS routes; FAA airways build-time snapshot; METAR/TAF (999999 → null, error-in-body);
       winds aloft multi-coordinate single request + 1 h grid cache (`skipped: 'budget'` when limited); planner,
       live aircraft on route, track my flight (`flightIdent`)
 ### pages-docs-privacy-ops
@@ -181,4 +199,4 @@ Kept current by the lead after every phase. The build is done when this file is 
 - [ ] map-engine: tune label density at z 3–5 (state/oblast labels crowd the view)
 - [x] pages-docs-privacy-ops: `/docs` and `/privacy` (Link prefetch 404 until built)
 - [x] lead: flip `CHECK_CATALOG_COMPLETENESS=1` in CI once every catalogue route exists
-- [ ] lead: add each builder's reported operator media hosts to `src/config/hosts.ts` (CSP)
+- [x] lead: add each builder's reported operator media hosts to `src/config/hosts.ts` (CSP)
