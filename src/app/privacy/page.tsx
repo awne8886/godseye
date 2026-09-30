@@ -19,7 +19,6 @@ export const dynamic = 'force-static';
 export const metadata: Metadata = {
   title: `Privacy — ${APP_NAME}`,
   description: `What ${APP_NAME} sends to third parties, when, and what the server keeps. Generated from the endpoint catalogue.`,
-  alternates: { canonical: '/privacy' },
 };
 
 /** Client-side preference keys (src/lib/store.ts persist name, src/lib/theme-boot.ts). */
@@ -77,7 +76,8 @@ export default function PrivacyPage() {
             Every provider below receives something you typed, selected or clicked. The list is generated from the endpoint catalogue
             ({hosts.length} hosts); the <TextLink href="/docs">API reference</TextLink> shows every endpoint and its upstreams.
             Entries in parentheses are hosts chosen at run time: a public URL you submit, or a scanner backend the operator
-            configured.
+            configured. The middle column lists every input of the endpoints that call a provider; an endpoint may forward only
+            some of them to each provider, never more.
           </p>
           <table className="mt-5 w-full table-fixed border-collapse text-left text-[12px]">
             <caption className="sr-only">Upstream hosts that receive user input, what is sent and why</caption>
@@ -89,7 +89,7 @@ export default function PrivacyPage() {
             <thead>
               <tr className="hud-micro text-fg-muted">
                 <th scope="col" className={`${cell} font-normal`}>Upstream</th>
-                <th scope="col" className={`${cell} font-normal`}>What is sent</th>
+                <th scope="col" className={`${cell} font-normal`}>Input that may be sent</th>
                 <th scope="col" className={`${cell} font-normal`}>When / why</th>
               </tr>
             </thead>

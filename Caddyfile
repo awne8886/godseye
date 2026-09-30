@@ -13,6 +13,8 @@
 		# OVERWRITE the client-IP headers with the address Caddy actually saw. The app keys its
 		# per-route rate limits on the rightmost X-Forwarded-For entry (TRUSTED_PROXY_HOPS=1), or on
 		# X-Real-IP only when TRUST_PROXY_HEADER=x-real-ip; a client-supplied value must never survive.
+		# (Caddy already ignores X-Forwarded-For from untrusted clients; stating it keeps the guarantee
+		# explicit if trusted_proxies is ever configured.)
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Real-IP {remote_host}
 		# Server-Sent Events (/api/*/stream): forward every chunk immediately.

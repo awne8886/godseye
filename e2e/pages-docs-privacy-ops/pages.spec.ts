@@ -85,7 +85,7 @@ test.describe('/privacy', () => {
     const hosts = upstreamsReceivingUserInput();
     await expect(table.getByRole('rowheader')).toHaveCount(hosts.length);
     await expect(table.getByRole('rowheader').first()).toHaveText(hosts[0]!);
-    await expect(page.getByRole('link', { name: 'camera notice' })).toHaveAttribute('href', '/cameras-notice');
+    await expect(page.getByRole('link', { name: 'camera notice', exact: true })).toHaveAttribute('href', '/cameras-notice');
     for (const name of ['Your location', 'AI analyst and your keys', 'Cookies, analytics and browser storage', 'What the server keeps', 'Responsible use']) {
       await expect(page.getByRole('heading', { level: 2, name })).toBeAttached();
     }

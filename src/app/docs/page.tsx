@@ -32,7 +32,6 @@ const CAPS = CAPABILITIES as Record<CapabilityId, CapabilitySpec>;
 export const metadata: Metadata = {
   title: `API reference — ${APP_NAME}`,
   description: `Every ${APP_NAME} endpoint (${CATALOG.length}), generated from the typed catalogue: parameters, cache TTLs, rate limits, capability gates and the upstreams each one calls. No API key required.`,
-  alternates: { canonical: '/docs' },
 };
 
 const cell = 'border-b border-[var(--border-secondary)] px-2 py-2 align-top [overflow-wrap:anywhere]';
@@ -92,16 +91,18 @@ function Endpoint({ e }: { e: ApiEndpoint }) {
         <table className="mt-4 w-full table-fixed border-collapse text-left text-[12px]">
           <caption className="sr-only">Parameters for {e.method} {e.path}</caption>
           <colgroup>
-            <col className="w-[28%]" />
-            <col className="w-[22%]" />
-            <col className="w-[12%]" />
+            <col className="w-[27%]" />
+            <col className="w-[30%] sm:w-[24%]" />
+            <col className="w-[9%] sm:w-[10%]" />
             <col />
           </colgroup>
           <thead>
             <tr className="hud-micro text-fg-muted">
               <th scope="col" className={`${cell} font-normal`}>Parameter</th>
               <th scope="col" className={`${cell} font-normal`}>Type</th>
-              <th scope="col" className={`${cell} font-normal`}>Req.</th>
+              <th scope="col" className={`${cell} font-normal`}>
+                <abbr title="Required" className="no-underline">Req</abbr>
+              </th>
               <th scope="col" className={`${cell} font-normal`}>Description</th>
             </tr>
           </thead>
