@@ -25,7 +25,9 @@
     "e2e": "playwright test",
     "lhci": "lhci autorun",
     "docs:api": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./tools/ts-loader.mjs tools/gen-api-docs.ts",
-    "docs:sources": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./tools/ts-loader.mjs tools/compile-data-sources.ts"
+    "docs:sources": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./tools/ts-loader.mjs tools/compile-data-sources.ts",
+    "data:airports": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./tools/ts-loader.mjs tools/build-airports.ts",
+    "data:routes": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./tools/ts-loader.mjs tools/build-routes.ts"
   },
   "dependencies": {
     "@deck.gl/aggregation-layers": "9.4.0",

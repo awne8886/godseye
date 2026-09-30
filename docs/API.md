@@ -1096,7 +1096,7 @@ IP intel: geolocation, ASN, hosting/proxy flags, OFAC cross-check
 | Cache | s-maxage 1 h, stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Upstreams | `ipwho.is`, `ip-api.com`, `stat.ripe.net` |
+| Upstreams | `ipwho.is`, `ip-api.com`, `stat.ripe.net`, `free.freeipapi.com` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/osint/ip?ip=8.8.8.8` |
@@ -1207,7 +1207,7 @@ Threat intel for an IP/domain/hash (abuse.ch, OTX, Tor exit exact match)
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Upstreams | `threatfox-api.abuse.ch`, `urlhaus-api.abuse.ch`, `otx.alienvault.com`, `check.torproject.org` |
+| Upstreams | `threatfox-api.abuse.ch`, `urlhaus-api.abuse.ch`, `otx.alienvault.com`, `check.torproject.org`, `feodotracker.abuse.ch` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/osint/threats?ioc=1.2.3.4` |
@@ -1411,6 +1411,7 @@ Airport resolution: IATA → ICAO → ident → fuzzy → metro → Photon → N
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
+| `submit` | query | boolean | no | 1 = explicit submit (Nominatim fallback) |
 | `q` | query | string | yes | code, name, city or place (e.g. `London`) |
 | `all` | query | boolean | no | 1 = include all airfields |
 
@@ -1440,7 +1441,7 @@ Planned route between two airports: great circle, estimates, services, weather, 
 | Cache | s-maxage 1 d, stale-while-revalidate 2 d |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RoutePlanResponse` |
-| Upstreams | `aviationweather.gov`, `api.open-meteo.com`, `services6.arcgis.com`, `aeroapi.flightaware.com`, `api.flightplandatabase.com` |
+| Upstreams | `aviationweather.gov`, `api.open-meteo.com`, `api.flightplandatabase.com` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/route/plan?from=EGLL&to=KJFK` |
 
