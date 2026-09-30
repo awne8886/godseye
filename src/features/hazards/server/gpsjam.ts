@@ -78,60 +78,103 @@ export function parseGpsJamDay(text: string, date: string, max = MAX_JAM_CELLS):
   return { items: items.slice(0, max), totalCells: total };
 }
 
-/** Minimal view of an aircraft for binning (columnar FLIGHT_FIELDS rows or Aircraft objects). */
+/** Minimal view of an aircraft for binning (FlightsSnapshot records, columnar rows or Aircraft objects). */
 interface Plane {
   lat: number;
   lng: number;
   nacP: number | null;
+  /** Epoch seconds of the position, when known. */
+  seenAt: number | null;
 }
 
-function planesFrom(data: unknown): Plane[] {
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+/**
+ * Accepts the aviation `FlightsSnapshot` (`{records: FlightRecord[]}` — what the in-process flights
+ * feed holds), the columnar `/api/flights` body (`{fields, rows}`), `{items}` or a bare array.
+ */
+export function planesFrom(data: unknown): Plane[] {
   const out: Plane[] = [];
   if (!data || typeof data !== 'object') return out;
-  const d = data as { fields?: unknown; rows?: unknown; items?: unknown };
+  const d = data as { fields?: unknown; rows?: unknown; items?: unknown; records?: unknown };
   if (Array.isArray(d.fields) && Array.isArray(d.rows)) {
     const f = d.fields as string[];
     const iLat = f.indexOf('lat');
     const iLng = f.indexOf('lng');
     const iN = f.indexOf('nacP');
-    if (iLat < 0 || iLng < 0 || iN < 0) return out;
+    const iSeen = f.indexOf('seenAt');
+    if (iLat < 0 || iLng < 0) return out;
     for (const r of d.rows as unknown[][]) {
-      const lat = r[iLat];
-      const lng = r[iLng];
-      const n = r[iN];
-      if (typeof lat === 'number' && typeof lng === 'number') out.push({ lat, lng, nacP: typeof n === 'number' ? n : null });
+      const lat = num(r[iLat]);
+      const lng = num(r[iLng]);
+      if (lat !== null && lng !== null) out.push({ lat, lng, nacP: iN < 0 ? null : num(r[iN]), seenAt: iSeen < 0 ? null : num(r[iSeen]) });
     }
     return out;
   }
-  const items = Array.isArray(data) ? data : Array.isArray(d.items) ? d.items : [];
-  for (const a of items as { lat?: unknown; lng?: unknown; nacP?: unknown }[]) {
-    if (typeof a?.lat === 'number' && typeof a.lng === 'number') out.push({ lat: a.lat, lng: a.lng, nacP: typeof a.nacP === 'number' ? a.nacP : null });
+  const items = Array.isArray(data) ? data : Array.isArray(d.records) ? d.records : Array.isArray(d.items) ? d.items : [];
+  for (const a of items as { lat?: unknown; lng?: unknown; nacP?: unknown; seenAt?: unknown }[]) {
+    const lat = num(a?.lat);
+    const lng = num(a?.lng);
+    if (lat !== null && lng !== null) out.push({ lat, lng, nacP: num(a.nacP), seenAt: num(a.seenAt) });
   }
   return out;
+}
+
+export interface LiveNacpBins {
+  cells: GpsJamCell[];
+  /** Aircraft with a position considered for binning (after the recency cut). */
+  aircraft: number;
+  /** Of those, how many reported a NACp at all. Zero means the binning could not run. */
+  withNacp: number;
 }
 
 /**
  * Bin live aircraft into H3 r4 cells; a cell is reported when it holds ≥ LIVE_MIN_AIRCRAFT
  * aircraft that report NACp and at least one reports NACp ≤ LIVE_BAD_NACP. Aircraft without a
- * NACp are not counted either way.
+ * NACp are not counted either way. With `minSeenAt` (epoch s), older positions are skipped so a
+ * frozen snapshot never yields "live" cells.
  */
-export function binLiveNacp(data: unknown): GpsJamCell[] {
-  const cells = new Map<string, { n: number; bad: number }>();
+export function binLiveNacpDetailed(data: unknown, minSeenAt: number | null = null): LiveNacpBins {
+  const cells = new Map<string, { n: number; bad: number; seen: number | null }>();
+  let aircraft = 0;
+  let withNacp = 0;
   for (const p of planesFrom(data)) {
-    if (p.nacP === null || Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180) continue;
+    if (Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180) continue;
+    if (minSeenAt !== null && p.seenAt !== null && p.seenAt < minSeenAt) continue;
+    aircraft++;
+    if (p.nacP === null) continue;
+    withNacp++;
     const h = latLngToCell(p.lat, p.lng, 4);
-    const c = cells.get(h) ?? { n: 0, bad: 0 };
+    const c = cells.get(h) ?? { n: 0, bad: 0, seen: null };
     c.n++;
-    if (p.nacP <= LIVE_BAD_NACP) c.bad++;
+    if (p.nacP <= LIVE_BAD_NACP) {
+      c.bad++;
+      if (p.seenAt !== null && (c.seen === null || p.seenAt > c.seen)) c.seen = p.seenAt;
+    }
     cells.set(h, c);
   }
   const out: GpsJamCell[] = [];
   for (const [h3, c] of cells) {
     if (c.n < LIVE_MIN_AIRCRAFT || c.bad === 0) continue;
     const [lat, lng] = cellToLatLng(h3);
-    out.push({ h3, lat: Math.round(lat * 1e4) / 1e4, lng: Math.round(lng * 1e4) / 1e4, badRatio: Math.round((c.bad / c.n) * 1e4) / 1e4, aircraft: c.n, bad: c.bad, basis: 'live-nacp', date: null });
+    out.push({
+      h3,
+      lat: Math.round(lat * 1e4) / 1e4,
+      lng: Math.round(lng * 1e4) / 1e4,
+      badRatio: Math.round((c.bad / c.n) * 1e4) / 1e4,
+      aircraft: c.n,
+      bad: c.bad,
+      basis: 'live-nacp',
+      date: null,
+      ...(c.seen !== null ? { observedAt: new Date(c.seen * 1000).toISOString() } : {}),
+    });
   }
-  return out.sort((a, b) => b.bad - a.bad || (a.h3 < b.h3 ? -1 : 1));
+  out.sort((a, b) => b.bad - a.bad || (a.h3 < b.h3 ? -1 : 1));
+  return { cells: out, aircraft, withNacp };
+}
+
+export function binLiveNacp(data: unknown, minSeenAt: number | null = null): GpsJamCell[] {
+  return binLiveNacpDetailed(data, minSeenAt).cells;
 }
 
 export interface GpsJamData {
@@ -183,19 +226,30 @@ export async function gpsInterference(date: string | null) {
   });
 }
 
+/** Live positions older than this are not binned (the aviation prune window). */
+export const LIVE_MAX_POSITION_AGE_S = 300;
+
+const unavailable = (error: string, ms = 0): ProviderRun => ({ status: { ok: false, count: 0, ms, age_s: null, error }, okAt: null });
+
 /**
  * Live NACp bins from the flights feed when it runs in this process (read in-process with
  * getFeed().peek(); never over HTTP and never triggering an upstream fetch). Computed per request
- * so the cells are as fresh as the flights snapshot. Null when no flights feed is registered.
+ * so the cells are as fresh as the flights snapshot.
+ *
+ * Honesty: `ok: true` (possibly with zero cells) only when the binning actually ran over recent
+ * aircraft that report NACp. No flights feed, no snapshot, no recent positions or no NACp field at
+ * all → `ok: false` with a reason, never "0 degraded cells" presented as truth.
  */
-export function liveNacpCells(): { cells: GpsJamCell[]; run: ProviderRun } | null {
+export function liveNacpCells(now = Date.now()): { cells: GpsJamCell[]; run: ProviderRun } {
   const flights = getFeed('flights');
-  if (!flights) return null;
+  if (!flights) return { cells: [], run: unavailable('flights_feed_not_running') };
   const snap = flights.peek();
-  if (snap.data === null) return { cells: [], run: { status: { ok: false, count: 0, ms: 0, age_s: null, error: 'no_flights_snapshot' }, okAt: null } };
+  if (snap.data === null) return { cells: [], run: unavailable('no_flights_snapshot') };
   const t0 = Date.now();
-  const cells = binLiveNacp(snap.data);
+  const bins = binLiveNacpDetailed(snap.data, Math.floor(now / 1000) - LIVE_MAX_POSITION_AGE_S);
+  const ms = Date.now() - t0;
+  if (bins.aircraft === 0) return { cells: [], run: unavailable('no_recent_positions', ms) };
+  if (bins.withNacp === 0) return { cells: [], run: unavailable('nacp_not_reported', ms) };
   const at = snap.meta.fetchedAt ? Date.parse(snap.meta.fetchedAt) : null;
-  // allowEmpty semantics: no degraded cell right now is a truthful answer.
-  return { cells, run: { status: { ok: true, count: cells.length, ms: Date.now() - t0, age_s: 0 }, okAt: at } };
+  return { cells: bins.cells, run: { status: { ok: true, count: bins.cells.length, ms, age_s: at === null ? null : Math.max(0, Math.round((now - at) / 1000)) }, okAt: at } };
 }

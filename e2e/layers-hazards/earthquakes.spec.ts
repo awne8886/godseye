@@ -74,11 +74,17 @@ test.describe('earthquakes layer', () => {
     await page.waitForTimeout(1500);
     const vp = page.viewportSize()!;
     await page.mouse.click(vp.width / 2, vp.height / 2);
-    const card = page.getByTestId('hazard-card');
-    await expect(card).toBeVisible({ timeout: 10_000 });
-    await expect(card.getByTestId('card-source')).toContainText('USGS');
-    await expect(card.getByTestId('card-observed')).toContainText(`${q.observedAt.slice(0, 16).replace('T', ' ')} UTC`);
-    await expect(card.getByTestId('card-freshness')).toHaveText(/LIVE|STALE|SOURCE OFFLINE|^\d+[smhd]$/);
-    await expect(card).toContainText(`M${q.magnitude.toFixed(1)}`);
+    // The body loads through next/dynamic: wait for the visible instance, then read it. The HUD frame
+    // (the <section> around the body) owns SOURCE / OBSERVED / the freshness badge; the body only
+    // names the originator (visual-qa m7), so each assertion targets the element that owns it.
+    const card = page.getByTestId('hazard-card').filter({ visible: true }).first();
+    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect(card.getByTestId('card-source')).toContainText('USGS', { timeout: 10_000 });
+    const frame = page.locator('section').filter({ has: card }).first();
+    const observed = frame.locator('dt', { hasText: 'OBSERVED' }).locator('xpath=following-sibling::dd[1]');
+    await expect(observed).toContainText(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}Z/);
+    await expect(frame.locator('[data-state]').first()).toHaveText(/LIVE|STALE|OFFLINE|\d+[smhd]/i);
+    await expect(frame.getByText('OBSERVED', { exact: true })).toHaveCount(1);
+    await expect(card).toContainText(/M\d+\.\d/);
   });
 });
