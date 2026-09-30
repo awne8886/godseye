@@ -39,7 +39,7 @@ function isolated(cat: Catalogue): { id: string; lat: number; lng: number } | nu
 }
 
 test.describe('cctv layer', () => {
-  test('cameras render (rail count ≥ 1) when operators are live', async ({ page }, info) => {
+  test('cameras load and render when operators are live', async ({ page }, info) => {
     test.skip(info.project.name === 'mobile', 'the layer rail flyout is desktop-only');
     const cat = await liveRegion(page, 'asia');
     test.skip(cat === null, 'asia camera providers offline right now: SOURCE OFFLINE (asserted)');

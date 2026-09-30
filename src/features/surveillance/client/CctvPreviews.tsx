@@ -49,7 +49,17 @@ export default function CctvPreviews({ rows }: { rows: Cell[][] }) {
       const c = map.getCenter();
       const inView = rows.filter((r) => r[IDX.streamType] !== 'link' && r[IDX.stillUrl] && b.contains([r[IDX.lng] as number, r[IDX.lat] as number]));
       inView.sort((a, z) => ((a[IDX.lat] as number) - c.lat) ** 2 + ((a[IDX.lng] as number) - c.lng) ** 2 - (((z[IDX.lat] as number) - c.lat) ** 2 + ((z[IDX.lng] as number) - c.lng) ** 2));
-      setPicked(inView.slice(0, PREVIEW_MAX_TILES));
+      // Nearest first, skipping cameras whose tile would overlap one already placed.
+      const placed: { x: number; y: number }[] = [];
+      const out: Cell[][] = [];
+      for (const r of inView) {
+        if (out.length >= PREVIEW_MAX_TILES) break;
+        const p = map.project([r[IDX.lng] as number, r[IDX.lat] as number]);
+        if (placed.some((q) => Math.abs(q.x - p.x) < PREVIEW_W + 6 && Math.abs(q.y - p.y) < PREVIEW_H + 6)) continue;
+        placed.push(p);
+        out.push(r);
+      }
+      setPicked(out);
     };
     choose();
     map.on('moveend', choose);
