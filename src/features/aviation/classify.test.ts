@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { airlineCodeOf, classifyAircraft, emitterToOpenSky, isHelicopter, type ClassifyInput } from './classify';
+import { normalizeAdsbResponse, normalizeAdsbRow, type AdsbResponse } from './adsb';
+import point from './__fixtures__/adsblol-point-classify.json';
 
 const base: ClassifyInput = { typeCode: null, callsign: null, dbFlags: null, categoryOs: null, altFt: null, gsKt: null };
 const c = (p: Partial<ClassifyInput>) => classifyAircraft({ ...base, ...p });
@@ -63,5 +65,56 @@ describe('OSIRIS classifier (docs/reference/03 §1, rule order exactly)', () => 
     expect(isHelicopter('h145', null)).toBe(true);
     expect(isHelicopter('B738', 8)).toBe(true);
     expect(isHelicopter('B738', 4)).toBe(false);
+  });
+});
+
+/**
+ * Real readsb rows (api.adsb.lol /v2/point/40.7/-74.0/250, captured 2026-09-30 22:43 UTC) and the
+ * bucket OSIRIS's classifyFlight() gives the same row: readsb rows have no `category_os`, so the
+ * emitter category never decides the bucket (R2-M1).
+ */
+describe('readsb rows classify exactly as OSIRIS does', () => {
+  const expected: Record<string, [bucket: string, heli: boolean]> = {
+    a6b151: ['jet', false], // N530KC GL5T A3 — typed business jet, not "commercial by A3"
+    a25565: ['jet', false], // N25CP GLF5 A3
+    ae10c1: ['military', false], // GLF5 dbFlags 1
+    ab2899: ['jet', false], // N818RP E55P A2
+    a03fc9: ['jet', false], // N115LJ LJ45 A2
+    a3592e: ['private', false], // N3148S C182 A1
+    a3af0e: ['private', false], // N3364S C210 A1
+    a687af: ['commercial', false], // CSJ52 A1: designator callsign, no type rule → default
+    ab60ee: ['commercial', false], // HRD32 SR20 A1
+    aa9b65: ['commercial', false], // SWA4741 B737
+    a55b50: ['commercial', false], // AAL3245 A21N (not in AIRLINER_TYPES) → default
+    ac74dd: ['private', false], // N901WF H25B A6 at 5 025 ft: GA callsign, not cruising like a jet
+    ae06e7: ['military', false], // SCORE03 BE20 dbFlags 1
+    a0aef0: ['private', true], // N143MH EC35 A7
+    a08edf: ['private', true], // N135MH EC35 A7
+  };
+  const batch = normalizeAdsbResponse(point as AdsbResponse, 'adsblol_tiles', 0);
+
+  it('covers every captured row', () => {
+    expect(batch.records.map((r) => r.id).sort()).toEqual(Object.keys(expected).sort());
+  });
+
+  it.each(Object.entries(expected))('%s → %j', (hex, [bucket, heli]) => {
+    const r = batch.records.find((x) => x.id === hex)!;
+    expect(r.bucket).toBe(bucket);
+    expect(r.isHelicopter).toBe(heli);
+  });
+
+  it('R2 live examples: typed private jets under A3 are jets', () => {
+    for (const [hex, reg, t] of [['a71329', 'N555MZ', 'GL7T'], ['a48e1f', 'N393BZ', 'GLEX'], ['a70e99', 'N554DG', 'GLF5']] as const) {
+      const r = normalizeAdsbRow({ hex, flight: `${reg}  `, r: reg, t, category: 'A3', lat: 40, lon: -100, alt_baro: 45000, gs: 480, track: 90, seen_pos: 1 }, Date.now(), 'adsblol_tiles');
+      expect(r.kind === 'ok' && r.record.bucket).toBe('jet');
+    }
+  });
+
+  it('A1 / A6 / B6 emitter categories do not decide the bucket on readsb rows', () => {
+    const row = (category: string, flight: string) => normalizeAdsbRow({ hex: 'abcdef', flight, category, lat: 1, lon: 1, alt_baro: 3000, gs: 120 }, 0, 'adsblol_tiles');
+    expect(row('A1', 'CSJ52').kind === 'ok' && row('A1', 'CSJ52')).toMatchObject({ record: { bucket: 'commercial' } });
+    expect(row('A6', 'SWA12')).toMatchObject({ record: { bucket: 'commercial' } });
+    expect(row('B6', 'N12AB')).toMatchObject({ record: { bucket: 'private' } });
+    expect(row('A3', 'N12AB')).toMatchObject({ record: { bucket: 'private' } });
   });
 });

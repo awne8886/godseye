@@ -6,13 +6,13 @@
  */
 import { withRoute } from '@/lib/respond';
 import { flightsFeed } from '@/features/aviation/feeds';
-import { flightsHub } from '@/features/aviation/server/stream';
+import { flightsHub, streamBufferBytes } from '@/features/aviation/server/stream';
 
 export const dynamic = 'force-dynamic';
 
 export const GET = withRoute('/api/flights/stream', async (req: Request) => {
   // Prime the feed so the connect snapshot carries data (or an honest SOURCE OFFLINE).
-  await flightsFeed.get();
-  // The full snapshot is ~2–3 MB at world scale: allow it to sit in the queue once.
-  return flightsHub().subscribe(req, { maxBufferedBytes: 8 * 1024 * 1024 });
+  const result = await flightsFeed.get();
+  // Room for one connect snapshot (+ one delta) at the current aircraft count, never more than 4 MB.
+  return flightsHub().subscribe(req, { maxBufferedBytes: streamBufferBytes(result.data?.records.length ?? 0) });
 });

@@ -1,6 +1,7 @@
 /**
- * One refresh of the flights feed: a slice of the adsb.lol tile sweep plus the global lists and
- * any licensed adapters, merged into the previous snapshot. Kept free of `defineFeed` so tests can
+ * One refresh of the flights feed: the adsb.lol tiles that the background TileSweeper read since
+ * the previous run, plus the global lists and any licensed adapters, merged into the previous
+ * snapshot. Kept free of `defineFeed` so tests can
  * drive it with fake fetchers. Server-only.
  *
  * Honesty: every record keeps its own upstream observation time (`seenAt`); aircraft not re-seen
@@ -13,25 +14,22 @@ import { skippedProvider } from '@/lib/feeds';
 import { mergeRecords, type FlightRecord, type NormalizedBatch } from '../adsb';
 import type { Tile } from '../tiles';
 import { RateLimitedError, type GlobalKey } from './providers';
+import type { TileResult } from './tile-sweeper';
 
 /** Provider keys, in `src` column order. */
 export const FLIGHT_SOURCES = ['adsblol_tiles', 'adsblol_mil', 'adsblol_ladd', 'adsblol_pia', 'adsblol_reapi', 'opensky', 'adsbfi_mil'] as const;
 export type FlightSource = (typeof FLIGHT_SOURCES)[number];
 
-/** Aircraft not re-observed for this long are dropped (one full sweep takes ~170–270 s). */
+/**
+ * Aircraft not re-observed for this long are dropped. Every tile is re-read within
+ * MAX_TILE_AGE_MS (165 s) and a row's position may already be ≤ 60 s old when read, so 300 s
+ * only drops aircraft that really left coverage.
+ */
 export const PRUNE_AFTER_S = 300;
 /** Global lists (/v2/mil, /v2/ladd, /v2/pia, adsb.fi mil) are refreshed at most this often. */
 export const GLOBAL_EVERY_MS = 30_000;
 /** OpenSky standard account: 4 credits per global call, 4 000 a day → one call per 86.4 s. */
 export const OPENSKY_EVERY_MS = 90_000;
-/**
- * Wall-clock budget for tile requests in one run (the feed's deadline is larger). The next run starts
- * one TTL (15 s) after this one ends, so a 25 s slice keeps the grid busy ~60 % of the time: one
- * start per 1.2 s → a full 86-tile sweep every ~170 s. The first run after a cold start is short
- * (FIRST_SLICE_BUDGET_MS) so the first map paint does not wait for a long slice.
- */
-export const SLICE_BUDGET_MS = 25_000;
-export const FIRST_SLICE_BUDGET_MS = 8_000;
 
 export interface TileState {
   at: number | null;
@@ -43,14 +41,8 @@ export interface FlightsSnapshot {
   records: FlightRecord[];
   /** Hex ids that a provider listed without a position (not drawn). */
   noPosition: string[];
+  /** Last read of each coverage tile (the background TileSweeper fills these). */
   tiles: TileState[];
-  cursor: number;
-  sweepStartedAt: number | null;
-  /** Duration of the last complete sweep (ms). */
-  lastSweepMs: number | null;
-  /** Consecutive tile failures (drives the back-off). */
-  tileFailures: number;
-  backoffUntil: number;
   due: Partial<Record<FlightSource, number>>;
   /** Last run of each provider (so a provider that did not run this time keeps its real age). */
   runs: Partial<Record<FlightSource, ProviderRun>>;
@@ -58,14 +50,14 @@ export interface FlightsSnapshot {
 
 export interface SweepDeps {
   tiles: readonly Tile[];
-  fetchTile: (t: Tile, signal: AbortSignal) => Promise<NormalizedBatch>;
+  /** Tile responses that arrived since the previous run (TileSweeper.drain in production). */
+  drainTiles: () => Promise<TileResult[]>;
   fetchGlobal: (k: GlobalKey, signal: AbortSignal) => Promise<NormalizedBatch>;
   fetchReapi: (signal: AbortSignal) => Promise<NormalizedBatch>;
   fetchOpenSky: (signal: AbortSignal) => Promise<NormalizedBatch>;
   fetchAdsbfiMil: (signal: AbortSignal) => Promise<NormalizedBatch>;
   caps: { reapi: boolean; opensky: boolean; openskyReason: 'not-configured' | 'licence'; adsbfi: boolean };
   now?: () => number;
-  sliceBudgetMs?: number;
 }
 
 export function emptySnapshot(tileCount: number): FlightsSnapshot {
@@ -73,11 +65,6 @@ export function emptySnapshot(tileCount: number): FlightsSnapshot {
     records: [],
     noPosition: [],
     tiles: Array.from({ length: tileCount }, () => ({ at: null, ok: false, count: 0 })),
-    cursor: 0,
-    sweepStartedAt: null,
-    lastSweepMs: null,
-    tileFailures: 0,
-    backoffUntil: 0,
     due: {},
     runs: {},
   };
@@ -176,43 +163,35 @@ export async function runSweep(prev: FlightsSnapshot | null, deps: SweepDeps, si
   } else {
     record('adsblol_reapi', skippedProvider('not-configured'));
     const t0 = now();
-    const budget = deps.sliceBudgetMs ?? (prev ? SLICE_BUDGET_MS : FIRST_SLICE_BUDGET_MS);
+    const prevStatus = runs.adsblol_tiles?.status;
     let lastError: unknown = null;
-    if (snap.backoffUntil <= now()) {
-      if (snap.cursor === 0 || snap.sweepStartedAt === null) snap.sweepStartedAt = now();
-      // Never more than one full sweep per run, whatever the budget.
-      for (let n = 0; n < deps.tiles.length && !signal.aborted && now() - t0 < budget; n++) {
-        const i = snap.cursor;
-        const tile = deps.tiles[i]!;
-        try {
-          const b = await deps.fetchTile(tile, signal);
-          batches.push(b.records);
-          snap.tiles[i] = { at: now(), ok: true, count: b.records.length };
-          snap.tileFailures = 0;
-        } catch (e) {
-          lastError = e;
-          snap.tiles[i] = { ...snap.tiles[i]!, ok: false };
-          snap.tileFailures++;
-          // Exponential back-off on any upstream error: 15 s, 30 s, 60 s … capped at 5 min.
-          snap.backoffUntil = now() + Math.min(300_000, 15_000 * 2 ** (snap.tileFailures - 1));
-          break;
-        }
-        snap.cursor = (i + 1) % deps.tiles.length;
-        if (snap.cursor === 0) {
-          snap.lastSweepMs = snap.sweepStartedAt !== null ? now() - snap.sweepStartedAt : null;
-          snap.sweepStartedAt = now();
-        }
+    let latest = -1;
+    for (const r of await deps.drainTiles()) {
+      const prevTile = snap.tiles[r.index];
+      if (!prevTile) continue;
+      if (r.batch) {
+        batches.push(r.batch.records);
+        snap.tiles[r.index] = { at: r.at, ok: true, count: r.batch.records.length };
+      } else {
+        snap.tiles[r.index] = { ...prevTile, ok: false };
+      }
+      // The provider's state is that of the most recent response (an error, then a success = ok).
+      if (r.at >= latest) {
+        latest = r.at;
+        lastError = r.batch ? null : r.error;
       }
     }
+    // Nothing arrived since the last run (the worker is backing off): the last error still stands.
+    const carried = latest < 0 && prevStatus && !prevStatus.ok && !prevStatus.skipped && prevStatus.error !== 'empty' ? prevStatus.error : undefined;
     const okTiles = snap.tiles.filter((t) => t.ok && t.at !== null);
     const oldest = okTiles.length ? Math.min(...okTiles.map((t) => t.at!)) : null;
     runs.adsblol_tiles = {
       status: {
-        ok: okTiles.length > 0 && lastError === null,
+        ok: okTiles.length > 0 && lastError === null && carried === undefined,
         count: 0,
         ms: now() - t0,
         age_s: null,
-        ...(lastError !== null ? { error: errorReason(lastError) } : okTiles.length ? {} : { error: 'empty' }),
+        ...(lastError !== null ? { error: errorReason(lastError) } : carried !== undefined ? { error: carried } : okTiles.length ? {} : { error: 'empty' }),
       },
       // Age of the OLDEST tile still contributing: the honest age of the sweep as a whole.
       okAt: oldest,

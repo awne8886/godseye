@@ -80,6 +80,8 @@ export default function AviationLayer({ active }: LayerComponentProps) {
   const cells = useRef<H3Cell[] | null>(null);
   const [layers, setLayers] = useState<LayersList | null>(null);
   const [drawn, setDrawn] = useState(0);
+  /** Drawn aircraft past the 60 s dead-reckoning cap (frozen, dimmed): exposed for tests/QA. */
+  const [stale, setStale] = useState(0);
 
 
   /** Advance positions to now, refilter, and republish the layers (called from effects only). */
@@ -108,6 +110,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
         }),
       );
       setDrawn(f.count);
+      setStale(f.staleVisible);
     },
     [projection, buckets, colorMode, theme, watched, tracks, selectedId],
   );
@@ -199,7 +202,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
 
   // Announces only the selection (not the per-second count); counts are data attributes for tests.
   return (
-    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-map-ready={map ? '1' : '0'} data-drawn={drawn} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
+    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-map-ready={map ? '1' : '0'} data-drawn={drawn} data-stale={stale} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
       {selectedLabel !== null ? `Selected aircraft ${selectedLabel}` : ''}
     </p>
   );

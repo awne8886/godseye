@@ -21,6 +21,15 @@ and `-H 'Origin: http://localhost:3000'` for CORS. Recorded bodies (trimmed) liv
 | `https://hexdb.io/api/v1/route/icao/BAW117` | 200 | 0.42 s | `*` | keyless | `{flight, route 'EGLL-KJFK', updatetime 1333306563}` — **2012**: labelled stale with its update time; miss = 404 `{"status":"404","error":"Route not found."}`; §6.2: the `/route/callsign/` path is gone | `/api/flight-route` fallback 3 |
 | `https://hexdb.io/api/v1/airport/icao/EGLL` | 200 | 0.57 s | `*` | keyless, `max-age=14400` | `{country_code, region_name, iata, icao, airport, latitude, longitude}` | coordinates for hexdb routes |
 
+Re-probed 2026-09-30 22:42–22:43 UTC (Phase 3 round 1), same UA and Origin:
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/point/51.5/-0.1/100` ×6, 1.2 s apart | 200 ×6 | 0.63–1.08 s | none (no ACAO) | 71 aircraft at night, ~41 kB; no rate-limit or Retry-After headers on 200; `seen_pos` median 0.27 s, max 57.7 s |
+| `https://api.adsb.lol/v2/point/40.7/-74.0/250` | 200 | 2.15 s | none | 932 aircraft, 477 kB; `seen_pos` median 0.28 s / p90 4.6 s; 15 rows kept as `__fixtures__/adsblol-point-classify.json` (classifier table test: GL5T/GLF5 under A3 → jet, E55P/LJ45 under A2 → jet, A1 designator callsigns → commercial, A6 at 5 000 ft with a registration callsign → private, EC35 A7 → private + helicopter) |
+| `https://vrs-standing-data.adsb.lol/routes/BA/BAW123.json` | 200 | 0.28 s | `*` | `airport_codes 'EGLL-OTHH'` (LHR→DOH): the R2 off-route example, now rejected by the 1.5 × route-length gate when the aircraft is over the Pacific |
+| `https://api.adsbdb.com/v0/aircraft/A71329` | 200 | 0.69 s | `*` | Global 7500 `GL7T`, N555MZ, owner Phenix Jet (US) — the R2-M1 example; OSIRIS buckets it `jet` |
+
 Not used: `api.airplanes.live` (403 "contact us" on every endpoint, docs/reference/25 §15);
 adsb.lol `/api/0/routeset` (non-functional, §6.2). Keyed/licensed adapters (not probed here, no
 credentials): `re-api.adsb.lol/?all_with_pos&jv2` (`ADSBLOL_REAPI=true`, feeder IP only; 403 from
@@ -30,7 +39,19 @@ product), adsb.fi `/api/v2/mil` (`ADSBFI_PERSONAL_USE=true`, 1 req/s, personal n
 
 Coverage: 86 tiles of 250 nm (hex lattice laid out for 230 nm so circles overlap) over the busiest
 airspace, one request start every 1.2 s through `providerBucket('api.adsb.lol', 1/1.2)`, ≤ 1 in
-flight, ~25 s of tiles per feed run, next run one 15 s TTL later → a full sweep about every
-170 s (measured first cold slice: 2 182 aircraft in 16 s); global lists every 30 s;
-aircraft not re-observed for 300 s are dropped. Sparse regions (Africa interior, oceans outside the
+flight (`adsblolSerial`, shared with the global lists). Since Phase 3 round 1 (R2-M2) one background
+worker (`server/tile-sweeper.ts`) reads tiles back to back instead of 25 s slices separated by a 15 s
+idle TTL (~60 % duty → full sweep 170–270 s, 50–78 % of positions older than the 60 s
+dead-reckoning cap); dense tiles are re-read more often (`(count + 1) × age`), every tile within
+165 s, and a 429 backs off for at least its `Retry-After`. Simulated with 86 skewed tiles at
+1.5 s/request: 38 % of aircraft behind a tile read > 60 s ago vs 54 % for round-robin at the same
+rate (`tile-sweeper.test.ts`). Upstream `seen_pos` is not the cause: median 0.28 s, p90 4.6 s,
+max 57 s over 932 rows. Global lists every 30 s; aircraft not re-observed for 300 s are dropped.
+The real fix for full-world freshness is the `ADSBLOL_REAPI` feeder upgrade (one request per run).
+Live check 2026-09-30 23:12–23:17 UTC (production build on :3150, cold start, sampled every 20 s):
+share of rows older than 60 s was 0.5–4 % for the first minute and 40–79 % at 3–5 min, median age
+57–114 s, 8.1k aircraft. api.adsb.lol answered `http_429` in 7 of 16 samples. At least two other
+GODSEYE servers were sweeping from the same sandbox egress IP at the same time; whether those 429s
+carried `Retry-After` was not captured. The exponential back-off (15 s … 5 min) then dominates the sweep. A single
+deployment per IP should see fewer 429s. This was not measured here. Sparse regions (Africa interior, oceans outside the
 NAT tracks, Russia, South America outside the south-east) are not covered by the keyless path.

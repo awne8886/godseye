@@ -1,8 +1,8 @@
 /**
  * Aviation upstream adapters (§4 FlightsProvider). Server-only.
  *  - adsblol_tiles (default, keyless, ODbL): `/v2/point/{lat}/{lon}/250` over the coverage grid,
- *    ≤ 1 request in flight, one start every 1.2 s via providerBucket('adsb.lol'), swept a slice
- *    per feed run so each tile streams into the snapshot as it arrives.
+ *    ≤ 1 request in flight (adsblolSerial), one start every 1.2 s via providerBucket('api.adsb.lol'),
+ *    read continuously by the background TileSweeper (tile-sweeper.ts) and drained per feed run.
  *  - adsblol_mil / _ladd / _pia (keyless): global lists; rows without lat/lon are `noPosition`.
  *  - adsblol_reapi (`ADSBLOL_REAPI=true`, feeder IP only): `re-api.adsb.lol/?all_with_pos&jv2`,
  *    replaces the tile sweep when enabled.
@@ -12,7 +12,7 @@
  */
 import 'server-only';
 import { httpJson, HttpError } from '@/lib/http';
-import { providerBucket } from '@/lib/ratelimit';
+import { providerBucket, SerialQueue } from '@/lib/ratelimit';
 import { classifyAircraft, isHelicopter } from '../classify';
 import { cleanCallsign, emergencyOf, normalizeAdsbResponse, type AdsbResponse, type FlightRecord, type NormalizedBatch } from '../adsb';
 import { tileUrl, type Tile } from '../tiles';
@@ -20,6 +20,12 @@ import { tileUrl, type Tile } from '../tiles';
 /** One start every 1.2 s across every api.adsb.lol request (tiles and global lists). */
 export const ADSBLOL_RATE_PER_S = 1 / 1.2;
 export const adsblolBucket = () => providerBucket('api.adsb.lol', ADSBLOL_RATE_PER_S, 1);
+/**
+ * ≤ 1 api.adsb.lol request in flight: the background tile worker and the feed run's global lists
+ * share this queue (the bucket above spaces the starts). Pinned on globalThis across HMR.
+ */
+const G = globalThis as unknown as { __godseyeAdsblolSerial?: SerialQueue };
+export const adsblolSerial = (G.__godseyeAdsblolSerial ??= new SerialQueue(0, 32));
 const adsbfiBucket = () => providerBucket('opendata.adsb.fi', 1, 1);
 const openskyBucket = () => providerBucket('opensky-network.org', 1, 1);
 
@@ -48,11 +54,11 @@ export async function fetchAdsbJson(url: string, source: string, signal: AbortSi
 }
 
 export function fetchTile(tile: Tile, signal: AbortSignal): Promise<NormalizedBatch> {
-  return fetchAdsbJson(tileUrl(tile), 'adsblol_tiles', signal);
+  return adsblolSerial.run(() => fetchAdsbJson(tileUrl(tile), 'adsblol_tiles', signal));
 }
 
 export function fetchGlobal(key: GlobalKey, signal: AbortSignal): Promise<NormalizedBatch> {
-  return fetchAdsbJson(ADSBLOL_GLOBAL[key], key, signal, { timeoutMs: 15_000 });
+  return adsblolSerial.run(() => fetchAdsbJson(ADSBLOL_GLOBAL[key], key, signal, { timeoutMs: 15_000 }));
 }
 
 export function fetchReapi(signal: AbortSignal): Promise<NormalizedBatch> {
