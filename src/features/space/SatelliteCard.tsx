@@ -10,7 +10,7 @@ import type { CardProps, PanelProps } from '@/lib/feature-module';
 import { useSelectionStore } from '@/lib/layer-host';
 import { formatAge } from '@/lib/freshness';
 import { CATEGORY_LABEL, CATEGORY_TOKEN } from './lib/catalog';
-import { orbitClass, periodMinutes } from './lib/orbit';
+import { orbitClass, periodMinutes } from './lib/orbit-math';
 import { fetchOrbit, orbitQueryKey, useNow, useSpaceStore, type SatelliteSelectionData } from './client/data';
 
 const ORBIT_NOTE: Record<string, string> = {

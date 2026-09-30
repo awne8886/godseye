@@ -8,6 +8,8 @@ import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import type { FeedMeta, IssResponse, Mission, OrbitResponse, Providers, SatCategory, SatellitesResponse, SpaceWeatherResponse } from '@/lib/types';
 import { COL, rowToRecord, type SatRecord } from '../lib/catalog';
+import { packedRecord, type CardRecord, type PackedCatalogue } from '../lib/packed';
+import type { CatalogueSummary } from '../lib/propagator';
 
 /** An upstream-offline answer (503) keeps its meta so the UI can show SOURCE OFFLINE + last-good. */
 export class FeedOfflineError extends Error {
@@ -30,31 +32,35 @@ async function getJson<T>(url: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const fetchSatellites = () => getJson<SatellitesResponse>('/api/satellites');
+/** One satellite's elements (small response; the full catalogue is fetched by the worker only). */
+export const fetchSatelliteById = (noradId: number) => getJson<SatellitesResponse>(`/api/satellites?id=${encodeURIComponent(String(noradId))}`);
 export const fetchIss = () => getJson<IssResponse>('/api/iss');
 export const fetchSpaceWeather = () => getJson<SpaceWeatherResponse>('/api/space-weather');
 export const fetchOrbit = (noradId: number, anchorMs: number) =>
   getJson<OrbitResponse>(`/api/satellites/orbit?id=${encodeURIComponent(String(noradId))}&t=${Math.round(anchorMs)}`);
 
-export const SATELLITES_QUERY_KEY = ['space', 'satellites'] as const;
+export const satelliteByIdQueryKey = (noradId: number) => ['space', 'satellites', 'id', noradId] as const;
 export const orbitQueryKey = (noradId: number, anchorMs: number) => ['space', 'orbit', noradId, Math.round(anchorMs)] as const;
 
 // ── Catalogue holder ────────────────────────────────────────────────────────────
+// Filled from the propagation worker's packed catalogue (typed arrays, transferred): the main
+// thread never parses or clones the /api/satellites rows.
 interface CatalogueView {
-  rows: readonly (readonly unknown[])[];
-  byId: Map<number, number>;
+  version: string;
+  packed: PackedCatalogue;
   missions: readonly Mission[];
   source: 'celestrak' | 'satnogs-fallback';
   meta: FeedMeta;
 }
 
 let current: CatalogueView | null = null;
+let byId: Map<number, number> | null = null;
 
-export function setCatalogue(resp: SatellitesResponse): CatalogueView {
-  if (current && current.rows === resp.rows) return current;
-  const byId = new Map<number, number>();
-  resp.rows.forEach((r, i) => byId.set(r[COL.noradId] as number, i));
-  current = { rows: resp.rows, byId, missions: resp.missions, source: resp.catalogueSource ?? 'celestrak', meta: resp.meta };
+export function setCatalogue(version: string, summary: CatalogueSummary, packed: PackedCatalogue | null): CatalogueView | null {
+  const p = packed ?? (current?.version === version ? current.packed : null);
+  if (!p) return current;
+  if (p !== current?.packed) byId = null;
+  current = { version, packed: p, missions: summary.missions, source: summary.catalogueSource, meta: summary.meta };
   useSpaceStore.getState().bump();
   return current;
 }
@@ -63,13 +69,23 @@ export function catalogue(): CatalogueView | null {
   return current;
 }
 
-export function recordAt(index: number): SatRecord | null {
-  const row = current?.rows[index];
-  return row ? rowToRecord(row) : null;
+/** Catalogue index of a NORAD id (the id map is built on first use, not per catalogue load). */
+export function indexOfId(noradId: number): number | undefined {
+  if (!current) return undefined;
+  if (!byId) {
+    const ids = current.packed.noradIds;
+    byId = new Map();
+    for (let i = 0; i < ids.length; i++) byId.set(ids[i]!, i);
+  }
+  return byId.get(noradId);
 }
 
-export function recordById(noradId: number): SatRecord | null {
-  const i = current?.byId.get(noradId);
+export function recordAt(index: number): CardRecord | null {
+  return current ? packedRecord(current.packed, index) : null;
+}
+
+export function recordById(noradId: number): CardRecord | null {
+  const i = indexOfId(noradId);
   return i === undefined ? null : recordAt(i);
 }
 
@@ -125,7 +141,7 @@ export interface SatelliteSelectionData extends Record<string, unknown> {
 }
 
 export function selectionDataFor(
-  rec: SatRecord,
+  rec: CardRecord,
   anchorAt: number,
   from: Pick<SatellitesResponse, 'missions' | 'catalogueSource'> | null = null,
 ): SatelliteSelectionData {

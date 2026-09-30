@@ -4,7 +4,7 @@
  * marker. Positions are PROPAGATED from published elements, never observed. Owner: layers-space.
  */
 import { degreesLat, degreesLong, eciToGeodetic, gstime, json2satrec, propagate, type SatRec } from 'satellite.js';
-import type { Omm, OrbitClass } from '@/lib/types';
+import type { Omm } from '@/lib/types';
 
 export interface PropagatedPoint {
   lat: number;
@@ -59,30 +59,9 @@ export function propagateAt(satrec: SatRec, at: Date): PropagatedPoint | null {
   return { lat, lng, altKm, velocityKmS: Math.hypot(v.x, v.y, v.z), eci: { x: pv.position.x, y: pv.position.y, z: pv.position.z } };
 }
 
-/** Orbital period in minutes from mean motion (rev/day). */
-export function periodMinutes(meanMotionRevPerDay: number): number | null {
-  return Number.isFinite(meanMotionRevPerDay) && meanMotionRevPerDay > 0 ? 1440 / meanMotionRevPerDay : null;
-}
+import { periodMinutes } from './orbit-math';
 
-const MU = 398_600.4418; // km³/s²
-const EARTH_EQ_RADIUS_KM = 6378.137;
-
-/**
- * Orbit regime from the elements (not from the instantaneous altitude, which misfiles a Molniya
- * at perigee as LEO): HEO when eccentricity ≥ 0.25; otherwise by mean altitude — LEO < 2 000 km,
- * GEO when the period is within 1 % of a sidereal day, MEO in between, HEO above.
- */
-export function orbitClass(meanMotionRevPerDay: number, eccentricity: number): OrbitClass {
-  const nRadS = (meanMotionRevPerDay * 2 * Math.PI) / 86_400;
-  const aKm = Math.cbrt(MU / (nRadS * nRadS));
-  const meanAlt = aKm - EARTH_EQ_RADIUS_KM;
-  const period = 1440 / meanMotionRevPerDay;
-  if (eccentricity >= 0.25) return 'HEO';
-  if (meanAlt < 2000) return 'LEO';
-  if (Math.abs(period - 1436.07) / 1436.07 < 0.01) return 'GEO';
-  if (meanAlt < 35_000) return 'MEO';
-  return 'HEO';
-}
+export { orbitClass, periodMinutes } from './orbit-math';
 
 export type TrackPoint = [lng: number, lat: number, altKm: number];
 
