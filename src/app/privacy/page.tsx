@@ -12,6 +12,7 @@ import { APP_NAME, REPO_URL } from '@/lib/config';
 import { THEME_STORAGE_KEY } from '@/lib/theme-boot';
 import { FRAME_HOSTS, IMAGE_HOSTS, MEDIA_HOSTS, TILE_HOSTS } from '@/config/hosts';
 import { PageShell, SectionTitle, TextLink } from '../docs/chrome';
+import s from '../docs/docs.module.css';
 import { userInputDisclosures } from '../docs/format';
 
 export const dynamic = 'force-static';
@@ -24,7 +25,6 @@ export const metadata: Metadata = {
 /** Client-side preference keys (src/lib/store.ts persist name, src/lib/theme-boot.ts). */
 const SETTINGS_STORAGE_KEY = 'godseye:settings';
 
-const cell = 'border-b border-[var(--border-secondary)] px-2 py-2 align-top [overflow-wrap:anywhere]';
 const prose = 'mt-3 max-w-3xl text-[13px] leading-relaxed text-fg';
 
 function Code({ children }: { children: ReactNode }) {
@@ -79,7 +79,7 @@ export default function PrivacyPage() {
             configured. The middle column lists every input of the endpoints that call a provider; an endpoint may forward only
             some of them to each provider, never more.
           </p>
-          <table className="mt-5 w-full table-fixed border-collapse text-left text-[12px]">
+          <table className={`${s.table} mt-5`}>
             <caption className="sr-only">Upstream hosts that receive user input, what is sent and why</caption>
             <colgroup>
               <col className="w-[26%]" />
@@ -87,26 +87,26 @@ export default function PrivacyPage() {
               <col />
             </colgroup>
             <thead>
-              <tr className="hud-micro text-fg-muted">
-                <th scope="col" className={`${cell} font-normal`}>Upstream</th>
-                <th scope="col" className={`${cell} font-normal`}>Input that may be sent</th>
-                <th scope="col" className={`${cell} font-normal`}>When / why</th>
+              <tr>
+                <th scope="col">Upstream</th>
+                <th scope="col">Input that may be sent</th>
+                <th scope="col">When / why</th>
               </tr>
             </thead>
             <tbody>
               {disclosures.map((d) => (
                 <tr key={d.host}>
-                  <th scope="row" className={`${cell} font-normal`}>
+                  <th scope="row">
                     <code className="font-mono text-cyan">{d.host}</code>
                   </th>
-                  <td className={`${cell} text-fg`}>
+                  <td>
                     <ul className="grid gap-1">
                       {[...new Set(d.uses.flatMap((u) => u.sent))].map((s) => (
                         <li key={s}>{s}</li>
                       ))}
                     </ul>
                   </td>
-                  <td className={`${cell} text-fg-secondary`}>
+                  <td className="text-fg-secondary">
                     <ul className="grid gap-1">
                       {d.uses.map((u) => (
                         <li key={`${u.method} ${u.path}`}>

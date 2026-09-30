@@ -12,6 +12,7 @@ import { CAPABILITIES, type CapabilityId, type CapabilitySpec } from '@/lib/capa
 import { APP_NAME } from '@/lib/config';
 import { DEFAULT_LIMIT } from '@/lib/ratelimit';
 import { PageShell, SectionTitle, TextLink } from './chrome';
+import s from './docs.module.css';
 import {
   GROUP_META,
   anchorId,
@@ -34,13 +35,11 @@ export const metadata: Metadata = {
   description: `Every ${APP_NAME} endpoint (${CATALOG.length}), generated from the typed catalogue: parameters, cache TTLs, rate limits, capability gates and the upstreams each one calls. No API key required.`,
 };
 
-const cell = 'border-b border-[var(--border-secondary)] px-2 py-2 align-top [overflow-wrap:anywhere]';
-
 function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="min-w-0">
-      <dt className="hud-micro text-fg-muted">{label}</dt>
-      <dd className="mt-1 text-[12px] leading-relaxed text-fg [overflow-wrap:anywhere]">{children}</dd>
+    <div>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
     </div>
   );
 }
@@ -62,7 +61,7 @@ function Endpoint({ e }: { e: ApiEndpoint }) {
         <code className="font-mono text-[13px] text-fg-heading [overflow-wrap:anywhere]">{e.path}</code>
       </h3>
       <p className="mt-2 text-[13px] leading-relaxed text-fg">{e.summary}</p>
-      <dl className="mt-4 grid gap-x-6 gap-y-3 sm:grid-cols-2">
+      <dl className={s.meta}>
         <Meta label="Cache">{formatCache(e)}</Meta>
         <Meta label="Rate limit">{formatRateLimit(e, DEFAULT_LIMIT)}</Meta>
         {stream && <Meta label="Stream">{stream}</Meta>}
@@ -88,37 +87,34 @@ function Endpoint({ e }: { e: ApiEndpoint }) {
         {e.osiris && <Meta label="Compatibility">Same path as the OSIRIS endpoint</Meta>}
       </dl>
       {e.params.length > 0 ? (
-        <table className="mt-4 w-full table-fixed border-collapse text-left text-[12px]">
+        <table className={`${s.table} mt-4`}>
           <caption className="sr-only">Parameters for {e.method} {e.path}</caption>
           <colgroup>
-            <col className="w-[27%]" />
-            <col className="w-[30%] sm:w-[24%]" />
-            <col className="w-[9%] sm:w-[10%]" />
+            <col className="w-[31%] sm:w-[27%]" />
+            <col className="w-[31%] sm:w-[28%]" />
             <col />
           </colgroup>
           <thead>
-            <tr className="hud-micro text-fg-muted">
-              <th scope="col" className={`${cell} font-normal`}>Parameter</th>
-              <th scope="col" className={`${cell} font-normal`}>Type</th>
-              <th scope="col" className={`${cell} font-normal`}>
-                <abbr title="Required" className="no-underline">Req</abbr>
-              </th>
-              <th scope="col" className={`${cell} font-normal`}>Description</th>
+            <tr>
+              <th scope="col">Parameter</th>
+              <th scope="col">Type</th>
+              <th scope="col">Description</th>
             </tr>
           </thead>
           <tbody>
             {e.params.map((p) => (
               <tr key={`${p.in}:${p.name}`}>
-                <th scope="row" className={`${cell} font-normal`}>
+                <th scope="row">
                   <code className="font-mono text-fg-heading">{p.name}</code>
-                  <span className="block text-fg-secondary">{p.in}</span>
+                  <span className={s.sub}>
+                    {p.in} · {p.required ? 'required' : 'optional'}
+                  </span>
                 </th>
-                <td className={`${cell} font-mono text-fg-secondary`}>{formatParamType(p)}</td>
-                <td className={`${cell} text-fg-secondary`}>{p.required ? 'yes' : 'no'}</td>
-                <td className={`${cell} text-fg`}>
+                <td className="font-mono text-fg-secondary">{formatParamType(p)}</td>
+                <td>
                   {p.description}
                   {p.example && (
-                    <span className="block text-fg-secondary">
+                    <span className={s.sub}>
                       e.g. <code className="font-mono">{p.example}</code>
                     </span>
                   )}
@@ -248,7 +244,7 @@ export default function DocsPage() {
               interface hides whatever is off. Current values: <code className="font-mono">/api/health</code> →{' '}
               <code className="font-mono">capabilities</code>.
             </p>
-            <table className="mt-5 w-full table-fixed border-collapse text-left text-[12px]">
+            <table className={`${s.table} mt-5`}>
               <caption className="sr-only">Capabilities and the environment that enables them</caption>
               <colgroup>
                 <col className="w-[24%]" />
@@ -256,20 +252,20 @@ export default function DocsPage() {
                 <col />
               </colgroup>
               <thead>
-                <tr className="hud-micro text-fg-muted">
-                  <th scope="col" className={`${cell} font-normal`}>Capability</th>
-                  <th scope="col" className={`${cell} font-normal`}>Enabled when</th>
-                  <th scope="col" className={`${cell} font-normal`}>Unlocks</th>
+                <tr>
+                  <th scope="col">Capability</th>
+                  <th scope="col">Enabled when</th>
+                  <th scope="col">Unlocks</th>
                 </tr>
               </thead>
               <tbody>
                 {capIds.map((id) => (
                   <tr key={id}>
-                    <th scope="row" className={`${cell} font-normal`}>
+                    <th scope="row">
                       <code className="font-mono text-gold-light">{id}</code>
                     </th>
-                    <td className={`${cell} font-mono text-fg-secondary`}>{capabilityCondition(id, CAPS[id])}</td>
-                    <td className={`${cell} text-fg`}>{CAPS[id].note}</td>
+                    <td className="font-mono text-fg-secondary">{capabilityCondition(id, CAPS[id])}</td>
+                    <td>{CAPS[id].note}</td>
                   </tr>
                 ))}
               </tbody>
@@ -281,25 +277,25 @@ export default function DocsPage() {
             <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-fg-secondary">
               OSIRIS endpoints that {APP_NAME} deliberately does not provide, and why.
             </p>
-            <table className="mt-5 w-full table-fixed border-collapse text-left text-[12px]">
+            <table className={`${s.table} mt-5`}>
               <caption className="sr-only">Excluded OSIRIS routes and reasons</caption>
               <colgroup>
                 <col className="w-[34%]" />
                 <col />
               </colgroup>
               <thead>
-                <tr className="hud-micro text-fg-muted">
-                  <th scope="col" className={`${cell} font-normal`}>Path</th>
-                  <th scope="col" className={`${cell} font-normal`}>Reason</th>
+                <tr>
+                  <th scope="col">Path</th>
+                  <th scope="col">Reason</th>
                 </tr>
               </thead>
               <tbody>
                 {EXCLUDED_OSIRIS_ROUTES.map((r) => (
                   <tr key={r.path}>
-                    <th scope="row" className={`${cell} font-normal`}>
+                    <th scope="row">
                       <code className="font-mono text-fg-heading">{r.path}</code>
                     </th>
-                    <td className={`${cell} text-fg`}>{r.reason}</td>
+                    <td>{r.reason}</td>
                   </tr>
                 ))}
               </tbody>

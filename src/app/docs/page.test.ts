@@ -18,6 +18,8 @@ describe('/docs', () => {
       for (const p of e.params) expect(decoded, `${e.path} ${p.name}`).toContain(`>${p.name}</code>`);
     }
     expect(html.match(/<article /g)?.length).toBe(CATALOG.length);
+    const requiredCount = CATALOG.reduce((n, e) => n + e.params.filter((p) => p.required).length, 0);
+    expect(decoded.split(' · required').length - 1).toBe(requiredCount);
   });
 
   it('lists every excluded OSIRIS route with its reason and every capability', () => {
