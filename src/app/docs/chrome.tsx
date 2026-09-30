@@ -1,6 +1,7 @@
 /**
  * Shared chrome for the static document pages (/docs, /privacy): skip link, site header,
- * footer and a scroll container (the map shell locks `html, body` to the viewport).
+ * footer and a fixed, full-viewport scroll container (the map shell locks `html, body` to the
+ * viewport; `position: fixed` avoids depending on `dvh` support).
  * Server components only. Internal links use next/link with prefetch off, so these light pages
  * never download the map route in the background.
  * Owner: pages-docs-privacy-ops.
@@ -21,7 +22,7 @@ const NAV: { key: PageKey | 'map' | 'cameras' | 'source'; href: string; label: s
 
 export function PageShell({ current, children }: { current: PageKey; children: ReactNode }) {
   return (
-    <div className="h-dvh overflow-y-auto bg-primary-bg text-fg [scroll-padding-top:1rem]">
+    <div className="fixed inset-0 overflow-y-auto bg-primary-bg text-fg [scroll-padding-top:1rem]">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-secondary-bg focus:px-4 focus:py-3 focus:text-[13px] focus:text-gold-light"

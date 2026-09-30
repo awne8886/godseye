@@ -111,7 +111,8 @@ export function formatParamType(p: Pick<ApiParam, 'type' | 'enum'>): string {
 /** Plain-language condition under which a capability is on (mirrors `evaluateCapability`). */
 export function capabilityCondition(id: string, spec: CapabilitySpec): string {
   const parts: string[] = [];
-  if (spec.env.length) parts.push(`${spec.env.join(' + ')} set`);
+  const envKeys = spec.env.filter((k) => k !== spec.flag);
+  if (envKeys.length) parts.push(`${envKeys.join(' + ')} set`);
   if (spec.flag) parts.push(`${spec.flag}=true`);
   if (spec.invertFlag) parts.push(`${spec.invertFlag} is not "true"`);
   // evaluateCapability() also turns DeepState off on commercial deployments.

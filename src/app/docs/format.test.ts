@@ -131,6 +131,7 @@ describe('capabilityCondition', () => {
   it('phrases default-on gates as opt-out', () => {
     expect(capabilityCondition('nc_sources', CAPABILITIES.nc_sources)).toBe('On by default; off when COMMERCIAL_DEPLOYMENT=true');
     expect(capabilityCondition('tfl', CAPABILITIES.tfl)).toBe('On when TFL_APP_KEY set');
+    expect(capabilityCondition('adsblol_reapi', CAPABILITIES.adsblol_reapi)).toBe('On when ADSBLOL_REAPI=true');
   });
 });
 

@@ -1489,7 +1489,7 @@ Optional upgrades and licence gates, evaluated on the server from environment va
 
 | Capability | Enabled when | Unlocks |
 |---|---|---|
-| `adsblol_reapi` | On when ADSBLOL_REAPI set, ADSBLOL_REAPI=true | adsb.lol re-api (feeder IP only) |
+| `adsblol_reapi` | On when ADSBLOL_REAPI=true | adsb.lol re-api (feeder IP only) |
 | `opensky` | On when OPENSKY_CLIENT_ID + OPENSKY_CLIENT_SECRET set, OPENSKY_LICENSED=true | OpenSky OAuth2 + written licence |
 | `adsbfi` | On when ADSBFI_PERSONAL_USE=true | adsb.fi open data (personal use only) |
 | `aeroapi` | On when AEROAPI_KEY set | FlightAware AeroAPI (filed routes, schedules) |
