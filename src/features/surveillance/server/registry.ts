@@ -289,13 +289,25 @@ export const EXCLUDED_SOURCES: readonly { host: string; reason: string }[] = [
  * streams; their cameras open the operator's own page instead.
  */
 export function linkOutSet(env: Record<string, string | undefined> = process.env): Set<string> {
-  return new Set((env.CCTV_LINK_OUT_ONLY ?? '').split(',').map((s) => s.trim()).filter(Boolean).map((s) => (s.length === 2 ? s.toUpperCase() : s.toLowerCase())));
+  return new Set((env.CCTV_LINK_OUT_ONLY ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
 }
 
 export function providerRow(def: ProviderDef, env: Record<string, string | undefined> = process.env): CameraProvider {
   const set = linkOutSet(env);
-  const forced = set.has(def.region) || set.has(def.row.country);
+  const forced = set.has(def.region) || set.has(def.row.country.toLowerCase());
   return { ...def.row, link_out_only: def.row.link_out_only || forced, proxy_allowed: def.row.proxy_allowed && !forced };
+}
+
+/**
+ * Cameras withdrawn after a confirmed removal request (§0.7), plus any ids an instance operator
+ * lists in `CCTV_REMOVED_IDS` (comma-separated). Removed cameras never enter the catalogue.
+ */
+export const REMOVED_CAMERA_IDS: ReadonlySet<string> = new Set<string>([]);
+
+export function isRemoved(id: string, env: Record<string, string | undefined> = process.env): boolean {
+  if (REMOVED_CAMERA_IDS.has(id)) return true;
+  const extra = env.CCTV_REMOVED_IDS;
+  return !!extra && extra.split(',').some((s) => s.trim() === id);
 }
 
 const BY_ID = new Map(PROVIDERS.map((p) => [p.row.id, p]));

@@ -50,7 +50,11 @@ export function mergeMeta(results: { region: CctvRegion; res: FeedResult<Camera[
   const observed = pick.map((r) => r.res.meta.observedAt).filter((t): t is string => t !== null).sort();
   const attribution: Attribution[] = [];
   const seen = new Set<string>();
-  for (const r of pick) for (const a of r.res.meta.attribution) if (!seen.has(a.text)) (seen.add(a.text), attribution.push(a));
+  for (const r of pick) for (const a of r.res.meta.attribution) {
+    if (seen.has(a.text)) continue;
+    seen.add(a.text);
+    attribution.push(a);
+  }
   const providers: Providers = {};
   for (const r of results) Object.assign(providers, r.res.providers);
   return {

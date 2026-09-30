@@ -13,7 +13,7 @@ export const json = <T = unknown>(name: string): T => JSON.parse(text(name)) as 
 export const FX = {
   caltrans: `caltrans-d7.${D}.json`,
   wsdot: `wsdot-cameras.${D}.kml`,
-  odot: `odot-cctvinventory.${D}.js`,
+  odot: `odot-cctvinventory.${D}.json`,
   txdot: `txdot-aus.${D}.json`,
   txdotSnapshot: `txdot-snapshot.${D}.json`,
   mdot: `mdot-list.${D}.json`,

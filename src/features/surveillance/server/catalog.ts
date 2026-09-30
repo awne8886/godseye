@@ -11,7 +11,7 @@ import { defineFeed, runProvider, skippedProvider, type Feed, type ProviderRun }
 import type { Camera } from '@/lib/types';
 import { CCTV_REGIONS, providerIdOf, type CctvRegion } from '../shared';
 import { LOADERS, type Loader } from './loaders';
-import { providerDef, providersIn, type ProviderDef } from './registry';
+import { isRemoved, providerDef, providersIn, type ProviderDef } from './registry';
 
 const MIN = 60_000;
 export const INVENTORY_TTL_MS = 30 * MIN;
@@ -41,7 +41,7 @@ export async function runRegion(
       }
       const { result, run } = await runProvider(() => load(signal), (r) => r.length);
       providers[id] = run;
-      if (result && result.length) rows.push(...result);
+      if (result && result.length) rows.push(...result.filter((c) => !isRemoved(c.id, env)));
       else if (previous) rows.push(...previous.filter((c) => c.providerId === id));
     }),
   );
@@ -93,7 +93,6 @@ function indexOf(rows: Camera[]): Map<string, Camera> {
   return m;
 }
 
-// eslint-disable-next-line no-control-regex -- ids are opaque catalogue keys; control characters are refused
 export const CAMERA_ID = /^[a-z]{2,16}-[^\u0000-\u001f\u007f]{1,160}$/;
 
 /** Find a catalogued camera by id; only ids from the catalogue ever reach an upstream. */
