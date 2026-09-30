@@ -101,6 +101,10 @@ test.describe('map engine', () => {
   test('double right-click opens the Region Dossier at the pointer; a slow pair does not', async ({ page, isMobile }) => {
     test.skip(isMobile, 'right-click is a desktop gesture (touch uses long-press)');
     await gotoMap(page, { camera: { lat: 48.85, lng: 2.35, zoom: 6 } });
+    // Input timestamps are taken when the browser receives the event: let the style/shader
+    // compilation long tasks pass so the pair is not stretched past 500 ms by a busy main thread.
+    await waitForMapStyle(page);
+    await page.waitForTimeout(3000);
     const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
