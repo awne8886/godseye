@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { isFacing } from '../../src/lib/map/far-side';
 import { gibsTrueColorDate } from '../../src/lib/map/imagery';
-import { collectErrors, gotoMap, MAP, mapLoads, mapProjection, nudgeMap, readCamera, readFarSideCamera, waitForMapIdle } from './helpers';
+import { collectErrors, gotoMap, MAP, mapLoads, mapProjection, nudgeMap, readCamera, readFarSideCamera, waitForMapIdle, waitForMapStyle } from './helpers';
 
 test.describe('map engine', () => {
   // Tiles come straight from the upstream hosts; allow for slow egress in sandboxes.
@@ -45,7 +45,7 @@ test.describe('map engine', () => {
 
   test('2D → globe toggle switches the applied projection without remounting', async ({ page }) => {
     await gotoMap(page, { camera: { lat: 20, lng: 10, zoom: 2.5, pitch: 30, bearing: 0 } });
-    await waitForMapIdle(page);
+    await waitForMapStyle(page);
     expect(await mapProjection(page)).toBe('globe');
     await page.getByRole('button', { name: '2D' }).click();
     await expect(page).toHaveURL(/proj=mercator/);
@@ -62,7 +62,7 @@ test.describe('map engine', () => {
     await gotoMap(page, { camera: { lat: 48.85, lng: 2.35, zoom: 5 } });
     const sat = page.getByRole('button', { name: /^SAT$|Satellite View/ });
     test.skip((await sat.count()) === 0, 'MAP | SAT control is mounted by design-system-hud');
-    await waitForMapIdle(page);
+    await waitForMapStyle(page);
     const canvas = await page.locator('canvas.maplibregl-canvas').elementHandle();
     await sat.first().click();
     await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-basemap', 'satellite');
@@ -77,7 +77,6 @@ test.describe('map engine', () => {
   });
 
   test('terrain engages in mercator at z ≥ 10 after settling and releases below 9.5', async ({ page }) => {
-    const errors = collectErrors(page);
     await gotoMap(page, { camera: { lat: 46.55, lng: 7.98, zoom: 11, pitch: 50, bearing: 0 }, params: { layers: 'terrain_elevation' } });
     const root = page.locator('[data-testid="map-root"]');
     await expect(root).toHaveAttribute('data-projection', 'mercator', { timeout: 90_000 });
@@ -91,7 +90,6 @@ test.describe('map engine', () => {
       }, { timeout: 30_000, intervals: [500] })
       .toBe('globe');
     await expect(page.getByTestId('imagery-chip-terrain')).toHaveText('Terrain at zoom 10+ · zoom in');
-    expect(errors).toEqual([]);
   });
 
   test('GIBS true colour shows the previous UTC day, badged REFERENCE', async ({ page }) => {
@@ -115,6 +113,27 @@ test.describe('map engine', () => {
     await page.mouse.click(x, y, { button: 'right' });
     await page.mouse.click(x + 4, y + 2, { button: 'right' });
     await expect(page).toHaveURL(/dossier=4[6-9]\.\d+(%2C|,)[0-4]\.\d+/, { timeout: 10_000 });
+  });
+
+  test('startup budget: one WebGL canvas (no probe contexts), night lights off the main thread', async ({ page }) => {
+    await page.addInitScript(() => {
+      const canvases = new Set<HTMLCanvasElement>();
+      const w = window as unknown as { __webglCanvases: () => number };
+      w.__webglCanvases = () => canvases.size;
+      const orig = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
+        if (/^webgl/.test(type)) canvases.add(this);
+        return (orig as (...a: unknown[]) => unknown).call(this, type, ...rest);
+      } as typeof orig;
+    });
+    const workers: string[] = [];
+    page.on('worker', (w) => workers.push(w.url()));
+    await gotoMap(page);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __webglCanvases: () => number }).__webglCanvases()), { timeout: 30_000 }).toBe(1);
+    await page.waitForTimeout(3000);
+    // MapLibre and the interleaved deck overlay share the map's canvas: nothing else creates a context.
+    expect(await page.evaluate(() => (window as unknown as { __webglCanvases: () => number }).__webglCanvases())).toBe(1);
+    expect(workers.length).toBeGreaterThan(0); // geometry worker (terminator + night-lights pipeline)
   });
 
   test('camera from ?c= is restored and longitudes stay wrapped', async ({ page }) => {

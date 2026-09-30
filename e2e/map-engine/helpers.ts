@@ -5,8 +5,8 @@
  *   await waitForMapIdle(page);
  *   const cam = await readCamera(page);
  *
- * The map host writes diagnostics on its container (`.maplibregl-map`): data-map-ready (first
- * idle), data-map-loads (map constructions this page), data-camera (lat,lng,zoom,pitch,bearing at
+ * The map host writes diagnostics on its container (`.maplibregl-map`): data-style-ready (style
+ * parsed, globe painting), data-map-ready (`load` + style loaded), data-map-loads (map constructions this page), data-camera (lat,lng,zoom,pitch,bearing at
  * the last moveend) and data-far-side (camera ground point + altitude on the globe, else "none").
  * The wrapper `[data-testid=map-root]` carries data-projection (effective) and data-basemap.
  */
@@ -47,6 +47,11 @@ export async function gotoMap(page: Page, opts: { camera?: CameraArg; params?: R
  */
 export async function waitForMapIdle(page: Page, timeout = 120_000): Promise<void> {
   await expect(page.locator(MAP)).toHaveAttribute('data-map-ready', 'true', { timeout });
+}
+
+/** Wait until the map exists and its style is parsed (tiles may still be loading). */
+export async function waitForMapStyle(page: Page, timeout = 60_000): Promise<void> {
+  await expect(page.locator(MAP)).toHaveAttribute('data-style-ready', 'true', { timeout });
 }
 
 /** Camera recorded at the last moveend, or null before the first move. */

@@ -205,7 +205,10 @@ export default function MapView() {
     installMissingImageResolver(map);
     // Host features that only need the parsed style (terrain, gestures, flyTo) do not wait for every
     // tile: `style.load` fires first; `load` covers a style that finished before we subscribed.
-    const styleReady = () => setLoaded(true);
+    const styleReady = () => {
+      el.dataset.styleReady = 'true';
+      setLoaded(true);
+    };
     // `style.load` may already have fired before React handed us the map.
     if (styleParsed(map)) styleReady();
     map.once('style.load', styleReady);
@@ -380,10 +383,10 @@ export default function MapView() {
     [setMap],
   );
 
-  // Feature modules (and their first fetches) and the deck overlay start after the basemap has
-  // loaded and the main thread is idle, so the first paint never waits for them.
-  const ready = useMapInstanceStore((s) => s.ready);
-  const deferred = useAfterIdle(ready, 1500);
+  // Feature modules (and their first fetches) and the deck overlay start once the style is parsed
+  // (the globe's first paint) and the main thread is idle, so the first paint never waits for them
+  // and a slow tile host (which delays `load`) never delays the data layers.
+  const deferred = useAfterIdle(loaded, 1500);
   // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
   const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
 
