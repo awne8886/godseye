@@ -146,6 +146,10 @@ export const FlightRouteResponse = z.object({
   progress: z.number().min(0).max(1).nullable(),
   distanceKm: z.number().nonnegative().nullable(),
   source: z.string().nullable(),
+  /** When the route source last updated this callsign's record (VRS file date, hexdb `updatetime`). */
+  sourceUpdatedAt: IsoTime.nullable().optional(),
+  /** True when the only answer is an old record (hexdb fallback older than 180 days): shown as STALE. */
+  stale: z.boolean().optional(),
   providers: Envelope.shape.providers,
   timestamp: IsoTime,
 });
