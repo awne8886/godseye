@@ -85,7 +85,9 @@
   "pnpm": {
     "onlyBuiltDependencies": [],
     "overrides": {
-      "image-size": "2.0.4"
+      "image-size": "2.0.4",
+      "fflate": "^0.7.5",
+      "tmp": "^0.2.6"
     }
   }
 }
