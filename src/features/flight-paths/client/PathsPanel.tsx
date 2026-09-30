@@ -233,6 +233,13 @@ export function PlanView({ plan }: { plan: Plan }) {
             <span key={i} className="flex-1" style={{ background: TWILIGHT_TOKEN[s.twilight] }} title={`${Math.round(s.fraction * 100)} %: ${s.twilight}`} />
           ))}
         </div>
+        <span className="hud-micro text-[var(--text-secondary)]">
+          {(['day', 'civil', 'nautical', 'astronomical', 'night'] as const)
+            .map((t) => [t, plan.daylight.filter((s) => s.twilight === t).length] as const)
+            .filter(([, n]) => n > 0)
+            .map(([t, n]) => `${t.toUpperCase()} ${n}/10`)
+            .join(' · ')}
+        </span>
         {plan.daylightMethod && <Note>{plan.daylightMethod}</Note>}
       </div>
       <div className="grid grid-cols-2 gap-2">

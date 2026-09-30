@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { gotoMap } from '../map-engine/helpers';
+import { gotoMap, readCamera, waitForMapIdle } from '../map-engine/helpers';
 
 /**
  * Flight Path Planner (§8). The plan uses bundled data (OurAirports, VRS standing data), so the
@@ -42,7 +42,15 @@ for (const proj of ['mercator', 'globe'] as const) {
     await expect(p.getByText('KNOWN SERVICES')).toBeVisible();
     await expect(p.getByText('BAW117').first()).toBeVisible();
     if (info.project.name === 'desktop') {
-      await page.waitForTimeout(2500); // fly-to settles
+      // The camera flies so the arc midpoint (≈ 52.2°N, 41.3°W) faces the viewer.
+      await waitForMapIdle(page);
+      await expect
+        .poll(async () => {
+          const c = await readCamera(page);
+          return c ? Math.abs(c.lat - 52.2) < 2 && Math.abs(c.lng + 41.3) < 2 : false;
+        }, { timeout: 60_000 })
+        .toBe(true);
+      await page.waitForTimeout(1500); // tiles settle after the fly
       await page.screenshot({
         path: info.outputPath(`route-lhr-jfk-${proj}.png`),
         animations: 'disabled',

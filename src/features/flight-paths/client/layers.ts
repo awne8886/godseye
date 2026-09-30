@@ -24,6 +24,9 @@ export interface RouteLayerInput {
 }
 
 const NO_CULL = { cullMode: 'none' } as const;
+/** On the globe, route lines float 8 km up (≈ cruise level) so they never z-fight the surface mesh. */
+export const GLOBE_LIFT_M = 8000;
+type Pos = [number, number] | [number, number, number];
 const color = (t: MapToken, a = 1): Rgba => readCssColor(t, a);
 
 function mix(a: Rgba, b: Rgba, t: number): Rgba {
@@ -48,14 +51,15 @@ export function buildRouteLayers(o: RouteLayerInput): LayersList {
   const out: LayersList = [];
   const planned = color('--map-route-planned');
   const vis = facing(o.globe);
-  const trigger = { getColor: [o.theme], getFillColor: [o.theme], getLineColor: [o.theme] };
+  const trigger = { getColor: [o.theme], getFillColor: [o.theme], getLineColor: [o.theme], getPath: [o.globe] };
+  const lift = (path: readonly [number, number][]): Pos[] => (o.globe ? path.map(([x, y]) => [x, y, GLOBE_LIFT_M] as Pos) : (path as Pos[]));
 
-  const arcs: { id: string; path: [number, number][] }[] = [];
-  if (o.plan) arcs.push({ id: 'plan', path: o.plan.greatCircle.points });
-  else if (o.flight?.plannedArc.length) arcs.push({ id: 'flight', path: o.flight.plannedArc });
+  const arcs: { id: string; path: Pos[] }[] = [];
+  if (o.plan) arcs.push({ id: 'plan', path: lift(o.plan.greatCircle.points) });
+  else if (o.flight?.plannedArc.length) arcs.push({ id: 'flight', path: lift(o.flight.plannedArc) });
   if (arcs.length) {
     out.push(
-      new PathLayer<{ path: [number, number][] }>({
+      new PathLayer<{ path: Pos[] }>({
         id: 'route-planned-glow',
         data: arcs,
         getPath: (d) => d.path,
@@ -67,7 +71,7 @@ export function buildRouteLayers(o: RouteLayerInput): LayersList {
         parameters: NO_CULL,
         updateTriggers: trigger,
       }),
-      new PathLayer<{ path: [number, number][] }>({
+      new PathLayer<{ path: Pos[] }>({
         id: 'route-planned-arc',
         data: arcs,
         getPath: (d) => d.path,
@@ -85,9 +89,9 @@ export function buildRouteLayers(o: RouteLayerInput): LayersList {
   const filed = o.plan?.filedPlans ?? [];
   if (filed.length) {
     out.push(
-      new PathLayer<{ path: [number, number][] }>({
+      new PathLayer<{ path: Pos[] }>({
         id: 'route-filed',
-        data: filed.map((f) => ({ path: f.waypoints.map((w) => [w.lng, w.lat] as [number, number]) })),
+        data: filed.map((f) => ({ path: lift(f.waypoints.map((w) => [w.lng, w.lat] as [number, number])) })),
         getPath: (d) => d.path,
         getColor: color('--map-route-filed', 0.85),
         getWidth: 1.5,
@@ -122,9 +126,9 @@ export function buildRouteLayers(o: RouteLayerInput): LayersList {
   const remaining = o.flight?.remainingLeg ?? [];
   if (remaining.length > 1) {
     out.push(
-      new PathLayer<{ path: [number, number][] }>({
+      new PathLayer<{ path: Pos[] }>({
         id: 'route-remaining',
-        data: [{ path: remaining }],
+        data: [{ path: lift(remaining) }],
         getPath: (d) => d.path,
         getColor: color('--map-route-planned', 0.45),
         getWidth: 1.5,

@@ -47,8 +47,8 @@ export const TWILIGHT_TOKEN = {
   day: 'var(--gold-light)',
   civil: 'var(--gold-dim)',
   nautical: 'var(--alert-blue)',
-  astronomical: 'var(--bg-tertiary)',
-  night: 'var(--bg-void)',
+  astronomical: 'var(--cyan-dim)',
+  night: 'var(--bg-tertiary)',
 } as const;
 
 /** Path types in legend order with what each one honestly means. */

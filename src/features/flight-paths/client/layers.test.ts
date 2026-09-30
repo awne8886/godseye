@@ -24,8 +24,8 @@ describe('buildRouteLayers', () => {
     const layers = buildRouteLayers({ plan, live, flight: null, globe: false, center: [0, 0], theme: 0 });
     expect(ids(layers)).toEqual(['route-planned-glow', 'route-planned-arc', 'route-filed', 'route-endpoints', 'route-endpoint-labels', 'route-diversions', 'route-live-aircraft']);
     const arc = (layers as Layer[])[1]!;
-    const data = arc.props.data as { path: [number, number][] }[];
-    expect(data[0]!.path).toBe(gc.points);
+    const data = arc.props.data as { path: number[][] }[];
+    expect(data[0]!.path).toBe(gc.points); // mercator: the server's unwrapped points as-is
     expect((arc.props.parameters as { cullMode: string }).cullMode).toBe('none');
   });
 
@@ -47,6 +47,9 @@ describe('buildRouteLayers', () => {
     const layers = buildRouteLayers({ plan: null, live: null, flight, globe: true, center: [-5, 52], theme: 1 });
     expect(ids(layers)).toEqual(['route-planned-glow', 'route-planned-arc', 'route-flown-track', 'route-remaining', 'route-endpoints', 'route-endpoint-labels', 'route-live-aircraft']);
     expect(((layers as Layer[])[2]!.props.data as unknown[]).length).toBe(2);
+    // Globe: lines lifted off the surface mesh.
+    const arcPath = ((layers as Layer[])[1]!.props.data as { path: number[][] }[])[0]!.path;
+    expect(arcPath[0]![2]).toBe(8000);
   });
 
   it('nothing to draw → no layers', () => {
