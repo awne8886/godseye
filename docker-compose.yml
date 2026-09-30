@@ -1,0 +1,66 @@
+# GODSEYE self-hosted stack: the app (never published directly) behind Caddy, which terminates
+# TLS and OVERWRITES X-Forwarded-For / X-Real-IP. Optional Redis for shared caches and rate limits.
+#
+#   docker compose up -d                          # app + Caddy on https://localhost
+#   GODSEYE_DOMAIN=monitor.example.org docker compose up -d
+#   docker compose --profile redis up -d          # also start Redis; set REDIS_URL=redis://redis:6379 in .env
+#
+# Every key is optional (see .env.example); secrets go in .env, never in the image.
+name: godseye
+
+services:
+  app:
+    build: .
+    image: godseye:local
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      # Feed snapshots survive restarts (filesystem SnapshotStore); REDIS_URL takes precedence.
+      SNAPSHOT_DIR: /data
+      # Caddy is the single trusted hop and overwrites X-Forwarded-For.
+      TRUSTED_PROXY_HOPS: "1"
+    # Reachable only from the compose network: clients must go through Caddy.
+    expose:
+      - "3000"
+    volumes:
+      - snapshots:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      GODSEYE_DOMAIN: ${GODSEYE_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  redis:
+    image: redis:8-alpine
+    profiles: ["redis"]
+    restart: unless-stopped
+    # Cache only: no persistence; every key GODSEYE writes has a TTL, so evict among those.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "512mb", "--maxmemory-policy", "volatile-lru"]
+    expose:
+      - "6379"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  snapshots:
+  caddy_data:
+  caddy_config:
