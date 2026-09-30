@@ -89,24 +89,81 @@ const SHAPES: Record<IconName, Draw> = {
   },
 };
 
-/** Brute-force signed distance (px) to the nearest pixel of the other state, clamped to SPREAD. */
-function sdf(inside: Uint8Array, w: number, h: number): Uint8ClampedArray {
+const INF = 1e20;
+
+/** Exact 1-D squared distance transform (Felzenszwalb & Huttenlocher 2012), in place on f[0..n). */
+function edt1d(f: Float64Array, n: number, d: Float64Array, v: Int32Array, z: Float64Array): void {
+  let k = 0;
+  v[0] = 0;
+  z[0] = -INF;
+  z[1] = INF;
+  for (let q = 1; q < n; q++) {
+    let s = (f[q]! + q * q - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!);
+    while (s <= z[k]!) {
+      k--;
+      s = (f[q]! + q * q - (f[v[k]!]! + v[k]! * v[k]!)) / (2 * q - 2 * v[k]!);
+    }
+    k++;
+    v[k] = q;
+    z[k] = s;
+    z[k + 1] = INF;
+  }
+  k = 0;
+  for (let q = 0; q < n; q++) {
+    while (z[k + 1]! < q) k++;
+    d[q] = (q - v[k]!) * (q - v[k]!) + f[v[k]!]!;
+  }
+  for (let q = 0; q < n; q++) f[q] = d[q]!;
+}
+
+/** Squared Euclidean distance from every cell to the nearest cell whose `grid` value is 0. */
+function edt2d(grid: Float64Array, w: number, h: number): void {
+  const n = Math.max(w, h);
+  const f = new Float64Array(n);
+  const d = new Float64Array(n);
+  const v = new Int32Array(n);
+  const z = new Float64Array(n + 1);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h; y++) f[y] = grid[y * w + x]!;
+    edt1d(f, h, d, v, z);
+    for (let y = 0; y < h; y++) grid[y * w + x] = f[y]!;
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) f[x] = grid[y * w + x]!;
+    edt1d(f, w, d, v, z);
+    for (let x = 0; x < w; x++) grid[y * w + x] = f[x]!;
+  }
+}
+
+/**
+ * Signed distance (px) to the nearest pixel of the other state, clamped to SPREAD, as a byte
+ * (0.5 = edge). Pixels outside the icon box count as "outside". Exact Euclidean distance transform
+ * in O(pixels) — perf M3: the former brute-force window scan cost ~1 s at first draw.
+ */
+export function sdf(inside: Uint8Array, w: number, h: number): Uint8ClampedArray {
+  // Pad by SPREAD so the box border behaves as "outside", like an out-of-bounds pixel did.
+  const W = w + 2 * SPREAD;
+  const H = h + 2 * SPREAD;
+  const toOutside = new Float64Array(W * H);
+  const toInside = new Float64Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const ix = x - SPREAD;
+      const iy = y - SPREAD;
+      const me = ix >= 0 && ix < w && iy >= 0 && iy < h ? inside[iy * w + ix]! : 0;
+      toOutside[y * W + x] = me ? INF : 0;
+      toInside[y * W + x] = me ? 0 : INF;
+    }
+  }
+  edt2d(toOutside, W, H);
+  edt2d(toInside, W, H);
   const out = new Uint8ClampedArray(w * h);
+  const cap = SPREAD * SPREAD;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const me = inside[y * w + x]!;
-      let best = SPREAD * SPREAD;
-      for (let dy = -SPREAD; dy <= SPREAD; dy++) {
-        const yy = y + dy;
-        for (let dx = -SPREAD; dx <= SPREAD; dx++) {
-          const xx = x + dx;
-          const other = yy < 0 || yy >= h || xx < 0 || xx >= w ? 0 : inside[yy * w + xx]!;
-          if (other !== me) {
-            const d = dx * dx + dy * dy;
-            if (d < best) best = d;
-          }
-        }
-      }
+      const i = (y + SPREAD) * W + x + SPREAD;
+      const best = Math.min(cap, me ? toOutside[i]! : toInside[i]!);
       const dist = Math.sqrt(best) - 0.5;
       const signed = me ? dist : -dist;
       out[y * w + x] = Math.round(Math.max(0, Math.min(1, 0.5 + signed / (2 * SPREAD))) * 255);
