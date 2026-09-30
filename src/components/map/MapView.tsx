@@ -17,13 +17,21 @@ import type { StyleSpecification } from 'maplibre-gl';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Map, type MapLayerMouseEvent, type MapRef, type ViewStateChangeEvent } from 'react-map-gl/maplibre';
 import { normalizeLng } from '@/lib/geo';
-import { useLayerStatusStore, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
+import { useDeckLayerStore, useLayerStatusStore, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
 import { publishCursor, publishView } from '@/lib/map/cursor';
 import { cameraFromMap, isFacing, setFarSideCamera } from '@/lib/map/far-side';
 import { createDoubleRightClick, createLongPress } from '@/lib/map/gestures';
 import { BLACK_MARBLE_LABEL, gibsTrueColorLabel } from '@/lib/map/imagery';
 import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
-import { candidatesFromDeck, candidatesFromNative, getPickOverlay, nativePickLayerIds, routePick, type NativeFeature } from '@/lib/map/picking';
+import {
+  candidatesFromDeck,
+  candidatesFromNative,
+  getPickOverlay,
+  nativePickLayerIds,
+  routePick,
+  type DeckPickInfo,
+  type NativeFeature,
+} from '@/lib/map/picking';
 import { installMissingImageResolver } from '@/lib/map/style-images';
 import { BASEMAP_STYLE_URL, IMAGERY_BEFORE_ID, firstLabelLayerId, transformStyle } from '@/lib/map/style-transform';
 import { attachTerrain, TERRAIN_MAX_PITCH, TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
@@ -63,7 +71,7 @@ const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia('
 let mapLoads = 0;
 
 export default function MapView() {
-  const mapRef = useRef<MapRef>(null);
+  const mapRef = useRef<MapRef | null>(null);
   const [style, setStyle] = useState<StyleSpecification | null>(null);
   // MapView is client-only (ssr:false), so the WebGL2 probe can run in the initializer.
   const [failure, setFailure] = useState<'webgl' | 'style' | null>(() => (hasWebGL2() ? null : 'webgl'));
@@ -171,12 +179,25 @@ export default function MapView() {
       : initialCamera(new Date().getTimezoneOffset());
   }, [hasStyle, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Runs as soon as react-map-gl has constructed the map (before any tile asks for sprite images).
+  const attachMapRef = useCallback((r: MapRef | null) => {
+    mapRef.current = r;
+    const map = r?.getMap();
+    const el = map?.getContainer();
+    if (!map || !el || el.dataset.mapLoads) return;
+    mapLoads++;
+    el.dataset.mapLoads = String(mapLoads);
+    installMissingImageResolver(map);
+    // Host features that only need the parsed style (terrain, gestures, flyTo) do not wait for every
+    // tile: `style.load` fires first; `load` covers a style that finished before we subscribed.
+    const styleReady = () => setLoaded(true);
+    map.once('style.load', styleReady);
+    map.once('load', styleReady);
+  }, []);
+
   const onLoad = useCallback(() => {
     const map = mapRef.current?.getMap() ?? null;
     if (!map) return;
-    mapLoads++;
-    map.getContainer().dataset.mapLoads = String(mapLoads);
-    installMissingImageResolver(map);
     setMap(map);
     setLoaded(true);
     map.once('idle', () => {
@@ -240,8 +261,15 @@ export default function MapView() {
   );
 
   // ── Picking ──────────────────────────────────────────────────────────────────
-  const pickAt = useCallback((map: maplibregl.Map, x: number, y: number) => {
-    const deck = getPickOverlay()?.pickMultipleObjects({ x, y, radius: 4, depth: 10 }) ?? [];
+  /** Everything selectable under (x, y); `hover` asks deck for the top object only (cheap). */
+  const pickAt = useCallback((map: maplibregl.Map, x: number, y: number, hover = false) => {
+    let deck: DeckPickInfo[] = [];
+    const overlay = useDeckLayerStore.getState().version > 0 ? getPickOverlay() : null;
+    try {
+      if (overlay) deck = hover ? [overlay.pickObject({ x, y, radius: 4 })].filter((i): i is DeckPickInfo => !!i) : overlay.pickMultipleObjects({ x, y, radius: 4, depth: 10 });
+    } catch {
+      deck = []; // deck not initialised yet (first frames, context restore)
+    }
     const ids = nativePickLayerIds().filter((id) => map.getLayer(id));
     const native = ids.length ? (map.queryRenderedFeatures([x, y], { layers: ids }) as unknown as NativeFeature[]) : [];
     const far = useMapInstanceStore.getState().projection === 'globe' ? cameraFromMap(map) : null;
@@ -267,7 +295,7 @@ export default function MapView() {
       hoverFrame.current = requestAnimationFrame(() => {
         publishCursor({ lng: normalizeLng(lng), lat, zoom: map.getZoom() });
         if (map.isMoving()) return;
-        map.getCanvas().style.cursor = pickAt(map, x, y).length ? 'pointer' : '';
+        map.getCanvas().style.cursor = pickAt(map, x, y, true).length ? 'pointer' : '';
       });
     },
     [pickAt],
@@ -344,7 +372,7 @@ export default function MapView() {
     <div className="absolute inset-0" data-testid="map-root" data-projection={effective} data-basemap={basemap}>
       <Map
         key={attempt}
-        ref={mapRef}
+        ref={attachMapRef}
         mapLib={maplibregl}
         mapStyle={style}
         initialViewState={initialView}
