@@ -143,6 +143,7 @@ export type GraphNodeId = z.infer<typeof S.GraphNodeId>;
 export type EntityGraphResponse = z.infer<typeof S.EntityGraphResponse>;
 export type AiGeneratedBy = z.infer<typeof S.AiGeneratedBy>;
 export type AiCitation = z.infer<typeof S.AiCitation>;
+export type AiAlertBrief = z.infer<typeof S.AiAlertBrief>;
 export type AiOverviewResponse = z.infer<typeof S.AiOverviewResponse>;
 export type CryptoResponse = z.infer<typeof S.CryptoResponse>;
 export type ChainBriefResponse = z.infer<typeof S.ChainBriefResponse>;
