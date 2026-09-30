@@ -24,7 +24,7 @@ export type Handler = (url: URL, opts: HttpModule.HttpOptions) => Reply | undefi
 
 export const upstream = {
   handlers: [] as Handler[],
-  calls: [] as { url: string; method: string; body?: string }[],
+  calls: [] as { url: string; method: string; body?: string; opts: HttpModule.HttpOptions }[],
   reset() {
     this.handlers = [];
     this.calls = [];
@@ -48,7 +48,7 @@ export function mockHttp(actual: typeof HttpModule): typeof HttpModule {
     let url = new URL(input);
     for (let hop = 0; hop <= (opts.maxRedirects ?? 5); hop++) {
       await opts.validateUrl?.(url);
-      upstream.calls.push({ url: url.toString(), method: opts.method ?? 'GET', body: typeof opts.body === 'string' ? opts.body : undefined });
+      upstream.calls.push({ url: url.toString(), method: opts.method ?? 'GET', body: typeof opts.body === 'string' ? opts.body : undefined, opts });
       const reply = upstream.handlers.map((h) => h(url, opts)).find(Boolean);
       if (!reply) throw new HttpError('HTTP 404', 'http', url.toString(), 404);
       if (reply.error) throw new HttpError(reply.error, reply.error, url.toString());

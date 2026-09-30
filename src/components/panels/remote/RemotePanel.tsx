@@ -3,7 +3,7 @@
  * WORLD REMOTE: connect to ONE Bluetooth Low Energy device the visitor picks in the browser's own
  * Web Bluetooth chooser, and read its standard Battery and Device Information services. The tool
  * is offered only when `navigator.bluetooth` exists. Honest scope: nothing is scanned, no local
- * network or localhost ports are probed, no WebRTC address harvesting, nothing leaves the
+ * network addresses or ports are probed, no WebRTC address harvesting, nothing leaves the
  * browser. Owner: panels-recon.
  */
 import { Bluetooth, BluetoothOff, Unplug } from 'lucide-react';

@@ -90,7 +90,8 @@ export function osintJson(body: OsintResponse, ttl: number): Response {
 export function offline(providers: Providers, detail: string): Response {
   const skippedOnly = Object.values(providers).length > 0 && Object.values(providers).every((p) => p.skipped);
   if (skippedOnly) {
-    return json({ error: 'not_configured', detail, providers }, { status: 503, ttl: 0, headers: { 'Retry-After': '3600' } });
+    const budget = Object.values(providers).some((p) => p.skipped === 'budget');
+    return json({ error: budget ? 'budget_exhausted' : 'not_configured', detail, providers }, { status: 503, ttl: 0, headers: { 'Retry-After': '3600' } });
   }
   return json({ error: 'source_offline', detail, providers, retryAfter: 30 }, { status: 503, ttl: 0, headers: { 'Retry-After': '30' } });
 }

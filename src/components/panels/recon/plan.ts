@@ -16,6 +16,7 @@ export interface Lookup {
 export type Plan = { ok: true; kind: TargetKind; target: string; lookups: Lookup[] } | { ok: false; reason: string };
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
+const MAC_RE = /^[0-9a-f]{2}([:-][0-9a-f]{2}){2,5}$/i;
 const enc = encodeURIComponent;
 
 export function planLookups(raw: string): Plan {
@@ -23,7 +24,7 @@ export function planLookups(raw: string): Plan {
   if (!s) return { ok: false, reason: 'Enter a domain, IP, ASN, CVE id, MAC prefix, wallet address or URL.' };
   if (looksPersonal(s)) return { ok: false, reason: PERSONAL_REFUSAL };
   if (CVE_RE.test(s.toUpperCase())) return { ok: true, kind: 'cve', target: s.toUpperCase(), lookups: [{ tool: 'cve', label: 'CVE', path: `/api/osint/cve?id=${enc(s.toUpperCase())}` }] };
-  if (IPV4.test(s) || (s.includes(':') && /^[0-9a-f:]+$/i.test(s) && s.split(':').length > 2 && !parseMac(s))) {
+  if (IPV4.test(s) || (s.includes(':') && /^[0-9a-f:]+$/i.test(s) && s.split(':').length > 2 && !MAC_RE.test(s))) {
     return {
       ok: true,
       kind: 'ip',
@@ -37,7 +38,7 @@ export function planLookups(raw: string): Plan {
     };
   }
   if (/^AS\d+$/i.test(s) && parseAsn(s)) return { ok: true, kind: 'asn', target: s.toUpperCase(), lookups: [{ tool: 'bgp', label: 'BGP / ASN', path: `/api/osint/bgp?query=${enc(s)}` }] };
-  if (/^[0-9a-f]{2}([:-][0-9a-f]{2}){2,5}$/i.test(s)) return { ok: true, kind: 'mac', target: s, lookups: [{ tool: 'mac', label: 'MAC vendor', path: `/api/osint/mac?mac=${enc(s)}` }] };
+  if (MAC_RE.test(s) && parseMac(s)) return { ok: true, kind: 'mac', target: s, lookups: [{ tool: 'mac', label: 'MAC vendor', path: `/api/osint/mac?mac=${enc(s)}` }] };
   const chain = detectChain(s);
   if (chain && !parseDomain(s).ok) return { ok: true, kind: 'wallet', target: s, lookups: [{ tool: 'crypto', label: `Wallet (${chain.toUpperCase()})`, path: `/api/osint/crypto?address=${enc(s)}&chain=${chain}` }] };
   if (/^https?:\/\//i.test(s)) {
