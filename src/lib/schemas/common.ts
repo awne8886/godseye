@@ -143,6 +143,8 @@ export const EntityKind = z.enum([
   'weather_event',
   'air_quality',
   'gps_jam_cell',
+  /** A user-drawn shape, a planned route or an imported ArcGIS feature (local, never sent anywhere). */
+  'drawn_shape',
   'sentinel_scene',
   'nuclear_site',
   'gdacs_incident',

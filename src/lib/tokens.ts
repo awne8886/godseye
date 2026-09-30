@@ -69,6 +69,8 @@ export const MAP_TOKENS = {
   '--map-directions': '#00e5ff',
   '--map-directions-casing': '#001014',
   '--map-directions-active': '#d4af37',
+  '--map-draw': '#d4af37',
+  '--map-arcgis': '#00e5ff',
   '--map-airport-watch': '#ffb300',
   '--map-route-planned': '#d4af37',
   '--map-route-filed': '#00e5ff',
