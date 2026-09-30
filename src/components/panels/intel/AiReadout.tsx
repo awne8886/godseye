@@ -34,7 +34,7 @@ export function AiReadout({ path, body, label = 'Read-out', onThread }: Props) {
           type="button"
           onClick={() => m.mutate()}
           disabled={m.isPending}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--border-secondary)] px-2 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--gold-primary)] hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] disabled:opacity-60"
+          className="inline-flex min-h-11 md:min-h-9 items-center gap-1.5 rounded-md border border-[var(--border-secondary)] px-2 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--gold-primary)] hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] disabled:opacity-60"
         >
           <Sparkles aria-hidden className="h-3.5 w-3.5" />
           {m.isPending ? 'Generating…' : r ? `Regenerate ${label}` : label}
@@ -44,7 +44,7 @@ export function AiReadout({ path, body, label = 'Read-out', onThread }: Props) {
           aria-expanded={showKey}
           aria-controls={keyId}
           onClick={() => setShowKey((v) => !v)}
-          className="ml-auto inline-flex min-h-9 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+          className="ml-auto inline-flex min-h-11 md:min-h-9 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
         >
           <KeyRound aria-hidden className="h-3 w-3" /> Own key
         </button>
@@ -58,7 +58,7 @@ export function AiReadout({ path, body, label = 'Read-out', onThread }: Props) {
             spellCheck={false}
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            className="min-h-9 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-2 font-mono text-[12px] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+            className="min-h-11 md:min-h-9 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-2 font-mono text-[12px] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
           />
         </label>
       )}
