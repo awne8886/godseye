@@ -35,7 +35,8 @@ export async function gotoMap(page: Page, opts: { camera?: CameraArg; params?: R
   if (opts.camera) q.set('c', cameraParam(opts.camera));
   const qs = q.toString();
   await page.goto(qs ? `/?${qs}` : '/');
-  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 30_000 });
+  // The style is fetched from OpenFreeMap with retry/backoff (4, 8, 16, 32 s…): allow for a slow first try.
+  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 90_000 });
 }
 
 /**

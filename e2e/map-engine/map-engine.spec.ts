@@ -60,9 +60,9 @@ test.describe('map engine', () => {
 
   test('SAT toggle keeps the map mounted and shows Esri imagery with its attribution', async ({ page }) => {
     await gotoMap(page, { camera: { lat: 48.85, lng: 2.35, zoom: 5 } });
-    await waitForMapIdle(page);
     const sat = page.getByRole('button', { name: /^SAT$|Satellite View/ });
     test.skip((await sat.count()) === 0, 'MAP | SAT control is mounted by design-system-hud');
+    await waitForMapIdle(page);
     const canvas = await page.locator('canvas.maplibregl-canvas').elementHandle();
     await sat.first().click();
     await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-basemap', 'satellite');
@@ -98,6 +98,23 @@ test.describe('map engine', () => {
     await gotoMap(page, { camera: { lat: 10, lng: 20, zoom: 2 }, params: { layers: 'gibs_truecolor' } });
     await expect(page.getByTestId('imagery-chip-gibs')).toHaveText(`VIIRS TRUE COLOUR ${gibsTrueColorDate(Date.now())} · REFERENCE`, { timeout: 60_000 });
     await expect(page.getByTestId('imagery-chip-night')).toHaveCount(0); // day_night not in ?layers=
+  });
+
+  test('double right-click opens the Region Dossier at the pointer; a slow pair does not', async ({ page, isMobile }) => {
+    test.skip(isMobile, 'right-click is a desktop gesture (touch uses long-press)');
+    await gotoMap(page, { camera: { lat: 48.85, lng: 2.35, zoom: 6 } });
+    const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await page.mouse.click(x, y, { button: 'right' });
+    await page.waitForTimeout(700); // > 500 ms: not a double right-click
+    await page.mouse.click(x + 3, y + 3, { button: 'right' });
+    await page.waitForTimeout(1500);
+    expect(page.url()).not.toContain('dossier=');
+    await page.waitForTimeout(700);
+    await page.mouse.click(x, y, { button: 'right' });
+    await page.mouse.click(x + 4, y + 2, { button: 'right' });
+    await expect(page).toHaveURL(/dossier=4[6-9]\.\d+(%2C|,)[0-4]\.\d+/, { timeout: 10_000 });
   });
 
   test('camera from ?c= is restored and longitudes stay wrapped', async ({ page }) => {
