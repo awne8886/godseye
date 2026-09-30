@@ -61,6 +61,7 @@ describe('aviation frame', () => {
     advanceFrame(f, 1200_000, new Set(['commercial']), true, [0, 50]);
     expect(f.pos[0]).toBe(settled);
     expect(f.frozen[0]).toBe(1);
+    expect(f.staleVisible).toBe(f.count); // every drawn aircraft is now past the cap
     // A camera move that changes the visible set swaps the data object.
     advanceFrame(f, 1200_000, new Set(['commercial']), true, [180, -50]);
     expect(f.data).not.toBe(data);

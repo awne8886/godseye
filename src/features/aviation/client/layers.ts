@@ -38,6 +38,8 @@ export interface Frame {
   /** Indices (into records) currently drawn. */
   visible: Uint32Array;
   count: number;
+  /** Visible aircraft past the dead-reckoning cap (drawn frozen and dimmed). */
+  staleVisible: number;
   /** Bumped whenever the visible index list changes (per-index accessors must re-run). */
   visVersion: number;
   /** Bumped whenever an aircraft crosses the 60 s cap (colours must re-run). */
@@ -78,6 +80,7 @@ export function newFrame(records: FlightRecord[]): Frame {
     frozen: new Uint8Array(n),
     visible: new Uint32Array(n),
     count: 0,
+    staleVisible: 0,
     visVersion: 0,
     frozenVersion: 0,
     data: { length: 0 },
@@ -152,6 +155,7 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
   let n = 0;
   let changed = false;
   let froze = false;
+  let stale = 0;
   for (let i = 0; i < f.records.length; i++) {
     const b = f.bucket[i]!;
     if (!want[b]) continue;
@@ -161,15 +165,20 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
       changed = true;
     }
     n++;
-    if (f.settled[i]) continue;
+    if (f.settled[i]) {
+      if (f.frozen[i]) stale++;
+      continue;
+    }
     const age = Math.max(0, nowS - f.seen[i]!);
     reckon(f, i, Math.min(age, MAX_DEAD_RECKON_S));
     if (age > MAX_DEAD_RECKON_S) {
       f.frozen[i] = 1;
       f.settled[i] = 1;
       froze = true;
+      stale++;
     }
   }
+  f.staleVisible = stale;
   if (n !== f.count || changed) {
     f.count = n;
     f.visVersion++;
