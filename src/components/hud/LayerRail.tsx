@@ -1,99 +1,136 @@
 'use client';
 /**
- * Left layer rail: one button per registry group with a cyan count badge; click opens the group's
- * flyout with ALL/NONE and 28×14 toggles. (design-system-hud adds hover flyouts, pinning,
- * freshness LEDs, Style Studio and Ghost Protocol.) Owner: design-system-hud.
+ * Left layer rail (desktop): one button per registry group with a cyan count badge. Hover shows the
+ * group's flyout; click pins it. Flyouts are disclosures (aria-expanded + aria-controls), not
+ * dialogs. The rail bottom holds the rail-bottom launchers (Settings, Style Studio) and Ghost
+ * Protocol. Owner: design-system-hud.
  */
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
-import { LAYER_GROUPS, visibleLayers, type LayerDef, type LayerGroupId, type LayerId } from '@/lib/layer-registry';
-import { useLayerStatusStore } from '@/lib/layer-host';
+import { AnimatePresence, motion } from 'motion/react';
+import { Ghost, Settings2, SlidersHorizontal } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { LAYER_GROUPS, type LayerGroupId, type LayerId } from '@/lib/layer-registry';
 import { useUiStore } from '@/lib/store';
+import { useVisibleLayers } from './hooks';
+import { useHudStore } from './hud-store';
 import { iconFor } from './icons';
-
-type Caps = Record<string, { enabled: boolean }>;
-
-function Toggle({ on }: { on: boolean }) {
-  return (
-    <span aria-hidden className={`relative inline-block h-[14px] w-[28px] rounded-full border transition-colors ${on ? 'border-[var(--gold-primary)] bg-[rgba(212,175,55,0.35)]' : 'border-white/25 bg-white/5'}`}>
-      <span className={`absolute top-[1px] h-[10px] w-[10px] rounded-full transition-[left] ${on ? 'left-[15px] bg-[var(--gold-light)]' : 'left-[1px] bg-white/40'}`} />
-    </span>
-  );
-}
+import { LayerList } from './LayerRows';
 
 export default function LayerRail() {
-  const [open, setOpen] = useState<LayerGroupId | null>(null);
+  const [hover, setHover] = useState<LayerGroupId | null>(null);
+  const pinned = useHudStore((s) => s.pinnedFlyout);
+  const setPinned = useHudStore((s) => s.setPinnedFlyout);
   const active = useUiStore((s) => s.activeLayers);
   const setLayer = useUiStore((s) => s.setLayer);
-  const status = useLayerStatusStore((s) => s.status);
-  const caps = useQuery({
-    queryKey: ['health'],
-    queryFn: async () => (await (await fetch('/api/health')).json()) as { capabilities: Caps },
-    select: (h) => h.capabilities,
-  });
-  const layers = visibleLayers(caps.data ?? {});
+  const openPanel = useUiStore((s) => s.openPanel);
+  const togglePanel = useUiStore((s) => s.togglePanel);
+  const ghost = useUiStore((s) => s.ghost);
+  const setGhost = useUiStore((s) => s.setGhost);
+  const layers = useVisibleLayers();
   const groups = LAYER_GROUPS.filter((g) => layers.some((l) => l.group === g.id));
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const shown = pinned ?? hover;
+
+  const enter = (g: LayerGroupId) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setHover(g), 120);
+  };
+  const leave = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setHover(null), 220);
+  };
 
   return (
-    <nav aria-label="Map layers" className="glass-rail absolute bottom-7 left-0 top-0 z-[var(--z-rail)] hidden w-12 flex-col items-center gap-1 pt-24 md:flex">
+    <nav aria-label="Map layers" className="glass-rail fixed bottom-7 left-0 top-0 z-[var(--z-rail)] hidden w-12 flex-col items-center gap-1 pb-3 pt-24 md:flex">
       {groups.map((g) => {
         const Icon = iconFor(g.icon);
         const inGroup = layers.filter((l) => l.group === g.id);
         const on = inGroup.filter((l) => active.has(l.id as LayerId) && !l.parent).length;
+        const expanded = shown === g.id;
+        const panelId = `flyout-${g.id}`;
         return (
-          <div key={g.id} className="relative">
+          <div key={g.id} className="relative" onMouseEnter={() => enter(g.id)} onMouseLeave={leave}>
             <button
               type="button"
-              aria-label={g.label}
-              aria-expanded={open === g.id}
-              onClick={() => setOpen(open === g.id ? null : g.id)}
-              className={`grid h-10 w-10 place-items-center rounded-lg ${on ? 'text-white/80' : 'text-white/35'} hover:text-white/70`}
+              aria-label={`${g.label} layers`}
+              aria-expanded={expanded}
+              aria-controls={panelId}
+              title={g.label}
+              onClick={() => setPinned(pinned === g.id ? null : g.id)}
+              className={`hud-control relative grid h-10 w-10 place-items-center ${on ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'} ${pinned === g.id ? 'bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : ''} hover:text-[var(--gold-light)]`}
             >
-              <Icon size={16} />
+              <Icon size={16} aria-hidden />
               {on > 0 && (
-                <span className="absolute right-0.5 top-0.5 min-w-[13px] rounded-full bg-[rgba(0,229,255,0.9)] px-0.5 font-mono text-[9px] leading-[13px] text-[var(--bg-void)]">{on}</span>
+                <span className="absolute right-0 top-0 min-w-[14px] rounded-full bg-[var(--cyan-primary)] px-0.5 text-center font-mono text-[10px] leading-[14px] text-[var(--bg-void)]">
+                  {on}
+                </span>
               )}
             </button>
-            {open === g.id && (
-              <div role="dialog" aria-label={g.label} className="glass-panel absolute left-[52px] top-0 min-w-[240px] p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="hud-micro text-[var(--text-heading)]">{g.label}</span>
-                  <button
-                    type="button"
-                    className="hud-micro text-[var(--gold-primary)]"
-                    onClick={() => inGroup.forEach((l: LayerDef) => setLayer(l.id as LayerId, on === 0))}
-                  >
-                    {on === 0 ? 'ALL' : 'NONE'}
-                  </button>
-                </div>
-                <ul className="space-y-1">
-                  {inGroup.map((l) => {
-                    const isOn = active.has(l.id as LayerId);
-                    const count = status[l.id as LayerId]?.count;
-                    return (
-                      <li key={l.id} className={l.parent ? 'pl-5' : ''}>
-                        <button
-                          type="button"
-                          aria-pressed={isOn}
-                          onClick={() => setLayer(l.id as LayerId, !isOn)}
-                          className="flex w-full items-center gap-2 rounded px-1 py-1 text-left hover:bg-white/5"
-                        >
-                          <Toggle on={isOn} />
-                          <span className="flex-1">
-                            <span className={`hud-text block text-[11px] ${isOn ? 'text-white/80' : 'text-white/50'}`}>{l.label}</span>
-                            {l.description && <span className="block font-sans text-[10px] text-[var(--text-muted)]">{l.description}</span>}
-                          </span>
-                          {typeof count === 'number' && <span className="font-mono text-[10px] text-[var(--text-secondary)]">{count.toLocaleString('en-US')}</span>}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
+            <AnimatePresence>
+              {expanded && (
+                <motion.div
+                  id={panelId}
+                  key={panelId}
+                  initial={{ opacity: 0, x: -8, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  className="glass-panel instrument-corners absolute left-[52px] top-0 w-[320px] p-3"
+                  role="region"
+                  aria-label={`${g.label} layers`}
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="hud-title">{g.label}</span>
+                    <button
+                      type="button"
+                      className="hud-micro hud-control min-h-[24px] px-2 text-[var(--gold-primary)] hover:bg-[rgba(var(--gold-rgb),0.08)]"
+                      onClick={() => inGroup.forEach((l) => setLayer(l.id as LayerId, on === 0))}
+                    >
+                      {on === 0 ? 'ALL' : 'NONE'}
+                    </button>
+                  </div>
+                  <LayerList layers={inGroup} />
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         );
       })}
+      <div className="mt-auto flex flex-col items-center gap-1">
+        <span aria-hidden className="mb-1 h-px w-6 bg-[var(--border-primary)]" />
+        <button
+          type="button"
+          aria-label="Ghost Protocol"
+          aria-pressed={ghost}
+          title="Ghost Protocol — violet low-signature palette"
+          onClick={() => setGhost(!ghost)}
+          className="hud-control grid h-10 w-10 place-items-center"
+          style={{ color: ghost ? 'var(--gold-primary)' : 'var(--text-secondary)' }}
+        >
+          <Ghost size={16} aria-hidden />
+        </button>
+        <button
+          type="button"
+          aria-label="Style Studio"
+          aria-pressed={openPanel === 'style-studio'}
+          title="Style Studio — live UI tokens"
+          onClick={() => togglePanel('style-studio')}
+          className="hud-control grid h-10 w-10 place-items-center"
+          style={{ color: openPanel === 'style-studio' ? 'var(--gold-primary)' : 'var(--text-secondary)' }}
+        >
+          <SlidersHorizontal size={16} aria-hidden />
+        </button>
+        <button
+          type="button"
+          aria-label="Settings"
+          aria-pressed={openPanel === 'settings'}
+          title="Settings — units, motion, privacy"
+          onClick={() => togglePanel('settings')}
+          className="hud-control grid h-10 w-10 place-items-center"
+          style={{ color: openPanel === 'settings' ? 'var(--gold-primary)' : 'var(--text-secondary)' }}
+        >
+          <Settings2 size={16} aria-hidden />
+        </button>
+      </div>
     </nav>
   );
 }
