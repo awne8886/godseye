@@ -1,9 +1,18 @@
 /**
  * Entry point for the maritime feature modules. Owner: layers-threats-network.
- * Export every FeatureModule this area provides (layers, cards, panels); see src/lib/feature-module.ts.
+ * Ports and chokepoints (REFERENCE) plus AIS vessels when the server relays AISStream.
  */
-import type { FeatureModule } from '@/lib/feature-module';
+import { defineModule, type FeatureModule } from '@/lib/feature-module';
+import { ChokepointCard, PortCard, VesselCard } from '../threats/client/cards';
+import MaritimeLayer from './client/MaritimeLayer';
 
-const modules: FeatureModule[] = [];
+const modules: FeatureModule[] = [
+  defineModule({
+    id: 'maritime',
+    layers: ['maritime'],
+    Layer: MaritimeLayer,
+    cards: { port: PortCard, chokepoint: ChokepointCard, vessel: VesselCard },
+  }),
+];
 
 export default modules;
