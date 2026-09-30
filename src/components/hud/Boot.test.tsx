@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ACTIVE_LAYERS } from '@/lib/layer-registry';
+import { resetCameraRequests } from '@/lib/map/camera';
 import { landingCityFor } from '@/lib/presets';
 import { DEFAULT_SETTINGS, useUiStore } from '@/lib/store';
 import Boot, { applyDeepLink, deepLinkPanel, introSkipReason, sameSet } from './Boot';
@@ -30,6 +31,7 @@ function mount() {
 }
 
 beforeEach(() => {
+  resetCameraRequests();
   useUiStore.setState({ activeLayers: new Set(DEFAULT_ACTIVE_LAYERS), splashDone: false, cameraFromUrl: false, flyTo: null, settings: DEFAULT_SETTINGS, openPanel: null, plannedRoute: null, flightIdent: null, dossierTarget: null });
 });
 afterEach(() => {

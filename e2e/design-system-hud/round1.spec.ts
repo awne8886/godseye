@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { SOURCES } from '../../src/lib/sources';
+import { TOOLS } from '../../src/lib/tool-registry';
 
 /**
  * design-system-hud, Phase 3 round 1 regressions: attribution visibility (R1-B1), the full source
@@ -57,10 +58,8 @@ test('docs-B2: SOURCES & LICENCES renders every registry entry with its licence'
 
 test('R4-B2: ?route=LHR-JFK opens PATHS and the intro fly-in does not override the deep link', async ({ page }) => {
   await boot(page, '/?route=LHR-JFK');
-  const paths = page.getByRole('region', { name: 'PATHS' });
-  if ((await page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: 'PATHS', exact: true }).count()) === 0 && !(await paths.count())) {
-    test.skip(true, 'PATHS panel not registered in this build');
-  }
+  const label = TOOLS.find((t) => t.id === 'paths')!.label;
+  const paths = page.getByRole('region', { name: label, exact: true });
   await expect(paths).toBeVisible({ timeout: 20_000 });
   await expect(page).toHaveURL(/route=LHR-JFK/);
 });

@@ -249,7 +249,11 @@ export function FullscreenButton() {
 }
 
 export default function ViewControls() {
-  const projection = useUiStore((s) => s.projection);
+  // The highlight shows the projection the map actually applies (terrain forces mercator), falling
+  // back to the requested one before the map is mounted.
+  const requested = useUiStore((s) => s.projection);
+  const applied = useMapInstanceStore((s) => (s.map ? s.projection : null));
+  const projection = applied ?? requested;
   const setProjection = useUiStore((s) => s.setProjection);
   const basemap = useUiStore((s) => s.basemap);
   const setBasemap = useUiStore((s) => s.setBasemap);

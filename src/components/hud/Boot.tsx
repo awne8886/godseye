@@ -12,6 +12,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { defaultLayersFor } from '@/lib/layer-registry';
+import { hasCameraDeepLink, requestIntroFlyTo } from '@/lib/map/camera';
 import { landingCityFor } from '@/lib/presets';
 import { useUiStore, type UiState } from '@/lib/store';
 import { parseFlightParam, parseLatLngParam, parseRouteParam } from '@/lib/url-state';
@@ -53,13 +54,19 @@ export function sameSet(a: ReadonlySet<string>, b: readonly string[]): boolean {
   return a.size === b.length && b.every((x) => a.has(x));
 }
 
-/** Browser geolocation, only ever called after an explicit opt-in. */
-export function locateOnce(zoom = 5): Promise<boolean> {
+/**
+ * Browser geolocation, only ever called after an explicit opt-in. A click ("Centre on my region")
+ * is an explicit camera request; the boot intro passes `intro: true` so it goes through
+ * requestIntroFlyTo() and never overrides a deep link or a move the visitor made meanwhile.
+ */
+export function locateOnce(zoom = 5, { intro = false }: { intro?: boolean } = {}): Promise<boolean> {
   return new Promise((resolve) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return resolve(false);
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        useUiStore.getState().requestFlyTo({ lat: p.coords.latitude, lng: p.coords.longitude, zoom, pitch: 30, bearing: 0, durationMs: 3000 });
+        const target = { lat: p.coords.latitude, lng: p.coords.longitude, zoom, pitch: 30, bearing: 0, durationMs: 3000 };
+        if (intro) requestIntroFlyTo(useUiStore.getState, target);
+        else useUiStore.getState().requestFlyTo(target);
         resolve(true);
       },
       () => resolve(false),
@@ -94,10 +101,10 @@ export default function Boot() {
     if (!splashDone || flown.current) return;
     flown.current = true;
     const ui = useUiStore.getState();
-    if (introSkipReason(initialParams, ui)) return;
+    if (introSkipReason(initialParams, ui) || hasCameraDeepLink(ui)) return;
     const city = landingCityFor(new Date());
-    const toCity = () => useUiStore.getState().requestFlyTo({ lat: city.lat, lng: city.lng, zoom: 3.4, pitch: 25, bearing: 0, durationMs: 3500 });
-    if (ui.settings.geoConsent === 'granted') void locateOnce(4.5).then((ok) => ok || toCity());
+    const toCity = () => requestIntroFlyTo(useUiStore.getState, { lat: city.lat, lng: city.lng, zoom: 3.4, pitch: 25, bearing: 0, durationMs: 3500 });
+    if (ui.settings.geoConsent === 'granted') void locateOnce(4.5, { intro: true }).then((ok) => ok || toCity());
     else toCity();
   }, [splashDone]);
 
