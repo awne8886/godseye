@@ -60,6 +60,45 @@ function Body({ title, chips, children, testId }: { title: string; chips?: React
 
 const PRECISION: Record<string, string> = { city: 'City (IP geolocation)', region: 'Region (IP geolocation)', 'country-centroid': 'Country label point' };
 
+/**
+ * Indicators that geolocate to exactly the same coordinate are drawn as ONE point with a count
+ * (never displaced); the card lists every one of them. `members` is set by the network layer.
+ */
+function membersOf<T>(data: unknown): T[] | null {
+  const m = (data as { members?: unknown }).members;
+  return Array.isArray(m) && m.length > 1 ? (m as T[]) : null;
+}
+
+function MemberList<T>({ items, testId, render }: { items: readonly T[]; testId: string; render: (t: T) => { key: string; primary: string; secondary: string } }) {
+  return (
+    <ul data-testid={testId} aria-label={`${items.length} indicators at this position`} className="mt-2 max-h-56 overflow-y-auto border-t border-[var(--border-secondary)]">
+      {items.map((t) => {
+        const r = render(t);
+        return (
+          <li key={r.key} className="flex items-baseline justify-between gap-3 border-b border-[var(--border-secondary)] py-[3px] last:border-b-0">
+            <span className="font-mono text-[11px] tracking-[.08em] tabular-nums text-[var(--text-primary)] [overflow-wrap:anywhere]">{r.primary}</span>
+            <span className="text-right font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-secondary)]">{r.secondary}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function GroupCard<T>({ testId, title, chips, location, precision, members, render, source }: { testId: string; title: string; chips: ReactNode; location: string; precision: string; members: readonly T[]; render: (t: T) => { key: string; primary: string; secondary: string }; source: string }) {
+  return (
+    <Body testId={testId} title={title} chips={chips}>
+      <Row label="Indicators">{members.length}</Row>
+      <Row label="Location">{location || '—'}</Row>
+      <Row label="Position">{precision}</Row>
+      <Note>
+        {members.length} {source} indicators geolocate to exactly this point, so the map draws one point with their count — none is moved. IP geolocation is approximate and is not an attacker’s location.
+      </Note>
+      <MemberList items={members} testId={`${testId}-members`} render={render} />
+    </Body>
+  );
+}
+
 // ── Threats ───────────────────────────────────────────────────────────────────────
 export function NuclearCard({ selection }: CardProps) {
   const s = selection.data as unknown as NuclearSite;
@@ -174,7 +213,21 @@ export function CountryRiskCard({ selection }: CardProps) {
 
 // ── Network ───────────────────────────────────────────────────────────────────────
 export function MalwareCard({ selection }: CardProps) {
-  const h = selection.data as unknown as MalwareHost & { colocated?: number };
+  const h = selection.data as unknown as MalwareHost;
+  const members = membersOf<MalwareHost>(selection.data);
+  if (members)
+    return (
+      <GroupCard
+        testId="card-malware"
+        title={`${members.length} malware hosts`}
+        chips={<><Chip tone="red" testId="card-indicator">INDICATOR</Chip><Chip tone="muted">URLhaus</Chip></>}
+        location={[h.city, h.country].filter(Boolean).join(', ')}
+        precision={PRECISION[h.geoPrecision] ?? '—'}
+        members={members}
+        source="URLhaus"
+        render={(m) => ({ key: m.ip, primary: `${m.ip}${m.port ? `:${m.port}` : ''}`, secondary: [m.family, m.online ? 'online' : 'offline'].filter(Boolean).join(' · ') })}
+      />
+    );
   return (
     <Body testId="card-malware" title={`${h.ip}${h.port ? `:${h.port}` : ''}`} chips={<><Chip tone="red" testId="card-indicator">INDICATOR</Chip><Chip tone="muted">URLhaus</Chip></>}>
       <Row label="Threat">{h.threat.replace('_', ' ')}</Row>
@@ -185,7 +238,7 @@ export function MalwareCard({ selection }: CardProps) {
       <Row label="Location">{[h.city, h.country].filter(Boolean).join(', ') || '—'}</Row>
       <Row label="Position">{PRECISION[h.geoPrecision]}</Row>
       <Row label="First seen">{iso(h.firstSeen)}</Row>
-      <Note>A blocklist INDICATOR: this IP hosted malware URLs. It is not an attacker’s location, and IP geolocation is approximate.{h.colocated && h.colocated > 1 ? ` ${h.colocated} indicators share this position; the map spreads them for display only.` : ''}</Note>
+      <Note>A blocklist INDICATOR: this IP hosted malware URLs. It is not an attacker’s location, and IP geolocation is approximate.</Note>
       <Link href={h.urlhausReference}>URLhaus entry</Link>
     </Body>
   );
@@ -193,6 +246,20 @@ export function MalwareCard({ selection }: CardProps) {
 
 export function C2Card({ selection }: CardProps) {
   const c = selection.data as unknown as C2Server;
+  const members = membersOf<C2Server>(selection.data);
+  if (members)
+    return (
+      <GroupCard
+        testId="card-c2"
+        title={`${members.length} botnet C2 servers`}
+        chips={<Chip tone="red" testId="card-indicator">INDICATOR</Chip>}
+        location={dash(c.country)}
+        precision={PRECISION[c.geoPrecision] ?? '—'}
+        members={members}
+        source="Feodo Tracker"
+        render={(m) => ({ key: m.id, primary: `${m.ip}${m.port ? `:${m.port}` : ''}`, secondary: [m.malware, m.status].filter(Boolean).join(' · ') })}
+      />
+    );
   return (
     <Body testId="card-c2" title={`${c.ip}${c.port ? `:${c.port}` : ''}`} chips={<><Chip tone="red" testId="card-indicator">INDICATOR</Chip><Chip tone={c.status === 'online' ? 'orange' : 'muted'}>{c.status}</Chip></>}>
       <Row label="Malware">{dash(c.malware)}</Row>
@@ -210,6 +277,20 @@ export function C2Card({ selection }: CardProps) {
 
 export function ThreatIndicatorCard({ selection }: CardProps) {
   const t = selection.data as unknown as ThreatIndicator;
+  const members = membersOf<ThreatIndicator>(selection.data);
+  if (members)
+    return (
+      <GroupCard
+        testId="card-threatfox"
+        title={`${members.length} ThreatFox indicators`}
+        chips={<><Chip tone="red" testId="card-indicator">INDICATOR</Chip><Chip tone="muted">ThreatFox</Chip></>}
+        location=""
+        precision={t.geo ? (PRECISION[t.geo.precision] ?? '—') : 'not placed'}
+        members={members}
+        source="ThreatFox"
+        render={(m) => ({ key: m.id, primary: m.ioc, secondary: [m.malware, m.threatType.replace('_', ' ')].filter(Boolean).join(' · ') })}
+      />
+    );
   return (
     <Body testId="card-threatfox" title={t.ioc} chips={<><Chip tone="red" testId="card-indicator">INDICATOR</Chip><Chip tone="muted">ThreatFox</Chip></>}>
       <Row label="IOC type">{t.iocType}</Row>

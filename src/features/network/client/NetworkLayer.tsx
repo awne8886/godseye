@@ -3,19 +3,23 @@
  * Network intel layers: URLhaus malware hosts over SSE (arrival beacons for NEW IPs only), Feodo
  * C2 and ThreatFox IOCs as INDICATOR points (never arcs), internet outages, Cloudflare attack
  * origins (points; an arc only when a target is reported) and submarine cables (REFERENCE).
- * Co-located indicators are spread for display only (spread.ts). Owner: layers-threats-network.
+ * Co-located indicators are ONE point at their true shared coordinate with a count (colocate.ts);
+ * nothing is displaced. Owner: layers-threats-network.
  */
-import { ArcLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { ArcLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
 import type { DeckPickInfo } from '@/lib/map/picking';
 import { readCssColor } from '@/lib/tokens';
-import type { AttackOrigin, AttackOriginsResponse, C2Response, C2Server, CablesResponse, FeedEvent, FeedMeta, LandingPoint, MalwareHost, Outage, OutagesResponse, Providers, ThreatFoxResponse, ThreatIndicator } from '@/lib/types';
+import type { AttackOrigin, AttackOriginsResponse, C2Response, C2Server, CablesResponse, FeedEvent, FeedMeta, KevResponse, LandingPoint, MalwareHost, Outage, OutagesResponse, Providers, ThreatFoxResponse, ThreatIndicator } from '@/lib/types';
 import { countryByIso2 } from '../../threats/shared/country';
 import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
-import { spreadPositions, useZoomBucket } from './spread';
+import { colocatedRadiusPx, countLabels, groupColocated, useMoveEndTick, type Colocated } from './colocate';
+import { KEV_FEED_LIMIT, kevEvents } from './kev-events';
+import { malwareCount, needsResync, reduceMalware, type MalwareStreamEvent } from './malware-state';
 
 const zOf = (id: string) => LAYERS.find((l) => l.id === id)!.z;
 const css = (token: Parameters<typeof readCssColor>[0], alpha = 1) => rgbaCss(readCssColor(token, alpha));
@@ -29,8 +33,34 @@ const sel = <T extends { id: string; lat: number; lng: number; observedAt: strin
   lngLat: [t.lng, t.lat] as [number, number],
 });
 
+// ── Co-located indicator groups (one point per true coordinate, count label) ─────
+/** Card payload for a group: the first indicator's fields plus every indicator at that point. */
+function groupData<T extends { id: string }>(g: Colocated<T>): Record<string, unknown> {
+  return { ...(g.items[0] as unknown as Record<string, unknown>), colocated: g.items.length, members: g.items };
+}
+const groupId = <T extends { id: string }>(g: Colocated<T>) => (g.items.length > 1 ? `at:${g.key}` : g.items[0]!.id);
+
+/** Count labels (n ≥ 2) at the shared point; billboard + cullMode none + far-side filtered. */
+function countLabelLayer<T>(id: string, groups: readonly Colocated<T>[], token: Parameters<typeof readCssColor>[0]) {
+  return new TextLayer<Colocated<T>>({
+    id,
+    data: countLabels(groups),
+    getPosition: (g) => [g.lng, g.lat],
+    getText: (g) => String(g.items.length),
+    getSize: 10,
+    getColor: readCssColor(token, 1),
+    fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+    fontWeight: 600,
+    getTextAnchor: 'middle',
+    getAlignmentBaseline: 'center',
+    billboard: true,
+    parameters: { cullMode: 'none' },
+    pickable: false,
+  });
+}
+
 // ── Malware (SSE) ────────────────────────────────────────────────────────────────
-export function malwareEvents(hosts: readonly MalwareHost[]): FeedEvent[] {
+export function malwareEvents(hosts: readonly MalwareHost[], receivedAt: string): FeedEvent[] {
   return hosts.map((h) => ({
     id: h.ip,
     layer: 'malware',
@@ -39,7 +69,8 @@ export function malwareEvents(hosts: readonly MalwareHost[]): FeedEvent[] {
     title: `New malware host ${h.ip}${h.family ? ` (${h.family})` : ''}`,
     detail: [h.city, h.country].filter(Boolean).join(', ') || undefined,
     severity: h.online ? ('medium' as const) : ('low' as const),
-    observedAt: h.observedAt ?? new Date().toISOString(),
+    // URLhaus dateadded of the host's newest URL; the stream arrival time only when URLhaus gave none.
+    observedAt: h.observedAt ?? receivedAt,
     lat: h.lat,
     lng: h.lng,
     source: 'URLhaus',
@@ -47,6 +78,7 @@ export function malwareEvents(hosts: readonly MalwareHost[]): FeedEvent[] {
 }
 
 const BEACON_MS = 120_000;
+const RESYNC_MIN_MS = 60_000;
 
 function MalwareLayer() {
   const [hosts, setHosts] = useState<MalwareHost[] | null>(null);
@@ -54,39 +86,55 @@ function MalwareLayer() {
   const [arrivals, setArrivals] = useState<ReadonlyMap<string, number>>(() => new Map());
   const update = useLayerStatusStore((s) => s.update);
   const push = useFeedEventStore((s) => s.push);
-  const zoom = useZoomBucket();
+  const tick = useMoveEndTick();
 
   useEffect(() => {
-    update('malware', { state: 'loading' });
-    const es = new EventSource('/api/malware/stream');
-    es.addEventListener('snapshot', (ev) => {
-      const snap = JSON.parse((ev as MessageEvent<string>).data) as { items: MalwareHost[]; meta: FeedMeta; providers: Providers };
-      setHosts(snap.items);
-      update('malware', { state: snap.meta.state, count: snap.items.length, fetchedAt: snap.meta.fetchedAt, observedAt: snap.meta.observedAt, lastGoodAt: snap.meta.lastGoodAt, providers: snap.providers, attribution: snap.meta.attribution, error: undefined });
-    });
-    es.addEventListener('detections', (ev) => {
-      const added = JSON.parse((ev as MessageEvent<string>).data) as MalwareHost[];
-      const now = Date.now();
-      setArrivals((prev) => new Map([...prev, ...added.map((h) => [h.ip, now] as const)]));
-      setHosts((prev) => {
-        const map = new Map((prev ?? []).map((h) => [h.ip, h]));
-        for (const h of added) map.set(h.ip, h);
-        const next = [...map.values()];
-        update('malware', { count: next.length, state: 'live', fetchedAt: new Date(now).toISOString() });
-        return next;
-      });
-      push(malwareEvents(added));
-    });
-    es.addEventListener('status', (ev) => {
-      const st = JSON.parse((ev as MessageEvent<string>).data) as { retired: string[] };
-      const gone = new Set(st.retired);
-      setHosts((prev) => (prev ? prev.filter((h) => !gone.has(h.ip)) : prev));
-    });
-    es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) update('malware', { state: 'offline', error: 'stream_closed' });
+    let es: EventSource | null = null;
+    let current: MalwareHost[] | null = null;
+    let lastResync = 0;
+    const apply = (ev: MalwareStreamEvent) => {
+      current = reduceMalware(current, ev);
+      setHosts(current);
+      if (needsResync(current, ev) && Date.now() - lastResync > RESYNC_MIN_MS) {
+        lastResync = Date.now();
+        open(); // a fresh snapshot replaces the set
+      }
     };
-    return () => es.close();
+    const open = () => {
+      es?.close();
+      const src = new EventSource('/api/malware/stream');
+      es = src;
+      src.addEventListener('snapshot', (ev) => {
+        const snap = JSON.parse((ev as MessageEvent<string>).data) as { items: MalwareHost[]; meta: FeedMeta; providers: Providers };
+        update('malware', { state: snap.meta.state, fetchedAt: snap.meta.fetchedAt, observedAt: snap.meta.observedAt, lastGoodAt: snap.meta.lastGoodAt, providers: snap.providers, attribution: snap.meta.attribution, error: undefined });
+        apply({ type: 'snapshot', items: snap.items });
+      });
+      src.addEventListener('detections', (ev) => {
+        const added = JSON.parse((ev as MessageEvent<string>).data) as MalwareHost[];
+        const now = Date.now();
+        setArrivals((prev) => new Map([...prev, ...added.map((h) => [h.ip, now] as const)]));
+        update('malware', { state: 'live', fetchedAt: new Date(now).toISOString() });
+        apply({ type: 'detections', items: added });
+        push(malwareEvents(added, new Date(now).toISOString()));
+      });
+      src.addEventListener('status', (ev) => {
+        const st = JSON.parse((ev as MessageEvent<string>).data) as { retired: string[]; total?: number };
+        apply({ type: 'status', retired: st.retired, total: st.total });
+      });
+      src.onerror = () => {
+        if (src.readyState === EventSource.CLOSED) update('malware', { state: 'offline', error: 'stream_closed' });
+      };
+    };
+    update('malware', { state: 'loading' });
+    open();
+    return () => es?.close();
   }, [update, push]);
+
+  // The count is derived from the host set here and nowhere else (R3-M2).
+  useEffect(() => {
+    const count = malwareCount(hosts);
+    if (count !== null) update('malware', { count });
+  }, [hosts, update]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -99,31 +147,31 @@ function MalwareLayer() {
     return () => clearInterval(t);
   }, []);
 
+  const groups = useMemo(() => (hosts ? groupColocated(hosts) : null), [hosts]);
   const layers = useMemo(() => {
-    if (!hosts) return null;
-    const { pos, shared } = spreadPositions(hosts, zoom);
-    const data = hosts.map((h, i) => ({ h, p: pos[i]!, n: shared[i]! }));
-    const beacons = data.filter((d) => arrivals.has(d.h.ip));
+    if (!groups) return null;
+    void tick; // re-run the far-side filter of the count labels after camera moves
+    const beacons = groups.filter((g) => g.items.some((h) => arrivals.has(h.ip)));
     return [
-      new ScatterplotLayer<(typeof data)[number]>({
+      new ScatterplotLayer<Colocated<MalwareHost>>({
         id: 'tn-malware',
-        data,
-        getPosition: (d) => d.p,
-        getRadius: (d) => (d.h.online ? 4 : 3),
+        data: groups,
+        getPosition: (g) => [g.lng, g.lat],
+        getRadius: (g) => colocatedRadiusPx(g.items.length, g.items.some((h) => h.online) ? 4 : 3),
         radiusUnits: 'pixels',
-        getFillColor: (d) => readCssColor('--map-malware', d.h.online ? 0.85 : 0.45),
+        getFillColor: (g) => readCssColor('--map-malware', g.items.some((h) => h.online) ? 0.7 : 0.4),
         getLineColor: readCssColor('--map-malware-ring', 0.9),
         stroked: true,
         lineWidthUnits: 'pixels',
-        getLineWidth: 0.5,
+        getLineWidth: 0.75,
         pickable: true,
         autoHighlight: true,
       }),
-      new ScatterplotLayer<(typeof data)[number]>({
+      new ScatterplotLayer<Colocated<MalwareHost>>({
         id: 'tn-malware-beacons',
         data: beacons,
-        getPosition: (d) => d.p,
-        getRadius: 11,
+        getPosition: (g) => [g.lng, g.lat],
+        getRadius: (g) => colocatedRadiusPx(g.items.length, 4) + 7,
         radiusUnits: 'pixels',
         filled: false,
         stroked: true,
@@ -132,12 +180,13 @@ function MalwareLayer() {
         getLineWidth: 1.5,
         pickable: false,
       }),
+      countLabelLayer('tn-malware-count', groups, '--map-malware-ring'),
     ];
-  }, [hosts, zoom, arrivals]);
+  }, [groups, arrivals, tick]);
   useDeckLayers('network:malware', layers, zOf('malware'));
   useDeckPick('tn-malware', (info: DeckPickInfo) => {
-    const d = info.object as { h: MalwareHost; n: number } | undefined;
-    return d ? sel('malware_host', 'malware', d.h, { colocated: d.n }) : null;
+    const g = info.object as Colocated<MalwareHost> | undefined;
+    return g ? { ...sel('malware_host', 'malware', g.items[0]!), id: groupId(g), data: groupData(g) } : null;
   });
   return null;
 }
@@ -152,23 +201,23 @@ export function c2Events(items: readonly C2Server[]): FeedEvent[] {
 function C2Layer() {
   const data = useFeedData<C2Response>('cyber_attacks', '/api/cyber-attacks', (b) => b.items.length);
   const items = data?.items;
-  const zoom = useZoomBucket();
+  const tick = useMoveEndTick();
   const push = useFeedEventStore((s) => s.push);
   useEffect(() => {
     if (items) push(c2Events(items));
   }, [items, push]);
+  const groups = useMemo(() => (items ? groupColocated(items) : null), [items]);
   const layers = useMemo(() => {
-    if (!items) return null;
-    const { pos, shared } = spreadPositions(items, zoom);
-    const rows = items.map((c, i) => ({ c, p: pos[i]!, n: shared[i]! }));
+    if (!groups) return null;
+    void tick;
     return [
-      new ScatterplotLayer<(typeof rows)[number]>({
+      new ScatterplotLayer<Colocated<C2Server>>({
         id: 'tn-c2',
-        data: rows,
-        getPosition: (d) => d.p,
-        getRadius: (d) => (d.c.status === 'online' ? 6 : 4),
+        data: groups,
+        getPosition: (g) => [g.lng, g.lat],
+        getRadius: (g) => colocatedRadiusPx(g.items.length, g.items.some((c) => c.status === 'online') ? 6 : 4),
         radiusUnits: 'pixels',
-        getFillColor: (d) => readCssColor(d.c.status === 'online' ? '--map-c2-online' : '--map-c2-offline', 0.9),
+        getFillColor: (g) => readCssColor(g.items.some((c) => c.status === 'online') ? '--map-c2-online' : '--map-c2-offline', 0.9),
         getLineColor: readCssColor('--map-c2-online', 1),
         stroked: true,
         lineWidthUnits: 'pixels',
@@ -176,12 +225,13 @@ function C2Layer() {
         pickable: true,
         autoHighlight: true,
       }),
+      countLabelLayer('tn-c2-count', groups, '--map-c2-online'),
     ];
-  }, [items, zoom]);
+  }, [groups, tick]);
   useDeckLayers('network:c2', layers, zOf('cyber_attacks'));
   useDeckPick('tn-c2', (info) => {
-    const d = info.object as { c: C2Server; n: number } | undefined;
-    return d ? sel('c2_server', 'cyber_attacks', d.c, { colocated: d.n }) : null;
+    const g = info.object as Colocated<C2Server> | undefined;
+    return g ? { ...sel('c2_server', 'cyber_attacks', g.items[0]!), id: groupId(g), data: groupData(g) } : null;
   });
   return null;
 }
@@ -192,17 +242,17 @@ type Placed = ThreatIndicator & { lat: number; lng: number };
 function ThreatFoxLayer() {
   const data = useFeedData<ThreatFoxResponse>('threatfox', '/api/threatfox', (b) => b.located);
   const placed = useMemo<Placed[] | null>(() => data?.items.flatMap((t) => (t.geo ? [{ ...t, lat: t.geo.lat, lng: t.geo.lng }] : [])) ?? null, [data]);
-  const zoom = useZoomBucket();
+  const tick = useMoveEndTick();
+  const groups = useMemo(() => (placed ? groupColocated(placed) : null), [placed]);
   const layers = useMemo(() => {
-    if (!placed) return null;
-    const { pos, shared } = spreadPositions(placed, zoom);
-    const rows = placed.map((t, i) => ({ t, p: pos[i]!, n: shared[i]! }));
+    if (!groups) return null;
+    void tick;
     return [
-      new ScatterplotLayer<(typeof rows)[number]>({
+      new ScatterplotLayer<Colocated<Placed>>({
         id: 'tn-threatfox',
-        data: rows,
-        getPosition: (d) => d.p,
-        getRadius: 3.5,
+        data: groups,
+        getPosition: (g) => [g.lng, g.lat],
+        getRadius: (g) => colocatedRadiusPx(g.items.length, 3.5),
         radiusUnits: 'pixels',
         getFillColor: readCssColor('--map-malware', 0.35),
         getLineColor: readCssColor('--map-malware', 0.95),
@@ -212,12 +262,14 @@ function ThreatFoxLayer() {
         pickable: true,
         autoHighlight: true,
       }),
+      countLabelLayer('tn-threatfox-count', groups, '--map-malware'),
     ];
-  }, [placed, zoom]);
+  }, [groups, tick]);
   useDeckLayers('network:threatfox', layers, zOf('threatfox'));
   useDeckPick('tn-threatfox', (info) => {
-    const d = info.object as { t: Placed; n: number } | undefined;
-    return d ? { kind: 'threat_indicator', id: d.t.id, layer: 'threatfox', source: 'threatfox', observedAt: d.t.observedAt, data: { ...d.t, colocated: d.n } as unknown as Record<string, unknown>, lngLat: [d.t.lng, d.t.lat] } : null;
+    const g = info.object as Colocated<Placed> | undefined;
+    const t = g?.items[0];
+    return g && t ? { kind: 'threat_indicator', id: groupId(g), layer: 'threatfox', source: 'threatfox', observedAt: t.observedAt, data: groupData(g), lngLat: [g.lng, g.lat] } : null;
   });
   return null;
 }
@@ -356,6 +408,26 @@ function CablesLayer() {
   return null;
 }
 
+// ── CISA KEV newest additions → Intel Feed (no map geometry) ─────────────────────
+function KevFeed() {
+  const push = useFeedEventStore((s) => s.push);
+  const q = useQuery({
+    queryKey: ['threats-network', 'kev-feed'],
+    queryFn: async ({ signal }) => {
+      const res = await fetch(`/api/cyber-threats?limit=${KEV_FEED_LIMIT}`, { signal, headers: { accept: 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as KevResponse;
+    },
+    refetchInterval: 10 * 60_000,
+    refetchIntervalInBackground: false,
+  });
+  const items = q.data?.items;
+  useEffect(() => {
+    if (items) push(kevEvents(items));
+  }, [items, push]);
+  return null;
+}
+
 export default function NetworkLayer({ active }: LayerComponentProps) {
   return (
     <>
@@ -365,6 +437,7 @@ export default function NetworkLayer({ active }: LayerComponentProps) {
       {active.has('threatfox') && <ThreatFoxLayer />}
       {active.has('cyber_attacks') && <C2Layer />}
       {active.has('malware') && <MalwareLayer />}
+      {(active.has('malware') || active.has('cyber_attacks') || active.has('threatfox')) && <KevFeed />}
     </>
   );
 }
