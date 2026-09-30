@@ -55,3 +55,19 @@ None required. (N2YO passes would be a keyed upgrade behind a capability; not im
 - `/api/space-weather` 200: Kp 0.33 Quiet (15:00Z interval), X-ray B2.6, RTSW SOLAR1 299.8 km/s, 3.81 p/cc,
   Bt 3.78 nT, Bz +0.55 nT, R0/S0/G0, 25 alerts; all six providers ok.
 - `/api/iss` 200 with a propagated ground track; `/api/satellites/orbit?id=25544` LEO, 92.98 min.
+
+## Re-probe 2026-09-30 22:42 UTC (Phase 3 round 1)
+
+Same honest UA, one `curl -s` each, `Origin: https://example.org`.
+
+| URL | Status | Latency | Size | CORS | Notes |
+|---|---|---|---|---|---|
+| `https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json` | **000** (no response; connection dropped after 11.4 s) | 11.4 s | 0 | — | Not retried (firewall budget). The server feed keeps its last-good catalogue with its age; minutes later the app's own server fetch of `active` succeeded (`/api/satellites` 200, 16 612 rows, 2 909 461 B uncompressed). A 403 would mean "not updated since last download". |
+| `https://db.satnogs.org/api/tle/?format=json&norad_cat_id=25544` | 200 | 0.85 s | 312 B | none | ISS TLE, `tle_source: Space-Track.org`, epoch 26273.46514106. |
+| `https://api.wheretheiss.at/v1/satellites/25544` | 200 | 0.34 s | 312 B | `*` | lat 11.44, lng −42.90, alt 416.95 km, velocity 27 594.6 km/h, `visibility: eclipsed`, timestamp 1790808175. |
+| `https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json` | 200 | 0.18 s | 4 872 B | `*` | Array of objects `{time_tag, Kp, a_running, station_count}`; `time_tag` zone-less UTC. |
+
+Client change recorded here because it affects how the catalogue reaches the browser: the
+`tle-propagate` worker now fetches `/api/satellites` itself (same origin) and transfers typed arrays
+to the main thread; the SPACE panel asks `/api/satellites?id=25544` (one row) instead of the whole
+catalogue.
