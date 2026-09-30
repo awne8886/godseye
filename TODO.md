@@ -125,6 +125,32 @@ Kept current by the lead after every phase. The build is done when this file is 
 - [ ] feature-flight-paths: AeroAPI unwired, FAA airways skipped (quota); comet head / pulsing endpoints / reverse
       arc / route clicks; panel title "FLIGHT PATHS" per §8
 
+## Phase 3 round 1 — 8 verifiers (R1–R4, visual-qa, perf, security, docs); fixes merged (029fc3c)
+Findings: `phase3/round1/*.md` in the lead scratchpad. 7 BLOCKING, ~35 MAJOR, ~80 MINOR. Fixed by the lead:
+security (cross-site POST 403, streamed body caps, redirect header allow-list, secret redaction, IPv6 zone/48,
+SSE global budget, bounded memory/file caches, ArcGIS limit, dev-dep overrides, proxy-trust warning), one NVD
+bucket, feedJson compression, 17 unwired capabilities removed, LICENSE NOTICE, README/catalogue honesty (TTLs,
+receivers, OSIRIS strings), `/api/stats` cameras. Fixed by owners (11 worktrees): attribution visibility,
+sources register (113 entries), deep links vs intro, click-only deck picking, antimeridian tracks, §8 styling,
+dossier nearby layers, markets chip truth, live NACp, malware count/co-location, KEV events, keyless cameras
+(no 503), TfL key in header, narrowed allow-lists, ArcGIS allow-list, directions snap gate, classifier parity,
+lazy layers (initial JS 560 → ~459 KB gz), worker-side satellite parse, /docs try-it/⌘K (LH 0.99), Docker
+hardening.
+- [ ] Lighthouse `/`: perf 0.54, TBT 4.1 s on c25edd6 (budget 0.85 / 300 ms); initial JS ~459 KB gz (350) —
+      dedicated map-engine perf task in progress
+- [ ] aviation: 40–79 % of positions older than 60 s after a few minutes under adsb.lol 429 on shared egress;
+      `ADSBLOL_REAPI` is the real fix; rail shows the stale count
+- [ ] feature-flight-paths: FAA airways layer (needs a cached, quota-aware provider); ArcLayer arc height and
+      deck extensions dashes; R4 minors m2, m5, m7, m8
+- [ ] layers-surveillance: INDOT, Edmonton, Via Lietuva, MLIT, Skyline link-out rows (R2-M4); camera card footer
+      on phones (m21); example camera ids for `/api/cctv/{resolve,stream-status,texas/snapshot}` docs
+- [ ] panels-recon: redirects within `*.arcgis.com` may change path (needs a path-pattern option on AllowRule)
+- [ ] map-engine: dark triangle artefact (m13) not reproduced; label density at z 3–5
+- [ ] panels: Telegram channel cache 2 min (brief asked 3); HKEX holidays from a secondary source — verify
+- [ ] pages-docs-privacy-ops: pin Caddy/Redis images by digest (Docker Hub 429); README screenshots (visual-qa
+      round 2, WebP)
+- [ ] dev-only advisories: extract-zip, uuid under @lhci/cli (no patched release)
+
 ## Phase 0 build items per builder (Phase 2 owners)
 ### map-engine
 - [x] `setMissingStyleImageResolver` for `circle-11` (gold SDF dot); drop `fill-pattern` on `landcover_wood`
@@ -162,7 +188,8 @@ Kept current by the lead after every phase. The build is done when this file is 
       (`openmeteo` capability), RainViewer, GPS jam (gpsjam daily H3, bad > 0 cells, columnar), Sentinel (CDSE STAC)
 ### layers-surveillance
 - [x] CCTV keyless providers (Caltrans paged, WSDOT KML, TxDOT new shape, HK TD, LTA, Digitraffic gzip, DriveBC/RWS
-      new URLs, NZTA, Trafikverket, …); keyed TfL/511/Seoul/Windy behind capabilities; excluded list honoured
+      new URLs, NZTA, Trafikverket, …); keyed TfL behind its capability (511 keys, Seoul, Windy not wired —
+      their capabilities were removed in Phase 3); excluded list honoured
 - [x] `/cameras-notice` page + "Report / remove this camera" on every feed + region link-out-only mode (§0.7)
 - [x] Stills-only `/api/cctv/proxy` with exact prefixes; `/api/cctv` lat/lng region select + ETag; live news `/live`
       resolved server-side; report any new media host for `src/config/hosts.ts`
@@ -183,7 +210,7 @@ Kept current by the lead after every phase. The build is done when this file is 
       Authorization header, pinned IP, passive default, active behind `SCANNER_ALLOW_ACTIVE`), World Remote without
       RTCPeerConnection/localhost probing
 ### feature-flight-paths
-- [x] OurAirports + mwgg + VRS routes; FAA airways build-time snapshot; METAR/TAF (999999 → null, error-in-body);
+- [x] OurAirports + mwgg + VRS routes (FAA airways snapshot NOT built — quota; see Phase 3); METAR/TAF (999999 → null, error-in-body);
       winds aloft multi-coordinate single request + 1 h grid cache (`skipped: 'budget'` when limited); planner,
       live aircraft on route, track my flight (`flightIdent`)
 ### pages-docs-privacy-ops
