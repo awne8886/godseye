@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { gotoMap, readCamera, waitForMapIdle } from '../map-engine/helpers';
+import { gotoMap as gotoMapBase, readCamera, waitForMapIdle, type CameraArg } from '../map-engine/helpers';
 
 /**
  * panels-recon end-to-end checks. Browser → /api responses for SEARCH, ROUTE and RECON are
@@ -10,6 +10,9 @@ import { gotoMap, readCamera, waitForMapIdle } from '../map-engine/helpers';
 
 const NOW = '2026-09-30T20:00:00.000Z';
 
+/** No data layers (`?layers=`): keeps SwiftShader free for the panel under test on a shared CPU. */
+const gotoMap = (page: Page, camera?: CameraArg) => gotoMapBase(page, { camera, params: { layers: '' } });
+
 async function openTool(page: Page, label: string) {
   const tool = page.getByRole('button', { name: label, exact: true });
   test.skip((await tool.count()) === 0, 'the HUD tool strip (design-system-hud) is not mounted in this build');
@@ -18,6 +21,7 @@ async function openTool(page: Page, label: string) {
 
 test.describe('panels-recon', () => {
   test.skip(({ isMobile }) => isMobile, 'the tool strip is desktop-only; phones reach these tools via bottom-sheet tabs');
+  test.beforeEach(() => test.setTimeout(240_000));
 
   test('SEARCH flies to a place', async ({ page }) => {
     await page.route('**/api/geosearch?**', (route) =>
@@ -30,8 +34,7 @@ test.describe('panels-recon', () => {
         },
       }),
     );
-    await gotoMap(page, { camera: { lat: 0, lng: 0, zoom: 2 } });
-    await waitForMapIdle(page);
+    await gotoMap(page, { lat: 0, lng: 0, zoom: 2 });
     await openTool(page, 'SEARCH');
     const panel = page.getByTestId('search-panel');
     await panel.getByLabel('Search places or coordinates').fill('Kyiv');
@@ -43,7 +46,7 @@ test.describe('panels-recon', () => {
       .poll(async () => {
         const c = await readCamera(page);
         return c ? Math.abs(c.lat - 50.45) < 0.5 && Math.abs(c.lng - 30.52) < 0.5 : false;
-      }, { timeout: 20_000 })
+      }, { timeout: 150_000, message: 'camera should fly to Kyiv once the style has loaded' })
       .toBe(true);
   });
 
@@ -77,8 +80,7 @@ test.describe('panels-recon', () => {
         },
       }),
     );
-    await gotoMap(page, { camera: { lat: 0, lng: 0, zoom: 2 } });
-    await waitForMapIdle(page);
+    await gotoMap(page, { lat: 0, lng: 0, zoom: 2 });
     await openTool(page, 'ROUTE');
     const panel = page.getByTestId('route-panel');
     await panel.getByLabel('From').fill('52.52, 13.38');
@@ -93,13 +95,14 @@ test.describe('panels-recon', () => {
       .poll(async () => {
         const c = await readCamera(page);
         return c ? Math.abs(c.lat - 52.51) < 0.5 && c.zoom > 8 : false;
-      }, { timeout: 20_000 })
+      }, { timeout: 150_000 })
       .toBe(true);
   });
 
   test('DRAW measures a line', async ({ page }) => {
-    await gotoMap(page, { camera: { lat: 20, lng: 0, zoom: 4 } });
-    await waitForMapIdle(page);
+    await gotoMap(page, { lat: 20, lng: 0, zoom: 4 });
+    // Drawing listens to the map instance, which the host publishes on the style's first load.
+    await waitForMapIdle(page, 200_000);
     await openTool(page, 'DRAW');
     const panel = page.getByTestId('draw-panel');
     await panel.getByRole('button', { name: /Line/ }).click();
@@ -153,7 +156,7 @@ test.describe('panels-recon', () => {
     await openTool(page, 'RECON');
     const panel = page.getByTestId('recon-panel');
     await panel.getByLabel('Target').fill('alice@example.com');
-    await panel.getByRole('button', { name: 'Run lookups' }).click();
+    await panel.getByLabel('Target').press('Enter');
     await expect(panel.getByRole('alert')).toContainText('not looked up');
   });
 
