@@ -27,7 +27,12 @@ export const MalwareHost = EntityBase.extend({
   firstSeen: IsoTime.nullable(),
 });
 
-export const MalwareResponse = Envelope.extend({ items: z.array(MalwareHost) });
+export const MalwareResponse = Envelope.extend({
+  items: z.array(MalwareHost),
+  /** Distinct IP hosts in the URLhaus window, and how many are still awaiting geolocation. */
+  hostsTotal: z.number().int().nonnegative().optional(),
+  pendingGeo: z.number().int().nonnegative().optional(),
+});
 
 /** SSE payloads on /api/malware/stream (event names: snapshot | detections | status | heartbeat). */
 export const MalwareStreamStatus = z.object({ retired: z.array(z.string()), total: z.number().int(), at: IsoTime });
@@ -49,7 +54,13 @@ export const C2Server = EntityBase.extend({
   label: z.literal('INDICATOR'),
 });
 
-export const C2Response = Envelope.extend({ items: z.array(C2Server) });
+export const C2Response = Envelope.extend({
+  items: z.array(C2Server),
+  /** How many listed C2s Feodo Tracker currently marks online (may honestly be 0 or 1). */
+  onlineCount: z.number().int().nonnegative().optional(),
+  /** Listed C2s not drawn because they could not be geolocated this run. */
+  unlocated: z.number().int().nonnegative().optional(),
+});
 
 /**
  * ThreatFox IOC. Most IOCs (domains, URLs, hashes) have no location: they live in the panel list.
@@ -84,9 +95,18 @@ export const KevEntry = z.object({
   dueDate: z.iso.date().nullable(),
   ransomware: z.enum(['Known', 'Unknown']),
   description: z.string(),
+  /** NVD enrichment (CVSS v3.1 base, else v3.0/v2), present only for CVEs NVD has answered for. */
+  cvssScore: z.number().min(0).max(10).nullable().optional(),
+  cvssSeverity: z.string().nullable().optional(),
+  cvssVersion: z.string().nullable().optional(),
 });
 
-export const KevResponse = Envelope.extend({ items: z.array(KevEntry), catalogVersion: z.string().nullable() });
+export const KevResponse = Envelope.extend({
+  items: z.array(KevEntry),
+  catalogVersion: z.string().nullable(),
+  /** CVEs enriched from NVD so far (NVD allows 5 requests / 30 s keyless). */
+  enriched: z.number().int().nonnegative().optional(),
+});
 
 export const Outage = EntityBase.extend({
   country: z.string(),
@@ -131,6 +151,30 @@ export const LandingPoint = EntityBase.extend({ name: z.string(), country: z.str
 export const CablesResponse = Envelope.extend({
   cables: z.array(SubmarineCable),
   landingPoints: z.array(LandingPoint),
+});
+
+/**
+ * One entity pushed by a third-party GODSEYE SDK client (POST /api/sdk/ingest). Always labelled
+ * third-party; the server stamps `ingestedAt` and never treats it as first-party data.
+ */
+export const SdkEntityInput = z.object({
+  id: z.string().min(1).max(128).regex(/^[\w.:-]+$/),
+  name: z.string().min(1).max(160),
+  domain: z.enum(['AIR', 'SEA', 'LAND', 'SPACE', 'CYBER', 'EW', 'SUBSURFACE']),
+  entityType: z.enum(['TRACK', 'FACILITY', 'EVENT', 'SENSOR', 'SIGNAL', 'INTEL']),
+  position: z.object({ lat: Lat, lng: Lng, alt: z.number().finite().optional(), heading: z.number().min(0).max(360).optional(), speed: z.number().min(0).optional() }),
+  timestamp: IsoTime,
+  source: z.object({ system: z.string().min(1).max(64), sensor: z.string().max(64).optional() }),
+  threat: z.enum(['NONE', 'LOW', 'ELEVATED', 'HIGH', 'CRITICAL']).optional(),
+  properties: z.record(z.string(), z.union([z.string().max(512), z.number(), z.boolean(), z.null()])).optional(),
+});
+
+export const SdkIngestBatch = z.object({ entities: z.array(z.unknown()).min(1).max(500) });
+
+export const SdkEntity = SdkEntityInput.extend({
+  thirdParty: z.literal(true),
+  label: z.literal('THIRD-PARTY (SDK)'),
+  ingestedAt: IsoTime,
 });
 
 /** POST /api/sdk/ingest result. */
