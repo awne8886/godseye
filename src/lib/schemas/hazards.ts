@@ -117,6 +117,8 @@ export const GpsJamCell = z.object({
   basis: z.enum(['gpsjam-daily', 'live-nacp']),
   /** UTC day of the gpsjam aggregate (null for live NACp bins). */
   date: z.iso.date().nullable(),
+  /** Live NACp bins only: newest position time of a degraded aircraft in the cell. */
+  observedAt: IsoTime.optional(),
 });
 
 export const GpsInterferenceResponse = Envelope.extend({

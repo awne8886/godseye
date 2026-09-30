@@ -260,7 +260,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
           length: frame.count,
           attributes: {
             getPosition: { value: frame.positions, size: 3 },
-            getFillColor: { value: frame.colors, size: 4 },
+            getFillColor: { value: frame.colors, size: 4, type: 'unorm8' },
             getRadius: { value: frame.radii, size: 1 },
           },
         },

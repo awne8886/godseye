@@ -41,7 +41,9 @@ describe('GET /api/gps-interference', () => {
     expect(body.items.every((c: { bad: number; date: string }) => c.bad > 0 && c.date === '2026-09-29')).toBe(true);
     expect(body.providers.gpsjam_manifest.ok).toBe(true);
     expect(body.providers.gpsjam).toMatchObject({ ok: true });
-    expect(body.providers.live_nacp).toBeUndefined();
+    // No flights feed in this process: live binning did not run, so it is reported as not available.
+    expect(body.providers.live_nacp).toMatchObject({ ok: false, count: 0, error: 'flights_feed_not_running' });
+    expect(body.items.some((c: { basis: string }) => c.basis === 'live-nacp')).toBe(false);
     expect(body.meta).toMatchObject({ feed: 'gps-interference', kind: 'live' });
     expect(body.meta.attribution[0].licence).toMatch(/unstated/i);
   });
