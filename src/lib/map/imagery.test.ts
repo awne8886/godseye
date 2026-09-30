@@ -3,6 +3,7 @@ import { TILE_HOSTS } from '@/config/hosts';
 import {
   BLACK_MARBLE_ATTRIBUTION,
   ESRI_ATTRIBUTION,
+  ESRI_LABEL,
   ESRI_MAX_ZOOM,
   ESRI_TILES,
   GIBS_TRUECOLOR_ATTRIBUTION,
@@ -39,6 +40,7 @@ describe('imagery sources', () => {
   it('carry their attribution (Esri verbatim, GIBS acknowledgement, Tilezen)', () => {
     expect(ESRI_ATTRIBUTION).toBe('Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community');
     expect(ESRI_MAX_ZOOM).toBe(19);
+    expect(ESRI_LABEL).toMatch(/REFERENCE$/);
     expect(GIBS_TRUECOLOR_ATTRIBUTION).toContain('NASA GIBS');
     expect(BLACK_MARBLE_ATTRIBUTION).toContain('2016');
     expect(TERRARIUM_ATTRIBUTION).toContain('tilezen/joerd');

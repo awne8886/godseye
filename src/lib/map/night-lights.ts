@@ -86,11 +86,25 @@ export function applyNightAlpha(src: RawImage, z: number, x: number, y: number, 
   return { width: w, height: h, data };
 }
 
-/** True when the whole tile is in daylight at `at` (sampled 9×9 with a 2° safety margin). */
+/**
+ * True when the whole tile is in daylight at `at`: a 9×9 grid including the tile edges must all
+ * be above a margin of one grid spacing (elevation changes by at most 1° per degree of arc, and
+ * no pixel is farther than one spacing from a sample), so no night pixel is ever skipped.
+ */
 export function tileIsDaylit(z: number, x: number, y: number, at: number): boolean {
   if (z < 2) return false;
-  const elev = elevationGrid(z, x, y, 9, 9, at);
-  for (let py = 0; py < 9; py++) for (let px = 0; px < 9; px++) if (elev(px, py) < 2) return false;
+  const n = 9;
+  const margin = Math.max(2, 360 / 2 ** z / (n - 1));
+  const sun = subsolarPoint(at);
+  const sinD = Math.sin(sun.lat * RAD);
+  const cosD = Math.cos(sun.lat * RAD);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const [lng, lat] = tilePixelLngLat(z, x, y, i / (n - 1), j / (n - 1), 1);
+      const s = Math.sin(lat * RAD) * sinD + Math.cos(lat * RAD) * cosD * Math.cos((lng - sun.lng) * RAD);
+      if (Math.asin(Math.max(-1, Math.min(1, s))) * DEG < margin) return false;
+    }
+  }
   return true;
 }
 

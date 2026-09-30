@@ -13,6 +13,8 @@ export const ESRI_TILES = ['https://server.arcgisonline.com/ArcGIS/rest/services
 export const ESRI_MAX_ZOOM = 19;
 /** Verbatim `copyrightText` of the World_Imagery MapServer (Vantor is Maxar's new name). */
 export const ESRI_ATTRIBUTION = 'Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community';
+/** A mosaic of captures from different years: reference imagery, never "live". */
+export const ESRI_LABEL = 'ESRI WORLD IMAGERY · REFERENCE';
 
 // ── NASA GIBS ────────────────────────────────────────────────────────────────────
 const GIBS_WMTS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';

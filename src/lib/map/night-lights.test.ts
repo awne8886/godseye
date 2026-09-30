@@ -67,6 +67,23 @@ describe('night-light alpha vs solar elevation', () => {
     expect(tileIsDaylit(6, (x + n / 2) % n, y, AT)).toBe(false);
     expect(tileIsDaylit(1, 0, 0, AT)).toBe(false);
   });
+
+  it('never skips a tile that has any night pixel (every z 3–4 tile, four times of day)', () => {
+    let skipped = 0;
+    for (const at of [AT, AT + 6 * 3_600_000, AT + 12 * 3_600_000, Date.UTC(2026, 11, 21, 3, 0)]) {
+      for (const z of [3, 4]) {
+        const n = 2 ** z;
+        for (let x = 0; x < n; x++) {
+          for (let y = 0; y < n; y++) {
+            if (!tileIsDaylit(z, x, y, at)) continue;
+            skipped++;
+            for (let py = 0; py <= 32; py += 2) for (let px = 0; px <= 32; px += 2) expect(solarElevation(tilePixelLngLat(z, x, y, px, py, 32), at)).toBeGreaterThanOrEqual(0);
+          }
+        }
+      }
+    }
+    expect(skipped).toBeGreaterThan(20); // the optimisation does kick in
+  });
 });
 
 describe('night-lights URLs', () => {

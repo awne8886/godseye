@@ -9,8 +9,8 @@
  */
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import type { Layer, LayersList } from '@deck.gl/core';
-import { useEffect, useMemo } from 'react';
-import { useControl } from 'react-map-gl/maplibre';
+import { useEffect, useMemo, useRef } from 'react';
+import { useControl, useMap } from 'react-map-gl/maplibre';
 import { orderedDeckLayers, useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
 import { type PickOverlay, setPickOverlay } from '@/lib/map/picking';
 
@@ -38,9 +38,22 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
         deviceProps: { _reuseDevices: true } as never,
       }),
   );
+  const layersRef = useRef(layers);
   useEffect(() => {
+    layersRef.current = layers;
     overlay.setProps({ layers });
   }, [overlay, layers]);
+  // After a WebGL context restore MapLibre rebuilds its style; hand deck its layers again.
+  const { current } = useMap();
+  useEffect(() => {
+    const map = current?.getMap();
+    if (!map) return;
+    const reapply = () => overlay.setProps({ layers: layersRef.current });
+    map.on('webglcontextrestored', reapply);
+    return () => {
+      map.off('webglcontextrestored', reapply);
+    };
+  }, [current, overlay]);
   useEffect(() => {
     setPickOverlay(overlay as unknown as PickOverlay);
     return () => setPickOverlay(null);

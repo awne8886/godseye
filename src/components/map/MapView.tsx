@@ -21,7 +21,7 @@ import { useDeckLayerStore, useLayerStatusStore, useMapInstanceStore, useSelecti
 import { publishCursor, publishView } from '@/lib/map/cursor';
 import { cameraFromMap, isFacing, setFarSideCamera } from '@/lib/map/far-side';
 import { createDoubleRightClick, createLongPress } from '@/lib/map/gestures';
-import { BLACK_MARBLE_LABEL, gibsTrueColorLabel } from '@/lib/map/imagery';
+import { BLACK_MARBLE_LABEL, ESRI_LABEL, gibsTrueColorLabel } from '@/lib/map/imagery';
 import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
 import {
   candidatesFromDeck,
@@ -160,10 +160,13 @@ export default function MapView() {
     });
   }, [terrainOn, terrainStatus]);
 
-  // flyTo requests (ts-stamped so identical targets re-fire); longitudes wrapped first.
+  // flyTo requests (ts-stamped so identical targets re-fire, each served once — a map rebuilt by
+  // the context ladder does not re-fly to an old target); longitudes wrapped first.
+  const servedFly = useRef(0);
   useEffect(() => {
     const map = mapRef.current;
-    if (!flyTo || !map || !loaded) return;
+    if (!flyTo || !map || !loaded || servedFly.current === flyTo.ts) return;
+    servedFly.current = flyTo.ts;
     const { lng, lat, zoom, pitch, bearing, durationMs } = flyTo;
     map.flyTo({ center: [normalizeLng(lng), lat], zoom, pitch, bearing, duration: reducedMotion() ? 0 : (durationMs ?? 2000), essential: false });
   }, [flyTo, loaded]);
@@ -360,7 +363,7 @@ export default function MapView() {
     const out: ImageryChip[] = [];
     if (dayNight && nightLightsSupported()) out.push({ id: 'night', text: BLACK_MARBLE_LABEL });
     if (trueColor) out.push({ id: 'gibs', text: gibsTrueColorLabel(gibsDate) });
-    if (satellite) out.push({ id: 'esri', text: 'ESRI WORLD IMAGERY · REFERENCE' });
+    if (satellite) out.push({ id: 'esri', text: ESRI_LABEL });
     if (terrainOn) out.push({ id: 'terrain', text: TERRAIN_STATUS_TEXT[terrainStatus] });
     return out;
   }, [dayNight, trueColor, satellite, terrainOn, terrainStatus, gibsDate]);
