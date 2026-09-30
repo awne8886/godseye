@@ -29,7 +29,8 @@ function useNow(ms = 1000) {
 const mono10 = 'font-mono text-[10px] uppercase tracking-[0.16em]';
 const mono11 = 'font-mono text-[11px] uppercase tabular-nums tracking-[0.08em]';
 
-function WatchRow({ hex, live, feedState, now }: { hex: string; live: FlightRecord | null; feedState: FreshnessState; now: number }) {
+/** `feed`: whether the flights feed answered (`live`), answered SOURCE OFFLINE, or has not answered yet. */
+function WatchRow({ hex, live, feed, feedState, now }: { hex: string; live: FlightRecord | null; feed: 'live' | 'offline' | 'pending'; feedState: FreshnessState; now: number }) {
   const detail = useAircraftDetail(/^[0-9a-f]{6}$/.test(hex) ? hex : null);
   const route = useFlightRoute(live?.callsign ?? null, live && !live.onGround ? { lat: live.lat, lng: live.lng, gsKt: live.gsKt } : null);
   const unwatch = useUiStore((s) => s.unwatchFlight);
@@ -77,7 +78,8 @@ function WatchRow({ hex, live, feedState, now }: { hex: string; live: FlightReco
       </p>
       <p className={`${mono10} text-[var(--text-muted)]`}>
         {track.length} POINTS THIS LEG
-        {!live && <span className="text-[var(--alert-orange)]"> · NO LONGER IN THE LIVE FEED</span>}
+        {!live && feed === 'live' && <span className="text-[var(--alert-orange)]"> · NO LONGER IN THE LIVE FEED</span>}
+        {feed === 'offline' && <span className="text-[var(--alert-red)]"> · FEED OFFLINE</span>}
       </p>
     </li>
   );
@@ -125,7 +127,7 @@ export default function FlightWatchPanel({ onClose }: PanelProps) {
       ) : (
         <ul className="flex flex-col">
           {watched.map((hex) => (
-            <WatchRow key={hex} hex={hex} live={data?.byId.get(hex) ?? null} feedState={feedState} now={now} />
+            <WatchRow key={hex} hex={hex} live={data?.byId.get(hex) ?? null} feed={!data ? 'pending' : data.offline ? 'offline' : 'live'} feedState={feedState} now={now} />
           ))}
         </ul>
       )}
