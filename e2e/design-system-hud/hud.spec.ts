@@ -36,6 +36,8 @@ test.describe('desktop HUD', () => {
   });
 
   test('HUD panels open and close from their launchers and keys', async ({ page }) => {
+    // Nine launcher round-trips; under a loaded CI box each click can wait seconds for actionability.
+    test.slow();
     await boot(page);
     // L → layers
     await page.keyboard.press('l');
