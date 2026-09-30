@@ -4,6 +4,7 @@
  * Owner: lead.
  */
 import { ALL_FEEDS } from '@/server/feeds';
+import { MOUNTED_ROUTES } from '@/server/mounted-routes';
 import { APP_VERSION } from '@/lib/config';
 import { evaluateCapabilities } from '@/lib/capabilities';
 import { allFeeds } from '@/lib/feeds';
@@ -23,6 +24,7 @@ export const GET = withRoute('/api/health', () => {
   const degraded = Object.values(feeds).some((f) => f.state === 'offline' || f.state === 'stale');
   const body: HealthResponse = {
     status: degraded ? 'degraded' : 'ok',
+    routes: [...MOUNTED_ROUTES],
     version: APP_VERSION,
     uptimeS: Math.round((Date.now() - started) / 1000),
     capabilities: evaluateCapabilities(),

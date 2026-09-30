@@ -10,6 +10,8 @@ export const CapabilityState = z.object({
 
 export const HealthResponse = z.object({
   status: z.enum(['ok', 'degraded']),
+  /** API routes this build serves (catalogue notation), so clients never call an absent route. */
+  routes: z.array(z.string()),
   version: z.string(),
   uptimeS: z.number().nonnegative(),
   capabilities: z.record(z.string(), CapabilityState),

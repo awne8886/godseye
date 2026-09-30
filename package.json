@@ -11,9 +11,9 @@
   },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "predev": "node tools/prepare-map-worker.mjs",
+    "predev": "node tools/prepare-map-worker.mjs && node tools/gen-mounted-routes.mjs",
     "dev": "next dev",
-    "prebuild": "node tools/prepare-map-worker.mjs",
+    "prebuild": "node tools/prepare-map-worker.mjs && node tools/gen-mounted-routes.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings=0 .",
