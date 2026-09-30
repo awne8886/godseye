@@ -1,0 +1,298 @@
+{
+ "_captured": "2026-09-30T20:02Z from the live upstream with the GODSEYE UA (feature-flight-paths probe)",
+ "_url": "https://aviationweather.gov/api/data/taf?ids=EGLL,KJFK&format=json",
+ "body": [
+  {
+   "icaoId": "EGLL",
+   "dbPopTime": "2026-09-30T17:12:06.690Z",
+   "bulletinTime": "2026-09-30T17:00:00.000Z",
+   "issueTime": "2026-09-30T16:53:00.000Z",
+   "validTimeFrom": 1790791200,
+   "validTimeTo": 1790899200,
+   "rawTAF": "TAF EGLL 301653Z 3018/0124 21010KT 9999 FEW035 PROB30 TEMPO 3021/0102 6000 SHRA PROB40 TEMPO 0100/0108 BKN006 PROB30 TEMPO 0102/0108 3000 BR MIFG BECMG 0108/0111 27008KT",
+   "mostRecent": 1,
+   "remarks": "",
+   "lat": 51.477,
+   "lon": -0.461,
+   "elev": 26,
+   "prior": 0,
+   "name": "London/Heathrow Intl",
+   "fcsts": [
+    {
+     "timeFrom": 1790791200,
+     "timeTo": 1790841600,
+     "timeBec": null,
+     "fcstChange": null,
+     "probability": null,
+     "wdir": 210,
+     "wspd": 10,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": "6+",
+     "altim": null,
+     "vertVis": null,
+     "wxString": null,
+     "notDecoded": null,
+     "clouds": [
+      {
+       "cover": "FEW",
+       "base": 3500,
+       "type": null
+      }
+     ],
+     "icgTurb": [],
+     "temp": []
+    },
+    {
+     "timeFrom": 1790802000,
+     "timeTo": 1790820000,
+     "timeBec": null,
+     "fcstChange": "TEMPO",
+     "probability": 30,
+     "wdir": null,
+     "wspd": null,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": 3.73,
+     "altim": null,
+     "vertVis": null,
+     "wxString": "SHRA",
+     "notDecoded": null,
+     "clouds": [],
+     "icgTurb": [],
+     "temp": []
+    },
+    {
+     "timeFrom": 1790812800,
+     "timeTo": 1790841600,
+     "timeBec": null,
+     "fcstChange": "TEMPO",
+     "probability": 40,
+     "wdir": null,
+     "wspd": null,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": "",
+     "altim": null,
+     "vertVis": null,
+     "wxString": null,
+     "notDecoded": null,
+     "clouds": [
+      {
+       "cover": "BKN",
+       "base": 600,
+       "type": null
+      }
+     ],
+     "icgTurb": [],
+     "temp": []
+    },
+    {
+     "timeFrom": 1790820000,
+     "timeTo": 1790841600,
+     "timeBec": null,
+     "fcstChange": "TEMPO",
+     "probability": 30,
+     "wdir": null,
+     "wspd": null,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": 1.86,
+     "altim": null,
+     "vertVis": null,
+     "wxString": "BR MIFG",
+     "notDecoded": null,
+     "clouds": [],
+     "icgTurb": [],
+     "temp": []
+    },
+    {
+     "timeFrom": 1790841600,
+     "timeTo": 1790899200,
+     "timeBec": 1790852400,
+     "fcstChange": "BECMG",
+     "probability": null,
+     "wdir": 270,
+     "wspd": 8,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": "6+",
+     "altim": null,
+     "vertVis": null,
+     "wxString": null,
+     "notDecoded": null,
+     "clouds": [
+      {
+       "cover": "FEW",
+       "base": 3500,
+       "type": null
+      }
+     ],
+     "icgTurb": [],
+     "temp": []
+    }
+   ]
+  },
+  {
+   "icaoId": "KJFK",
+   "dbPopTime": "2026-09-30T19:41:54.003Z",
+   "bulletinTime": "2026-09-30T19:41:00.000Z",
+   "issueTime": "2026-09-30T19:41:00.000Z",
+   "validTimeFrom": 1790798400,
+   "validTimeTo": 1790899200,
+   "rawTAF": "TAF KJFK 301941Z 3020/0124 20010KT P6SM SCT040 BKN250 FM010100 22007KT P6SM SCT040 BKN250 FM011400 22010KT P6SM SCT040 SCT100 BKN200 FM011800 21014KT P6SM SCT040 BKN100",
+   "mostRecent": 1,
+   "remarks": " AMD",
+   "lat": 40.63916,
+   "lon": -73.76394,
+   "elev": 3,
+   "prior": 0,
+   "name": "New York/JF Kennedy Intl",
+   "fcsts": [
+    {
+     "timeFrom": 1790798400,
+     "timeTo": 1790816400,
+     "timeBec": null,
+     "fcstChange": null,
+     "probability": null,
+     "wdir": 200,
+     "wspd": 10,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": "6+",
+     "altim": null,
+     "vertVis": null,
+     "wxString": null,
+     "notDecoded": null,
+     "clouds": [
+      {
+       "cover": "SCT",
+       "base": 4000,
+       "type": null
+      },
+      {
+       "cover": "BKN",
+       "base": 25000,
+       "type": null
+      }
+     ],
+     "icgTurb": [],
+     "temp": []
+    },
+    {
+     "timeFrom": 1790816400,
+     "timeTo": 1790863200,
+     "timeBec": null,
+     "fcstChange": "FM",
+     "probability": null,
+     "wdir": 220,
+     "wspd": 7,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": "6+",
+     "altim": null,
+     "vertVis": null,
+     "wxString": null,
+     "notDecoded": null,
+     "clouds": [
+      {
+       "cover": "SCT",
+       "base": 4000,
+       "type": null
+      },
+      {
+       "cover": "BKN",
+       "base": 25000,
+       "type": null
+      }
+     ],
+     "icgTurb": [],
+     "temp": []
+    },
+    {
+     "timeFrom": 1790863200,
+     "timeTo": 1790877600,
+     "timeBec": null,
+     "fcstChange": "FM",
+     "probability": null,
+     "wdir": 220,
+     "wspd": 10,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": "6+",
+     "altim": null,
+     "vertVis": null,
+     "wxString": null,
+     "notDecoded": null,
+     "clouds": [
+      {
+       "cover": "SCT",
+       "base": 4000,
+       "type": null
+      },
+      {
+       "cover": "SCT",
+       "base": 10000,
+       "type": null
+      },
+      {
+       "cover": "BKN",
+       "base": 20000,
+       "type": null
+      }
+     ],
+     "icgTurb": [],
+     "temp": []
+    },
+    {
+     "timeFrom": 1790877600,
+     "timeTo": 1790899200,
+     "timeBec": null,
+     "fcstChange": "FM",
+     "probability": null,
+     "wdir": 210,
+     "wspd": 14,
+     "wgst": null,
+     "wshearHgt": null,
+     "wshearDir": null,
+     "wshearSpd": null,
+     "visib": "6+",
+     "altim": null,
+     "vertVis": null,
+     "wxString": null,
+     "notDecoded": null,
+     "clouds": [
+      {
+       "cover": "SCT",
+       "base": 4000,
+       "type": null
+      },
+      {
+       "cover": "BKN",
+       "base": 10000,
+       "type": null
+      }
+     ],
+     "icgTurb": [],
+     "temp": []
+    }
+   ]
+  }
+ ]
+}

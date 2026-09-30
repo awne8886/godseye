@@ -1,0 +1,60 @@
+{
+ "_captured": "2026-09-30T20:02Z from the live upstream with the GODSEYE UA (feature-flight-paths probe)",
+ "_url": "https://aviationweather.gov/api/data/metar?ids=EGLL,KJFK&format=json",
+ "body": [
+  {
+   "icaoId": "EGLL",
+   "receiptTime": "2026-09-30T19:54:15.593Z",
+   "obsTime": 1790797800,
+   "reportTime": "2026-09-30T20:00:00.000Z",
+   "temp": 18,
+   "dewp": 11,
+   "wdir": 190,
+   "wspd": 7,
+   "visib": "6+",
+   "altim": 1014,
+   "qcField": 2,
+   "metarType": "METAR",
+   "rawOb": "METAR EGLL 301950Z AUTO 19007KT 150V230 9999 NCD 18/11 Q1014",
+   "lat": 51.477,
+   "lon": -0.461,
+   "elev": 26,
+   "name": "London/Heathrow Intl, EN, GB",
+   "cover": "CLR",
+   "clouds": [],
+   "fltCat": "VFR"
+  },
+  {
+   "icaoId": "KJFK",
+   "receiptTime": "2026-09-30T19:54:07.909Z",
+   "obsTime": 1790797860,
+   "reportTime": "2026-09-30T20:00:00.000Z",
+   "temp": 23.3,
+   "dewp": 15,
+   "wdir": 210,
+   "wspd": 7,
+   "visib": "10+",
+   "altim": 1018,
+   "slp": 1017.9,
+   "qcField": 4,
+   "metarType": "METAR",
+   "rawOb": "METAR KJFK 301951Z 21007KT 10SM FEW042 BKN250 23/15 A3006 RMK AO2 SLP179 T02330150",
+   "lat": 40.6392,
+   "lon": -73.7639,
+   "elev": 3,
+   "name": "New York/JF Kennedy Intl, NY, US",
+   "cover": "BKN",
+   "clouds": [
+    {
+     "cover": "FEW",
+     "base": 4200
+    },
+    {
+     "cover": "BKN",
+     "base": 25000
+    }
+   ],
+   "fltCat": "VFR"
+  }
+ ]
+}
