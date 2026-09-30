@@ -39,6 +39,26 @@ describe('response helpers', () => {
     expect(await r.json()).toMatchObject({ error: 'source_offline' });
   });
 
+  it('compresses large feed bodies per ETag when the client accepts it', async () => {
+    const result: FeedResult<number[]> = { data: Array.from({ length: 2000 }, (_, i) => i), meta: meta({ feed: 'cables' }), providers: {} };
+    const plain = feedJson(new Request('http://x/'), result, (d) => ({ items: d }));
+    expect(plain.headers.get('content-encoding')).toBeNull();
+    const raw = Buffer.from(await plain.arrayBuffer());
+    const br = feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, deflate, br' } }), result, (d) => ({ items: d }));
+    expect(br.headers.get('content-encoding')).toBe('br');
+    expect(br.headers.get('vary')).toBe('Accept-Encoding');
+    expect(br.headers.get('etag')).toBe(plain.headers.get('etag'));
+    const brBytes = Buffer.from(await br.arrayBuffer());
+    expect(brBytes.length).toBeLessThan(raw.length / 2);
+    expect(zlib.brotliDecompressSync(brBytes).equals(raw)).toBe(true);
+    const gz = feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, br;q=0' } }), result, (d) => ({ items: d }));
+    expect(gz.headers.get('content-encoding')).toBe('gzip');
+    expect(zlib.gunzipSync(Buffer.from(await gz.arrayBuffer())).equals(raw)).toBe(true);
+    // Small bodies are not worth compressing.
+    const small = feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'br' } }), { ...result, data: [1] }, (d) => ({ items: d }));
+    expect(small.headers.get('content-encoding')).toBeNull();
+  });
+
   it('shortens the edge TTL for stale snapshots', () => {
     const r = feedJson(new Request('http://x/'), { data: [1], meta: meta({ state: 'stale', stale: true, ttlSeconds: 900 }), providers: {} }, (d) => ({ items: d }));
     expect(r.headers.get('cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');

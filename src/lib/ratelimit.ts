@@ -255,6 +255,14 @@ export function providerBucket(name: string, ratePerSec: number, burst = 1): Tok
   return b;
 }
 
+/**
+ * NVD's published limits: keyless 5 requests / 30 s; with NVD_API_KEY (sent as the `apiKey` header)
+ * 50 / 30 s. Every NVD caller (KEV scoring, chain brief, RECON CVE lookup) takes this one bucket.
+ */
+export function nvdBucket(keyed = !!process.env.NVD_API_KEY?.trim()): TokenBucket {
+  return keyed ? providerBucket('nvd-keyed', 50 / 30, 5) : providerBucket('nvd', 5 / 30, 1);
+}
+
 export class QueueFullError extends Error {
   constructor() {
     super('queue full');

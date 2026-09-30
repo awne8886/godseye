@@ -60,10 +60,8 @@ function notModified(req: Request, etag: string, headers: Record<string, string>
 /**
  * Respond with a feed snapshot. `body` gets `meta` and `providers` merged in. A feed with no data
  * returns 503 with SOURCE OFFLINE semantics (never an empty array pretending to be truth).
- */
-/**
  * `variant` distinguishes filtered views of one feed in the ETag; it defaults to the request's
- * query string so two filters never share an ETag.
+ * query string so two filters never share an ETag. Bodies ≥ 1 KB are sent br/gzip when accepted.
  */
 export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T) => Record<string, unknown>, variant = new URL(req.url).search): Response {
   const ttl = result.meta.ttlSeconds;
@@ -80,7 +78,50 @@ export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T)
   const headers = { 'Cache-Control': cacheControl(edgeTtl), ETag: etag };
   const nm = notModified(req, etag, headers);
   if (nm) return nm;
-  return json({ ...body(result.data), meta: result.meta, providers: result.providers }, { ttl: edgeTtl, headers: { ETag: etag } });
+  const raw = Buffer.from(JSON.stringify({ ...body(result.data), meta: result.meta, providers: result.providers }));
+  const { bytes, enc } = encodeFor(req, etag, raw);
+  return new Response(new Uint8Array(bytes), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      ...headers,
+      Vary: 'Accept-Encoding',
+      ...(enc ? { 'Content-Encoding': enc } : {}),
+    },
+  });
+}
+
+// ── Per-ETag compression for feed responses ─────────────────────────────────────
+// Route-handler Responses are not compressed by the Next server, so a 700 KB feed went out as-is.
+// Encoded bodies are cached by (encoding, ETag) under a byte budget: one compression per snapshot.
+const ENCODED = new Map<string, Buffer>();
+let encodedBytes = 0;
+const ENCODED_MAX_BYTES = 32 * 1024 * 1024;
+const MIN_COMPRESS_BYTES = 1024;
+
+function encodeFor(req: Request, etag: string, raw: Buffer): { bytes: Buffer; enc: 'br' | 'gzip' | null } {
+  if (raw.length < MIN_COMPRESS_BYTES) return { bytes: raw, enc: null };
+  const accepted = acceptedEncodings(req.headers.get('accept-encoding'));
+  const enc = accepted.has('br') ? 'br' : accepted.has('gzip') ? 'gzip' : null;
+  if (!enc) return { bytes: raw, enc: null };
+  const key = `${enc}|${etag}`;
+  const hit = ENCODED.get(key);
+  if (hit) {
+    ENCODED.delete(key);
+    ENCODED.set(key, hit);
+    return { bytes: hit, enc };
+  }
+  const bytes = enc === 'br' ? zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }) : zlib.gzipSync(raw, { level: 6 });
+  if (bytes.length <= ENCODED_MAX_BYTES) {
+    ENCODED.set(key, bytes);
+    encodedBytes += bytes.length;
+    while (encodedBytes > ENCODED_MAX_BYTES) {
+      const [k, v] = ENCODED.entries().next().value!;
+      ENCODED.delete(k);
+      encodedBytes -= v.length;
+    }
+  }
+  return { bytes, enc };
 }
 
 // ── Precompressed bulk payloads ─────────────────────────────────────────────────

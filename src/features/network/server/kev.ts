@@ -11,7 +11,7 @@ import 'server-only';
 import { hasCapability } from '@/lib/capabilities';
 import { defineFeed, runProvider } from '@/lib/feeds';
 import { httpJson } from '@/lib/http';
-import { providerBucket } from '@/lib/ratelimit';
+import { nvdBucket } from '@/lib/ratelimit';
 import type { KevEntry } from '@/lib/types';
 
 export const KEV_URL = 'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json';
@@ -91,10 +91,10 @@ export const kevFeed = defineFeed<{ items: KevEntry[]; catalogVersion: string | 
     );
     const items = kev.result ?? [];
     const keyed = hasCapability('nvd');
-    const bucket = keyed ? providerBucket('nvd-keyed', 50 / 30) : providerBucket('nvd', 5 / 30);
     const todo = items.filter((k) => !scores.has(k.cveId)).slice(0, keyed ? 40 : 5);
     const nvd = await runProvider(
       async () => {
+        const bucket = nvdBucket(keyed); // inside the provider: any failure lands in providers.nvd
         let n = 0;
         for (const k of todo) {
           const res = await httpJson<Parameters<typeof nvdScore>[0]>(`${NVD_URL}${k.cveId}`, {

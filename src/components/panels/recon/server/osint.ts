@@ -14,7 +14,7 @@ import 'server-only';
 import { hasCapability } from '@/lib/capabilities';
 import { normalizeUtc } from '@/lib/freshness';
 import { HttpError, httpJson, httpText } from '@/lib/http';
-import { providerBucket } from '@/lib/ratelimit';
+import { nvdBucket, providerBucket } from '@/lib/ratelimit';
 import type { Providers } from '@/lib/types';
 import { probe, skipped, type Finding } from './lookup';
 import { ipwhoBucket } from './geo';
@@ -596,8 +596,6 @@ export function fromNvd(b: NvdBody) {
   };
 }
 
-/** NVD keyless: 5 requests / 30 s; with NVD_API_KEY (sent as the `apiKey` header): 50 / 30 s. */
-const nvdBucket = () => (process.env.NVD_API_KEY ? providerBucket('nvd-keyed', 50 / 30, 5) : providerBucket('nvd', 5 / 30, 1));
 
 const SEVERITY_LEVEL: Record<string, Finding['level']> = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low', NONE: 'info' };
 

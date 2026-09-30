@@ -10,7 +10,7 @@ import 'server-only';
 import { runProvider, skippedProvider, type FeedData, type ProviderRun } from '@/lib/feeds';
 import { hasCapability } from '@/lib/capabilities';
 import { getJson } from './get-json';
-import { providerBucket } from '@/lib/ratelimit';
+import { nvdBucket } from '@/lib/ratelimit';
 
 export const CHAIN_WINDOW_DAYS = 120;
 
@@ -113,7 +113,7 @@ export async function runChain(ctx: { signal?: AbortSignal } = {}, now = Date.no
       async () => {
         const url = `https://services.nvd.nist.gov/rest/json/cves/2.0?keywordSearch=cryptocurrency&pubStartDate=${encodeURIComponent(nvdDate(now - (CHAIN_WINDOW_DAYS - 1) * 86_400_000))}&pubEndDate=${encodeURIComponent(nvdDate(now))}&resultsPerPage=100`;
         const headers: Record<string, string> = process.env.NVD_API_KEY ? { apiKey: process.env.NVD_API_KEY } : {};
-        return parseNvd((await getJson<NvdBody>(url, { timeoutMs: 20_000, signal: ctx.signal, headers, limiter: providerBucket('nvd', 0.15, 1) })).data);
+        return parseNvd((await getJson<NvdBody>(url, { timeoutMs: 20_000, signal: ctx.signal, headers, limiter: nvdBucket() })).data);
       },
       (x) => x.length,
       { allowEmpty: true },
