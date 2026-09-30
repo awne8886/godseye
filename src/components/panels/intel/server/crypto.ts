@@ -101,13 +101,20 @@ const PROVIDERS: { name: string; fetch: Fetcher; gate?: () => ProviderRun | null
     name: 'coinbase',
     fetch: async (missing, signal) => {
       const out: CryptoQuote[] = [];
+      let firstError: unknown = null;
       for (const s of missing) {
         const base = `https://api.exchange.coinbase.com/products/${s}-USD`;
-        const t = await getJson<{ price?: string; time?: string }>(`${base}/ticker`, { timeoutMs: 8000, signal, limiter: providerBucket('coinbase', 3, 3) });
-        const st = await getJson<{ open?: string }>(`${base}/stats`, { timeoutMs: 8000, signal, limiter: providerBucket('coinbase', 3, 3) }).catch(() => null);
-        const q = parseCoinbase(s, t.data, st?.data ?? null);
-        if (q) out.push(q);
+        try {
+          const t = await getJson<{ price?: string; time?: string }>(`${base}/ticker`, { timeoutMs: 8000, signal, limiter: providerBucket('coinbase', 3, 3) });
+          const st = await getJson<{ open?: string }>(`${base}/stats`, { timeoutMs: 8000, signal, limiter: providerBucket('coinbase', 3, 3) }).catch(() => null);
+          const q = parseCoinbase(s, t.data, st?.data ?? null);
+          if (q) out.push(q);
+        } catch (e) {
+          firstError ??= e;
+        }
       }
+      // One product failing must not discard the others; all failing is a provider failure.
+      if (!out.length && firstError) throw firstError;
       return out;
     },
   },

@@ -6,7 +6,6 @@
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { clearL1, MemoryStore, setStore } from '@/lib/cache';
 
 const DIR = join(process.cwd(), 'src/components/panels/intel/__fixtures__');
 
@@ -77,28 +76,6 @@ export function httpMock(routes: () => Route[], HttpError: ErrorCtor, calls: Cal
       return { ...r, data: JSON.parse(r.body.toString('utf8')) as unknown };
     },
   };
-}
-
-let n = 0;
-
-/** A request from a distinct client IP each time (per-IP limits never interfere) unless `ip` is given. */
-export function req(path: string, init: { method?: string; headers?: Record<string, string>; body?: unknown; ip?: string } = {}): Request {
-  n++;
-  const ip = init.ip ?? `10.88.${(n >> 8) & 255}.${n & 255}`;
-  return new Request(`http://localhost${path}`, {
-    method: init.method ?? 'GET',
-    headers: { 'x-forwarded-for': ip, ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}), ...init.headers },
-    ...(init.body !== undefined ? { body: typeof init.body === 'string' ? init.body : JSON.stringify(init.body) } : {}),
-  });
-}
-
-export function freshCache(): void {
-  clearL1();
-  setStore(new MemoryStore());
-}
-
-export function resetCache(): void {
-  setStore(undefined);
 }
 
 /** Every recorded upstream route for a keyless happy path. */
