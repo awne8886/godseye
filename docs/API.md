@@ -682,7 +682,9 @@ CISA Known Exploited Vulnerabilities
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/cyber-threats` |
 
-No parameters.
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `limit` | query | number | no | newest N additions (1–2000); total always reports the full count (e.g. `20`) |
 
 ### `GET /api/outages`
 

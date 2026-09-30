@@ -21,7 +21,7 @@ export function kevEvents(items: readonly KevEntry[]): FeedEvent[] {
     layer: KEV_FEED_LAYER,
     // EntityKind has no 'vulnerability' yet (lead-owned enum); KEV rows carry no coordinates and
     // open no card, so the kind is metadata only.
-    entityKind: 'threat_indicator' as const,
+    entityKind: 'vulnerability' as const,
     entityId: k.cveId,
     title: `CISA KEV added ${k.cveId}: ${[k.vendor, k.product].filter(Boolean).join(' ') || k.name}`,
     detail: [

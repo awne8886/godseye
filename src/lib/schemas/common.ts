@@ -160,6 +160,7 @@ export const EntityKind = z.enum([
   'attack_origin',
   'cable',
   'landing_point',
+  'vulnerability',
   'airport',
   'region',
 ]);
