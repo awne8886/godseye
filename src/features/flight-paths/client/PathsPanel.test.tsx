@@ -177,4 +177,20 @@ describe('PATHS panel', () => {
     });
     expect((fromInput as HTMLInputElement).value).toBe('LGW');
   });
+
+  it('Enter on an unmatched place submits once (explicit) and picks the nearest scheduled airport', async () => {
+    await act(async () => {
+      renderPanel();
+    });
+    const [, toInput] = screen.getAllByRole('combobox');
+    await act(async () => {
+      fireEvent.change(toInput!, { target: { value: 'qqheathrowairfieldqq' } });
+    });
+    await act(async () => {
+      fireEvent.keyDown(toInput!, { key: 'Enter' });
+    });
+    await waitFor(() => expect((toInput as HTMLInputElement).value).toBe('LHR'), { timeout: 5000 });
+    const calls = (fetch as unknown as { mock: { calls: [string][] } }).mock.calls.map((c) => String(c[0]));
+    expect(calls.some((c) => c.includes('submit=1'))).toBe(true);
+  });
 });

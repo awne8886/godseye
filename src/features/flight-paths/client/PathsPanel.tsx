@@ -14,7 +14,8 @@ import type { PanelProps } from '@/lib/feature-module';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import { useUiStore } from '@/lib/store';
 import { parseRouteParam } from '@/lib/url-state';
-import { ApiFailure, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan } from './api';
+import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
+import { Profile } from './Profile';
 import { FLT_TOKEN, PATH_TYPES, TWILIGHT_TOKEN, codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
 
 type Mode = 'route' | 'live' | 'flight';
@@ -121,6 +122,14 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && results[0]) pick(codeOf(results[0]));
+          // An explicit submit with no local match may use the server's Nominatim fallback.
+          else if (e.key === 'Enter' && text.trim().length >= 3 && !/^[A-Z0-9]{3,4}$/i.test(text.trim())) {
+            e.preventDefault();
+            void getJson<SearchResponse>(searchUrl(text.trim(), all, true)).then(
+              (r) => r.results[0] && pick(codeOf(r.results[0])),
+              () => undefined,
+            );
+          }
           if (e.key === 'Escape') setOpen(false);
         }}
         placeholder="CODE, CITY OR AIRPORT"
@@ -413,6 +422,7 @@ export function FlightView({ flight }: { flight: Flight }) {
         <Stat label="REG" value={flight.resolved.registration ?? '—'} />
       </div>
       {id?.operator && <Note>Operator: {id.operator}</Note>}
+      {flight.flownTrack.length > 1 && <Profile track={flight.flownTrack} />}
       <div className="grid grid-cols-2 gap-2">
         {o && <MetarChip code={codeOf(o)} wx={flight.weather.origin} />}
         {d && <MetarChip code={codeOf(d)} wx={flight.weather.destination} />}
