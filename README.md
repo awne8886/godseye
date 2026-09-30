@@ -14,12 +14,12 @@ source, with the time it was observed and how fresh it is.
 
 ## Honest data, by construction
 
-GODSEYE replicates the feature set of [OSIRIS](https://github.com/simplifaisoul/osiris) and was built to
-answer the criticism that project received: synthetic data shown as live intelligence, docs that drifted
+GODSEYE replicates the feature set of an existing MIT-licensed monitor (credited under Licence below) and
+was built to answer the criticism that project received: synthetic data shown as live intelligence, docs that drifted
 from the API, and weak security and licensing. The rules are enforced in code and tests, not just stated:
 
 - **Nothing is fabricated.** No random, jittered, cloned or padded data (`Math.random` is a lint error in
-  shipped code). Blocklist hits are drawn as **INDICATOR** points; attack arcs appear only when a source
+  shipped code; retry-timing jitter in the HTTP client is the only exemption). Blocklist hits are drawn as **INDICATOR** points; attack arcs appear only when a source
   reports both ends. Static layers (nuclear sites, chokepoints, conflict zones, ports) are badged
   **REFERENCE**, never LIVE.
 - **Observation time is not fetch time.** Responses carry `observedAt` and `fetchedAt` separately; LIVE
@@ -71,13 +71,15 @@ variables.
 | Variable | Effect |
 |---|---|
 | `GODSEYE_CONTACT` | Email or URL appended to the User-Agent sent to every upstream (default: this repo's issue tracker). Please set it on public instances. |
+| `GODSEYE_DOMAIN` | Public hostname for the bundled Caddy in `docker compose` (automatic HTTPS). |
 | `COMMERCIAL_DEPLOYMENT` | `true` turns off every non-commercial source (capabilities `nc_sources`, `openmeteo`, `cloudflare`, `deepstate`). |
-| `NONCOMMERCIAL` | `true` enables DeepStateMap frontlines (`deepstate`; never with `COMMERCIAL_DEPLOYMENT`). |
+| `NONCOMMERCIAL` | `true` enables DeepStateMap frontlines (`deepstate`; never with `COMMERCIAL_DEPLOYMENT`). Non-commercial use with attribution only; DeepState requires prior approval for commercial use of its API. |
 | `TRUSTED_PLATFORM` | `cloudflare`, `vercel` or `akamai`: trust that edge's client-IP header. Leave empty behind your own proxy. |
 | `TRUSTED_PROXY_HOPS` | Number of proxies appending to `X-Forwarded-For` (default 1: the rightmost entry is the client). |
 | `TRUST_PROXY_HEADER` | Trust exactly one header your proxy overwrites, e.g. `x-real-ip`. |
 | `HSTS_PRELOAD` | `true` adds `preload` to HSTS (commits the whole domain to HTTPS). |
 | `SSE_MAX_DURATION_MS` | Close event streams after this many ms so capped hosts reconnect cleanly (Vercel default 280000). |
+| `SSE_MAX_BUFFERED_BYTES` | Process-wide budget for bytes queued to slow event-stream clients (default 256 MB); past it the slowest clients are dropped. |
 | `GODSEYE_DISABLE_POLLER` | `true` disables the background upstream poller (tests, static previews). |
 
 ### Caching and self-hosted engines
@@ -87,6 +89,7 @@ variables.
 | `REDIS_URL` | `redis`: shared snapshots, single-writer locks and rate limits across instances. |
 | `SNAPSHOT_STORE` | Force `memory`, `filesystem` or `redis`. |
 | `SNAPSHOT_DIR` | Filesystem snapshot store directory (survives restarts). |
+| `SNAPSHOT_MEMORY_MAX_BYTES`, `SNAPSHOT_MAX_FILES` | Bounds for per-query cache entries in the memory (default 256 MB) and filesystem (default 20000 files) stores; feed snapshots are never evicted. |
 | `PHOTON_URL`, `NOMINATIM_URL` | Self-hosted geocoders instead of the public demo servers. |
 | `VALHALLA_URL`, `OSRM_URL` | Self-hosted routing engines. |
 
@@ -97,46 +100,29 @@ variables.
 | `ADSBLOL_REAPI=true` | `adsblol_reapi` | adsb.lol re-api (only from a feeder IP) |
 | `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`, `OPENSKY_LICENSED=true` | `opensky` | OpenSky (requires a written licence for live products) |
 | `ADSBFI_PERSONAL_USE=true` | `adsbfi` | adsb.fi open data (personal, non-commercial use only) |
-| `AEROAPI_KEY` | `aeroapi` | FlightAware AeroAPI filed routes and schedules |
 | `FPDB_API_KEY` | `fpdb` | FlightPlanDatabase plans (flight simulation only) |
-| `N2YO_API_KEY` | `n2yo` | Visual satellite passes |
-| `FIRMS_MAP_KEY` | `firms_area` | NASA FIRMS area API |
-| `OPENAQ_API_KEY` | `openaq` | OpenAQ v3 air quality |
-| `WAQI_TOKEN` | `waqi` | World Air Quality Index |
-| `CDSE_CLIENT_ID`, `CDSE_CLIENT_SECRET` | `cdse` | Copernicus Data Space (Sentinel Hub) |
 | `AIS_API_KEY` | `ais` | Live AIS vessels via a server-side AISStream relay |
-| `WINDY_WEBCAMS_KEY` | `windy` | Windy Webcams |
 | `TFL_APP_KEY` | `tfl` | TfL Unified API ("Powered by TfL Open Data") |
 | `CCTV_LINK_OUT_ONLY` | — | Region keys or country codes whose cameras are shown as operator links only (no previews) |
 | `CCTV_REMOVED_IDS` | — | Camera ids removed on request (report/remove button), comma-separated |
-| `WSDOT_ACCESS_CODE` | `wsdot` | WSDOT Traveler API (camera KML is keyless) |
 | `TRAFIKVERKET_KEY` | `trafikverket` | Trafikverket API (stills are keyless) |
-| `IBI511_KEYS` | `ibi511` | IBI 511 state camera APIs, e.g. `fl:KEY,ga:KEY` |
 | `CLOUDFLARE_API_TOKEN` | `cloudflare` | Cloudflare Radar outages and attack origins (CC BY-NC data) |
-| `ACLED_EMAIL`, `ACLED_PASSWORD` | `acled` | ACLED conflict events |
-| `UCDP_TOKEN` | `ucdp` | UCDP GED events |
 | `ABUSECH_AUTH_KEY` | `abusech` | abuse.ch APIs (bulk files stay keyless) |
 | `NVD_API_KEY` | `nvd` | Higher NVD rate limit |
 | `OTX_KEY` | `otx` | AlienVault OTX |
 | `SDK_INGEST_KEY` | `sdk` | GODSEYE SDK entity ingest (fail-closed without a key) |
-| `SHODAN_KEY` | `shodan` | Shodan full API (InternetDB is keyless) |
-| `IPINFO_TOKEN` | `ipinfo` | IPinfo Lite |
 | `OPENSANCTIONS_KEY` | `opensanctions` | OpenSanctions API |
-| `ETHERSCAN_API_KEY` | `etherscan` | Etherscan |
-| `HELIUS_API_KEY` | `helius` | Helius Solana RPC |
 | `SCANNER_URL`, `SCANNER_KEY` | `scanner` | Optional allow-listed scanner backend (passive scan types) |
 | `SCANNER_ALLOW_ACTIVE=true` | `scanner_active` | Operator opt-in for active scan types |
-| `FINNHUB_KEY` | `finnhub` | Finnhub quotes |
 | `COINGECKO_DEMO_KEY` | `coingecko_demo` | CoinGecko demo key |
 | `ANTHROPIC_API_KEY` | `anthropic` | Language-model briefings and overviews |
 | `GEMINI_API_KEY_1` | `gemini` | Fallback analyst model |
 | `OLLAMA_URL` | `ollama` | Operator-configured local model (visitors can never supply a URL) |
 | `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `OLLAMA_MODEL` | — | Optional model overrides; by default the newest suitable model from each provider's model list is used |
 | `DISABLE_USER_AI_KEYS=true` | `ai_user_keys` | Refuse visitor-supplied keys (`x-ai-key` header, used once, never stored) |
-| `GOOGLE_MAPS_API_KEY` | `photoreal` | Standalone Photoreal City View (Google 3D Tiles terms apply) |
 
 Keyless licence gates that are on by default: `nc_sources` (TeleGeography cables, OpenSanctions bulk,
-abuse.ch, ip-api, Shodan InternetDB, Edmonton cameras) and `openmeteo` (Open-Meteo free tier); both are
+abuse.ch, ip-api, Shodan InternetDB) and `openmeteo` (Open-Meteo free tier); both are
 off when `COMMERCIAL_DEPLOYMENT=true`.
 
 ## Deployment notes
@@ -160,11 +146,15 @@ off when `COMMERCIAL_DEPLOYMENT=true`.
 
 ## Privacy and responsible use
 
-- No accounts, no cookies, no analytics. Upstreams see the server, never the visitor's IP; `/privacy`
-  lists every third party that receives something a visitor typed, generated from the endpoint catalogue.
+- No accounts, no cookies, no analytics. Data APIs are called by the server, never with the visitor's IP
+  address. Map tiles, official video embeds and some camera video load directly in the browser from the
+  hosts listed on `/privacy`, and `/api/geo` sends the visitor's IP to a geolocation provider only after
+  they click "centre on my region". `/privacy` also lists every third party that receives something a
+  visitor typed, generated from the endpoint catalogue.
 - The visitor is never geolocated automatically: "centre on my region" is an explicit click.
 - OSINT tools are **passive and about infrastructure only** (domains, IPs, certificates, networks,
-  vulnerabilities). There is no username, email, phone or identity search.
+  vulnerabilities). There is no username, email, phone or identity search: sanctions-list screening and
+  the entity graph cover listed or public entities only, never private individuals.
 - Active scanning is available only if the operator connects a separate scanner backend; scans are
   allow-listed and **proxied through this server**, never run "from your browser". Scanning systems you
   are not authorised to test may be unlawful.

@@ -7,8 +7,8 @@
  *
  * Probed 2026-09-30: single point 200 in 0.82 s; multi-location (comma lists) answers a JSON array
  * in 0.81 s; CORS `*`; `current.time` is a zone-less GMT hour → normalizeUtc().
- * OpenAQ v3 / WAQI keyed upgrades are not wired (no keys to verify them with); they are reported
- * as skipped so the response says so.
+ * OpenAQ v3 / WAQI keyed upgrades are not implemented (no keys to verify them with), so they are
+ * neither offered as capabilities nor reported as providers.
  */
 import 'server-only';
 import { hasCapability } from '@/lib/capabilities';
@@ -119,11 +119,7 @@ export async function airQuality(bbox: [number, number, number, number] | null) 
     note: 'Modelled (CAMS) values at sampling points, not station measurements',
     isEmpty: (d) => !d.answered,
     run: async (signal) => {
-      // Keyed upgrades are not wired yet: with a key present they report `disabled`, never ok.
-      const providers: Record<string, ProviderRun> = {
-        openaq: skippedProvider(hasCapability('openaq') ? 'disabled' : 'not-configured'),
-        waqi: skippedProvider(hasCapability('waqi') ? 'disabled' : 'not-configured'),
-      };
+      const providers: Record<string, ProviderRun> = {};
       const points: readonly (readonly [string | null, number, number])[] = q ? gridPoints(q) : AQ_CITIES;
       if (!hasCapability('openmeteo')) {
         providers['open-meteo'] = skippedProvider('licence');

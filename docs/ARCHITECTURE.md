@@ -218,6 +218,8 @@ Preferences persist in `localStorage` (`godseye:settings`, `godseye:theme`), rea
 | Tool | Purpose |
 |---|---|
 | `tools/prepare-map-worker.mjs` | Vendors the MapLibre worker (predev/prebuild). |
+| `tools/gen-mounted-routes.mjs` | Lists the mounted `/api` routes into `src/server/mounted-routes.ts` for `/api/health` (predev/prebuild). |
+| `tools/perf/*.mjs` | Lighthouse, trace, LCP, bundle-size and payload-size benchmarks (perf audits). |
 | `tools/gen-types.mjs` | Regenerates `src/lib/types.ts` from the zod schemas. |
 | `tools/gen-api-docs.ts` | Writes `docs/API.md` from the catalogue (`--check` to verify). |
 | `tools/compile-data-sources.ts` | Compiles `docs/DATA_SOURCES.md` from `docs/data-sources/*.md` plus the licence summary. |

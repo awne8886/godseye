@@ -10,40 +10,24 @@ export const CAPABILITIES = {
   adsblol_reapi: { env: ['ADSBLOL_REAPI'], flag: 'ADSBLOL_REAPI', note: 'adsb.lol re-api (feeder IP only)' },
   opensky: { env: ['OPENSKY_CLIENT_ID', 'OPENSKY_CLIENT_SECRET'], flag: 'OPENSKY_LICENSED', note: 'OpenSky OAuth2 + written licence' },
   adsbfi: { env: [], flag: 'ADSBFI_PERSONAL_USE', note: 'adsb.fi open data (personal use only)' },
-  aeroapi: { env: ['AEROAPI_KEY'], note: 'FlightAware AeroAPI (filed routes, schedules)' },
   fpdb: { env: ['FPDB_API_KEY'], note: 'FlightPlanDatabase (sim-only filed plans)' },
   // Space
-  n2yo: { env: ['N2YO_API_KEY'], note: 'N2YO visual passes' },
   // Hazards
-  firms_area: { env: ['FIRMS_MAP_KEY'], note: 'NASA FIRMS area API' },
-  openaq: { env: ['OPENAQ_API_KEY'], note: 'OpenAQ v3' },
-  waqi: { env: ['WAQI_TOKEN'], note: 'World Air Quality Index' },
-  cdse: { env: ['CDSE_CLIENT_ID', 'CDSE_CLIENT_SECRET'], note: 'Copernicus Data Space (Sentinel Hub)' },
   // Maritime
   ais: { env: ['AIS_API_KEY'], note: 'AISStream.io server relay' },
   // Surveillance
-  windy: { env: ['WINDY_WEBCAMS_KEY'], note: 'Windy Webcams v3 (x-windy-api-key header)' },
   tfl: { env: ['TFL_APP_KEY'], note: 'TfL Unified API app_key ("Powered by TfL Open Data")' },
-  wsdot: { env: ['WSDOT_ACCESS_CODE'], note: 'WSDOT Traveler API (the camera KML is keyless)' },
   trafikverket: { env: ['TRAFIKVERKET_KEY'], note: 'Trafikverket API (stills are keyless)' },
-  ibi511: { env: ['IBI511_KEYS'], note: 'IBI 511 developer keys, e.g. "fl:KEY,ga:KEY" (FL, GA, NC, AZ, LA, NV, UT)' },
   // Threats / network
   cloudflare: { env: ['CLOUDFLARE_API_TOKEN'], invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'Cloudflare Radar (Radar: Read; data CC BY-NC)' },
-  acled: { env: ['ACLED_EMAIL', 'ACLED_PASSWORD'], note: 'ACLED OAuth' },
-  ucdp: { env: ['UCDP_TOKEN'], note: 'UCDP GED x-ucdp-access-token' },
   abusech: { env: ['ABUSECH_AUTH_KEY'], note: 'abuse.ch APIs (bulk files stay keyless)' },
   nvd: { env: ['NVD_API_KEY'], note: 'NVD 2.0 higher rate' },
   otx: { env: ['OTX_KEY'], note: 'AlienVault OTX' },
   // OSINT
-  shodan: { env: ['SHODAN_KEY'], note: 'Shodan full API (InternetDB is keyless)' },
-  ipinfo: { env: ['IPINFO_TOKEN'], note: 'IPinfo Lite' },
   opensanctions: { env: ['OPENSANCTIONS_KEY'], note: 'OpenSanctions API' },
-  etherscan: { env: ['ETHERSCAN_API_KEY'], note: 'Etherscan' },
-  helius: { env: ['HELIUS_API_KEY'], note: 'Helius Solana RPC' },
   scanner: { env: ['SCANNER_URL', 'SCANNER_KEY'], note: 'Optional allow-listed scanner backend (passive scan types)' },
   scanner_active: { env: ['SCANNER_URL', 'SCANNER_KEY'], flag: 'SCANNER_ALLOW_ACTIVE', note: 'Operator opt-in for active scan types (quick/vuln)' },
   // Markets
-  finnhub: { env: ['FINNHUB_KEY'], note: 'Finnhub quotes' },
   coingecko_demo: { env: ['COINGECKO_DEMO_KEY'], note: 'CoinGecko demo key' },
   // AI
   anthropic: { env: ['ANTHROPIC_API_KEY'], note: 'Claude analyst (briefings/overviews)' },
@@ -58,11 +42,10 @@ export const CAPABILITIES = {
   nc_sources: {
     env: [],
     invertFlag: 'COMMERCIAL_DEPLOYMENT',
-    note: 'Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras',
+    note: 'Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial)',
   },
   openmeteo: { env: [], invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'Open-Meteo free tier (non-commercial; CC BY 4.0 data)' },
   deepstate: { env: [], flag: 'NONCOMMERCIAL', note: 'DeepStateMap frontlines (non-commercial, attribution)' },
-  photoreal: { env: ['GOOGLE_MAPS_API_KEY'], note: 'Standalone Photoreal City View (Google 3D Tiles)' },
 } as const satisfies Record<string, CapabilitySpec>;
 
 export interface CapabilitySpec {

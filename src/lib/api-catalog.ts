@@ -50,6 +50,11 @@ export interface ApiEndpoint {
   upstreams: readonly string[];
   /** True when user-supplied input (query, coordinates, identifiers) is forwarded upstream. */
   forwardsUserInput: boolean;
+  /**
+   * The subset of `upstreams` that receives the user input, when not all of them do (e.g. bulk
+   * lists downloaded and matched locally). Defaults to every upstream.
+   */
+  inputReceivers?: readonly string[];
   capability?: CapabilityId;
   /** Per-IP limit on this route (default applies when omitted). `bucket` shares a limit across routes. */
   rateLimit?: { limit: number; windowS: number; bucket?: string; failClosed?: boolean };
@@ -105,7 +110,7 @@ export const API_CATALOG = [
   },
   {
     method: 'GET', path: '/api/satellites/orbit', group: 'space', summary: 'Orbit track ±½ period around t, split at the antimeridian',
-    params: [q('id', 'number', true, 'NORAD catalogue number', '25544'), q('t', 'number', false, 'Epoch ms the markers were propagated for')],
+    params: [q('id', 'number', true, 'NORAD catalogue number', '25544'), q('norad', 'number', false, 'alias of id'), q('t', 'number', false, 'Epoch ms the markers were propagated for')],
     ttlSeconds: 600, responseSchema: 'OrbitResponse', upstreams: [], forwardsUserInput: false, example: '?id=25544', osiris: true, owner: 'layers-space',
   },
   { method: 'GET', path: '/api/space-weather', group: 'space', summary: 'NOAA SWPC Kp, scales, X-ray flux, solar wind (rtsw_wind_1m + rtsw_mag_1m), alerts', params: [], ttlSeconds: 300, responseSchema: 'SpaceWeatherResponse', upstreams: ['services.swpc.noaa.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-space' },
@@ -120,9 +125,9 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/fires', group: 'hazards', summary: 'NASA FIRMS VIIRS/MODIS 24 h fire pixels sampled by FRP/confidence', params: [], ttlSeconds: 900, responseSchema: 'FiresResponse', upstreams: ['firms.modaps.eosdis.nasa.gov', 'eonet.gsfc.nasa.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-hazards' },
   { method: 'GET', path: '/api/weather', group: 'hazards', summary: 'Severe weather/natural events: EONET, NWS, GDACS, NHC, GVP', params: [], ttlSeconds: 300, responseSchema: 'WeatherResponse', upstreams: ['eonet.gsfc.nasa.gov', 'api.weather.gov', 'www.gdacs.org', 'www.nhc.noaa.gov', 'mapservices.weather.noaa.gov', 'volcano.si.edu'], forwardsUserInput: false, osiris: true, owner: 'layers-hazards' },
   {
-    method: 'GET', path: '/api/air-quality', group: 'hazards', summary: 'PM2.5 / US AQI (Open-Meteo keyless; OpenAQ/WAQI keyed)',
-    params: [q('bbox', 'string', false, 'west,south,east,north', '-10,35,30,60')], ttlSeconds: 900, responseSchema: 'AirQualityResponse',
-    upstreams: ['air-quality-api.open-meteo.com', 'api.openaq.org', 'api.waqi.info'], forwardsUserInput: false, osiris: true, owner: 'layers-hazards',
+    method: 'GET', path: '/api/air-quality', group: 'hazards', summary: 'PM2.5 / US AQI (Open-Meteo)',
+    params: [q('bbox', 'string', false, 'west,south,east,north of the map view (rounded to whole degrees; sent to Open-Meteo as a 6×6 grid)', '-10,35,30,60')], ttlSeconds: 1800, responseSchema: 'AirQualityResponse',
+    upstreams: ['air-quality-api.open-meteo.com'], forwardsUserInput: true, osiris: true, owner: 'layers-hazards',
   },
   {
     method: 'GET', path: '/api/gps-interference', group: 'hazards', summary: 'GPS interference H3 cells (gpsjam daily + live NACp binning)',
@@ -143,11 +148,11 @@ export const API_CATALOG = [
       q('lat', 'number', false, 'pick regions around a point'),
       q('lng', 'number', false, 'pick regions around a point'),
     ],
-    ttlSeconds: 1800, responseSchema: 'CctvResponse',
+    ttlSeconds: 300, responseSchema: 'CctvResponse',
     upstreams: ['api.tfl.gov.uk', 'cwwp2.dot.ca.gov', 'caltrans-gis.dot.ca.gov', 'wsdot.wa.gov', 'its.txdot.gov', 'tdcctv.data.one.gov.hk', 'api.data.gov.sg', 'tie.digitraffic.fi', 'api.trafikinfo.trafikverket.se', '(other public camera operators per the provider registry)'],
     forwardsUserInput: false, example: '?region=us-west', osiris: true, owner: 'layers-surveillance',
   },
-  { method: 'GET', path: '/api/cctv/providers', group: 'surveillance', summary: 'Camera provider registry rows (operator, licence, attribution, terms)', params: [], ttlSeconds: 3600, responseSchema: 'CameraProvidersResponse', upstreams: [], forwardsUserInput: false, osiris: false, owner: 'layers-surveillance' },
+  { method: 'GET', path: '/api/cctv/providers', group: 'surveillance', summary: 'Camera provider registry rows (operator, licence, attribution, terms)', params: [], ttlSeconds: 300, responseSchema: 'CameraProvidersResponse', upstreams: [], forwardsUserInput: false, osiris: false, owner: 'layers-surveillance' },
   { method: 'GET', path: '/api/cctv/proxy', group: 'surveillance', summary: 'Stills-only frame proxy (exact-prefix allow-list, no storage)', params: [q('id', 'string', true, 'Camera id from the catalogue', 'hktd-H429F')], ttlSeconds: 5, responseSchema: 'image/*', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
   { method: 'GET', path: '/api/cctv/resolve', group: 'surveillance', summary: 'Resolve a camera to its playable stream', params: [q('id', 'string', true, 'Camera id')], ttlSeconds: 300, responseSchema: 'CameraResolveResponse', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
   { method: 'GET', path: '/api/cctv/stream-status', group: 'surveillance', summary: 'Probe whether a camera stream is online', params: [q('id', 'string', true, 'Camera id')], ttlSeconds: 60, responseSchema: 'StreamStatusResponse', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
@@ -155,7 +160,7 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/live-news', group: 'surveillance', summary: '24/7 news channels (official YouTube embeds, runtime live check)', params: [], ttlSeconds: 3600, responseSchema: 'LiveNewsResponse', upstreams: ['www.youtube.com'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
 
   // ── maritime ───────────────────────────────────────────────────────────────────
-  { method: 'GET', path: '/api/maritime', group: 'maritime', summary: 'Ports + chokepoints (reference) and AIS vessels (keyed relay)', params: [q('bbox', 'string', false, 'w,s,e,n vessel filter')], ttlSeconds: 5, responseSchema: 'MaritimeResponse', upstreams: ['stream.aisstream.io'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/maritime', group: 'maritime', summary: 'Ports + chokepoints (reference) and AIS vessels (keyed relay)', params: [q('bbox', 'string', false, 'w,s,e,n vessel filter')], ttlSeconds: 10, responseSchema: 'MaritimeResponse', upstreams: ['stream.aisstream.io'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
 
   // ── threats ────────────────────────────────────────────────────────────────────
   { method: 'GET', path: '/api/infrastructure', group: 'threats', summary: 'Nuclear facilities (Wikidata + curated), with seismic/conflict context flags', params: [], ttlSeconds: 86400, responseSchema: 'InfrastructureResponse', upstreams: ['query.wikidata.org', 'earthquake.usgs.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
@@ -170,7 +175,7 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/country-risk', group: 'threats', summary: 'Country risk (INFORM + World Bank WGI) with method', params: [], ttlSeconds: 86400, responseSchema: 'CountryRiskResponse', upstreams: ['drmkc.jrc.ec.europa.eu', 'api.worldbank.org'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
 
   // ── network ────────────────────────────────────────────────────────────────────
-  { method: 'GET', path: '/api/malware', group: 'network', summary: 'URLhaus malware hosts (geolocated IPs, precision labelled)', params: [], ttlSeconds: 60, responseSchema: 'MalwareResponse', upstreams: ['urlhaus.abuse.ch', 'ip-api.com'], forwardsUserInput: false, capability: 'nc_sources', osiris: true, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/malware', group: 'network', summary: 'URLhaus malware hosts (geolocated IPs, precision labelled)', params: [], ttlSeconds: 300, responseSchema: 'MalwareResponse', upstreams: ['urlhaus.abuse.ch', 'ip-api.com'], forwardsUserInput: false, capability: 'nc_sources', osiris: true, owner: 'layers-threats-network' },
   { method: 'GET', path: '/api/malware/stream', group: 'network', summary: 'SSE malware detections (snapshot, detections, status, heartbeat)', params: [], ttlSeconds: null, stream: 'sse', responseSchema: 'MalwareResponse', upstreams: [], forwardsUserInput: false, capability: 'nc_sources', osiris: true, owner: 'layers-threats-network' },
   { method: 'GET', path: '/api/cyber-attacks', group: 'network', summary: 'Feodo Tracker botnet C2 indicators', params: [], ttlSeconds: 300, responseSchema: 'C2Response', upstreams: ['feodotracker.abuse.ch', 'ip-api.com'], forwardsUserInput: false, capability: 'nc_sources', osiris: true, owner: 'layers-threats-network' },
   { method: 'GET', path: '/api/threatfox', group: 'network', summary: 'ThreatFox recent IOCs (list; IP IOCs geolocated as INDICATOR points)', params: [], ttlSeconds: 600, responseSchema: 'ThreatFoxResponse', upstreams: ['threatfox.abuse.ch', 'ip-api.com'], forwardsUserInput: false, capability: 'nc_sources', osiris: false, owner: 'layers-threats-network' },
@@ -188,15 +193,15 @@ export const API_CATALOG = [
   {
     method: 'GET', path: '/api/news', group: 'intel', summary: 'Live Alerts: Telegram previews + wire RSS, deduped, geoparsed',
     params: [q('kind', 'enum', false, 'filter by alert kind', 'rocket', ['rocket', 'event', 'news']), q('bloc', 'enum', false, 'filter by bloc', 'western', ['western', 'russian', 'regional', 'independent'])],
-    ttlSeconds: 60, responseSchema: 'NewsResponse',
+    ttlSeconds: 120, responseSchema: 'NewsResponse',
     upstreams: ['t.me', 'feeds.bbci.co.uk', 'www.theguardian.com', 'www.aljazeera.com', 'www.france24.com', 'rss.dw.com', 'rss.nytimes.com', 'www.timesofisrael.com', 'tass.com', 'www.aa.com.tr', 'www.scmp.com', 'www.channelnewsasia.com', 'www.africanews.com', 'nominatim.openstreetmap.org'],
     forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph',
   },
-  { method: 'GET', path: '/api/markets', group: 'markets', summary: 'Indices, defense, energy, commodities, crypto, FX quotes + breadth', params: [], ttlSeconds: 60, responseSchema: 'MarketsResponse', upstreams: ['query1.finance.yahoo.com', 'api.coingecko.com', 'data-api.binance.vision', 'api.exchange.coinbase.com', 'api.kraken.com'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
+  { method: 'GET', path: '/api/markets', group: 'markets', summary: 'Indices, defense, energy, commodities, crypto, FX quotes + breadth', params: [], ttlSeconds: 120, responseSchema: 'MarketsResponse', upstreams: ['query1.finance.yahoo.com', 'api.coingecko.com', 'data-api.binance.vision', 'api.exchange.coinbase.com', 'api.kraken.com'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
   {
     method: 'GET', path: '/api/markets/history', group: 'markets', summary: 'OHLC candles for one symbol',
     params: [q('symbol', 'string', true, 'Ticker (allow-listed)', 'GC=F'), q('range', 'enum', false, 'Range (case-sensitive)', '1M', ['1m', '15m', '24H', '1W', '1M', '6M', '1Y'])],
-    ttlSeconds: 60, responseSchema: 'MarketHistoryResponse', upstreams: ['query1.finance.yahoo.com'], forwardsUserInput: true, example: '?symbol=GC%3DF&range=1M', osiris: true, owner: 'panels-alerts-markets-dossier-graph',
+    ttlSeconds: 900, responseSchema: 'MarketHistoryResponse', upstreams: ['query1.finance.yahoo.com'], forwardsUserInput: true, example: '?symbol=GC%3DF&range=1M', osiris: true, owner: 'panels-alerts-markets-dossier-graph',
   },
   { method: 'GET', path: '/api/crypto', group: 'markets', summary: 'BTC/ETH/SOL spot prices (Binance → Coinbase → Kraken; CoinGecko only with a demo key)', params: [], ttlSeconds: 60, responseSchema: 'CryptoResponse', upstreams: ['data-api.binance.vision', 'api.exchange.coinbase.com', 'api.kraken.com', 'api.coingecko.com'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
   { method: 'GET', path: '/api/chain/daily', group: 'markets', summary: 'Daily chain brief: exploits, crypto CVEs, sanctioned wallets', params: [q('days', 'number', false, 'window 1–120', '30')], ttlSeconds: 1800, responseSchema: 'ChainBriefResponse', upstreams: ['api.llama.fi', 'services.nvd.nist.gov', 'api.opensanctions.org'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
@@ -204,13 +209,13 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/scm-suppliers', group: 'markets', summary: 'Supply-chain sites with hazard proximity checks (method stated)', params: [], ttlSeconds: 900, responseSchema: 'ScmSuppliersResponse', upstreams: ['earthquake.usgs.gov'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
   {
     method: 'GET', path: '/api/region-dossier', group: 'intel', summary: 'Region Dossier: reverse geocode, Wikipedia, Wikidata facts, head of state, live layers within 150 km, weather',
-    params: [q('lat', 'number', true, 'latitude', '50.45'), q('lng', 'number', true, 'longitude', '30.52')], ttlSeconds: 300, responseSchema: 'RegionDossierResponse',
-    upstreams: ['photon.komoot.io', 'nominatim.openstreetmap.org', 'en.wikipedia.org', 'www.wikidata.org', 'query.wikidata.org', 'api.open-meteo.com'], forwardsUserInput: true, example: '?lat=50.45&lng=30.52', osiris: true, owner: 'panels-alerts-markets-dossier-graph',
+    params: [q('lat', 'number', true, 'latitude', '50.45'), q('lng', 'number', true, 'longitude', '30.52')], ttlSeconds: 60, responseSchema: 'RegionDossierResponse',
+    upstreams: ['photon.komoot.io', 'nominatim.openstreetmap.org', 'en.wikipedia.org', 'query.wikidata.org', 'api.open-meteo.com'], forwardsUserInput: true, example: '?lat=50.45&lng=30.52', osiris: true, owner: 'panels-alerts-markets-dossier-graph',
   },
   {
     method: 'GET', path: '/api/entity/expand', group: 'intel', summary: 'Entity Graph expansion (Wikidata + OpenSanctions + RIPEstat)',
     params: [q('type', 'enum', true, 'node type', 'company', ['aircraft', 'vessel', 'company', 'person', 'ip', 'asn', 'country']), q('id', 'string', true, 'identifier', 'Q95')],
-    ttlSeconds: 86400, responseSchema: 'EntityGraphResponse', upstreams: ['query.wikidata.org', 'www.wikidata.org', 'api.opensanctions.org', 'stat.ripe.net'], forwardsUserInput: true, example: '?type=company&id=Q95', osiris: true, owner: 'panels-alerts-markets-dossier-graph',
+    ttlSeconds: 3600, responseSchema: 'EntityGraphResponse', upstreams: ['query.wikidata.org', 'www.wikidata.org', 'api.opensanctions.org', 'stat.ripe.net'], forwardsUserInput: true, example: '?type=company&id=Q95', osiris: true, owner: 'panels-alerts-markets-dossier-graph',
   },
 
   // ── ai ─────────────────────────────────────────────────────────────────────────
@@ -230,7 +235,7 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/osint/sweep', group: 'osint', summary: 'Passive network sweep of a small public prefix via InternetDB (no packets sent to targets)', params: [q('ip', 'string', true, 'public IPv4', '1.1.1.0'), q('cidr', 'number', false, 'prefix length 28–32', '30')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['internetdb.shodan.io', 'ipwho.is'], forwardsUserInput: true, capability: 'nc_sources', rateLimit: { limit: 5, windowS: 60 }, osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/mac', group: 'osint', summary: 'MAC vendor lookup', params: [q('mac', 'string', true, 'MAC or OUI', '00:1A:2B')], ttlSeconds: 86400, responseSchema: 'OsintResponse', upstreams: ['api.maclookup.app'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?mac=00:1A:2B', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/cve', group: 'osint', summary: 'CVE detail (MITRE, CIRCL, NVD) with KEV flag', params: [q('id', 'string', true, 'CVE id', 'CVE-2024-3400')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['cveawg.mitre.org', 'cve.circl.lu', 'services.nvd.nist.gov'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?id=CVE-2024-3400', osiris: true, owner: 'panels-recon' },
-  { method: 'GET', path: '/api/osint/threats', group: 'osint', summary: 'Threat intel for an IP/domain/hash (abuse.ch, OTX, Tor exit exact match)', params: [q('ioc', 'string', true, 'indicator', '1.2.3.4')], ttlSeconds: 600, responseSchema: 'OsintResponse', upstreams: ['threatfox-api.abuse.ch', 'urlhaus-api.abuse.ch', 'otx.alienvault.com', 'check.torproject.org', 'feodotracker.abuse.ch'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, osiris: true, owner: 'panels-recon' },
+  { method: 'GET', path: '/api/osint/threats', group: 'osint', summary: 'Threat intel for an IP/domain/hash (abuse.ch, OTX, Tor exit exact match)', params: [q('ioc', 'string', true, 'indicator', '1.2.3.4')], ttlSeconds: 600, responseSchema: 'OsintResponse', upstreams: ['threatfox-api.abuse.ch', 'otx.alienvault.com', 'check.torproject.org', 'feodotracker.abuse.ch'], inputReceivers: ['threatfox-api.abuse.ch', 'otx.alienvault.com'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/sanctions', group: 'osint', summary: 'OFAC SDN search (OpenSanctions bulk, CC BY-NC)', params: [q('q', 'string', true, 'name / vessel / entity', 'Rosneft')], ttlSeconds: 86400, responseSchema: 'OsintResponse', upstreams: ['data.opensanctions.org'], forwardsUserInput: false, capability: 'nc_sources', rateLimit: OSINT_LIMIT, example: '?q=Rosneft', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/crypto', group: 'osint', summary: 'Wallet trace BTC/ETH/SOL with transparent risk factors', params: [q('address', 'string', true, 'wallet address'), q('chain', 'enum', false, 'chain', 'btc', ['btc', 'eth', 'sol'])], ttlSeconds: 300, responseSchema: 'OsintResponse', upstreams: ['mempool.space', 'eth.blockscout.com', 'api.mainnet-beta.solana.com'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/leaks', group: 'osint', summary: 'Known breaches of an organisation domain (no personal email lookups)', params: [q('domain', 'string', true, 'organisation domain', 'example.com')], ttlSeconds: 86400, responseSchema: 'OsintResponse', upstreams: ['api.xposedornot.com'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, osiris: true, owner: 'panels-recon' },
@@ -243,10 +248,10 @@ export const API_CATALOG = [
   {
     method: 'GET', path: '/api/directions', group: 'geo', summary: 'Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile',
     params: [
-      q('from', 'string', true, 'lat,lng (OSIRIS order)', '51.5072,-0.1276'),
+      q('from', 'string', true, 'lat,lng (latitude first)', '51.5072,-0.1276'),
       q('to', 'string', true, 'lat,lng', '51.5081,-0.0877'),
       q('via', 'string', false, 'lat,lng|lat,lng waypoints'),
-      q('mode', 'enum', false, 'mode (OSIRIS names auto/bicycle/pedestrian accepted as aliases)', 'drive', ['drive', 'walk', 'bike', 'auto', 'pedestrian', 'bicycle']),
+      q('mode', 'enum', false, 'mode (auto/bicycle/pedestrian accepted as aliases)', 'drive', ['drive', 'walk', 'bike', 'auto', 'pedestrian', 'bicycle']),
       q('avoid', 'string', false, 'tolls,highways,ferries'),
     ],
     ttlSeconds: 300, responseSchema: 'DirectionsResponse', upstreams: ['valhalla1.openstreetmap.de', 'router.project-osrm.org', 'routing.openstreetmap.de'], forwardsUserInput: true, example: '?from=51.5072,-0.1276&to=51.5081,-0.0877', osiris: true, owner: 'panels-recon',
@@ -259,9 +264,9 @@ export const API_CATALOG = [
 
   // ── flight paths ───────────────────────────────────────────────────────────────
   { method: 'GET', path: '/api/airports/search', group: 'flight-paths', summary: 'Airport resolution: IATA → ICAO → ident → fuzzy → metro → Photon → Nominatim', params: [q('submit', 'boolean', false, '1 = explicit submit (Nominatim fallback)'), q('q', 'string', true, 'code, name, city or place', 'London'), q('all', 'boolean', false, '1 = include all airfields')], ttlSeconds: 600, responseSchema: 'AirportSearchResponse', upstreams: ['photon.komoot.io', 'nominatim.openstreetmap.org'], forwardsUserInput: true, example: '?q=London', osiris: false, owner: 'feature-flight-paths' },
-  { method: 'GET', path: '/api/airports/{code}', group: 'flight-paths', summary: 'Airport record + runways + METAR/TAF + local time', params: [p('code', 'IATA, ICAO or ident', 'EGLL')], ttlSeconds: 300, responseSchema: 'AirportDetailResponse', upstreams: ['aviationweather.gov', 'api.adsb.lol'], forwardsUserInput: true, example: 'EGLL', osiris: false, owner: 'feature-flight-paths' },
-  { method: 'GET', path: '/api/route/plan', group: 'flight-paths', summary: 'Planned route between two airports: great circle, estimates, services, weather, diversions', params: [q('from', 'string', true, 'origin code', 'EGLL'), q('to', 'string', true, 'destination code', 'KJFK')], ttlSeconds: 86400, responseSchema: 'RoutePlanResponse', upstreams: ['aviationweather.gov', 'api.open-meteo.com', 'api.flightplandatabase.com'], forwardsUserInput: true, example: '?from=EGLL&to=KJFK', osiris: false, owner: 'feature-flight-paths' },
-  { method: 'GET', path: '/api/route/live', group: 'flight-paths', summary: 'Live aircraft on an airport pair (matched + corridor-inferred)', params: [q('from', 'string', true, 'origin code', 'EGLL'), q('to', 'string', true, 'destination code', 'KJFK'), q('reverse', 'boolean', false, '1 = include B→A')], ttlSeconds: 15, responseSchema: 'RouteLiveResponse', upstreams: ['api.adsb.lol'], forwardsUserInput: true, example: '?from=EGLL&to=KJFK&reverse=1', osiris: false, owner: 'feature-flight-paths' },
+  { method: 'GET', path: '/api/airports/{code}', group: 'flight-paths', summary: 'Airport record + runways + METAR/TAF + local time', params: [p('code', 'IATA, ICAO or ident', 'EGLL')], ttlSeconds: 300, responseSchema: 'AirportDetailResponse', upstreams: ['aviationweather.gov', 'api.adsb.lol'], forwardsUserInput: true, inputReceivers: ['aviationweather.gov'], example: 'EGLL', osiris: false, owner: 'feature-flight-paths' },
+  { method: 'GET', path: '/api/route/plan', group: 'flight-paths', summary: 'Planned route between two airports: great circle, estimates, services, weather, diversions', params: [q('from', 'string', true, 'origin code', 'EGLL'), q('to', 'string', true, 'destination code', 'KJFK')], ttlSeconds: 300, responseSchema: 'RoutePlanResponse', upstreams: ['aviationweather.gov', 'api.open-meteo.com', 'api.flightplandatabase.com'], forwardsUserInput: true, example: '?from=EGLL&to=KJFK', osiris: false, owner: 'feature-flight-paths' },
+  { method: 'GET', path: '/api/route/live', group: 'flight-paths', summary: 'Live aircraft on an airport pair (matched + corridor-inferred)', params: [q('from', 'string', true, 'origin code', 'EGLL'), q('to', 'string', true, 'destination code', 'KJFK'), q('reverse', 'boolean', false, '1 = include B→A')], ttlSeconds: 15, responseSchema: 'RouteLiveResponse', upstreams: ['api.adsb.lol'], forwardsUserInput: false, example: '?from=EGLL&to=KJFK&reverse=1', osiris: false, owner: 'feature-flight-paths' },
   { method: 'GET', path: '/api/flight/{ident}', group: 'flight-paths', summary: 'A specific flight by callsign, IATA flight number, registration or hex', params: [p('ident', 'BAW117, BA117, G-XWBA or 4ca2b3', 'BA117')], ttlSeconds: 60, responseSchema: 'FlightDetailResponse', upstreams: ['vrs-standing-data.adsb.lol', 'api.adsbdb.com', 'hexdb.io', 'api.adsb.lol', 'adsb.lol', 'aviationweather.gov'], forwardsUserInput: true, example: 'BA117', osiris: false, owner: 'feature-flight-paths' },
 ] as const satisfies readonly ApiEndpoint[];
 
@@ -270,12 +275,12 @@ export const API_CATALOG = [
  */
 export const EXCLUDED_OSIRIS_ROUTES = [
   { path: '/api/proxy-tiles', reason: 'CARTO terms (2026-09-29) forbid proxying/caching; GODSEYE uses OpenFreeMap directly.' },
-  { path: '/api/osint/username', reason: 'People-search: GODSEYE only runs passive lookups on infrastructure (§0.7).' },
-  { path: '/api/osint/fingerprint', reason: 'People-search / identity fingerprinting (§0.7).' },
-  { path: '/api/osint/phone', reason: 'People-search (§0.7).' },
-  { path: '/api/osint/github', reason: 'People-search (§0.7).' },
-  { path: '/api/osint/hudsonrock', reason: 'Infostealer lookups by personal email (§0.7).' },
-  { path: '/api/github-webhook', reason: "OSIRIS's own deploy hook, not a product feature." },
+  { path: '/api/osint/username', reason: 'People-search: GODSEYE only runs passive lookups on infrastructure (responsible-use policy — see /privacy).' },
+  { path: '/api/osint/fingerprint', reason: 'People-search / identity fingerprinting (responsible-use policy — see /privacy).' },
+  { path: '/api/osint/phone', reason: 'People-search (responsible-use policy — see /privacy).' },
+  { path: '/api/osint/github', reason: 'People-search (responsible-use policy — see /privacy).' },
+  { path: '/api/osint/hudsonrock', reason: 'Infostealer lookups by personal email (responsible-use policy — see /privacy).' },
+  { path: '/api/github-webhook', reason: 'Deploy hook of the reference project, not a product feature.' },
 ] as const;
 
 /** Look up a catalogue entry by its (templated) path. */
@@ -301,6 +306,6 @@ export function routeFileFor(path: string): string {
 /** Distinct upstream hosts that receive user-supplied input (for the Privacy page). */
 export function upstreamsReceivingUserInput(): string[] {
   const hosts = new Set<string>();
-  for (const e of API_CATALOG as readonly ApiEndpoint[]) if (e.forwardsUserInput) e.upstreams.forEach((h) => hosts.add(h));
+  for (const e of API_CATALOG as readonly ApiEndpoint[]) if (e.forwardsUserInput) (e.inputReceivers ?? e.upstreams).forEach((h) => hosts.add(h));
   return [...hosts].sort();
 }

@@ -187,6 +187,7 @@ Orbit track ±½ period around t, split at the antimeridian
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `id` | query | number | yes | NORAD catalogue number (e.g. `25544`) |
+| `norad` | query | number | no | alias of id |
 | `t` | query | number | no | Epoch ms the markers were propagated for |
 
 ### `GET /api/space-weather`
@@ -276,21 +277,21 @@ No parameters.
 
 ### `GET /api/air-quality`
 
-PM2.5 / US AQI (Open-Meteo keyless; OpenAQ/WAQI keyed)
+PM2.5 / US AQI (Open-Meteo)
 
 | | |
 |---|---|
-| Cache | s-maxage 15 min, stale-while-revalidate 30 min |
+| Cache | s-maxage 30 min, stale-while-revalidate 1 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `AirQualityResponse` |
-| Upstreams | `air-quality-api.open-meteo.com`, `api.openaq.org`, `api.waqi.info` |
-| Forwards user input upstream | No |
+| Upstreams | `air-quality-api.open-meteo.com` |
+| Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/air-quality` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `bbox` | query | string | no | west,south,east,north (e.g. `-10,35,30,60`) |
+| `bbox` | query | string | no | west,south,east,north of the map view (rounded to whole degrees; sent to Open-Meteo as a 6×6 grid) (e.g. `-10,35,30,60`) |
 
 ### `GET /api/gps-interference`
 
@@ -355,7 +356,7 @@ Public camera catalogue by region (columnar, < 4 MB per response)
 
 | | |
 |---|---|
-| Cache | s-maxage 30 min, stale-while-revalidate 1 h |
+| Cache | s-maxage 5 min, stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CctvResponse` |
 | Upstreams | `api.tfl.gov.uk`, `cwwp2.dot.ca.gov`, `caltrans-gis.dot.ca.gov`, `wsdot.wa.gov`, `its.txdot.gov`, `tdcctv.data.one.gov.hk`, `api.data.gov.sg`, `tie.digitraffic.fi`, `api.trafikinfo.trafikverket.se`, `(other public camera operators per the provider registry)` |
@@ -375,7 +376,7 @@ Camera provider registry rows (operator, licence, attribution, terms)
 
 | | |
 |---|---|
-| Cache | s-maxage 1 h, stale-while-revalidate 2 h |
+| Cache | s-maxage 5 min, stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CameraProvidersResponse` |
 | Upstreams | None: served from this server only |
@@ -479,7 +480,7 @@ Ports + chokepoints (reference) and AIS vessels (keyed relay)
 
 | | |
 |---|---|
-| Cache | s-maxage 5 s, stale-while-revalidate 10 s |
+| Cache | s-maxage 10 s, stale-while-revalidate 20 s |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MaritimeResponse` |
 | Upstreams | `stream.aisstream.io` |
@@ -606,10 +607,10 @@ URLhaus malware hosts (geolocated IPs, precision labelled)
 
 | | |
 |---|---|
-| Cache | s-maxage 1 min, stale-while-revalidate 2 min |
+| Cache | s-maxage 5 min, stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MalwareResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | `urlhaus.abuse.ch`, `ip-api.com` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
@@ -627,7 +628,7 @@ SSE malware detections (snapshot, detections, status, heartbeat)
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Stream | Server-Sent Events (text/event-stream) |
 | Response | `MalwareResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | None: served from this server only |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
@@ -643,7 +644,7 @@ Feodo Tracker botnet C2 indicators
 | Cache | s-maxage 5 min, stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `C2Response` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | `feodotracker.abuse.ch`, `ip-api.com` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
@@ -660,7 +661,7 @@ ThreatFox recent IOCs (list; IP IOCs geolocated as INDICATOR points)
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ThreatFoxResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | `threatfox.abuse.ch`, `ip-api.com` |
 | Forwards user input upstream | No |
 | Example | `GET /api/threatfox` |
@@ -728,7 +729,7 @@ Submarine cables + landing points (TeleGeography, CC BY-NC-SA, bundled)
 | Cache | s-maxage 1 d, stale-while-revalidate 2 d |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CablesResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | None: served from this server only |
 | Forwards user input upstream | No |
 | Example | `GET /api/cables` |
@@ -780,7 +781,7 @@ Live Alerts: Telegram previews + wire RSS, deduped, geoparsed
 
 | | |
 |---|---|
-| Cache | s-maxage 1 min, stale-while-revalidate 2 min |
+| Cache | s-maxage 2 min, stale-while-revalidate 4 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `NewsResponse` |
 | Upstreams | `t.me`, `feeds.bbci.co.uk`, `www.theguardian.com`, `www.aljazeera.com`, `www.france24.com`, `rss.dw.com`, `rss.nytimes.com`, `www.timesofisrael.com`, `tass.com`, `www.aa.com.tr`, `www.scmp.com`, `www.channelnewsasia.com`, `www.africanews.com`, `nominatim.openstreetmap.org` |
@@ -799,10 +800,10 @@ Region Dossier: reverse geocode, Wikipedia, Wikidata facts, head of state, live 
 
 | | |
 |---|---|
-| Cache | s-maxage 5 min, stale-while-revalidate 10 min |
+| Cache | s-maxage 1 min, stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RegionDossierResponse` |
-| Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org`, `en.wikipedia.org`, `www.wikidata.org`, `query.wikidata.org`, `api.open-meteo.com` |
+| Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org`, `en.wikipedia.org`, `query.wikidata.org`, `api.open-meteo.com` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/region-dossier?lat=50.45&lng=30.52` |
@@ -818,7 +819,7 @@ Entity Graph expansion (Wikidata + OpenSanctions + RIPEstat)
 
 | | |
 |---|---|
-| Cache | s-maxage 1 d, stale-while-revalidate 2 d |
+| Cache | s-maxage 1 h, stale-while-revalidate 2 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `EntityGraphResponse` |
 | Upstreams | `query.wikidata.org`, `www.wikidata.org`, `api.opensanctions.org`, `stat.ripe.net` |
@@ -841,7 +842,7 @@ Indices, defense, energy, commodities, crypto, FX quotes + breadth
 
 | | |
 |---|---|
-| Cache | s-maxage 1 min, stale-while-revalidate 2 min |
+| Cache | s-maxage 2 min, stale-while-revalidate 4 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MarketsResponse` |
 | Upstreams | `query1.finance.yahoo.com`, `api.coingecko.com`, `data-api.binance.vision`, `api.exchange.coinbase.com`, `api.kraken.com` |
@@ -857,7 +858,7 @@ OHLC candles for one symbol
 
 | | |
 |---|---|
-| Cache | s-maxage 1 min, stale-while-revalidate 2 min |
+| Cache | s-maxage 15 min, stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MarketHistoryResponse` |
 | Upstreams | `query1.finance.yahoo.com` |
@@ -1132,7 +1133,7 @@ Shodan InternetDB (ports, CPEs, vulns; non-commercial)
 | Cache | s-maxage 1 h, stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | `internetdb.shodan.io` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
@@ -1151,7 +1152,7 @@ Passive network sweep of a small public prefix via InternetDB (no packets sent t
 | Cache | s-maxage 1 h, stale-while-revalidate 2 h |
 | Rate limit | 5 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | `internetdb.shodan.io`, `ipwho.is` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
@@ -1207,7 +1208,7 @@ Threat intel for an IP/domain/hash (abuse.ch, OTX, Tor exit exact match)
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Upstreams | `threatfox-api.abuse.ch`, `urlhaus-api.abuse.ch`, `otx.alienvault.com`, `check.torproject.org`, `feodotracker.abuse.ch` |
+| Upstreams | `threatfox-api.abuse.ch`, `otx.alienvault.com`, `check.torproject.org`, `feodotracker.abuse.ch` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/osint/threats?ioc=1.2.3.4` |
@@ -1225,7 +1226,7 @@ OFAC SDN search (OpenSanctions bulk, CC BY-NC)
 | Cache | s-maxage 1 d, stale-while-revalidate 2 d |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
 | Upstreams | `data.opensanctions.org` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
@@ -1366,10 +1367,10 @@ Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `from` | query | string | yes | lat,lng (OSIRIS order) (e.g. `51.5072,-0.1276`) |
+| `from` | query | string | yes | lat,lng (latitude first) (e.g. `51.5072,-0.1276`) |
 | `to` | query | string | yes | lat,lng (e.g. `51.5081,-0.0877`) |
 | `via` | query | string | no | lat,lng\|lat,lng waypoints |
-| `mode` | query | enum (drive \| walk \| bike \| auto \| pedestrian \| bicycle) | no | mode (OSIRIS names auto/bicycle/pedestrian accepted as aliases) (e.g. `drive`) |
+| `mode` | query | enum (drive \| walk \| bike \| auto \| pedestrian \| bicycle) | no | mode (auto/bicycle/pedestrian accepted as aliases) (e.g. `drive`) |
 | `avoid` | query | string | no | tolls,highways,ferries |
 
 ### `GET /api/arcgis`
@@ -1438,7 +1439,7 @@ Planned route between two airports: great circle, estimates, services, weather, 
 
 | | |
 |---|---|
-| Cache | s-maxage 1 d, stale-while-revalidate 2 d |
+| Cache | s-maxage 5 min, stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RoutePlanResponse` |
 | Upstreams | `aviationweather.gov`, `api.open-meteo.com`, `api.flightplandatabase.com` |
@@ -1460,7 +1461,7 @@ Live aircraft on an airport pair (matched + corridor-inferred)
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RouteLiveResponse` |
 | Upstreams | `api.adsb.lol` |
-| Forwards user input upstream | Yes (listed on /privacy) |
+| Forwards user input upstream | No |
 | Example | `GET /api/route/live?from=EGLL&to=KJFK&reverse=1` |
 
 | Parameter | In | Type | Required | Description |
@@ -1495,33 +1496,17 @@ Optional upgrades and licence gates, evaluated on the server from environment va
 | `adsblol_reapi` | On when ADSBLOL_REAPI=true | adsb.lol re-api (feeder IP only) |
 | `opensky` | On when OPENSKY_CLIENT_ID + OPENSKY_CLIENT_SECRET set, OPENSKY_LICENSED=true | OpenSky OAuth2 + written licence |
 | `adsbfi` | On when ADSBFI_PERSONAL_USE=true | adsb.fi open data (personal use only) |
-| `aeroapi` | On when AEROAPI_KEY set | FlightAware AeroAPI (filed routes, schedules) |
 | `fpdb` | On when FPDB_API_KEY set | FlightPlanDatabase (sim-only filed plans) |
-| `n2yo` | On when N2YO_API_KEY set | N2YO visual passes |
-| `firms_area` | On when FIRMS_MAP_KEY set | NASA FIRMS area API |
-| `openaq` | On when OPENAQ_API_KEY set | OpenAQ v3 |
-| `waqi` | On when WAQI_TOKEN set | World Air Quality Index |
-| `cdse` | On when CDSE_CLIENT_ID + CDSE_CLIENT_SECRET set | Copernicus Data Space (Sentinel Hub) |
 | `ais` | On when AIS_API_KEY set | AISStream.io server relay |
-| `windy` | On when WINDY_WEBCAMS_KEY set | Windy Webcams v3 (x-windy-api-key header) |
 | `tfl` | On when TFL_APP_KEY set | TfL Unified API app_key ("Powered by TfL Open Data") |
-| `wsdot` | On when WSDOT_ACCESS_CODE set | WSDOT Traveler API (the camera KML is keyless) |
 | `trafikverket` | On when TRAFIKVERKET_KEY set | Trafikverket API (stills are keyless) |
-| `ibi511` | On when IBI511_KEYS set | IBI 511 developer keys, e.g. "fl:KEY,ga:KEY" (FL, GA, NC, AZ, LA, NV, UT) |
 | `cloudflare` | On when CLOUDFLARE_API_TOKEN set, COMMERCIAL_DEPLOYMENT is not "true" | Cloudflare Radar (Radar: Read; data CC BY-NC) |
-| `acled` | On when ACLED_EMAIL + ACLED_PASSWORD set | ACLED OAuth |
-| `ucdp` | On when UCDP_TOKEN set | UCDP GED x-ucdp-access-token |
 | `abusech` | On when ABUSECH_AUTH_KEY set | abuse.ch APIs (bulk files stay keyless) |
 | `nvd` | On when NVD_API_KEY set | NVD 2.0 higher rate |
 | `otx` | On when OTX_KEY set | AlienVault OTX |
-| `shodan` | On when SHODAN_KEY set | Shodan full API (InternetDB is keyless) |
-| `ipinfo` | On when IPINFO_TOKEN set | IPinfo Lite |
 | `opensanctions` | On when OPENSANCTIONS_KEY set | OpenSanctions API |
-| `etherscan` | On when ETHERSCAN_API_KEY set | Etherscan |
-| `helius` | On when HELIUS_API_KEY set | Helius Solana RPC |
 | `scanner` | On when SCANNER_URL + SCANNER_KEY set | Optional allow-listed scanner backend (passive scan types) |
 | `scanner_active` | On when SCANNER_URL + SCANNER_KEY set, SCANNER_ALLOW_ACTIVE=true | Operator opt-in for active scan types (quick/vuln) |
-| `finnhub` | On when FINNHUB_KEY set | Finnhub quotes |
 | `coingecko_demo` | On when COINGECKO_DEMO_KEY set | CoinGecko demo key |
 | `anthropic` | On when ANTHROPIC_API_KEY set | Claude analyst (briefings/overviews) |
 | `gemini` | On when GEMINI_API_KEY_1 set | Gemini fallback analyst |
@@ -1529,10 +1514,9 @@ Optional upgrades and licence gates, evaluated on the server from environment va
 | `ai_user_keys` | On by default; off when DISABLE_USER_AI_KEYS=true | Visitors may send their own provider key in the x-ai-key header (used once, never stored) |
 | `redis` | On when REDIS_URL set | Shared cache + rate limits across instances |
 | `sdk` | On when SDK_INGEST_KEY set | GODSEYE SDK entity ingest (fail-closed without a key) |
-| `nc_sources` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras |
+| `nc_sources` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial) |
 | `openmeteo` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Open-Meteo free tier (non-commercial; CC BY 4.0 data) |
 | `deepstate` | On when NONCOMMERCIAL=true, COMMERCIAL_DEPLOYMENT is not "true" | DeepStateMap frontlines (non-commercial, attribution) |
-| `photoreal` | On when GOOGLE_MAPS_API_KEY set | Standalone Photoreal City View (Google 3D Tiles) |
 
 ## Not replicated
 
@@ -1541,9 +1525,9 @@ OSIRIS endpoints that GODSEYE deliberately does not provide, and why.
 | Path | Reason |
 |---|---|
 | `/api/proxy-tiles` | CARTO terms (2026-09-29) forbid proxying/caching; GODSEYE uses OpenFreeMap directly. |
-| `/api/osint/username` | People-search: GODSEYE only runs passive lookups on infrastructure (§0.7). |
-| `/api/osint/fingerprint` | People-search / identity fingerprinting (§0.7). |
-| `/api/osint/phone` | People-search (§0.7). |
-| `/api/osint/github` | People-search (§0.7). |
-| `/api/osint/hudsonrock` | Infostealer lookups by personal email (§0.7). |
-| `/api/github-webhook` | OSIRIS's own deploy hook, not a product feature. |
+| `/api/osint/username` | People-search: GODSEYE only runs passive lookups on infrastructure (responsible-use policy — see /privacy). |
+| `/api/osint/fingerprint` | People-search / identity fingerprinting (responsible-use policy — see /privacy). |
+| `/api/osint/phone` | People-search (responsible-use policy — see /privacy). |
+| `/api/osint/github` | People-search (responsible-use policy — see /privacy). |
+| `/api/osint/hudsonrock` | Infostealer lookups by personal email (responsible-use policy — see /privacy). |
+| `/api/github-webhook` | Deploy hook of the reference project, not a product feature. |

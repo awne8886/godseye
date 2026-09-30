@@ -34,7 +34,7 @@ describe('GET /api/air-quality', () => {
     expect(body.items[0]).toMatchObject({ station: 'London', pm25: 4.8, usAqi: 32, observedAt: '2026-09-30T18:00:00.000Z' });
     expect(body.sampling).toBe('cities');
     expect(body.providers['open-meteo']).toMatchObject({ ok: true, count: 2 });
-    expect(body.providers.openaq).toMatchObject({ ok: false, skipped: 'not-configured' });
+    expect(body.providers.openaq).toBeUndefined(); // not implemented: never advertised
     expect(body.meta).toMatchObject({ feed: 'air-quality', kind: 'live' });
     expect(body.meta.note).toMatch(/Modelled/);
   });
