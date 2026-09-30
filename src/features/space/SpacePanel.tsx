@@ -16,7 +16,7 @@ import { useSelectionStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import { entityFreshness, formatAge, FRESHNESS_COLOR_TOKEN, freshnessLabel } from '@/lib/freshness';
 import type { IssResponse } from '@/lib/types';
-import { FeedOfflineError, fetchIss, recordById, selectionDataFor, useNow, useSpaceStore } from './client/data';
+import { FeedOfflineError, SATELLITES_QUERY_KEY, fetchIss, fetchSatellites, recordFromResponse, selectionDataFor, useNow, useSpaceStore } from './client/data';
 
 export const NASA_ISS_VIDEO_ID = 'awQzjn72bI0';
 const ISS_NORAD_ID = 25544;
@@ -57,13 +57,14 @@ export function SpacePanel({ onClose }: PanelProps) {
   const setLayer = useUiStore((s) => s.setLayer);
   const select = useSelectionStore((s) => s.select);
   const frameAt = useSpaceStore((s) => s.frameAt);
-  const catalogueVersion = useSpaceStore((s) => s.catalogueVersion);
+  // Same query key as the satellite layer (deduped): the panel works with the layer switched off.
+  const sats = useQuery({ queryKey: SATELLITES_QUERY_KEY, queryFn: fetchSatellites, staleTime: 5 * 60_000 });
   const now = useNow(1000);
   const iss = useQuery({ queryKey: ['space', 'iss'], queryFn: fetchIss, refetchInterval: 5_000, staleTime: 4_000 });
   const d = iss.data;
   const offline = iss.error instanceof FeedOfflineError ? iss.error : null;
   const state = d ? entityFreshness({ kind: 'live', at: d.meta.observedAt ? Date.parse(d.meta.observedAt) : null, observationCadenceMs: 60_000, feedState: d.meta.state, now }) : 'offline';
-  const issRecord = catalogueVersion >= 0 ? recordById(ISS_NORAD_ID) : null;
+  const issRecord = recordFromResponse(sats.data, ISS_NORAD_ID);
 
   const embed = `https://www.youtube-nocookie.com/embed/${NASA_ISS_VIDEO_ID}?${new URLSearchParams({ autoplay: autoplay ? '1' : '0', mute: '1', playsinline: '1', rel: '0' })}`;
 
@@ -152,9 +153,9 @@ export function SpacePanel({ onClose }: PanelProps) {
               kind: 'satellite',
               id: String(ISS_NORAD_ID),
               layer: 'satellites',
-              source: 'celestrak',
+              source: sats.data?.catalogueSource === 'satnogs-fallback' ? 'satnogs' : 'celestrak',
               observedAt: issRecord.epoch,
-              data: selectionDataFor(issRecord, frameAt ?? Date.now()),
+              data: selectionDataFor(issRecord, frameAt ?? Date.now(), sats.data ?? null),
               lngLat: d ? [d.lng, d.lat] : null,
             });
             if (d) requestFlyTo({ lng: d.lng, lat: d.lat, zoom: 2.2 });
@@ -162,7 +163,7 @@ export function SpacePanel({ onClose }: PanelProps) {
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--border-cyan)] font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--cyan-primary)] hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Crosshair aria-hidden className="h-4 w-4" />
-          {issRecord ? 'Track ISS on globe' : 'Satellite catalogue loading…'}
+          {issRecord ? 'Track ISS on globe' : sats.isError ? 'Satellite catalogue offline' : 'Satellite catalogue loading…'}
         </button>
       </div>
     </section>

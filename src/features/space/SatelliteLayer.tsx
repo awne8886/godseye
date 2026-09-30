@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { LayersList, PickingInfo } from '@deck.gl/core';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { useDeckLayers, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
@@ -17,7 +17,7 @@ import { useUiStore } from '@/lib/store';
 import { readCssColor } from '@/lib/tokens';
 import type { LayerId } from '@/lib/layer-registry';
 import { CATEGORY_TOKEN, LAYER_CATEGORY, SAT_CATEGORIES } from './lib/catalog';
-import { displayAltM } from './lib/propagate-batch';
+import { ISS_NORAD_ID, displayAltM } from './lib/propagate-batch';
 import {
   FeedOfflineError,
   SATELLITES_QUERY_KEY,
@@ -220,6 +220,26 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
         updateTriggers: { getPosition: frame.at, getFillColor: frame.at, getRadius: frame.at },
       }),
     );
+    // ISS highlight: a label beside its (enlarged) marker when it is on the visible hemisphere.
+    const issIdx = catalogue()?.byId.get(ISS_NORAD_ID);
+    const k = issIdx === undefined ? -1 : frame.index.indexOf(issIdx);
+    if (k >= 0) {
+      out.push(
+        new TextLayer<{ p: [number, number, number] }>({
+          id: 'space-iss-label',
+          data: [{ p: [frame.positions[k * 3]!, frame.positions[k * 3 + 1]!, frame.positions[k * 3 + 2]!] }],
+          getPosition: (d) => d.p,
+          getText: () => 'ISS',
+          getColor: readCssColor('--map-sat-science', 1),
+          getSize: 11,
+          fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+          getPixelOffset: [0, -12],
+          billboard: true,
+          parameters: { cullMode: 'none' },
+          pickable: false,
+        }),
+      );
+    }
     return out;
   }, [frame, orbit.data, selData, active, select]);
 

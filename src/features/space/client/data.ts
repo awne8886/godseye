@@ -102,6 +102,12 @@ export const useSpaceStore = create<SpaceState>((set) => ({
   setFrame: (frameAt, telemetry) => set({ frameAt, telemetry }),
 }));
 
+/** The ISS (or any) record straight from a satellites response, without the catalogue holder. */
+export function recordFromResponse(resp: SatellitesResponse | undefined, noradId: number): SatRecord | null {
+  const row = resp?.rows.find((r) => r[COL.noradId] === noradId);
+  return row ? rowToRecord(row) : null;
+}
+
 /** Selection payload for a satellite (small object; the card reads it). */
 export interface SatelliteSelectionData extends Record<string, unknown> {
   noradId: number;
@@ -118,8 +124,12 @@ export interface SatelliteSelectionData extends Record<string, unknown> {
   anchorAt: number;
 }
 
-export function selectionDataFor(rec: SatRecord, anchorAt: number): SatelliteSelectionData {
-  const cat = catalogue();
+export function selectionDataFor(
+  rec: SatRecord,
+  anchorAt: number,
+  from: Pick<SatellitesResponse, 'missions' | 'catalogueSource'> | null = null,
+): SatelliteSelectionData {
+  const cat = from ? { missions: from.missions, source: from.catalogueSource ?? 'celestrak' } : catalogue();
   return {
     noradId: rec.noradId,
     name: rec.name,
