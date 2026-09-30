@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import type { LayersList } from '@deck.gl/core';
+import type { MapMouseEvent } from 'maplibre-gl';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
@@ -25,6 +26,8 @@ import { EMERGENCY_LABEL } from './format';
 
 const Z = getLayer('flights')?.z ?? 80;
 const TICK_MS = 1000;
+/** Click tolerance around an aircraft icon, in CSS pixels. */
+const HIT_PX = 14;
 const SEVERITY: Record<'7500' | '7600' | '7700', FeedEvent['severity']> = { '7500': 'critical', '7700': 'high', '7600': 'medium' };
 
 export default function AviationLayer({ active }: LayerComponentProps) {
@@ -144,13 +147,32 @@ export default function AviationLayer({ active }: LayerComponentProps) {
     const onMove = () => {
       if (!raf) raf = requestAnimationFrame(read);
     };
+    // CPU hit-test on click (projected positions, nearest within HIT_PX): works on the globe and in
+    // 2D regardless of GPU picking support; aircraft carry the highest pickPriority anyway.
+    const onClick = (e: MapMouseEvent) => {
+      const f = frame.current;
+      let best = -1;
+      let bestD = HIT_PX * HIT_PX;
+      for (let k = 0; k < f.count; k++) {
+        const i = f.visible[k]!;
+        const p = map.project([f.pos[i * 2]!, f.pos[i * 2 + 1]!]);
+        const d = (p.x - e.point.x) ** 2 + (p.y - e.point.y) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      if (best >= 0) onSelect(f.records[best]!, [f.pos[best * 2]!, f.pos[best * 2 + 1]!]);
+    };
     read();
     map.on('move', onMove);
+    map.on('click', onClick);
     return () => {
+      map.off('click', onClick);
       map.off('move', onMove);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [map, rebuild]);
+  }, [map, rebuild, onSelect]);
 
   useDeckLayers('aviation', layers, Z);
 
@@ -199,7 +221,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
 
   // Announces only the selection (not the per-second count); counts are data attributes for tests.
   return (
-    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-drawn={drawn} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
+    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-map-ready={map ? '1' : '0'} data-drawn={drawn} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
       {selectedLabel !== null ? `Selected aircraft ${selectedLabel}` : ''}
     </p>
   );

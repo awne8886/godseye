@@ -32,11 +32,14 @@ function pickTarget(f: Flights): { lat: number; lng: number; id: string } {
 }
 
 async function openAt(page: Page, t: { lat: number; lng: number }) {
-  await page.goto(`/?layers=flights,private,jets,military&c=${t.lat.toFixed(5)},${t.lng.toFixed(5)},11`);
-  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 30_000 });
+  // 2D: SwiftShader in CI/sandboxes does not draw the MapLibre globe reliably; the layer is the same.
+  await page.goto(`/?proj=mercator&layers=flights,private,jets,military&c=${t.lat.toFixed(5)},${t.lng.toFixed(5)},11`);
+  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 20_000 });
   const status = page.getByTestId('aviation-status');
   await expect(status).toHaveAttribute('data-drawn', /^[1-9]\d*$/, { timeout: 45_000 });
+  // Clicks are handled once the map host reports the map ready (first idle).
+  await expect(status).toHaveAttribute('data-map-ready', '1', { timeout: 60_000 });
   return status;
 }
 
