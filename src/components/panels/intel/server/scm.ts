@@ -119,7 +119,10 @@ export async function chokepointAlerts(): Promise<{ alerts: { chokepoint: string
   const f = getFeed('maritime');
   if (!f) return { alerts: [], run: runFromFeed(null, 0, false) };
   const r = await f.get().catch(() => null);
-  const cps = ((r?.data as { chokepoints?: { name?: string; risk?: string; message?: string; status?: string }[] } | null)?.chokepoints ?? []).filter((c) => c.name);
-  const alerts = cps.filter((c) => c.risk && c.risk.toUpperCase() !== 'NORMAL').map((c) => ({ chokepoint: c.name!, risk: c.risk!, message: c.message ?? c.status ?? '' }));
+  const cps = ((r?.data as { chokepoints?: { name?: string; risk?: string; baseRisk?: string; message?: string; status?: string }[] } | null)?.chokepoints ?? []).filter((c) => c.name);
+  // Only live-elevated risk is an alert: a chokepoint's curated base risk is REFERENCE data, never an alert.
+  const alerts = cps
+    .filter((c) => c.risk && c.risk.toUpperCase() !== 'NORMAL' && (c.baseRisk === undefined || c.risk !== c.baseRisk))
+    .map((c) => ({ chokepoint: c.name!, risk: c.risk!, message: c.message ?? c.status ?? '' }));
   return { alerts, run: runFromFeed(r?.meta ?? null, cps.length, !!r?.data) };
 }

@@ -150,3 +150,22 @@ describe('scale bar and cursor readout', () => {
     expect(geoCell(51.54, -0.16)).toBe('51.5,-0.2');
   });
 });
+
+describe('palette query items (Flight Path Planner shortcuts)', () => {
+  it('turns a typed route or flight into a PATHS action, and nothing else', async () => {
+    const { queryItems } = await import('./palette-items');
+    const { useUiStore } = await import('@/lib/store');
+    const all = () => true;
+    const [plan] = queryItems('lhr jfk', all);
+    expect(plan!.label).toBe('Plan route LHR → JFK');
+    plan!.run();
+    expect(useUiStore.getState()).toMatchObject({ plannedRoute: { from: 'LHR', to: 'JFK' }, openPanel: 'paths' });
+    const [track] = queryItems('ba117', all);
+    expect(track!.label).toBe('Track flight BA117');
+    track!.run();
+    expect(useUiStore.getState().flightIdent).toBe('BA117');
+    expect(queryItems('satellites', all)).toEqual([]);
+    expect(queryItems('LHR JFK', (id) => id !== 'paths')).toEqual([]);
+    useUiStore.getState().setOpenPanel(null);
+  });
+});

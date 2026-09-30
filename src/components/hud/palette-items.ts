@@ -8,6 +8,7 @@ import type { LayerDef, LayerId } from '@/lib/layer-registry';
 import { REGION_PRESETS } from '@/lib/presets';
 import { PANELS, TOOLS, type PanelId } from '@/lib/tool-registry';
 import { useUiStore } from '@/lib/store';
+import { parseFlightParam, parseRouteParam } from '@/lib/url-state';
 import { mapCentre, runKeyAction } from './actions';
 
 export interface PaletteItem {
@@ -23,6 +24,44 @@ export interface PaletteItem {
 const CONTEXT_PANELS = new Set<PanelId>(['dossier', 'graph', 'flight-watch', 'camera', 'live-news', 'satellite', 'palette']);
 
 const keyFor = (action: KeyAction) => KEY_BINDINGS.find((b) => b.action === action)?.display;
+
+/**
+ * Items derived from what the visitor typed: "LHR JFK" / "EGLL-KJFK" plans a route, a callsign,
+ * flight number, registration or hex tracks a flight. Both open the PATHS panel.
+ */
+export function queryItems(query: string, available: (id: PanelId) => boolean): PaletteItem[] {
+  if (!available('paths')) return [];
+  const ui = () => useUiStore.getState();
+  const q = query.trim();
+  const out: PaletteItem[] = [];
+  const route = parseRouteParam(q);
+  if (route) {
+    out.push({
+      id: `route:${route.from}-${route.to}`,
+      group: 'ACTIONS',
+      label: `Plan route ${route.from} → ${route.to}`,
+      keywords: [q, 'route', 'plan', 'flight path'],
+      run: () => {
+        ui().setPlannedRoute(route);
+        ui().setOpenPanel('paths');
+      },
+    });
+  }
+  const flight = !route && /\d/.test(q) ? parseFlightParam(q) : null;
+  if (flight) {
+    out.push({
+      id: `flight:${flight}`,
+      group: 'ACTIONS',
+      label: `Track flight ${flight}`,
+      keywords: [q, 'flight', 'track', 'callsign'],
+      run: () => {
+        ui().setFlightIdent(flight);
+        ui().setOpenPanel('paths');
+      },
+    });
+  }
+  return out;
+}
 
 export function paletteItems(ctx: { available: (id: PanelId) => boolean; layers: LayerDef[]; active: ReadonlySet<string> }): PaletteItem[] {
   const ui = () => useUiStore.getState();

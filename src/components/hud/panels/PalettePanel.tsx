@@ -5,12 +5,12 @@
  */
 import { Command } from 'cmdk';
 import { Search } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { PanelProps } from '@/lib/feature-module';
 import { useUiStore } from '@/lib/store';
 import { isPanelAvailable, useHasBluetooth, useVisibleLayers } from '../hooks';
 import ModalShell from '../ModalShell';
-import { paletteItems, type PaletteItem } from '../palette-items';
+import { paletteItems, queryItems, type PaletteItem } from '../palette-items';
 
 const GROUPS: PaletteItem['group'][] = ['TOOLS', 'PANELS', 'ACTIONS', 'REGIONS', 'LAYERS'];
 
@@ -18,7 +18,11 @@ export default function PalettePanel({ onClose }: PanelProps) {
   const bt = useHasBluetooth();
   const layers = useVisibleLayers();
   const active = useUiStore((s) => s.activeLayers);
-  const items = useMemo(() => paletteItems({ available: (id) => isPanelAvailable(id, bt), layers, active }), [bt, layers, active]);
+  const [query, setQuery] = useState('');
+  const items = useMemo(() => {
+    const available = (id: Parameters<typeof isPanelAvailable>[0]) => isPanelAvailable(id, bt);
+    return [...queryItems(query, available), ...paletteItems({ available, layers, active })];
+  }, [bt, layers, active, query]);
 
   const run = (item: PaletteItem) => {
     item.run();
@@ -38,7 +42,9 @@ export default function PalettePanel({ onClose }: PanelProps) {
           <Search size={15} aria-hidden className="text-[var(--gold-primary)]" />
           <Command.Input
             autoFocus
-            placeholder="Search tools, layers, regions…"
+            value={query}
+            onValueChange={setQuery}
+            placeholder="Search tools, layers, regions — or LHR JFK, BA117…"
             className="hud-text h-12 flex-1 bg-transparent text-[13px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)]"
           />
           <kbd className="hud-micro rounded-[var(--radius-chip)] border border-[var(--border-primary)] px-1.5 text-[var(--text-secondary)]">ESC</kbd>

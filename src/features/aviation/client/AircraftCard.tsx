@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Eye, EyeOff, Plane, TriangleAlert } from 'lucide-react';
+import { Eye, EyeOff, Plane, Route, TriangleAlert } from 'lucide-react';
 import type { CardProps } from '@/lib/feature-module';
 import { OBSERVATION_CADENCE_MS, type LayerId } from '@/lib/layer-registry';
 import { useLayerStatus } from '@/lib/layer-host';
@@ -110,6 +110,7 @@ export default function AircraftCard({ selection }: CardProps) {
   const watchFlight = useUiStore((s) => s.watchFlight);
   const unwatchFlight = useUiStore((s) => s.unwatchFlight);
   const openPanel = useUiStore((s) => s.setOpenPanel);
+  const setFlightIdent = useUiStore((s) => s.setFlightIdent);
   const id = detail.data?.identity ?? null;
   const posSource = r.posSource ? POS_SOURCE_LABEL[r.posSource] : traceSourceLabel(detail.data?.trackSource ?? null);
   const airline = airlineCodeOf(r.callsign);
@@ -224,6 +225,18 @@ export default function AircraftCard({ selection }: CardProps) {
         {watched ? <EyeOff aria-hidden className="size-4" /> : <Eye aria-hidden className="size-4" />}
         {watched ? 'UNWATCH' : 'WATCH'}
         {!watched && watchCount >= MAX_WATCHED_FLIGHTS ? ` (REPLACES OLDEST OF ${MAX_WATCHED_FLIGHTS})` : ''}
+      </button>
+      {/* Hands the flight to the Flight Path Planner (planned arc, flown track, remaining leg). */}
+      <button
+        type="button"
+        onClick={() => {
+          setFlightIdent((r.callsign ?? r.id.replace(/^~/, '')).toUpperCase());
+          openPanel('paths');
+        }}
+        className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--gold-primary)]/40 bg-[var(--gold-primary)]/10 px-3 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--gold-primary)] hover:bg-[var(--gold-primary)]/20 focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+      >
+        <Route aria-hidden className="size-4" />
+        SHOW PLANNED PATH
       </button>
       <p className="text-[12px] text-[var(--text-secondary)]">
         Aircraft data © adsb.lol contributors, ODbL 1.0 · registry adsbdb.com ·{' '}
