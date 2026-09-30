@@ -57,7 +57,7 @@ export default function Telemetry() {
     <div className="hud-micro fixed right-4 top-4 z-[var(--z-hud)] flex items-center gap-3 text-[var(--text-secondary)]" aria-label="Telemetry" role="group">
       <span className="hidden font-bold text-[var(--cyan-primary)] md:inline">ZULU {zulu}Z</span>
       <span aria-live="polite" className="flex items-center gap-1.5" style={{ color: STATUS_COLOR[st] }}>
-        <span aria-hidden className={`inline-block h-1.5 w-1.5 rounded-full ${st === 'LIVE' ? 'hud-pulse' : ''}`} style={{ background: STATUS_COLOR[st] }} />
+        <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[st], boxShadow: st === 'LIVE' ? '0 0 6px var(--alert-green)' : undefined }} />
         STATUS: {st}
       </span>
       <span className="hidden text-[var(--cyan-primary)] md:inline">{shown.length} LAYERS</span>

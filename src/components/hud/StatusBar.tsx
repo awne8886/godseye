@@ -99,7 +99,7 @@ export default function StatusBar() {
           const label = `${l.label}: ${state ? state.toUpperCase() : 'ACQUIRING'}`;
           return (
             <li key={l.id} title={label} aria-label={label} className="grid h-4 w-3 place-items-center">
-              <span aria-hidden className={`inline-block h-1.5 w-1.5 rounded-full ${state ? '' : 'hud-blink'}`} style={{ background: color }} />
+              <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: state ? 1 : 0.5 }} />
             </li>
           );
         })}

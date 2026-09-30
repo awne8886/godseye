@@ -38,7 +38,7 @@ export function FreshnessLed({ layer, status }: { layer: LayerDef; status: Layer
   if (status.state === 'loading')
     return (
       <span className="hud-micro flex items-center gap-1 text-[var(--cyan-primary)]">
-        <span aria-hidden className="hud-pulse inline-block h-1.5 w-1.5 rounded-full bg-[var(--cyan-primary)]" />
+        <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full border border-[var(--cyan-primary)]" />
         ACQUIRING
       </span>
     );
