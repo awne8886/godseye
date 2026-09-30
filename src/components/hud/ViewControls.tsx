@@ -136,7 +136,7 @@ export default function ViewControls() {
 
   return (
     <>
-      <div className="glass-panel fixed bottom-[calc(72px+env(safe-area-inset-bottom))] left-3 z-[var(--z-hud)] flex items-center gap-1 p-1 md:bottom-[100px] md:left-[120px]">
+      <div className="glass-panel fixed bottom-[calc(96px+env(safe-area-inset-bottom))] left-3 z-[var(--z-hud)] flex items-center gap-1 p-1 md:bottom-[100px] md:left-[120px]">
         <Segmented
           label="Projection"
           group="proj"

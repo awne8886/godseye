@@ -363,6 +363,13 @@
 .maplibregl-ctrl-bottom-right {
   bottom: 28px;
 }
+/* Phones: keep attribution above the bottom nav (56 px + safe area), never under it. */
+@media (max-width: 767px), (max-height: 499px) and (orientation: landscape) {
+  .maplibregl-ctrl-bottom-right,
+  .maplibregl-ctrl-bottom-left {
+    bottom: calc(56px + env(safe-area-inset-bottom));
+  }
+}
 /* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome. */
 .maplibregl-ctrl-bottom-left,
 .maplibregl-ctrl-bottom-right {

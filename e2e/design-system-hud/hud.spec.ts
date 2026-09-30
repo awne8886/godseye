@@ -79,6 +79,20 @@ test.describe('desktop HUD', () => {
     await expect(page.getByRole('region', { name: 'REGION PRESETS' })).toBeHidden();
   });
 
+  test('the docked panel column resizes from the keyboard and remembers its width', async ({ page }) => {
+    await boot(page);
+    await page.keyboard.press('l');
+    const handle = page.getByRole('separator', { name: 'Resize panel' });
+    await expect(handle).toHaveAttribute('aria-valuenow', '360');
+    await handle.focus();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    await expect(handle).toHaveAttribute('aria-valuenow', '400');
+    const box = await page.getByRole('region', { name: 'LAYERS' }).boundingBox();
+    expect(Math.round(box!.width)).toBe(400);
+    expect(await page.evaluate(() => localStorage.getItem('godseye:panel-width'))).toBe('400');
+  });
+
   test('every registered tool in the strip toggles its panel', async ({ page }) => {
     await boot(page);
     for (const t of TOOLS) {
