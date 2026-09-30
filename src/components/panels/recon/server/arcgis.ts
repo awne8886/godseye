@@ -1,15 +1,17 @@
 /**
- * ArcGIS catalogue search (www.arcgis.com, fixed host) and import of ANY public
- * …/rest/services/…/(Feature|Map)Server layer as GeoJSON. The user's URL is never proxied as is:
- * it is parsed, checked against the service-URL shape, and REBUILT to exactly
+ * ArcGIS catalogue search (www.arcgis.com, fixed host) and import of a public
+ * …/rest/services/…/(Feature|Map)Server layer as GeoJSON from an ALLOW-LISTED ArcGIS host
+ * (`*.arcgis.com`, `*.arcgisonline.com`, plus exact hosts the operator lists in
+ * `ARCGIS_ALLOWED_HOSTS`). The user's URL is never proxied as is: it is parsed, checked against the
+ * service-URL shape and the allow-list, and REBUILT to exactly
  * `<origin>/…/rest/services/<svc>/(Feature|Map)Server/<n>/query?…&f=geojson`, then fetched with
- * safeFetch() (SSRF guard on every hop, ports 80/443/8080/8443, no credentials). Features are
- * capped (FEATURE_CAP) and the response says when it was truncated. Owner: panels-recon. Server-only.
+ * allowListedFetch() (allow-list AND SSRF guard on every hop, no credentials). Features are capped
+ * (FEATURE_CAP) and the response says when it was truncated. Owner: panels-recon. Server-only.
  */
 import 'server-only';
 import { HttpError, httpJson } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
-import { safeFetch } from '@/lib/ssrf';
+import { allowListedFetch, matchesAllowList, type AllowRule } from '@/lib/ssrf';
 import type { ArcgisResponse, ProviderStatus } from '@/lib/types';
 import { probe } from './lookup';
 
@@ -41,6 +43,47 @@ export function parseServiceUrl(raw: string): ServiceRef {
   if (!m) throw new HttpError('Expected …/rest/services/<name>/FeatureServer[/n] or …/MapServer[/n]', 'blocked', raw);
   const kind = m[2]!.toLowerCase() === 'featureserver' ? 'FeatureServer' : 'MapServer';
   return { origin: u.origin, servicePath: m[1]!.replace(/(FeatureServer|MapServer)$/i, kind), kind, layer: m[3] ? Number(m[3]) : 0 };
+}
+
+/**
+ * Built-in ArcGIS hosts. ArcGIS Online hosted services live at
+ * `services<N>.arcgis.com/<orgId>/arcgis/rest/services/…` (the org id varies, so the directory prefix
+ * is `/` and the service shape is enforced by SERVICE_RE on the rebuilt URL); Esri's own servers
+ * (`services.arcgisonline.com`, `sampleserver6.arcgisonline.com`) serve `/arcgis/rest/services/…`.
+ */
+export const BUILTIN_ARCGIS_RULES: readonly AllowRule[] = [
+  { host: '*.arcgis.com', pathPrefix: '/' },
+  { host: '*.arcgisonline.com', pathPrefix: '/arcgis/rest/services/' },
+];
+
+const HOST_ENTRY = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::(\d{2,5}))?$/;
+
+/**
+ * Operator additions: `ARCGIS_ALLOWED_HOSTS=gis.example.gov,maps.example.org:8443` — exact hosts
+ * (optional port), https only, no wildcards. Invalid entries are ignored.
+ */
+export function arcgisRules(env: Record<string, string | undefined> = process.env): AllowRule[] {
+  const extra: AllowRule[] = [];
+  for (const raw of (env.ARCGIS_ALLOWED_HOSTS ?? '').split(',')) {
+    const m = raw.trim().toLowerCase().match(HOST_ENTRY);
+    if (!m) continue;
+    extra.push({ host: m[1]!, pathPrefix: '/', ...(m[2] && m[2] !== '443' ? { port: m[2] } : {}) });
+  }
+  return [...BUILTIN_ARCGIS_RULES, ...extra];
+}
+
+/** True when the (rebuilt) service URL is on the ArcGIS allow-list. */
+export function isAllowedService(ref: ServiceRef, env: Record<string, string | undefined> = process.env): boolean {
+  return matchesAllowList(new URL(`${ref.origin}${ref.servicePath}/${ref.layer}/query`), arcgisRules(env));
+}
+
+/** Allow-list check for a catalogue item URL (lets the panel say which results can be imported). */
+export function isImportableUrl(raw: string, env: Record<string, string | undefined> = process.env): boolean {
+  try {
+    return isAllowedService(parseServiceUrl(raw), env);
+  } catch {
+    return false;
+  }
 }
 
 export type Bbox = [number, number, number, number];
@@ -89,7 +132,7 @@ export function sanitizeFeatures(body: unknown): { fc: GeoJSON.FeatureCollection
 export async function importLayer(ref: ServiceRef, bbox?: Bbox | null): Promise<{ fc: GeoJSON.FeatureCollection | null; truncated: boolean; status: ProviderStatus }> {
   const url = queryUrl(ref, bbox);
   const p = await probe(`arcgis:layer:${url.toString()}`, 10 * 60_000, async () => {
-    const res = await safeFetch(url, { maxBytes: ARCGIS_MAX_BYTES, headers: { accept: 'application/geo+json, application/json' } });
+    const res = await allowListedFetch(url, arcgisRules(), { maxBytes: ARCGIS_MAX_BYTES, timeoutMs: 10_000, deadlineMs: 20_000, headers: { accept: 'application/geo+json, application/json' } });
     if (!res.ok) throw new HttpError(`HTTP ${res.status}`, 'http', url.origin, res.status);
     let body: unknown;
     try {
@@ -127,7 +170,7 @@ export async function searchItems(q: string): Promise<{ items: ArcgisResponse['i
     return data.results.flatMap((r) => {
       if (!r.url || !/^https?:\/\//.test(r.url)) return [];
       const e = r.extent?.length === 2 ? [r.extent[0]![0], r.extent[0]![1], r.extent[1]![0], r.extent[1]![1]] : [];
-      return [{ id: r.id, title: r.title ?? r.id, owner: r.owner ?? null, url: r.url, snippet: r.snippet ?? null, extent: inRange(e) ? (e as Bbox) : null }];
+      return [{ id: r.id, title: r.title ?? r.id, owner: r.owner ?? null, url: r.url, snippet: r.snippet ?? null, extent: inRange(e) ? (e as Bbox) : null, importable: isImportableUrl(r.url) }];
     });
   }, { count: (l) => l.length, allowEmpty: true });
   return { items: p.value ?? [], status: p.status };

@@ -20,7 +20,7 @@ import { aircraftDetail, adsbdbBucket } from '@/features/aviation/server/aircraf
 import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
-import { etaMs, onCorridor, progressOn } from '../lib/geometry';
+import { etaMs, onCorridor, pathIntoFrame, progressOn } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { findAirport, openFlights, vrsIndex, type AirportRecord } from './data';
@@ -221,7 +221,9 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     const pr = progressOn(here, O, D);
     progress = pr.progress;
     eta = etaMs(pr.remainingKm, live, now);
-    remainingLeg = greatCirclePoints(here, D, 64);
+    // Same longitude frame as the planned arc (which is unwrapped from the origin and may run past
+    // ±180): otherwise a trans-Pacific remaining leg lands in another world copy (R4-B1).
+    remainingLeg = pathIntoFrame(greatCirclePoints(here, D, 64), plannedArc);
   }
   const last = flownTrack[flownTrack.length - 1];
   const landed = !airborne && destination !== null && last !== undefined && distanceKm([last.lng, last.lat], [destination.lng, destination.lat]) <= 25 && (last.onGround || (last.altFt ?? 0) < 1500);
@@ -257,4 +259,20 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     providers: providersAt(runs, now),
     timestamp: new Date(now).toISOString(),
   };
+}
+
+/**
+ * True when nothing at all was found for the ident: no ICAO address, no live position, no route, no flown track
+ * and no aircraft identity. Combined with `upstreamFailures` the route answers 404 (every source
+ * answered and none knows the flight) or 503 (a source was down, so "unknown" is not established).
+ */
+export function nothingFound(d: FlightDetail): boolean {
+  return d.resolved.hex === null && d.position === null && d.origin === null && d.destination === null && d.flownTrack.length === 0 && d.identity === null && d.routeSource == null;
+}
+
+/** Providers that failed (not skipped). The flights snapshot does not count when an adsb.lol lookup answered instead. */
+export function upstreamFailures(d: FlightDetail): string[] {
+  const entries = Object.entries(d.providers);
+  const lookupOk = entries.some(([k, p]) => k.startsWith('adsblol_') && p.ok);
+  return entries.filter(([k, p]) => !p.ok && !p.skipped && !(k === 'flights' && lookupOk)).map(([k]) => k);
 }

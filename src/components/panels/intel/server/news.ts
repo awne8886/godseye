@@ -65,8 +65,14 @@ export const WIRE_FEEDS: readonly NewsSource[] = [
 
 export const ALL_SOURCES: readonly NewsSource[] = [...TELEGRAM_CHANNELS, ...WIRE_FEEDS];
 
-export const POSTS_PER_CHANNEL = 10;
+/** Contract §6 News and OSIRIS `api/news/route.ts:80`: the 8 newest posts per channel (low volume). */
+export const POSTS_PER_CHANNEL = 8;
 export const ITEMS_PER_WIRE = 8;
+
+/** The newest POSTS_PER_CHANNEL posts of a `t.me/s/<handle>` page (the page lists oldest first). */
+export function latestChannelPosts(html: string, handle: string): TelegramPost[] {
+  return parseChannelPage(html, handle).slice(-POSTS_PER_CHANNEL);
+}
 export const MAX_ITEM_AGE_MS = 72 * 3600_000;
 
 export interface NewsData {
@@ -172,7 +178,7 @@ export async function runNews(ctx: Pick<FeedContext<NewsData>, 'signal'>, now = 
       const { result, run } = await runProvider(
         async () => {
           const r = await httpText(src.url, { timeoutMs: 10_000, retries: 1, maxBytes: 4 * 1024 * 1024, signal: ctx.signal, ...(src.kind === 'telegram' ? { limiter: tgLimiter() } : {}) });
-          if (src.kind === 'telegram') return parseChannelPage(r.text ?? '', src.handle).slice(-POSTS_PER_CHANNEL).map((p) => fromTelegram(p, src)).filter(fresh);
+          if (src.kind === 'telegram') return latestChannelPosts(r.text ?? '', src.handle).map((p) => fromTelegram(p, src)).filter(fresh);
           return parseFeed(r.text ?? '')
             .map((it) => fromWire(it, src))
             .filter((x): x is AlertItem => x !== null && fresh(x))

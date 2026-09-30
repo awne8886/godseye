@@ -17,7 +17,7 @@ import { useSelectionStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import { entityFreshness, formatAge, FRESHNESS_COLOR_TOKEN, freshnessLabel } from '@/lib/freshness';
 import type { IssResponse } from '@/lib/types';
-import { FeedOfflineError, SATELLITES_QUERY_KEY, fetchIss, fetchSatellites, recordFromResponse, selectionDataFor, useNow, useSpaceStore } from './client/data';
+import { FeedOfflineError, fetchIss, fetchSatelliteById, recordFromResponse, satelliteByIdQueryKey, selectionDataFor, useNow, useSpaceStore } from './client/data';
 
 export const NASA_ISS_VIDEO_ID = 'awQzjn72bI0';
 const ISS_NORAD_ID = 25544;
@@ -58,8 +58,8 @@ export function SpacePanel({ onClose }: PanelProps) {
   const setLayer = useUiStore((s) => s.setLayer);
   const select = useSelectionStore((s) => s.select);
   const frameAt = useSpaceStore((s) => s.frameAt);
-  // Same query key as the satellite layer (deduped): the panel works with the layer switched off.
-  const sats = useQuery({ queryKey: SATELLITES_QUERY_KEY, queryFn: fetchSatellites, staleTime: 5 * 60_000 });
+  // Only the ISS elements (one row), so the panel works with the layer off and never parses the catalogue.
+  const sats = useQuery({ queryKey: satelliteByIdQueryKey(ISS_NORAD_ID), queryFn: () => fetchSatelliteById(ISS_NORAD_ID), staleTime: 5 * 60_000 });
   const now = useNow(1000);
   const iss = useQuery({ queryKey: ['space', 'iss'], queryFn: fetchIss, refetchInterval: 5_000, staleTime: 4_000 });
   const d = iss.data;

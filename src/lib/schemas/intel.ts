@@ -93,6 +93,8 @@ export const MarketSession = z.object({
   tz: z.string(),
   open: z.boolean(),
   nextChangeAt: IsoTime.nullable(),
+  /** True when a sourced full-day holiday calendar covers this exchange for the current year. */
+  holidaysModelled: z.boolean().optional(),
 });
 
 export const MarketsResponse = Envelope.extend({
@@ -148,7 +150,16 @@ export const RegionDossierResponse = z.object({
   /** Live layers aggregated within 150 km of the point; an offline feed is reported as such, never as 0. */
   nearby: z.object({
     radiusKm: z.literal(150),
-    counts: z.record(z.string(), z.object({ count: z.number().int().nonnegative().nullable(), state: FreshnessState })),
+    counts: z.record(
+      z.string(),
+      z.object({
+        count: z.number().int().nonnegative().nullable(),
+        state: FreshnessState,
+        /** Why `count` is null or incomplete: still loading, shape not understood, keyed/licensed layer off, some regions missing. */
+        reason: z.enum(['pending', 'unavailable', 'not-configured', 'licence', 'partial']).optional(),
+        note: z.string().optional(),
+      }),
+    ),
     highlights: z.array(z.object({ layer: z.string(), id: z.string(), title: z.string(), distanceKm: z.number(), observedAt: IsoTime.nullable() })),
   }),
   weather: z

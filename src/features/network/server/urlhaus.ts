@@ -200,8 +200,10 @@ export const malwareFeed = defineFeed<MalwareData>({
     // Arrival beacons: NEW IPs only (never re-announce hosts the clients already have).
     const { added, retired } = diffHosts(previous?.items ?? null, items);
     const hub = malwareHub();
-    if (added.length) hub.broadcast('detections', added.slice(0, 200));
-    if (retired.length) hub.broadcast('status', { retired, total: items.length, at: new Date().toISOString() });
+    // Every added host is sent (in chunks of 200 per event), then the server's own total, so a
+    // client's set — and the count derived from it — always equals what is served.
+    for (let i = 0; i < added.length; i += 200) hub.broadcast('detections', added.slice(i, i + 200));
+    if (added.length || retired.length) hub.broadcast('status', { retired, total: items.length, at: new Date().toISOString() });
     let newest = 0;
     for (const h of items) if (h.observedAt) newest = Math.max(newest, Date.parse(h.observedAt));
     return {

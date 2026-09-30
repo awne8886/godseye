@@ -106,7 +106,7 @@ export default function ReconPanel(_: PanelProps) {
       >
         <Label htmlFor={targetId}>Target</Label>
         <div className="flex gap-1.5">
-          <HudInput id={targetId} value={target} onChange={(e) => setTarget(e.target.value)} placeholder="example.com · 1.1.1.1 · AS15169 · CVE-2024-3400" maxLength={2048} autoFocus />
+          <HudInput id={targetId} value={target} onChange={(e) => setTarget(e.target.value)} placeholder="domain · IP · ASN · CVE" title="e.g. example.com, 1.1.1.1, AS15169, CVE-2024-3400" maxLength={2048} autoFocus />
           <HudButton type="submit" aria-label="Run lookups" disabled={busy}>
             <Search size={14} aria-hidden />
           </HudButton>

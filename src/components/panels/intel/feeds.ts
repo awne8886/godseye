@@ -94,7 +94,7 @@ export const marketsFeed = defineFeed<MarketsData>({
     { text: 'Quotes: Yahoo Finance chart endpoint (unofficial, delayed per exchange rules)', url: 'https://finance.yahoo.com/' },
     { text: 'Crypto: Binance / Coinbase / Kraken public tickers' },
   ],
-  note: 'Exchange sessions are computed from regular trading hours in each exchange time zone; public holidays are not modelled.',
+  note: 'Exchange sessions are computed from regular trading hours in each exchange time zone; 2026 full-day holidays are modelled for NYSE, Nasdaq, LSE, SSE and HKEX only (sessions[].holidaysModelled) — other holidays and half days are not modelled.',
   count: (d) => d.quotes.length,
   eager: true,
   retryAfterErrorMs: MIN,

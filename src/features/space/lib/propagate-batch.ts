@@ -11,9 +11,10 @@
 import type { SatRec } from 'satellite.js';
 import { isFacing } from '@/lib/geo';
 import { propagateAt } from './orbit';
+import { ISS_NORAD_ID, displayAltM } from './orbit-math';
 import { inEarthShadow, sunDirection } from './shadow';
 
-export const ISS_NORAD_ID = 25544;
+export { ISS_NORAD_ID, displayAltM } from './orbit-math';
 
 export interface BatchInput {
   satrecs: readonly (SatRec | null)[];
@@ -48,15 +49,6 @@ export interface BatchResult {
   failed: number;
   /** Position of the selected satellite this tick, if it propagated. */
   selected: { noradId: number; lng: number; lat: number; altKm: number; velocityKmS: number; shadow: boolean } | null;
-}
-
-/**
- * Display altitude on the globe, in metres. True altitudes span 160 km (LEO) to 36 000 km (GEO),
- * which would put GEO five Earth radii off the globe; a square-root compression keeps every shell
- * visible and in order (LEO ≈ 450 km, MEO ≈ 1 400 km, GEO ≈ 1 750 km). Cards show the true value.
- */
-export function displayAltM(altKm: number): number {
-  return (250 + 1500 * Math.sqrt(Math.max(0, altKm) / 36_000)) * 1000;
 }
 
 export function propagateBatch(input: BatchInput, opts: BatchOptions): BatchResult {

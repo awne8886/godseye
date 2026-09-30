@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
 import { AIRPORT_FIELDS, AIRPORT_TYPES, type AirportIndexFile, type VrsRoutesFile } from '@/features/flight-paths/lib/data-format';
-import { buildAirportIndex, buildRunways } from './build-airports';
+import { buildAirportIndex, buildRunways, MWGG_URL, provenance } from './build-airports';
 
 // Rows copied verbatim from the OurAirports / mwgg / VRS / OpenFlights files downloaded 2026-09-30.
 const AIRPORTS = `"id","ident","type","name","latitude_deg","longitude_deg","elevation_ft","continent","iso_country","iso_region","municipality","scheduled_service","icao_code","iata_code","gps_code","local_code","home_link","wikipedia_link","keywords"
@@ -68,5 +68,27 @@ describe('bundled data files', () => {
     expect(min.rows.length).toBeGreaterThan(8000);
     const vrs = JSON.parse(gunzipSync(readFileSync(new URL('routes-vrs.json.gz', dir))).toString('utf8')) as VrsRoutesFile;
     expect(vrs.chains['EGLL-KJFK']).toContain('BAW117');
+  });
+
+  it('record upstream provenance, never a local path (docs minor 4)', () => {
+    for (const f of ['airports.min.json', 'airports-all.json.gz']) {
+      const raw = readFileSync(new URL(f, dir));
+      const file = JSON.parse((f.endsWith('.gz') ? gunzipSync(raw) : raw).toString('utf8')) as AirportIndexFile;
+      const text = JSON.stringify(file.sources);
+      expect(text, f).not.toMatch(/\/tmp|scratchpad|local copy|\/home\//);
+      expect(file.sources.ourairports, f).toMatch(/^https:\/\/davidmegginson\.github\.io\/ourairports-data\//);
+      expect(file.sources.mwgg, f).toBe(MWGG_URL);
+      expect(Date.parse(file.sources.ourairportsLastModified ?? ''), f).not.toBeNaN();
+    }
+  });
+});
+
+describe('provenance', () => {
+  it('URLs + licences + ISO Last-Modified; junk dates become null', () => {
+    const p = provenance({ ourairports: 'Wed, 30 Sep 2026 03:12:00 GMT', mwgg: 'not a date' });
+    expect(p.ourairportsLastModified).toBe('2026-09-30T03:12:00.000Z');
+    expect(p.mwggLastModified).toBeNull();
+    expect(p.mwgg).toBe(MWGG_URL);
+    expect(p.ourairportsLicence).toMatch(/Public Domain/);
   });
 });

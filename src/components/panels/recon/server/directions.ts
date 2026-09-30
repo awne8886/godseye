@@ -5,6 +5,11 @@
  * the FOSSGIS routed-foot / routed-bike instances for walking and cycling; OSRM ships no
  * instruction text, so maneuvers are phrased from type + modifier + street name.
  * Self-hosted engines: VALHALLA_URL, OSRM_URL. Owner: panels-recon. Server-only.
+ *
+ * Snap gate: both engines snap each requested point to the nearest routable road. OSRM snaps
+ * without a limit (Berlin → New York "routes" to Cabo da Roca, 5,534 km short), so every route is
+ * checked: a requested point farther than SNAP_LIMIT_M from where the route actually starts, passes
+ * or ends means there is no road route between these points, and we say so instead of drawing one.
  */
 import 'server-only';
 import { HttpError, httpJson } from '@/lib/http';
@@ -179,6 +184,8 @@ export interface OsrmStep {
 }
 export interface OsrmBody {
   code?: string;
+  /** Snapped input points; `distance` is metres from the requested coordinate to the snapped one. */
+  waypoints?: { distance?: number; location?: [number, number] }[];
   routes?: { distance?: number; duration?: number; geometry?: { coordinates?: [number, number][] }; legs?: { steps?: OsrmStep[] }[] }[];
 }
 
@@ -232,14 +239,75 @@ export function normalizeOsrm(body: OsrmBody): Route[] {
     .filter((r): r is Route => r !== null);
 }
 
-async function osrmRoute(points: LatLng[], mode: Mode): Promise<Route[]> {
+export interface OsrmResult {
+  routes: Route[];
+  /** OSRM `waypoints[].distance` per requested point (metres), when reported. */
+  snapM: (number | null)[];
+  /** OSRM answered `NoRoute`: the network has no path between the snapped points. */
+  noRoute?: boolean;
+}
+
+async function osrmRoute(points: LatLng[], mode: Mode): Promise<OsrmResult> {
   const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
   const url = `${osrmBase(mode)}/route/v1/driving/${coords}?overview=full&steps=true&geometries=geojson&alternatives=${points.length === 2 ? 'true' : 'false'}`;
   const { data } = await httpJson<OsrmBody>(url, { timeoutMs: 10_000, retries: 1, limiter: osrmBucket() });
+  if (data?.code === 'NoRoute') return { routes: [], snapM: [], noRoute: true };
   if (data?.code && data.code !== 'Ok') throw new HttpError(`OSRM ${data.code}`, 'http', url);
   const routes = normalizeOsrm(data ?? {});
   if (!routes.length) throw new HttpError('OSRM returned no route', 'parse', url);
-  return routes;
+  return { routes, snapM: (data?.waypoints ?? []).map((w) => (typeof w.distance === 'number' && Number.isFinite(w.distance) ? w.distance : null)) };
+}
+
+// ── Snap gate ───────────────────────────────────────────────────────────────────
+/** A requested point farther than this from the route means "no road route here". */
+export const SNAP_LIMIT_M = 5000;
+
+export interface Unreachable {
+  /** Index into the requested points (0 = start, last = destination, between = via). */
+  index: number;
+  role: 'start' | 'via' | 'destination';
+  /** Metres from the requested point to the nearest point the route reaches; null when the engine only said NoRoute. */
+  distanceM: number | null;
+}
+
+/** Great-circle metres between [lng, lat] and a point. */
+function metres(a: [number, number], b: LatLng): number {
+  const r = Math.PI / 180;
+  const h = Math.sin(((b.lat - a[1]) * r) / 2) ** 2 + Math.cos(a[1] * r) * Math.cos(b.lat * r) * Math.sin(((b.lng - a[0]) * r) / 2) ** 2;
+  return 12_742_000 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * The worst requested point that the route does not reach within `limitM`, or null when every point
+ * is reached. Start/destination are measured to the first/last vertex, via points to the nearest
+ * vertex; engine-reported snap distances (OSRM waypoints) count too, whichever is larger.
+ */
+export function snapGap(points: LatLng[], route: Route, snapM: readonly (number | null)[] = [], limitM = SNAP_LIMIT_M): Unreachable | null {
+  const coords = route.geometry.coordinates as [number, number][];
+  if (coords.length < 2) return { index: points.length - 1, role: 'destination', distanceM: null };
+  let worst: Unreachable | null = null;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    const last = i === points.length - 1;
+    let geo: number;
+    if (i === 0) geo = metres(coords[0]!, p);
+    else if (last) geo = metres(coords[coords.length - 1]!, p);
+    else {
+      geo = Infinity;
+      for (const c of coords) geo = Math.min(geo, metres(c, p));
+    }
+    const d = Math.max(geo, snapM[i] ?? 0);
+    if (d > limitM && (!worst || d > (worst.distanceM ?? 0))) worst = { index: i, role: i === 0 ? 'start' : last ? 'destination' : 'via', distanceM: Math.round(d) };
+  }
+  return worst;
+}
+
+/** Human sentence for a 422 no_route answer. */
+export function unreachableDetail(u: Unreachable): string {
+  const what = u.role === 'start' ? 'the start' : u.role === 'destination' ? 'the destination' : `via point ${u.index}`;
+  if (u.distanceM === null) return 'No road route between these points: the routing engine found no path on the road network.';
+  const km = u.distanceM >= 10_000 ? `${Math.round(u.distanceM / 1000).toLocaleString('en-US')} km` : `${(u.distanceM / 1000).toFixed(1)} km`;
+  return `No road route between these points: the nearest road the route can reach is ${km} from ${what} (it may be across water or off the road network).`;
 }
 
 // ── Elevation (Valhalla /height) ───────────────────────────────────────────────
@@ -279,6 +347,8 @@ export interface DirectionsResult {
   ascentM: number | null;
   descentM: number | null;
   providers: Providers;
+  /** Set when an engine answered but could not reach a requested point (no route is returned). */
+  unreachable: Unreachable | null;
 }
 
 const key = (points: LatLng[], mode: Mode, avoid: Avoid) => `${mode}:${points.map((p) => `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`).join('|')}:${Number(avoid.tolls)}${Number(avoid.highways)}${Number(avoid.ferries)}`;
@@ -288,14 +358,28 @@ export async function directions(points: LatLng[], mode: Mode, avoid: Avoid): Pr
   const k = key(points, mode, avoid);
   const v = await probe(`dir:valhalla:${k}`, 5 * 60_000, () => valhallaRoute(points, mode, avoid), { count: (r) => r.length });
   providers.valhalla = v.status;
-  let engine: DirectionsResult['engine'] = v.value ? 'valhalla' : null;
-  let routes = v.value ?? [];
+  let engine: DirectionsResult['engine'] = null;
+  let routes: Route[] = [];
+  let unreachable: Unreachable | null = null;
+  if (v.value?.length) {
+    unreachable = snapGap(points, v.value[0]!);
+    if (!unreachable) {
+      engine = 'valhalla';
+      routes = v.value;
+    }
+  }
   if (!routes.length) {
-    const o = await probe(`dir:osrm:${k}`, 5 * 60_000, () => osrmRoute(points, mode), { count: (r) => r.length });
+    const o = await probe(`dir:osrm:${k}`, 5 * 60_000, () => osrmRoute(points, mode), { count: (r) => r.routes.length, allowEmpty: true });
     providers.osrm = o.status;
-    if (o.value) {
-      engine = 'osrm';
-      routes = o.value;
+    if (o.value?.noRoute) unreachable ??= { index: points.length - 1, role: 'destination', distanceM: null };
+    else if (o.value?.routes.length) {
+      const gap = snapGap(points, o.value.routes[0]!, o.value.snapM);
+      if (gap) unreachable = gap;
+      else {
+        engine = 'osrm';
+        routes = o.value.routes;
+        unreachable = null;
+      }
     }
   }
   let elevation: DirectionsResult['elevation'] = null;
@@ -307,5 +391,5 @@ export async function directions(points: LatLng[], mode: Mode, avoid: Avoid): Pr
     providers['valhalla-height'] = e.status;
     if (e.value) ({ elevation, ascentM, descentM } = e.value);
   }
-  return { engine, routes, elevation, ascentM, descentM, providers };
+  return { engine, routes, elevation, ascentM, descentM, providers, unreachable: engine ? null : unreachable };
 }

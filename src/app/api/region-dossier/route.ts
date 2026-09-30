@@ -2,7 +2,8 @@
  * GET /api/region-dossier?lat=50.45&lng=30.52 — Region Dossier (RegionDossierResponse): place,
  * Wikidata country facts, Wikipedia summary, Open-Meteo weather (capability `openmeteo`) and live
  * layers within 150 km read in-process, each with its own {count, state} (an offline layer is
- * reported as offline with count null, never as 0). Owner: panels-alerts-markets-dossier-graph.
+ * reported as offline with count null, never as 0; a layer that answered in an unreadable shape is
+ * `unavailable`, a cold one `pending`, a keyed/licensed one `not-configured`/`licence`). Owner: panels-alerts-markets-dossier-graph.
  */
 import { z } from 'zod';
 import { runDossierStatic, type DossierStatic } from '@/components/panels/intel/server/dossier';
@@ -38,15 +39,18 @@ export const GET = withRoute('/api/region-dossier', async (req) => {
   const counts: RegionDossierResponse['nearby']['counts'] = {};
   const highlights: RegionDossierResponse['nearby']['highlights'] = [];
   for (const [layer, n] of Object.entries(near)) {
-    counts[layer] = { count: n.count, state: n.state };
+    counts[layer] = { count: n.count, state: n.state, ...(n.reason ? { reason: n.reason } : {}), ...(n.note ? { note: n.note } : {}) };
     for (const p of n.points.slice(0, 3)) highlights.push({ layer, id: p.id, title: p.title.slice(0, 140), distanceKm: Math.round(p.distanceKm * 10) / 10, observedAt: p.observedAt });
   }
   highlights.sort((a, b) => a.distanceKm - b.distanceKm);
-  if (stat.data === null && Object.values(counts).every((c) => c.count === null)) {
+  if (stat.data === null && Object.values(counts).every((c) => c.count === null && c.reason !== 'pending')) {
     return apiError(503, 'source_offline', 'No dossier upstream answered and no live layer has data.', { retryAfter: 30, headers: { 'Retry-After': '30' } });
   }
   const providers = { ...stat.providers };
-  for (const [layer, c] of Object.entries(counts)) providers[`layer:${layer}`] = { ok: c.count !== null, count: c.count ?? 0, ms: 0, age_s: null, ...(c.count === null ? { error: c.state } : {}) };
+  for (const [layer, c] of Object.entries(counts)) {
+    const skipped = c.reason === 'not-configured' || c.reason === 'licence' ? c.reason : undefined;
+    providers[`layer:${layer}`] = { ok: c.count !== null, count: c.count ?? 0, ms: 0, age_s: null, ...(skipped ? { skipped } : c.count === null ? { error: c.reason ?? c.state } : {}) };
+  }
   const body: RegionDossierResponse = {
     lat,
     lng,

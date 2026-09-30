@@ -272,6 +272,19 @@ fixtures (VRS/adsbdb/hexdb BAW117) are reused. Bundled files are produced by
 Nominatim is reached only through `src/lib/geocode.ts` (1 req/s queue, 30-day cache) and only on an
 explicit submit (`submit=1`), never for type-ahead. FlightAware AeroAPI (`aeroapi`) is not wired yet.
 
+#### Re-probe 2026-09-30 22:4x UTC (Phase 3 round-1 fixes)
+
+Same honest UA (`… probe`), `Origin: https://example.org` to read CORS.
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://davidmegginson.github.io/ourairports-data/airports.csv` | 200 | 0.80 s | `*` | 12.7 MB, `Last-Modified: Wed, 30 Sep 2026 01:53:58 GMT`; index rebuilt from a fresh download — `airports.min.json` `sources` now records the upstream URLs, licences and this `Last-Modified` (no local path) |
+| `https://raw.githubusercontent.com/mwgg/Airports/master/airports.json` | 200 | 0.52 s | `*` | 9.0 MB; **no `Last-Modified` header** (ETag only), so `mwggLastModified` is `null`; MIT, used for IANA `tz` only (8,163 of 9,785 default rows) |
+| `https://vrs-standing-data.adsb.lol/routes/BA/BAW117.json` | 200 | 0.30 s | `*` | `Last-Modified: Sun, 20 Sep 2026 18:48:17 GMT`; `airport_codes: "EGLL-KJFK"`, `_airport_codes_iata: "LHR-JFK"` |
+| `https://api.adsbdb.com/v0/callsign/BAW117` | 200 | 0.69 s | `*` | `response.flightroute{callsign_icao BAW117, callsign_iata BA117, airline{icao BAW, iata BA}, origin, destination}`; looked up per request, never bulk-stored |
+| `https://aviationweather.gov/api/data/metar?ids=EGLL&format=json` | 200 | 0.31 s | none | `obsTime 1790806800` (epoch s), `reportTime` rounded, `rawOb "METAR EGLL 302220Z AUTO …"` |
+| `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0/query?where=IDENT='J80'&outFields=IDENT,TYPE_CODE&returnGeometry=false&f=json` (FAA ADDS airways) | 200 (no quota error this time) | 0.94 s | `*` | `geometryType esriGeometryPolyline`, `wkid 4269` (NAD83), `Last-Modified: Thu, 03 Sep 2026`; public domain. **Not wired**: the earlier probe returned a 429 inside a 200 body, and `route-airways` is left out until a cached, quota-aware provider exists |
+
 ### layers-aviation
 
 Probed 2026-09-30 18:07–18:20 UTC from the build sandbox with
@@ -399,6 +412,22 @@ None required. (N2YO passes would be a keyed upgrade behind a capability; not im
   Bt 3.78 nT, Bz +0.55 nT, R0/S0/G0, 25 alerts; all six providers ok.
 - `/api/iss` 200 with a propagated ground track; `/api/satellites/orbit?id=25544` LEO, 92.98 min.
 
+### Re-probe 2026-09-30 22:42 UTC (Phase 3 round 1)
+
+Same honest UA, one `curl -s` each, `Origin: https://example.org`.
+
+| URL | Status | Latency | Size | CORS | Notes |
+|---|---|---|---|---|---|
+| `https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json` | **000** (no response; connection dropped after 11.4 s) | 11.4 s | 0 | — | Not retried (firewall budget). The server feed keeps its last-good catalogue with its age; minutes later the app's own server fetch of `active` succeeded (`/api/satellites` 200, 16 612 rows, 2 909 461 B uncompressed). A 403 would mean "not updated since last download". |
+| `https://db.satnogs.org/api/tle/?format=json&norad_cat_id=25544` | 200 | 0.85 s | 312 B | none | ISS TLE, `tle_source: Space-Track.org`, epoch 26273.46514106. |
+| `https://api.wheretheiss.at/v1/satellites/25544` | 200 | 0.34 s | 312 B | `*` | lat 11.44, lng −42.90, alt 416.95 km, velocity 27 594.6 km/h, `visibility: eclipsed`, timestamp 1790808175. |
+| `https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json` | 200 | 0.18 s | 4 872 B | `*` | Array of objects `{time_tag, Kp, a_running, station_count}`; `time_tag` zone-less UTC. |
+
+Client change recorded here because it affects how the catalogue reaches the browser: the
+`tle-propagate` worker now fetches `/api/satellites` itself (same origin) and transfers typed arrays
+to the main thread; the SPACE panel asks `/api/satellites?id=25544` (one row) instead of the whole
+catalogue.
+
 ### layers-surveillance
 
 Probed **2026-09-30 19:58–20:45 UTC** from the build sandbox with
@@ -510,6 +539,16 @@ Bundled files (prepared 2026-09-30, each carries `_meta` with source, licence an
 `public/data/{zones,zones-countries,cables,ports,chokepoints,nuclear-curated}.json` and
 `src/features/threats/shared/country-centroids.json`.
 
+Re-probe 2026-09-30 22:49 UTC (Phase 3 round-1 fixes; honest UA, `Origin: https://example.org`):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| CISA KEV JSON | 200 · 0.77 s · 1.76 MB | none | `catalogVersion 2026.09.30`, `dateReleased 2026-09-30T16:59:23.0688Z`. `dateAdded` is a calendar date only → Intel Feed events say "(date only)". `/api/cyber-threats?limit=20` serves the newest additions (`total` = full count). |
+| URLhaus `csv_recent/` | 200 · 0.45 s · 2.95 MB | none | Unchanged format. Every added host now reaches clients (detections in chunks of 200) followed by `status {retired, total}`. |
+| Feodo `ipblocklist.json` | 200 · 0.44 s · 1.8 kB | none | Unchanged (frozen list, STALE). |
+| IODA `v2/outages/events?from&until&limit=5` | 200 · 8.9 s · 1.8 kB | reflects Origin | Slow this time (8.9 s); within the feed timeout. |
+| TeleGeography `cable-geo.json` / `landing-point-geo.json` | 200 · 0.49 s · 751 kB / 200 · 0.54 s · 361 kB | none | Unchanged; bundled copy still current. |
+
 ## map-engine — probe log
 
 All map sources are fetched **by the browser, straight from the tile host** (hosts in
@@ -535,6 +574,21 @@ Headless Chromium behind the sandbox egress proxy intermittently fails tile requ
 `net::ERR_TOO_MANY_RETRIES` (curl from the same host gets 200 in < 0.5 s), so the first map `idle`
 can take 30–90 s there. The e2e helpers (`e2e/map-engine/helpers.ts`) allow 120 s and ignore
 `net::ERR_*` transport errors only when `E2E_IGNORE_HTTPS_ERRORS=1`.
+
+### Phase 3 round-1 re-probe (2026-09-30 22:42Z, curl, honest UA, `Origin: http://localhost:3000`)
+
+| URL | Status | Latency | Size | CORS | Notes |
+|---|---|---|---|---|---|
+| `https://tiles.openfreemap.org/styles/dark` | 200 `application/json` | 0.34 s | 20,959 B | `*` | unchanged: 13 name-based `text-field`s use the `name:latin`/`name:nonlatin` bilingual stack (replaced by `coalesce(name:en, name_en, name)`, visual-qa m18); `highway_name_motorway` uses `ref` (kept) |
+| `https://tiles.openfreemap.org/planet` (TileJSON) | 200 `application/json` | 0.43 s | 19,254 B | `*` | tiles `planet/20260927_080001_pt/{z}/{x}/{y}.pbf`, minzoom 0, maxzoom 14, bounds ±180/±85.05113. Now fetched by the page together with the style and inlined into the source (same-host https templates only), so a TileJSON failure takes the style's retry-with-backoff path; captured as `src/lib/map/__fixtures__/openfreemap-planet-tilejson.2026-09-30.json` (without `vector_layers`) |
+| `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/3/2/4` | 200 `image/jpeg` | 0.16 s | 15,791 B | `*` | unchanged |
+| `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/2/4.png` | 200 `image/png` | 0.47 s | 88,471 B | `*` | unchanged |
+| `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/10/163/395.png` | 200 `image/png` | 0.19 s | 85,093 B | `*` | unchanged |
+
+Basemap tile failures in the browser (e.g. the sandbox proxy's `net::ERR_TOO_MANY_RETRIES`) now
+surface as a `BASEMAP OFFLINE · [LAST TILE hh:mm UTC ·] RETRYING` chip and
+`data-basemap-state="offline"` on the map container after 3 consecutive failed tiles, with
+`map.refreshTiles('openmaptiles')` retried at 2 s × 2ⁿ (≤ 60 s) until a tile arrives.
 
 ## pages-docs-privacy-ops — link and licence verification
 
@@ -633,7 +687,7 @@ each file name.
 ### Live Alerts — Telegram public previews (`/api/news`)
 
 Public channel previews (`https://t.me/s/<handle>`), server-rendered HTML with no API. Low volume
-(10 newest posts per channel, 2-minute feed TTL, `providerBucket('t.me', 2/s)`), shown to people with a
+(8 newest posts per channel — OSIRIS and contract §6; was 10 before 2026-09-30 round-1 fix — 2-minute feed TTL, `providerBucket('t.me', 2/s)`), shown to people with a
 link to the post; never used for training. Posts without their own `<time datetime>` are dropped.
 
 | Handle | Name / declared stance | Bloc | Status | Latency | Size | CORS |
@@ -730,6 +784,32 @@ Live layers within 150 km are read in-process from the registered feeds (`flight
 
 Keyless default: the deterministic ANALYST (keyword digest), labelled as such with `fallbackReason`.
 
+### Re-probe 2026-09-30 22:47 UTC (Phase 3 round-1 fixes)
+
+Same honest UA, `curl -sS -m 25`, one request each (one retry where noted), `Origin: http://localhost:3000`.
+
+| URL | Status | Latency | CORS | Auth | Notes |
+|---|---|---|---|---|---|
+| `https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?interval=1d&range=5d` | **429** | 0.38 s | none | none (unofficial) | body `Too Many Requests` from the shared sandbox egress; the app keeps SOURCE OFFLINE / last-good for that symbol |
+| `https://query2.finance.yahoo.com/v8/finance/chart/%5EIXIC?interval=1d&range=5d` | 200 | 0.16 s | none | none (unofficial) | 1.7 kB; `meta.regularMarketTime` 1790802959, `exchangeName: "NIM"`, `timezone: "EDT"`. Not wired (query1 only; no host rotation) |
+| `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT` | 200 | 0.79 s | `*` | none | 556 B; `lastPrice`, `priceChangePercent`, `closeTime` (ms) |
+| `https://t.me/s/Osintdefender` | reset, then 200 | 11.2 s (reset) / 0.79 s | none | none | 112 kB, **20 posts** on the page; the feed keeps the newest **8** (`POSTS_PER_CHANNEL`). Saved as fixture `tg-Osintdefender-full.2026-09-30.html` |
+| `https://en.wikipedia.org/api/rest_v1/page/summary/Singapore` | 200 | 0.30 s | `*` | none | 2.7 kB; `title`, `extract`, `content_urls.desktop.page`, `thumbnail.source` (CC BY-SA 4.0) |
+| `https://query.wikidata.org/sparql?query=SELECT ?c WHERE {?c wdt:P297 "SG"}&format=json` | 200 | 0.20 s | `*` | none | `results.bindings[0].c.value` = `http://www.wikidata.org/entity/Q334` (CC0) |
+| `https://www.gov.uk/bank-holidays.json` | 200 | 0.33 s | `*` | none | OGL v3; `england-and-wales.events[].date` 2026 → 01-01, 04-03, 04-06, 05-04, 05-25, 08-31, 12-25, 12-28 (LSE closures, bundled in `sessions.ts`, not fetched at runtime) |
+
+Holiday calendars bundled in `src/components/panels/intel/server/sessions.ts` (read once, 2026 only):
+NYSE/Nasdaq from `https://www.nyse.com/markets/hours-calendars` (200, 0.35 s; 2026 column: Jan 1, Jan 19,
+Feb 16, Apr 3, May 25, Jun 19, Jul 3, Sep 7, Nov 26, Dec 25); SSE from the Shanghai Futures Exchange
+circular of 2025-12-17 "Trading Schedule during National Holidays for Year 2026" (mainland calendar:
+Jan 1–3, Feb 15–23, Apr 4–6, May 1–5, Jun 19–21, Sep 25–27, Oct 1–7); HKEX 2026 securities-market
+full-day closures (14 dates, as published by HKEX and reported by globalexchanges.com). Every other
+exchange reports `holidaysModelled: false` and the panel marks it with `*`.
+
+Region Dossier live layers read other owners' feeds in-process (no HTTP): `cctv:<region>` (the regions
+whose box, grown by 150 km, holds the point), `maritime` (ports + chokepoints REFERENCE; vessels only
+with `AIS_API_KEY`), `cables` (TeleGeography REFERENCE, CC BY-NC-SA, only with `nc_sources`).
+
 ### panels-recon
 
 RECON, SEARCH, ROUTE, DRAW, ARCGIS and WORLD REMOTE. Every upstream is called by this server
@@ -756,7 +836,18 @@ Fixtures recorded from these probes live in `src/components/panels/recon/__fixtu
 | `router.project-osrm.org/route/v1/driving` | `/api/directions` fallback | 200 | 0.55 s | `*` | keyless demo server (fair use) | `providerBucket('osrm', 1/s)` | No instruction text and no toll/highway/ferry flags: phrased from maneuver type/modifier; flags reported false with an explicit "not reported by OSRM" UI note. `OSRM_URL` for self-hosting |
 | `routing.openstreetmap.de/routed-foot`, `/routed-bike` | `/api/directions` walk/bike fallback | 200 | 0.7 s | `*` | keyless FOSSGIS | same bucket | Same OSRM v5 API |
 | `www.arcgis.com/sharing/rest/search` | `/api/arcgis?q=` | 200 | 0.32 s | reflects Origin | keyless public catalogue | 2/s, 10 min cache | Query restricted to `type:"Feature Service" OR type:"Map Service"` and `access:public` |
-| any public `…/rest/services/…/(Feature|Map)Server/n/query?f=geojson` | `/api/arcgis?url=` | 200 (USGS_Seismic_Data_v1 0.46 s; sampleserver6 USA MapServer 0.57 s) | — | varies | service owner's terms | `safeFetch` (public IPs, ports 80/443/8080/8443, no credentials, every redirect hop re-validated), URL rebuilt, 3.5 MB cap, 1000 features (`resultRecordCount` + `exceededTransferLimit` → `truncated`) | Never a raw proxy: only the rebuilt `/query` URL is fetched; properties reduced to primitives |
+| allow-listed `…/rest/services/…/(Feature\|Map)Server/n/query?f=geojson` on `*.arcgis.com` (any path; hosted services are `/<orgId>/arcgis/rest/services/…`), `*.arcgisonline.com` (`/arcgis/rest/services/` only) and exact hosts in `ARCGIS_ALLOWED_HOSTS` | `/api/arcgis?url=` | 200 (services9.arcgis.com USGS_Seismic_Data_v1 0.39 s; sampleserver6.arcgisonline.com Earthquakes_Since1970 FeatureServer 0.25 s; services.arcgisonline.com World_Imagery MapServer `?f=json` 0.35 s) — re-probed 2026-09-30 | — | `*` (services9, services.arcgisonline) / reflects Origin (sampleserver6) | service owner's terms | `allowListedFetch(url, arcgisRules())`: host allow-list + SSRF guard on every hop, URL rebuilt, 3.5 MB cap, 1000 features (`resultRecordCount` + `exceededTransferLimit` → `truncated`). Off-list host → 403 `host_not_allowed` before any DNS/network; redirect off-list → 400 `blocked_target` (SEC-M3) | Never a raw proxy: only the rebuilt `/query` URL is fetched; properties reduced to primitives. Catalogue results carry `importable` (the arcgis.com "earthquakes" search returned 19 results on services{,1,2,4,9}.arcgis.com and 1 on `mapsdep.nj.gov`, which is shown as "Host not allowed" unless the operator lists it) |
+
+##### Routing snap check (R4-M1), probed 2026-09-30
+
+| Request | Status | Latency | CORS | Result |
+|---|---|---|---|---|
+| OSRM `route/v1/driving/13.38,52.52;-74,40.7` (Berlin → New York) | 200 `code: Ok` | 0.97 s (full), 0.50 s (simplified) | `*` | `waypoints[0].distance` 4.8 m, `waypoints[1].distance` **5,534,234 m** (snapped to Cabo da Roca, `[-9.497727, 38.78069]`), route 2,827 km. Now answered 422 `no_route` |
+| OSRM `route/v1/driving/13.38,52.52;2.35,48.86` (Berlin → Paris) | 200 `code: Ok` | 0.41 s | `*` | waypoints 4.8 m / 39.2 m, route 1,050 km — passes the gate |
+| Valhalla `/route` auto Berlin → New York | **400** `error_code 154` "Path distance exceeds the max distance limit: 1500000 meters" | 0.40 s | `*` | provider reported `http_400` |
+| Valhalla `/route` auto Berlin → Paris | 200 | 1.42 s | `*` | 1,112 km; `trip.locations` echoes the requested points (no snapped position), so the gate measures the shape's first/last vertex |
+
+Gate (`snapGap`, `SNAP_LIMIT_M = 5000`): start/destination vs the route's first/last vertex, via points vs the nearest vertex, and OSRM `waypoints[].distance` when present (the larger wins). OSRM `NoRoute` is also 422 `no_route`; both engines failing stays 503 SOURCE OFFLINE.
 
 #### OSINT (passive, infrastructure only)
 

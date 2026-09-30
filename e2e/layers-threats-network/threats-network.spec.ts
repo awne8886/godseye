@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { gotoMap } from '../map-engine/helpers';
 
 /**
  * layers-threats-network: Global Incidents (GDACS) and GDELT Events render ≥ 1 entity when their
@@ -37,10 +38,9 @@ async function live<T>(page: Page, path: string, provider: string): Promise<T | 
   return body as T;
 }
 
+/** Open the map (shared 90 s canvas / 30 s splash waits from the map-engine helper). */
 async function openAt(page: Page, lat: number, lng: number, zoom: number, layers: string) {
-  await page.goto(`/?c=${lat.toFixed(4)},${lng.toFixed(4)},${zoom}&layers=${layers}`);
-  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 20_000 });
+  await gotoMap(page, { camera: { lat: Number(lat.toFixed(4)), lng: Number(lng.toFixed(4)), zoom }, params: { layers } });
 }
 
 async function railCount(page: Page, group: string, row: RegExp): Promise<number> {
@@ -91,7 +91,7 @@ test.describe('threats & network layers', () => {
     test.skip(!hasCardHost(), 'no entity-card host (cardFor) is mounted by the HUD in this build');
     const body = await live<{ items: { ip: string; lat: number; lng: number }[] }>(page, '/api/malware', 'urlhaus');
     test.skip(body === null || body.items.length === 0, 'URLhaus offline/disabled right now (asserted SOURCE OFFLINE or capability_disabled)');
-    // Prefer a host alone at its position (co-located ones are spread for display).
+    // Prefer a host alone at its position (co-located ones are one point with a count and a list card).
     const key = (h: { lat: number; lng: number }) => `${h.lat.toFixed(4)},${h.lng.toFixed(4)}`;
     const counts = new Map<string, number>();
     for (const h of body!.items) counts.set(key(h), (counts.get(key(h)) ?? 0) + 1);
@@ -104,5 +104,19 @@ test.describe('threats & network layers', () => {
     await expect(card).toBeVisible({ timeout: 15_000 });
     await expect(card.getByTestId('card-indicator')).toHaveText('INDICATOR');
     await expect(card).toContainText('URLhaus');
+  });
+
+  test('Live Malware count equals the host set after detections + status (R3-M2)', async ({ page }, info) => {
+    test.skip(info.project.name === 'mobile', 'the layer rail flyout is desktop-only');
+    const h = (ip: string, lat: number, lng: number) => ({ id: ip, ip, lat, lng, observedAt: '2026-09-30T19:54:23.000Z', source: 'urlhaus', port: 80, threat: 'malware_download', family: 'Mozi', urlCount: 1, online: true, asn: null, country: 'Testland', city: null, geoPrecision: 'city', urlhausReference: null, firstSeen: null });
+    const meta = { feed: 'malware', state: 'live', fetchedAt: '2026-09-30T20:00:00.000Z', observedAt: '2026-09-30T19:54:23.000Z', lastGoodAt: '2026-09-30T20:00:00.000Z', ttlSeconds: 300, kind: 'live', attribution: [] };
+    const snap = JSON.stringify({ items: [h('192.0.2.1', 10, 10), h('192.0.2.2', 10, 10)], meta, providers: {} });
+    const add = JSON.stringify([h('198.51.100.1', 20, 20), h('198.51.100.2', 20, 20)]);
+    const status = JSON.stringify({ retired: ['192.0.2.1', '192.0.2.2'], total: 2, at: '2026-09-30T20:05:00.000Z' });
+    await page.route('**/api/malware/stream', (route) =>
+      route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: `retry: 600000\n\nevent: snapshot\ndata: ${snap}\n\nevent: detections\ndata: ${add}\n\nevent: status\ndata: ${status}\n\n` }),
+    );
+    await gotoMap(page, { camera: { lat: 15, lng: 15, zoom: 3 }, params: { proj: 'mercator', layers: 'malware' } });
+    expect(await railCount(page, 'NETWORK INTEL', /Live Malware/)).toBe(2);
   });
 });

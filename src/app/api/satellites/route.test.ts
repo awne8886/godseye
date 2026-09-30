@@ -56,6 +56,17 @@ describe('GET /api/satellites', () => {
     expect(again.status).toBe(304);
   });
 
+  it('narrows to one NORAD id for the SPACE panel look-up (no full catalogue on the main thread)', async () => {
+    vi.mocked(httpJson).mockImplementation(upstreamRouter(celestrakRoutes()).impl as never);
+    const res = await GET(req('?id=25544'), undefined);
+    const body = await res.json();
+    expect(SatellitesResponse.safeParse(body).success).toBe(true);
+    expect(body.rows.length).toBe(1);
+    expect(body.rows[0][COL.noradId]).toBe(25544);
+    expect(Object.values(body.categoryCounts as Record<string, number>).reduce((a, b) => a + b, 0)).toBe(1);
+    expect((await GET(req('?id=abc'), undefined)).status).toBe(400);
+  });
+
   it('negotiates brotli/gzip and stays under the 4 MB cap', async () => {
     vi.mocked(httpJson).mockImplementation(upstreamRouter(celestrakRoutes()).impl as never);
     const res = await GET(req('', { 'accept-encoding': 'gzip' }), undefined);

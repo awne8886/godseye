@@ -1,8 +1,13 @@
 import type { StyleSpecification } from 'maplibre-gl';
 import { describe, expect, it } from 'vitest';
 import fixture from './__fixtures__/openfreemap-dark.2026-09-30.json';
+import planet from './__fixtures__/openfreemap-planet-tilejson.2026-09-30.json';
 import {
   BASEMAP_ATTRIBUTION,
+  ENGLISH_NAME,
+  inlineTileJson,
+  parseTileJson,
+  tileJsonUrl,
   BUILDINGS_3D_LAYER_ID,
   BUILDINGS_MIN_ZOOM,
   HORUS_BASEMAP,
@@ -113,5 +118,46 @@ describe('3D buildings layer', () => {
     const colour = l.paint?.['fill-extrusion-color'] as unknown[];
     for (const c of HORUS_BASEMAP.buildingRamp) expect(colour).toContain(c);
     expect(l.paint?.['fill-extrusion-height']).toEqual(['interpolate', ['linear'], ['zoom'], 14.5, 0, 15.5, ['coalesce', ['get', 'render_height'], 0]]);
+  });
+});
+
+describe('English labels (visual-qa m18)', () => {
+  const out = transformStyle(fixture as unknown as StyleSpecification);
+  const tf = (id: string) => (out.layers.find((l) => l.id === id) as { layout?: Record<string, unknown> } | undefined)?.layout?.['text-field'];
+
+  it('replaces the bilingual latin/nonlatin stack with name:en → name_en → name', () => {
+    for (const id of ['place_country_major', 'place_city', 'place_state', 'water_name']) {
+      if (tf(id) !== undefined) expect(tf(id)).toEqual(ENGLISH_NAME);
+    }
+    expect(JSON.stringify(out.layers)).not.toContain('name:nonlatin');
+  });
+
+  it('leaves non-name labels (motorway refs) alone', () => {
+    const ref = tf('highway_name_motorway');
+    if (ref !== undefined) expect(JSON.stringify(ref)).toContain('ref');
+  });
+});
+
+describe('TileJSON inlining (R1-m2)', () => {
+  const raw = fixture as unknown as StyleSpecification;
+  const url = tileJsonUrl(raw);
+
+  it('finds the vector TileJSON URL and inlines tiles, zoom range and bounds, keeping our attribution', () => {
+    expect(url).toBe('https://tiles.openfreemap.org/planet');
+    const tj = parseTileJson(planet, url!);
+    expect(tj.tiles[0]).toMatch(/^https:\/\/tiles\.openfreemap\.org\/planet\/.+\/\{z\}\/\{x\}\/\{y\}\.pbf$/);
+    expect(tj.maxzoom).toBe(14);
+    const out = transformStyle(inlineTileJson(raw, tj));
+    const src = out.sources.openmaptiles as Record<string, unknown>;
+    expect(src.url).toBeUndefined();
+    expect(src.tiles).toEqual(tj.tiles);
+    expect(src.maxzoom).toBe(14);
+    expect(src.attribution).toBe(BASEMAP_ATTRIBUTION);
+  });
+
+  it('rejects a TileJSON without usable same-host https tiles', () => {
+    expect(() => parseTileJson({ tiles: [] }, 'https://tiles.openfreemap.org/planet')).toThrow();
+    expect(() => parseTileJson({ tiles: ['https://evil.example/{z}/{x}/{y}.pbf'] }, 'https://tiles.openfreemap.org/planet')).toThrow();
+    expect(() => parseTileJson(null, 'https://tiles.openfreemap.org/planet')).toThrow();
   });
 });

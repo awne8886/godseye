@@ -682,7 +682,9 @@ CISA Known Exploited Vulnerabilities
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/cyber-threats` |
 
-No parameters.
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `limit` | query | number | no | newest N additions (1–2000); total always reports the full count (e.g. `20`) |
 
 ### `GET /api/outages`
 
@@ -1353,7 +1355,7 @@ Place search: Photon type-ahead; Nominatim only on explicit submit
 
 ### `GET /api/directions`
 
-Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile
+Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile; 422 no_route when a point is > 5 km from the road network
 
 | | |
 |---|---|
@@ -1382,7 +1384,7 @@ ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `ArcgisResponse` |
-| Upstreams | `www.arcgis.com`, `(user-supplied public ArcGIS server)` |
+| Upstreams | `www.arcgis.com`, `*.arcgis.com`, `*.arcgisonline.com` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/arcgis` |
@@ -1390,7 +1392,7 @@ ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `q` | query | string | no | catalogue search |
-| `url` | query | string | no | any public …/rest/services/…/(Feature\|Map)Server[/n] URL |
+| `url` | query | string | no | …/rest/services/…/(Feature\|Map)Server[/n] on *.arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS |
 | `bbox` | query | string | no | west,south,east,north |
 
 ## Flight paths

@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>OSINTdefender – Telegram</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta http-equiv="X-UA-Compatible"
+     content="IE=edge" />
+    <meta name="MobileOptimized" content="176" />
+    <meta name="HandheldFriendly" content="True" />
+    
+<meta property="og:title" content="OSINTdefender">
+<meta property="og:image" content="https://cdn4.telesco.pe/file/al5jIBEG5U_B3QEOGsLiEp9GuPDCzzVJjiPNzZVFjff1hd0AauA3J5BwjVwc2OVkIDmtB5mLAUHOBxhh0VrnPRoXugUoopmYroDVQfSrPlh9N4n8HjTpKcIUldtP3hLFsuUAWscnUhfEbcm42R42wvSx49dXosA3Mdg7GhweJfr0jp9uRxWr06y1TQVFcU4mmqk-4AjQ3qumV8NDzqtOGWELBRC-ugJBytdXWXi-9V4XPG-yy2HsEwAEGsjuV4bpKm1WZb5mGyQluK5HaC-imoxXrFUMeyG0oLBOMAvkbyCe7Y2D0W0oH_vP7nxqfJINLX3chPBR4O4gUkt3OjIuRA.jpg">
+<meta property="og:site_name" content="Telegram">
+<meta property="og:description" content="Breaking News | OSINT | Engineering analyses">
+
+<meta property="twitter:title" content="OSINTdefender">
+<meta property="twitter:image" content="https://cdn4.telesco.pe/file/al5jIBEG5U_B3QEOGsLiEp9GuPDCzzVJjiPNzZVFjff1hd0AauA3J5BwjVwc2OVkIDmtB5mLAUHOBxhh0VrnPRoXugUoopmYroDVQfSrPlh9N4n8HjTpKcIUldtP3hLFsuUAWscnUhfEbcm42R42wvSx49dXosA3Mdg7GhweJfr0jp9uRxWr06y1TQVFcU4mmqk-4AjQ3qumV8NDzqtOGWELBRC-ugJBytdXWXi-9V4XPG-yy2HsEwAEGsjuV4bpKm1WZb5mGyQluK5HaC-imoxXrFUMeyG0oLBOMAvkbyCe7Y2D0W0oH_vP7nxqfJINLX3chPBR4O4gUkt3OjIuRA.jpg">
+<meta property="twitter:site" content="@Telegram">
+
+<meta property="al:ios:app_store_id" content="686449807">
+<meta property="al:ios:app_name" content="Telegram Messenger">
+<meta property="al:ios:url" content="tg://resolve?domain=Osintdefender">
+
+<meta property="al:android:url" content="tg://resolve?domain=Osintdefender">
+<meta property="al:android:app_name" content="Telegram">
+<meta property="al:android:package" content="org.telegram.messenger">
+
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@Telegram">
+<meta name="twitter:description" content="Breaking News | OSINT | Engineering analyses
+">
+
+    <link rel="prev" href="/s/Osintdefender?before=20353">
+<link rel="canonical" href="/s/Osintdefender?before=20373">
+
+    <script>window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches&&document.documentElement&&document.documentElement.classList&&document.documentElement.classList.add('theme_dark');</script>
+    <link rel="icon" type="image/svg+xml" href="//telegram.org/img/website_icon.svg?4">
+<link rel="apple-touch-icon" sizes="180x180" href="//telegram.org/img/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="//telegram.org/img/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="//telegram.org/img/favicon-16x16.png">
+<link rel="alternate icon" href="//telegram.org/img/favicon.ico" type="image/x-icon" />
+    <link href="//telegram.org/css/font-roboto.css?1" rel="stylesheet" type="text/css">
+    <link href="//telegram.org/css/widget-frame.css?75" rel="stylesheet" media="screen">
+    <link href="//telegram.org/css/telegram-web.css?39" rel="stylesheet" media="screen">
+    <script>TBaseUrl='/';</script>
+    <style>        .user-color-12 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #3391d4 0px, #3391d4 5px, #7dd3f0 5px, #7dd3f0 10px);
+          --user-accent-color: #3391d4;
+          --user-background: #3391d41f;
+        }        .user-color-10 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #27a910 0px, #27a910 5px, #a7dc57 5px, #a7dc57 10px);
+          --user-accent-color: #27a910;
+          --user-background: #27a9101f;
+        }        .user-color-8 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #e0802b 0px, #e0802b 5px, #fac534 5px, #fac534 10px);
+          --user-accent-color: #e0802b;
+          --user-background: #e0802b1f;
+        }        .user-color-7 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #e15052 0px, #e15052 5px, #f9ae63 5px, #f9ae63 10px);
+          --user-accent-color: #e15052;
+          --user-background: #e150521f;
+        }        .user-color-9 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #a05ff3 0px, #a05ff3 5px, #f48fff 5px, #f48fff 10px);
+          --user-accent-color: #a05ff3;
+          --user-background: #a05ff31f;
+        }        .user-color-11 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #27acce 0px, #27acce 5px, #82e8d6 5px, #82e8d6 10px);
+          --user-accent-color: #27acce;
+          --user-background: #27acce1f;
+        }        .user-color-13 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #dd4371 0px, #dd4371 5px, #ffbe9f 5px, #ffbe9f 10px);
+          --user-accent-color: #dd4371;
+          --user-background: #dd43711f;
+        }        .user-color-14 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #247bed 0px, #247bed 5px, #f04856 5px, #f04856 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #247bed;
+          --user-background: #247bed1f;
+        }        .user-color-15 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #d67722 0px, #d67722 5px, #1ea011 5px, #1ea011 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #d67722;
+          --user-background: #d677221f;
+        }        .user-color-16 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #179e42 0px, #179e42 5px, #e84a3f 5px, #e84a3f 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #179e42;
+          --user-background: #179e421f;
+        }        .user-color-17 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #2894af 0px, #2894af 5px, #6fc456 5px, #6fc456 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #2894af;
+          --user-background: #2894af1f;
+        }        .user-color-18 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #0c9ab3 0px, #0c9ab3 5px, #ffad95 5px, #ffad95 10px, #ffe6b5 10px, #ffe6b5 15px);
+          --user-accent-color: #0c9ab3;
+          --user-background: #0c9ab31f;
+        }        .user-color-19 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #7757d6 0px, #7757d6 5px, #f79610 5px, #f79610 10px, #ffde8e 10px, #ffde8e 15px);
+          --user-accent-color: #7757d6;
+          --user-background: #7757d61f;
+        }        .user-color-20 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #1585cf 0px, #1585cf 5px, #f2ab1d 5px, #f2ab1d 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #1585cf;
+          --user-background: #1585cf1f;
+        }        body.dark .user-color-12, html.theme_dark .user-color-12 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #52bfff 0px, #52bfff 5px, #0b5494 5px, #0b5494 10px);
+          --user-accent-color: #52bfff;
+          --user-background: #52bfff1f;
+        }        body.dark .user-color-10, html.theme_dark .user-color-10 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #a7eb6e 0px, #a7eb6e 5px, #167e2d 5px, #167e2d 10px);
+          --user-accent-color: #a7eb6e;
+          --user-background: #a7eb6e1f;
+        }        body.dark .user-color-8, html.theme_dark .user-color-8 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #ecb04e 0px, #ecb04e 5px, #c35714 5px, #c35714 10px);
+          --user-accent-color: #ecb04e;
+          --user-background: #ecb04e1f;
+        }        body.dark .user-color-7, html.theme_dark .user-color-7 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #ff9380 0px, #ff9380 5px, #992f37 5px, #992f37 10px);
+          --user-accent-color: #ff9380;
+          --user-background: #ff93801f;
+        }        body.dark .user-color-9, html.theme_dark .user-color-9 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #c697ff 0px, #c697ff 5px, #5e31c8 5px, #5e31c8 10px);
+          --user-accent-color: #c697ff;
+          --user-background: #c697ff1f;
+        }        body.dark .user-color-11, html.theme_dark .user-color-11 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #40d8d0 0px, #40d8d0 5px, #045c7f 5px, #045c7f 10px);
+          --user-accent-color: #40d8d0;
+          --user-background: #40d8d01f;
+        }        body.dark .user-color-13, html.theme_dark .user-color-13 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #ff86a6 0px, #ff86a6 5px, #8e366e 5px, #8e366e 10px);
+          --user-accent-color: #ff86a6;
+          --user-background: #ff86a61f;
+        }        body.dark .user-color-14, html.theme_dark .user-color-14 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #3fa2fe 0px, #3fa2fe 5px, #e5424f 5px, #e5424f 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #3fa2fe;
+          --user-background: #3fa2fe1f;
+        }        body.dark .user-color-15, html.theme_dark .user-color-15 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #ff905e 0px, #ff905e 5px, #32a527 5px, #32a527 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #ff905e;
+          --user-background: #ff905e1f;
+        }        body.dark .user-color-16, html.theme_dark .user-color-16 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #66d364 0px, #66d364 5px, #d5444f 5px, #d5444f 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #66d364;
+          --user-background: #66d3641f;
+        }        body.dark .user-color-17, html.theme_dark .user-color-17 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #22bce2 0px, #22bce2 5px, #3da240 5px, #3da240 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #22bce2;
+          --user-background: #22bce21f;
+        }        body.dark .user-color-18, html.theme_dark .user-color-18 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #22bce2 0px, #22bce2 5px, #ff9778 5px, #ff9778 10px, #ffda6b 10px, #ffda6b 15px);
+          --user-accent-color: #22bce2;
+          --user-background: #22bce21f;
+        }        body.dark .user-color-19, html.theme_dark .user-color-19 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #9791ff 0px, #9791ff 5px, #f2731d 5px, #f2731d 10px, #ffdb59 10px, #ffdb59 15px);
+          --user-accent-color: #9791ff;
+          --user-background: #9791ff1f;
+        }        body.dark .user-color-20, html.theme_dark .user-color-20 {
+          --user-line-gradient: repeating-linear-gradient(-45deg, #3da6eb 0px, #3da6eb 5px, #eea51d 5px, #eea51d 10px, #ffffff 10px, #ffffff 15px);
+          --user-accent-color: #3da6eb;
+          --user-background: #3da6eb1f;
+        }.user-color-6, .user-color-4, .user-color-2, .user-color-0, .user-color-1, .user-color-3, .user-color-5,   .user-color-default {
+    --user-accent-color: var(--accent-color);
+    --user-accent-background: var(--accent-background);
+    --user-line-gradient: linear-gradient(45deg, var(--accent-color), var(--accent-color));
+  }</style>
+  </head>
+  <body class="widget_frame_base tgme_webpreview emoji_image thin_box_shadow tme_mode no_transitions">
+    <div class="tgme_background_wrap">
+      <canvas id="tgme_background" class="tgme_background" width="50" height="50" data-colors="dbddbb,6ba587,d5d88d,88b884"></canvas>
+      <div class="tgme_background_pattern"></div>
+    </div>
+    <header class="tgme_header search_collapsed">
+  <div class="tgme_container">
+    <div class="tgme_header_search">
+      <form class="tgme_header_search_form" action="/s/Osintdefender">
+        <svg class="tgme_header_search_form_icon" width="20" height="20" viewBox="0 0 20 20"><g fill="none" stroke="#7D7F81" stroke-width="1.4"><circle cx="9" cy="9" r="6"></circle><path d="M13.5,13.5 L17,17" stroke-linecap="round"></path></g></svg>
+        <input class="tgme_header_search_form_input js-header_search" placeholder="Search" name="q" autocomplete="off" value="" />
+        <a href="/s/Osintdefender" class="tgme_header_search_form_clear"><svg class="tgme_action_button_icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20"><g class="icon_body" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke="#000000" stroke-width="1.5"><path d="M6 14l8-8m0 8L6 6" stroke-dasharray="0,11.314" stroke-dashoffset="5.657"/><path d="M26 14l8-8m0 8l-8-8" stroke-dasharray="0.371,10.943" stroke-dashoffset="5.842"/><path d="M46 14l8-8m0 8l-8-8" stroke-dasharray="1.982,9.332" stroke-dashoffset="6.647756"/><path d="M66 14l8-8m0 8l-8-8" stroke-dasharray="5.173,6.14" stroke-dashoffset="8.243"/><path d="M86 14l8-8m0 8l-8-8" stroke-dasharray="7.866,3.448" stroke-dashoffset="9.59"/><path d="M106 14l8-8m0 8l-8-8" stroke-dasharray="9.471,1.843" stroke-dashoffset="10.392"/><path d="M126 14l8-8m0 8l-8-8" stroke-dasharray="10.417,0.896" stroke-dashoffset="10.866"/><path d="M146 14l8-8m0 8l-8-8" stroke-dasharray="10.961,0.353" stroke-dashoffset="11.137"/><path d="M166 14l8-8m0 8l-8-8" stroke-dasharray="11.234,0.08" stroke-dashoffset="11.274"/><path d="M186 14l8-8m0 8l-8-8"/></g></svg></a>
+      </form>
+    </div>
+    <div class="tgme_header_right_column">
+      <section class="tgme_right_column">
+        <div class="tgme_channel_info">
+          <div class="tgme_channel_info_header">
+            <i class="tgme_page_photo_image bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i>
+            <div class="tgme_channel_info_header_title_wrap">
+              <div class="tgme_channel_info_header_title"><span dir="auto">OSINTdefender</span></div>
+              <div class="tgme_channel_info_header_labels"></div>
+            </div>
+            <div class="tgme_channel_info_header_username"><a href="https://t.me/Osintdefender">@Osintdefender</a></div>
+          </div>
+          <div class="tgme_channel_info_counters"><div class="tgme_channel_info_counter"><span class="counter_value">6.33K</span> <span class="counter_type">subscribers</span></div><div class="tgme_channel_info_counter"><span class="counter_value">13.7K</span> <span class="counter_type">photos</span></div><div class="tgme_channel_info_counter"><span class="counter_value">3.7K</span> <span class="counter_type">videos</span></div><div class="tgme_channel_info_counter"><span class="counter_value">27</span> <span class="counter_type">files</span></div><div class="tgme_channel_info_counter"><span class="counter_value">7.9K</span> <span class="counter_type">links</span></div></div>
+          <div class="tgme_channel_info_description">Breaking News | OSINT | Engineering analyses</div>
+          <a class="tgme_channel_download_telegram" href="//telegram.org/dl?tme=fa4c3dd4725c8fc73f_17612179287831236939">
+            <svg class="tgme_channel_download_telegram_icon" width="21px" height="18px" viewBox="0 0 21 18"><g fill="none"><path fill="#ffffff" d="M0.554,7.092 L19.117,0.078 C19.737,-0.156 20.429,0.156 20.663,0.776 C20.745,0.994 20.763,1.23 20.713,1.457 L17.513,16.059 C17.351,16.799 16.62,17.268 15.88,17.105 C15.696,17.065 15.523,16.987 15.37,16.877 L8.997,12.271 C8.614,11.994 8.527,11.458 8.805,11.074 C8.835,11.033 8.869,10.994 8.905,10.958 L15.458,4.661 C15.594,4.53 15.598,4.313 15.467,4.176 C15.354,4.059 15.174,4.037 15.036,4.125 L6.104,9.795 C5.575,10.131 4.922,10.207 4.329,10.002 L0.577,8.704 C0.13,8.55 -0.107,8.061 0.047,7.614 C0.131,7.374 0.316,7.182 0.554,7.092 Z"></path></g></svg>Download Telegram
+          </a>
+          <div class="tgme_footer">
+            <div class="tgme_footer_column">
+              <h5><a href="//telegram.org/faq">About</a></h5>
+            </div>
+            <div class="tgme_footer_column">
+              <h5><a href="//telegram.org/blog">Blog</a></h5>
+            </div>
+            <div class="tgme_footer_column">
+              <h5><a href="//telegram.org/apps">Apps</a></h5>
+            </div>
+            <div class="tgme_footer_column">
+              <h5><a href="//core.telegram.org/">Platform</a></h5>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="tgme_header_info">
+      <a class="tgme_channel_join_telegram" href="//telegram.org/dl?tme=fa4c3dd4725c8fc73f_17612179287831236939">
+        <svg class="tgme_channel_join_telegram_icon" width="19px" height="16px" viewBox="0 0 19 16"><g fill="none"><path fill="#ffffff" d="M0.465,6.638 L17.511,0.073 C18.078,-0.145 18.714,0.137 18.932,0.704 C19.009,0.903 19.026,1.121 18.981,1.33 L16.042,15.001 C15.896,15.679 15.228,16.111 14.549,15.965 C14.375,15.928 14.211,15.854 14.068,15.748 L8.223,11.443 C7.874,11.185 7.799,10.694 8.057,10.345 C8.082,10.311 8.109,10.279 8.139,10.249 L14.191,4.322 C14.315,4.201 14.317,4.002 14.195,3.878 C14.091,3.771 13.926,3.753 13.8,3.834 L5.602,9.138 C5.112,9.456 4.502,9.528 3.952,9.333 L0.486,8.112 C0.077,7.967 -0.138,7.519 0.007,7.11 C0.083,6.893 0.25,6.721 0.465,6.638 Z"></path></g></svg>Join
+      </a>
+      <a class="tgme_header_link" href="https://t.me/Osintdefender">
+        <i class="tgme_page_photo_image bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i>
+        <div class="tgme_header_title_wrap">
+          <div class="tgme_header_title"><span dir="auto">OSINTdefender</span></div>
+          <div class="tgme_header_labels"></div>
+        </div>
+        <div class="tgme_header_counter">6.33K subscribers</div>
+      </a>
+    </div>
+  </div>
+</header>
+<main class="tgme_main" data-url="/Osintdefender">
+  <div class="tgme_container">
+    <section class="tgme_channel_history js-message_history">
+      <div class="tgme_widget_message_centered js-messages_more_wrap"><a href="/s/Osintdefender?before=20353" class="tme_messages_more js-messages_more" data-before="20353"></a></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20353" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNTMsInQiOjE3OTA4MDg0NDIsImgiOiIxYjdjMzFmYTBiYjNhNTVjM2YifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5316888896924752899 1237934664_460004355" href="https://t.me/OSINTdefender/20353" style="width:555px;background-image:url('https://cdn4.telesco.pe/file/Iy2ILyh2w-crxUiOe8N8du8j_56VOhblD_ADR5PhFww4VGoAHeotA6gC9fOtB0aDYk9r4BeTExSBk0-RAo7XCzc1aIlcngDZ58ojk5qWYF6vT-fO83gdeThfjvegPQM2I_o-ro8-CxJxUpUlApNSkLGURocCg_vuXRAestzYbD6ZXzJOwOtda4e_2cn1RVIvFPBwIBqVBC6o19EtzENW1FdScF7bhU92GyCSeeQWkSwCS6z9Q-fHqkjFow188zXptAzex_zJwiSb6XCNXiUl89cK0tUKex03o75lG_92bErcd7mOHil0_5t3VqqICn5zzyXmNr5b8yfFItrCdzfsYg.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:127.02702702703%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Russia">#Russia</a> <br/><br/>Russia has revived the Dead Hand nuclear retaliation system, also known as Perimeter, which is designed to ensure a retaliatory strike even if the country&#39;s leadership is incapacitated. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_reactions js-message_reactions"><span class="tgme_reaction"><i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F918D.png')"><b>👍</b></i>1</span></div><div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">617</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20353"><time datetime="2026-09-27T16:01:08+00:00" class="time">16:01</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20354" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNTQsInQiOjE3OTA4MDg0NDIsImgiOiI0MzYwODdkYmRjOTk3ZjE4MTMifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5318931256953215830 1238410188_460004182" href="https://t.me/OSINTdefender/20354" style="width:435px;background-image:url('https://cdn4.telesco.pe/file/j0wf8U4z58olfHtJd2K1BEz_94F_Nf94fNGkUD2_IV3A9Rn7VQ24O7h_QWmBiJsQ-dLjDDYJjz661aHr0PwSklHOJ_qt50BbNbP1EyLtiwBlVAkOsnH8m0X5QQz5fhfCC1XDyGb0WIVpmO8VtYCLcAsTweM-olSgeQK6tHyEOCH0NryBpsCTo8IT12n_6Hlso2WesXQOvIkP4La20149fLg5FLUaHW6TjpS3kw0UHDRhfqa0ob1dtt8fnrNvHCiBcqlousffd6oJjRNnUSEucFreee8LkFC8eE6yLwSkJSVBBJ2-tXJDaJyahBSwXUaW-IO2FQbds7fD0nT18iJAhA.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:56.091954022989%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23USA">#USA</a> <a href="?q=%23China">#China</a> <br/><br/>China and the US have agreed to establish a military crisis communication pact to prevent escalation of tensions.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">509</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20354"><time datetime="2026-09-28T07:06:52+00:00" class="time">07:06</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20355" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNTUsInQiOjE3OTA4MDg0NDIsImgiOiJkZGI3MGJmOTVhODZmYTg1NmMifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5318931256953215832 1238410188_460004184" href="https://t.me/OSINTdefender/20355" style="width:800px;background-image:url('https://cdn4.telesco.pe/file/PuqgTuhLk6_ifSQq9YiW8u6CIXG69UuDplJevyMKdBHnEmx6GCbAtIWiIBXLmMDNqJj5ahUqO9xoORyZzHOr9EG1VKSHIgRKcGQ6rOlYLFOUczfQT6_qaJKp257m9Ot_cOR0YHsNoLiqdW5eEt633lJZuPDwqvvxjoBIRwo6WWOWtbgq3oet53e8BWKOg835cI87olVqH7EguVxy0swiY6S2qUt-bsxgM7H1uPvShCIZOfydNqN7BWLZxjmBawtTkqHvt16QMBshCq9Y3gBf_qfe9WD1WOBHsQTkOGhFoWwTfhAmsRhaamOPqmpucE7lpwVvA3y3QOUalBq5prLZkg.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:56.25%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23USA">#USA</a><br/><br/>The U.S. Navy&#39;s next fight will involve utilizing advanced technologies like the MQ-25A Stingray, which provides unmanned aerial refueling to extend the range and endurance of carrier-based aircraft.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">509</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20355"><time datetime="2026-09-28T07:08:47+00:00" class="time">07:08</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20356" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNTYsInQiOjE3OTA4MDg0NDIsImgiOiJmODdiYzcxZTM0NTc0MTU4MzQifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5321027364202422959 1238898226_460006063" href="https://t.me/OSINTdefender/20356" style="width:240px;background-image:url('https://cdn4.telesco.pe/file/VCQq9krYjLTKJdE-OzVig0QrqF8WK1MJwyNjtdvDhSIdJYFJXFlUD_MWGse6gGHkrsebJV1KXlKpgymIj93aB5Tky3QkxZHWhJU7etjKWrVs7bHhM1_D33fLUqH0n8hELPvlM010LAtPHt553zMyEbzVExOfhW7QyBt2uegRo4iO0YGTzttJf69vD1Txcnt1SIxfCSlDrK41p4mi-sDAK678MyCmVwLJh8EeYxjzqHC7W0X_nGO9M0FIIH039iZVem3GENU0-ldxw2vHJNStaTrkp4vU6qBTiPi0NpDpwlR701FY9mE4qwU6iPsLS4sGl9Os7MaWhFbjDzsWnYdeyQ.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:111.00917431193%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23USA">#USA</a><br/><br/>The U.S. Navy&#39;s W93/Mk7 nuclear weapons program has indeed entered the Engineering and Manufacturing Development (EMD) phase after achieving Milestone B earlier this year. This marks the first new U.S. nuclear warhead and reentry system program initiated in nearly four decades.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">516</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20356"><time datetime="2026-09-28T07:20:50+00:00" class="time">07:20</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20357" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNTcsInQiOjE3OTA4MDg0NDIsImgiOiI2MzQ2MGZmYmQ1OTU0NDkzM2MifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5318931256953216180 1238410188_460004532" href="https://t.me/OSINTdefender/20357" style="width:474px;background-image:url('https://cdn4.telesco.pe/file/KzS-WxlpgsaXo0WWWO8mR82WnjlD34IWUoVxUaLMNwNDbY2DCTNRH_I7_4bY2PKMbedSd6aILF-G5BbOf9pymkKj7lm_Fd4P2jotGVYRzUS4KDhy9uceF-gcDTL7s2or_2cCLlIoaSC_ALkFPuSdjjI1QFbg2BanD7BneNo0R7_1jb8c3ViGJsyvV55-m2NQkb1ioQ0ol82Z-CZa0i-3ECrTbJhVaniHUrVEWrLaWycvsSQHgyrCIjOV0882qwHaiJVucNjhfCAIzrf-J741MGvdwzUJxOSMZSFLA26Oea0h7-eOV7M_XanlwkmMXDl1znJROSlbGelpOrZb-T4A5A.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:66.666666666667%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Iraq">#Iraq</a><br/><br/>U.S. troops are set to completely withdraw from Iraq by September 30, 2026, as confirmed by Iraqi Prime Minister Ali al-Zaidi. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">517</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20357"><time datetime="2026-09-28T10:21:16+00:00" class="time">10:21</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20358" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNTgsInQiOjE3OTA4MDg0NDIsImgiOiIzOTA1NDNkY2E5NzJhMWNiZmQifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Iran">#Iran</a> <a href="?q=%23Israel">#Israel</a> <br/><br/>Israeli Prime Minister Benjamin Netanyahu has confirmed that Israel was involved in the attack that killed Iran&#39;s Supreme Leader Ali Khamenei. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_reactions js-message_reactions"><span class="tgme_reaction"><i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F918D.png')"><b>👍</b></i>3</span></div><div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">520</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20358"><time datetime="2026-09-28T13:11:08+00:00" class="time">13:11</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20359" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNTksInQiOjE3OTA4MDg0NDIsImgiOiJjZjI4NWQ0YTQ0YTQ0OWQ4NTUifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5321027364202423992 1238898226_460007096" href="https://t.me/OSINTdefender/20359" style="width:800px;background-image:url('https://cdn4.telesco.pe/file/dL31S-rxqpUUwycVXgzzDRnI__Gt_lzI6g0LF5voBDSBNAAP6XOBPBFV-l25QdTLLMJFvZeim3xxdJqv9iDLC_C31kYmShgpPlZRD5YTLMvi7BPk0hg7dYeJ-H8FlmLSwNtEjcyk91tCfSaCBQdYC2v-lChwscC9feh0cfrJfArEg7OGowZ5VTKSD6rVPDtpLcZFHvOtACOXNvhFyeYnmmjeons-D2_PlmshPIEw_W542TlK6W868R9cyMNNWpfo6jZ0sqUuQSQv_VYaKlg9hmEst0VAaHK44NujUHkrkE1lZrckTpgjpOsycRT_S9cOhQb8lu9dujQZ_0WN6BgzFg.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:50%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Russia">#Russia</a> <br/><br/>Russia has begun assembling the flight prototype of the Sukhoi Su-75 Checkmate, a single-engine fifth-generation fighter, with test flights expected to occur between late 2026 and 2027. This aircraft aims to provide a cost-effective alternative to existing models like the F-35.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">494</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20359"><time datetime="2026-09-28T17:29:14+00:00" class="time">17:29</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20360" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjAsInQiOjE3OTA4MDg0NDIsImgiOiI3MWFlNGE0YjU1MTc2Njg4NWQifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5318931256953216852 1238410188_460005204" href="https://t.me/OSINTdefender/20360" style="width:549px;background-image:url('https://cdn4.telesco.pe/file/gAImjIvwXsH8d-34h7u-XdyExbYpRrNlNOAA25joBBRVVhNJGHwHPH7qgfHxYXM2-j7nf0q0WyM_nOa07B_yxg2PZSMQ3yXmzaocYYxCdphyC_tP-laE3yk9B_kq2dXxlZulepzQHsK1OrYndUZ6v3G4clEze_PGUTbWv2scQUmQFMtN7Ezl3j9pjkjpZe3g67yBhx4ACaXhsjRufeLfGFT2SBqFW0j9H-hOlPJn1BsHtnEg6Rf9zOJLUvriwApJhlqCsynTt6V-WegX0NQSufj_VwGIlYmpjWCIvXP0953yCt07ZCbc5YlVO9NFahIKY8TsRh6yPppscOGczMaEyw.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:54.098360655738%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Russia">#Russia</a> <a href="?q=%23China">#China</a> <br/><br/>Russian state television has reported that a mobile air defense unit from the 51st Air Defense Division is using unmarked shoulder-fired missiles resembling China&#39;s QW-18A and QW-19. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">759</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20360"><time datetime="2026-09-28T17:33:46+00:00" class="time">17:33</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20361" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjEsInQiOjE3OTA4MDg0NDIsImgiOiJkNWViMTAxOThiY2E5ZGQ4MGQifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5318931256953216862 1238410188_460005214" href="https://t.me/OSINTdefender/20361" style="width:800px;background-image:url('https://cdn4.telesco.pe/file/Vo-4D7hriYPiO9h7UEKnaXhiky537Wd3bZXs9RWyYRn6urh8Q3lZi87I-peXg_m0w8_B1LVOKokzuF1XBRIwDH8CrfiZMYjdb4pday1fmLNn_2iRTmyA6-_8Pd6MxO2rjS-pEgc2K2eS4BjRS3rY8aEJB8g4mLSzP6m3lFPc5-2ZF9zrCsaIsNB5Z6R0R4FZ4Dk2Weogz_669Ra8rB-9GvlrEGDjuCxbnExCWETkQNnE3XHsfwM6jBpSXMxI46EjTiPfaPQk-fEwGuUaXzTD9kRpx9d9gdd9LWzjWUR_nlHwyyFb3EFP3GbMtfblnnCb05N3H-MaQj-rzBBfIKbCvA.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:66.625%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23UK">#UK</a><br/><br/>The Royal Air Force (RAF) has established No. III Space Effects Squadron, marking the formation of its first dedicated unit tasked with countering hostile threats to United Kingdom satellites.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">522</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20361"><time datetime="2026-09-28T17:43:23+00:00" class="time">17:43</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20362" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjIsInQiOjE3OTA4MDg0NDIsImgiOiIzYTRmOTdiZGMwYTZmNjk2MzkifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_video_player not_supported js-message_video_player" href="https://t.me/OSINTdefender/20362"><i class="tgme_widget_message_video_thumb" style="background-image:url('https://cdn4.telesco.pe/file/uRtLLxRElBJNr-6uVmzAWOk-I4kAWS9sEniKmgAsiugMjYP8U8BypLo_pdRzd3Ss1_5HtgrFHA6W9FI0oS5GFlA7yU9ZTE2IzL5hoNZPjQJ_XyqKLQ2FpS_LqJ8eBlX0KoiaA0w9R1gTzhnUXjQZ0sU8-Z_NMc8hrSzkWZpFZpOvomdwz4CdPiDoUKQfadmv9TN5qRfa3dpcvcoMN2tpD_JdyzKRb4L9CUWel5pJVckzpbLl-PQWJhloLmaf_SsR6_eKmPyfk_tdh2J-Gbs-8Dk-N72K7EvSlpF6szU3Wc6NpEo2SvnlbWC6_HOwcg1ykvyMUesVfCKrE3SfsUqv3A')"></i>
+
+<div class="tgme_widget_message_video_wrap" style="width:1280px;padding-top:56.25%">
+  
+</div>
+<div class="message_video_play js-message_video_play"></div>
+<time class="message_video_duration js-message_video_duration">0:54</time>
+<div class="message_media_not_supported_wrap">
+  <div class="message_media_not_supported">
+    <div class="message_media_not_supported_label">Media is too big</div>
+    <span class="message_media_view_in_telegram">VIEW IN TELEGRAM</span>
+  </div>
+</div></a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Russia">#Russia</a> <br/><br/>Almaz-Antey is presenting the export version of the long-range UAV &quot;Garpiya-A1(E)&quot; with a range of up to 1,000 kilometers and a warhead capacity of over 50 kilograms. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">465</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20362"><time datetime="2026-09-29T07:03:14+00:00" class="time">07:03</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20363" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjMsInQiOjE3OTA4MDg0NDIsImgiOiI5MmM0MDQ3Yzk4YmRmODQyYzIifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5321183056766901428 1238934476_460004532" href="https://t.me/OSINTdefender/20363" style="width:800px;background-image:url('https://cdn4.telesco.pe/file/nV46i4J8BvwH465tcrEJlTqpy_sQQrVRUbfyFaHjqsrGDGIyBp_XGY8yb17A7ffhWrHOr91dM08fYydX0zGKogFBp9XarAnSc5l-fpIh8Vi6-_dgpqInmUo1wJNQqqIKq3_kjfSAqzgkg2sVktYRV7RujHA6epy49_4Rv6GwHkiI1jQdWygxE2jzqNOiTp9S7rr1cIlOXTVFuhV8r7kLrXOov2Ldg2xk_qHSRaaLKfc54pJGeR1i3k8u8uLAm2emTzDq78QJIEp-rQuIquVohovC_kAmQ5CebjG-4uf7iUnwKJZ08jJb9WyrjOUBg3VwsNtbxu1Xhsg7bM26E6cd_Q.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:56.25%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23UK">#UK</a><br/><br/>The UK&#39;s submarine maintenance relies on a single 1993 Faslane ship lift, creating a critical vulnerability for its nuclear deterrent and operational readiness. The government has announced a €7 billion investment in new floating dry docks to address years of neglect and expand capacity.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_reactions js-message_reactions"><span class="tgme_reaction"><i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F918D.png')"><b>👍</b></i>2</span></div><div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">490</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20363"><time datetime="2026-09-29T07:03:14+00:00" class="time">07:03</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20364" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjQsInQiOjE3OTA4MDg0NDIsImgiOiJiMTBiYTU0MGY1ZDEwOGNmM2MifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5323673716891788552 1239514378_460006664" href="https://t.me/OSINTdefender/20364" style="width:474px;background-image:url('https://cdn4.telesco.pe/file/dxsloIjMgvAvhO1aWSf7vAgOHOsImy003Z_OsKX048uXmD438ph-t8NB0a9Tm7Z2m-n3s1JYfOPe87DX8dyd0_-O9IMdBPCeKAt7DO2z4ZWuh3QqqYaQUrpkML8v9CleyK3HHoI2K2EgaJOz9A_JIlEATBgNe25kApObrd-uWfi7boO7lSsWOzWfWUPTUoF2CKBm0F5bziI8hQZPyutv4ste5gsZEnV2YIGkSgvZg0rN3T2oX_R4pDAjUGejLIHDyWf1o3d2xjka--JbxEOzTYUmhahy2ybV8Dr1kCM-_buiQYlAAsCJhnzEsdltvZDzKkfNMD8Qxz0yZaydUQguOg.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:48.31223628692%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Ukraine">#Ukraine</a> <a href="?q=%23USA">#USA</a> <a href="?q=%23Norway">#Norway</a> <a href="?q=%23France">#France</a> <a href="?q=%23Germany">#Germany</a> <br/><br/>Ukraine has received a new NASAMS air defense system along with a package of interceptor missiles from the United States and Norway. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_reactions js-message_reactions"><span class="tgme_reaction"><i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F8E89.png')"><b>🎉</b></i>2</span></div><div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">590</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20364"><time datetime="2026-09-29T17:44:31+00:00" class="time">17:44</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20365" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjUsInQiOjE3OTA4MDg0NDIsImgiOiI5YmQzMTRhNmNlZmUzODgyNzMifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5323398972128830105 1239450409_460006041" href="https://t.me/OSINTdefender/20365" style="width:800px;background-image:url('https://cdn4.telesco.pe/file/TJxTudkVlO2PyQDMmY_vNXt-zZg3xhs7CUhGck3-QIoPGlog4ERgslA8xF2-Nrs0BIbt7xq94SXU5PEh3XbnT7s0WJool4dAmP5_D5P1Kyn5Aq2Cg3lrO6wkzBOLu1Q_wwlxJ90s7h1zvjvjKL40e3-WhSywL3N-OPQOkkHHZ7DJy_6FpUocouYqLFcki4Z27Z4wdG5-1feQdhuvtpVfqYSc1UNeDClVzUsBhpKAsCGj2jOeLkATaPjX6fHsjKSldwVlvUFQFV0iTtCeHIvW2EkSgYqZSBm6T9XvVygOhUOXW7W-mzg2wCkYBZhUlv05kf3nQSudCFGGGIVApXlluA.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:66.625%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23USA">#USA</a><br/><br/>The U.S. Department of Defense has authorized an additional &#036;52.3 million for L3Harris proximity fuzes designed to equip APKWS laser-guided rockets for counter-drone operations. This firm-fixed-price modification, announced by the U.S. Department of War, supplements a contract originally awarded by the Naval Surface Warfare Center Indian Head Division to L3Harris Fuzing and Ordnance Systems in late May. The work, to be executed in Cincinnati, Ohio, is scheduled for completion by November 2027. The official notice does not specify the quantity of fuzes included in this funding.<br/><br/>A proximity fuze detonates a warhead upon detecting a nearby target, thereby eliminating the need for a direct impact on small, fast-moving drones to ensure destruction. L3Harris designates this product as the Mechanical Proximity Fuze, or FALCO fuze, named after the Fixed Wing, Air Launched, Counter-Unmanned Aircraft Systems Ordnance program. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">409</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta">edited &nbsp;<a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20365"><time datetime="2026-09-29T17:48:15+00:00" class="time">17:48</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20366" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjYsInQiOjE3OTA4MDg0NDIsImgiOiJkYTNkZTRiZDYzMWI5ZDYxODQifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5323398972128830114 1239450409_460006050" href="https://t.me/OSINTdefender/20366" style="width:800px;background-image:url('https://cdn4.telesco.pe/file/KE98p_-iWXUFI6Cl5-TV2YZba6u_rPMwfVCL-iCb2auvDTfKnbGxgOU3WQ2w2DpFhl4SZ_gBpTu1IOjNRBvNBGyVT6BWd3alQsUsbhxtblulPaLlaYSPVOtJ7v8Cc6XN7r61VVPjFuceocL39FaxeEZxSAJsUOulVFHD3aVqaxUIpM6kwBK9-4mcOlx6rOVr-cPBJC6deLR3lRnJM1LxYSNRfriEDUmf1W9eaxiujAbrtX4J2bXHI0A1rEzrLemLakadtUZQzir5hEqUxD6kf6lYuQTnaaLiWaaLRBsn2uVxjVqKsr5FzN_yxvUIX1t-ij3YbBH1bmowP_dUb7AMIw.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:66.75%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Russia">#Russia</a> <br/><br/>Russia plans to spend 17.1 trillion rubles (about &#036;202.58 billion) on defense in 2027, a 27% increase over the previously budgeted amount and the highest level since its 2022 invasion of Ukraine. The draft budget also projects total defense spending of 50 trillion rubles over the next three years.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">434</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20366"><time datetime="2026-09-29T17:51:49+00:00" class="time">17:51</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20367" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjcsInQiOjE3OTA4MDg0NDIsImgiOiJkNDc0YTM1MTAzMGFmNWVmMzQifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5323673716891788563 1239514378_460006675" href="https://t.me/OSINTdefender/20367" style="width:474px;background-image:url('https://cdn4.telesco.pe/file/sCdQGfYWy9BxJxdrzQVmSyJpJ-zlo4GKfpWO87IPDwhNYT6OGRG6itm9rQWSalx0sbMIJAG5A1ZNkw_KvE-h-JbGX4iIB1pj_qJcLn4Yng6B6J5rVXTF3clFiJ3Z7GkoS5ZqYqBzpiAlefTBvpiHInXMA6E4yOifONPArvndd20KpjbVjkzX7OvdR2KCgaze1HQHeuKpeDFHuQrwWh2tA8ux2YUCxH8UIVpsmSxpwEZ7hsDb8P9QxbqvLMYbfqXvpj8YocMnelYZ5-7J7_ukfcL3iodLKkkK9p1hsmTNrREvgGbzAbTasJqi1c6HyRLZxaV_KHAZQT22u1XPpgGm6g.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:56.118143459916%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23Ukraine">#Ukraine</a> <a href="?q=%23NK">#NK</a><br/><br/>North Korea is preparing to deploy another 10,000 troops to Russia, according to Ukrainian President Volodymyr Zelenskyy. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_reactions js-message_reactions"><span class="tgme_reaction"><i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F918E.png')"><b>👎</b></i>1</span></div><div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">483</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20367"><time datetime="2026-09-29T17:53:44+00:00" class="time">17:53</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20368" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjgsInQiOjE3OTA4MDg0NDIsImgiOiJkNDViODY5YTZiMTllOWQ1YzcifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5323673716891788565 1239514378_460006677" href="https://t.me/OSINTdefender/20368" style="width:679px;background-image:url('https://cdn4.telesco.pe/file/nfFnVvq8NRQa6upRTCU92L7rkCmCvCwiYQExjoU47XcpUnCyZoXmWgkylJMmWPbsgcSnrWB2dXnZcQzIzcG9TZv8wPA5RK1__eJjFcT_g-LtT2JCMM_A2x9eOw5QccYWCPht54k-tbPz2cn9VRlLnhqjmVxFAj2j0m99q66X5Q_20GCbUjesRYnx-D3L8NFw3GazGkXeKKyCsdTJQhe7Yz48z4BJVqF4dQpRr7x1fkNf6XWYqOOVTdMVqAYSIU_SYka126JRw63Phf9t9BKCDvha1kQ_NCZTasiIhzSPCSHLSYiVD-4h8hFPfkW1gB77k33ZfEf7xuyM7ut5Y_RXZQ.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:66.568483063328%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23UK">#UK</a><br/><br/>The United Kingdom has proposed to extend its nuclear deterrent to the nine other members of the Joint Expeditionary Force (JEF), which includes countries like Finland, Denmark, and Sweden, enhancing regional security alongside NATO&#39;s existing arrangements. <br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">459</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20368"><time datetime="2026-09-30T00:05:57+00:00" class="time">00:05</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20369" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNjksInQiOjE3OTA4MDg0NDIsImgiOiJjNGE2ZDI4YTRlMDVkNzQ3ODMifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5323673716891788568 1239514378_460006680" href="https://t.me/OSINTdefender/20369" style="width:800px;background-image:url('https://cdn4.telesco.pe/file/WsdWtZuTTi0fbZziWEvkBUJ9E6we2z67jFpvpDdouaVgPkfrxZRRL81cV2uMT0taiQL3HLCAvo2Xufxipx4VO-EdW2faHErXoVUXLbQzDQNdmVe26vtGUNcIRq3VnSk_13JBtJQlRY7eka-RdsxHixSiLco6Y7npYjjSUJwXLpZK0LHI_eepV7pDXjfXr_76ma1DTdmtSUcOty7To0E1a2PXLYgXvBVhR6q303EK84jme5urS8LkupINsZns-WWWdvnB_iCiKac8G1uoHx1PhXRqwpghNac91xioaS1D8QbyPFL_sK5qqrpOOwxxCCYW560Ltafi5hc16SZqTsK90Q.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:56.25%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23USA">#USA</a><br/><br/>The U.S. government awarded Raytheon a contract worth up to &#036;20.7 billion to produce Advanced Medium-Range Air-to-Air Missiles (AMRAAMs), nearly doubling their production capacity.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">445</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20369"><time datetime="2026-09-30T03:06:57+00:00" class="time">03:06</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20370" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNzAsInQiOjE3OTA4MDg0NDIsImgiOiJmYWI0NWQyNmNiNGQ4ZGQ4ODMifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5325650771942514147 1239974697_460004835" href="https://t.me/OSINTdefender/20370" style="width:440px;background-image:url('https://cdn4.telesco.pe/file/NHZpaY5airKhFNUQn86uFWzQ3Q80swwtlNVhUg25JHni8YbBIF6tNE0WVFeG3oW2BPNQwDzzebblKqrpfowwpbDfxS4y4Ke5FEJtlp6JqiS7kIL5KjQXbzwlpwZlnqnBC4tFBXJCX3J-8Hy2oiox6dIj1Rp1ZWzoxzux2NGszYoJanJlsiGkACropdRJAKriksBXIPQ1NlME8IvByBEmOPc3V5yNmZewfBc9DSdTNh-yjNmdmm1QVoyPfe6BxAeANIx-UqsDISUS1es-_r9IcN8heRjwSb2KxkhXj3iwnr0xknJsWKMpCRAchLa_ECIUEYu8IesBtlvwvw_ESoz9BQ.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:52.5%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23USA">#USA</a><br/><br/>Boeing has been selected to develop the Navy’s sixth-generation carrier-based strike fighter, designated F/A-XX, outperforming Northrop Grumman, which was considered its primary competitor during the final stages of negotiation. The contract, valued at &#036;20 billion for the full-scale development phase, stipulates the procurement of multiple test aircraft for ground, airworthiness, systems, and weapons integration testing, as detailed in a Pentagon release.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">423</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20370"><time datetime="2026-09-30T05:40:59+00:00" class="time">05:40</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20371" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNzEsInQiOjE3OTA4MDg0NDIsImgiOiJkZTk2OTYwMzQ4MGE0NWQ0MzIifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5325650771942515292 1239974697_460005980" href="https://t.me/OSINTdefender/20371" style="width:430px;background-image:url('https://cdn4.telesco.pe/file/bBRJs668eU7jJfUj48b_8MkfMRipU7-vqSQKoj1K0F_99iuCkJcc-abnordyVSS86DDJH8pY-APvYdQjUusBaRXgGvAwqYZsCYoT4IsZH5g_8QO1apGOGCL5m1RWa1XqjaXkEDelJ_WmjBI753K_CXMqGEJXpheAjAZ4doVYFli3t7tJFPwHHqsLCgkVATYj6jJ33EcRqz7nUNm_ZsXhJ_YsUxJ9IuA44UbtcqJJM2Iagk-YGlJz-XDfwc4LihVu2pUDR67aoNvjWRagadi_NhUVaCeEoMYXV8V6kZsjah2ntpW19nxTeJCkcfQGALGJ_-wRAbLNWKKuDwSOYVls1w.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:56.744186046512%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23EU">#EU</a> <a href="?q=%23Russia">#Russia</a> <br/><br/>Russia has issued a warning to NATO, stating that it would be prepared to deploy nuclear weapons should the Western alliance attempt to sever access to Kaliningrad, a Russian exclave situated along the Baltic Sea.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_reactions js-message_reactions"><span class="tgme_reaction"><i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F918E.png')"><b>👎</b></i>2</span></div><div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">279</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20371"><time datetime="2026-09-30T15:54:22+00:00" class="time">15:54</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div><div class="tgme_widget_message_wrap js-widget_message_wrap"><div class="tgme_widget_message text_not_supported_wrap js-widget_message" data-post="OSINTdefender/20372" data-view="eyJjIjotMTYzMzY1OTcwMCwicCI6MjAzNzIsInQiOjE3OTA4MDg0NDIsImgiOiIwNmE5Yzc1YTFmNmJlOTg5NjcifQ">
+  <div class="tgme_widget_message_user"><a href="https://t.me/OSINTdefender"><i class="tgme_widget_message_user_photo bgcolor1" data-content="O"><img src="https://cdn4.telesco.pe/file/anLT-sSQfxyPDi7fbks5sCxZ4Y_07Rt35fzaXkICjbAS89u-Im0FYxQqHb0Ur7QTjw6RCV-sYJdVSwdXrQ2ERUwVXcV-3enli6Odo3cOI3Ao8Cwt0MP4ioNvmY7v_G7HO0R9GYV9tW2J3TDqiRh-VaOdF3xtqymS9qjk38aYfNkMoaPzXKElpzGuW0QpKlfWipD7nNjurRH_aJ2ZGZengeqOx-OtzQP9ufyBNtJtusfdSPX6BP4S4lx2lv9becTChyy1LPuR5q7HTctP9l7-xFluO_mT2chkDI4dDfnnj-GN_TgCiz3taoIjpEqDrxOQA0JZTY9DgmVw4Lp6VB_Ubw.jpg"></i></a></div>
+  <div class="tgme_widget_message_bubble">
+    
+        <i class="tgme_widget_message_bubble_tail">
+      <svg class="bubble_icon" width="9px" height="20px" viewBox="0 0 9 20">
+        <g fill="none">
+          <path class="background" fill="#ffffff" d="M8,1 L9,1 L9,20 L8,20 L8,18 C7.807,15.161 7.124,12.233 5.950,9.218 C5.046,6.893 3.504,4.733 1.325,2.738 L1.325,2.738 C0.917,2.365 0.89,1.732 1.263,1.325 C1.452,1.118 1.72,1 2,1 L8,1 Z"></path>
+          <path class="border_1x" fill="#d7e3ec" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0 L9,0 L9,20 L7,20 L7,20 L7.002,18.068 C6.816,15.333 6.156,12.504 5.018,9.58 C4.172,7.406 2.72,5.371 0.649,3.475 C-0.165,2.729 -0.221,1.464 0.525,0.649 C0.904,0.236 1.439,0 2,0 Z"></path>
+          <path class="border_2x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.5 L9,0.5 L9,20 L7.5,20 L7.5,20 L7.501,18.034 C7.312,15.247 6.64,12.369 5.484,9.399 C4.609,7.15 3.112,5.052 0.987,3.106 C0.376,2.547 0.334,1.598 0.894,0.987 C1.178,0.677 1.579,0.5 2,0.5 Z"></path>
+          <path class="border_3x" d="M9,1 L2,1 C1.72,1 1.452,1.118 1.263,1.325 C0.89,1.732 0.917,2.365 1.325,2.738 C3.504,4.733 5.046,6.893 5.95,9.218 C7.124,12.233 7.807,15.161 8,18 L8,20 L9,20 L9,1 Z M2,0.667 L9,0.667 L9,20 L7.667,20 L7.667,20 L7.668,18.023 C7.477,15.218 6.802,12.324 5.64,9.338 C4.755,7.064 3.243,4.946 1.1,2.983 C0.557,2.486 0.52,1.643 1.017,1.1 C1.269,0.824 1.626,0.667 2,0.667 Z"></path>
+        </g>
+      </svg>
+    </i>
+    <div class="tgme_widget_message_author accent_color"><a class="tgme_widget_message_owner_name" href="https://t.me/OSINTdefender"><span dir="auto">OSINTdefender</span></a></div>
+
+
+<a class="tgme_widget_message_photo_wrap 5325650771942515294 1239974697_460005982" href="https://t.me/OSINTdefender/20372" style="width:474px;background-image:url('https://cdn4.telesco.pe/file/JzSySjFeJVCrHQXR6q91TZjhQOmxXM5j1O_JheeBj93cYCye4JORQVcfoPpTPc7PqMmPWHRi7yvsw4tsKnYxDs2Yp3DAh0RpKfGQcPFYeqKRQsuuwXdyohHAhb8GYAnI0fXuzdw04Cy38Mlr3OLWGdfau_4roi-fVKlf_76QIicutur2dEtBT-SRIwPv442YO-J14CsD-gtyeN2fKoadjoDFkuUvPnaP7bi_QVAtJRT6G_HgRnJuRsmSgxUGArZNY3QlD8H4SzbGoNNi_0kmH_TNz9zFSUOiJQoHU27nyTKJCnOI2Ph16ps6fsafWxH-6tOmbld5dOOLvpDYUZMRtw.jpg')">
+  <div class="tgme_widget_message_photo" style="padding-top:56.118143459916%"></div>
+</a><div class="tgme_widget_message_text js-message_text" dir="auto"><a href="?q=%23USA">#USA</a> <a href="?q=%23Iran">#Iran</a> <a href="?q=%23Israel">#Israel</a> <br/><br/>Iran is reportedly enhancing its military readiness in response to threats from the United States and Israel. Israeli Prime Minister Netanyahu and Defense Minister Katz have emphasized that any attack from Iran would provoke a severe response from Israel, with Katz stating that the IDF is prepared for both defense and attack.<br/><br/>Subscribe to <a href="https://t.me/OSINTdefender" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">@OSINTdefender</a> | <i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F92AC.png')"><b>💬</b></i> <a href="https://t.me/+DwDkxaYZhSRiMzVi" target="_blank" rel="noopener" onclick="return confirm('Open this link?\n\n'+this.href);">Chat room</a></div>
+<div class="tgme_widget_message_reactions js-message_reactions"><span class="tgme_reaction"><i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F918D.png')"><b>👍</b></i>1</span></div><div class="tgme_widget_message_footer compact js-message_footer">
+  
+  <div class="tgme_widget_message_info short js-message_info">
+    <span class="tgme_widget_message_views">281</span><span class="copyonly"> views</span><span class="tgme_widget_message_meta"><a class="tgme_widget_message_date" href="https://t.me/OSINTdefender/20372"><time datetime="2026-09-30T15:55:39+00:00" class="time">15:55</time></a></span>
+  </div>
+</div>
+  </div>
+  
+</div></div>
+    </section>
+  </div>
+</main>
+    <script src="//telegram.org/js/jquery.min.js"></script>
+    <script src="//telegram.org/js/jquery-ui.min.js"></script>
+    <script src="//telegram.org/js/tgwallpaper.min.js?3"></script>
+<script src="//telegram.org/js/tgsticker.js?32"></script>
+
+    <script src="//telegram.org/js/widget-frame.js?68"></script>
+    <script src="//telegram.org/js/telegram-web.js?14"></script>
+    <script>TWeb.init();
+</script>
+    
+  </body>
+</html>
+<!-- page generated in 93.6ms -->

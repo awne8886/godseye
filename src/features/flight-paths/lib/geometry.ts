@@ -220,3 +220,93 @@ export function etaMs(remainingKm: number, s: Pick<LiveState, 'gsKt' | 'vrFpm'>,
   const kts = transitional ? (s.gsKt + CRUISE_BLEND_KTS) / 2 : s.gsKt;
   return Math.round(now + (remainingKm / (kts * 1.852)) * 3_600_000 + APPROACH_MIN * 60_000);
 }
+
+// ── One longitude frame for everything drawn for a route/flight (antimeridian) ─────
+/** `lng` shifted by whole turns so it lies within 180° of `ref` (same world copy). */
+export function nearLng(lng: number, ref: number): number {
+  return lng + 360 * Math.round((ref - lng) / 360);
+}
+
+/**
+ * Unwrap a polyline so consecutive longitudes never differ by more than 180°, with the first
+ * point placed in the world copy nearest `anchorLng` (when given). Latitudes are untouched.
+ */
+export function unwrapPath(points: readonly LngLatTuple[], anchorLng?: number): LngLatTuple[] {
+  const out: LngLatTuple[] = [];
+  let prev: number | null = anchorLng ?? null;
+  for (const [lng, lat] of points) {
+    const x = prev === null ? lng : nearLng(lng, prev);
+    out.push([x, lat]);
+    prev = x;
+  }
+  return out;
+}
+
+/** Index of the vertex of `path` nearest to `p` on the sphere (−1 for an empty path). */
+export function nearestVertex(path: readonly LngLatTuple[], p: LngLatTuple): number {
+  let best = -1;
+  let bestKm = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const km = distanceKm(path[i]!, p);
+    if (km < bestKm) {
+      bestKm = km;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** `p` moved into the longitude frame of the (unwrapped) `path`: the copy nearest its closest vertex. */
+export function intoFrame(p: LngLatTuple, path: readonly LngLatTuple[]): LngLatTuple {
+  const i = nearestVertex(path, p);
+  return i < 0 ? p : [nearLng(p[0], path[i]![0]), p[1]];
+}
+
+/** A polyline moved into the frame of `path`: its first point placed via `intoFrame`, the rest unwrapped from there. */
+export function pathIntoFrame(points: readonly LngLatTuple[], path: readonly LngLatTuple[]): LngLatTuple[] {
+  if (!points.length) return [];
+  return unwrapPath(points, intoFrame(points[0]!, path)[0]);
+}
+
+/** Largest longitude step between consecutive points (a continuous line has ≤ 180). */
+export function maxLngStep(points: readonly LngLatTuple[]): number {
+  let m = 0;
+  for (let i = 1; i < points.length; i++) m = Math.max(m, Math.abs(points[i]![0] - points[i - 1]![0]));
+  return m;
+}
+
+/** Bounds [[west, south], [east, north]] of an unwrapped polyline (west may be < −180, east > 180). */
+export function pathBounds(points: readonly LngLatTuple[]): [[number, number], [number, number]] | null {
+  if (!points.length) return null;
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const [x, y] of points) {
+    w = Math.min(w, x);
+    e = Math.max(e, x);
+    s = Math.min(s, y);
+    n = Math.max(n, y);
+  }
+  return [[w, s], [e, n]];
+}
+
+/** Point at fraction `f` (0–1, by vertex count) along an unwrapped polyline, linearly between vertices. */
+export function pointAlong(points: readonly LngLatTuple[], f: number): LngLatTuple | null {
+  if (!points.length) return null;
+  if (points.length === 1) return points[0]!;
+  const x = Math.max(0, Math.min(1, f)) * (points.length - 1);
+  const i = Math.min(points.length - 2, Math.floor(x));
+  const t = x - i;
+  const a = points[i]!;
+  const b = points[i + 1]!;
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+}
+
+/**
+ * Split a polyline into dash pieces of `on` vertices followed by a gap of `off` vertices (the
+ * `[2,2]` dash of §8 on a 256-point arc). Pure geometry: every vertex comes from the input.
+ */
+export function dashPieces(points: readonly LngLatTuple[], on = 4, off = 3): LngLatTuple[][] {
+  const out: LngLatTuple[][] = [];
+  const step = on + off;
+  for (let i = 0; i + 1 < points.length; i += step) out.push(points.slice(i, Math.min(points.length, i + on + 1)));
+  return out.filter((d) => d.length >= 2);
+}

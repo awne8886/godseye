@@ -29,3 +29,16 @@ fixtures (VRS/adsbdb/hexdb BAW117) are reused. Bundled files are produced by
 
 Nominatim is reached only through `src/lib/geocode.ts` (1 req/s queue, 30-day cache) and only on an
 explicit submit (`submit=1`), never for type-ahead. FlightAware AeroAPI (`aeroapi`) is not wired yet.
+
+### Re-probe 2026-09-30 22:4x UTC (Phase 3 round-1 fixes)
+
+Same honest UA (`… probe`), `Origin: https://example.org` to read CORS.
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://davidmegginson.github.io/ourairports-data/airports.csv` | 200 | 0.80 s | `*` | 12.7 MB, `Last-Modified: Wed, 30 Sep 2026 01:53:58 GMT`; index rebuilt from a fresh download — `airports.min.json` `sources` now records the upstream URLs, licences and this `Last-Modified` (no local path) |
+| `https://raw.githubusercontent.com/mwgg/Airports/master/airports.json` | 200 | 0.52 s | `*` | 9.0 MB; **no `Last-Modified` header** (ETag only), so `mwggLastModified` is `null`; MIT, used for IANA `tz` only (8,163 of 9,785 default rows) |
+| `https://vrs-standing-data.adsb.lol/routes/BA/BAW117.json` | 200 | 0.30 s | `*` | `Last-Modified: Sun, 20 Sep 2026 18:48:17 GMT`; `airport_codes: "EGLL-KJFK"`, `_airport_codes_iata: "LHR-JFK"` |
+| `https://api.adsbdb.com/v0/callsign/BAW117` | 200 | 0.69 s | `*` | `response.flightroute{callsign_icao BAW117, callsign_iata BA117, airline{icao BAW, iata BA}, origin, destination}`; looked up per request, never bulk-stored |
+| `https://aviationweather.gov/api/data/metar?ids=EGLL&format=json` | 200 | 0.31 s | none | `obsTime 1790806800` (epoch s), `reportTime` rounded, `rawOb "METAR EGLL 302220Z AUTO …"` |
+| `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0/query?where=IDENT='J80'&outFields=IDENT,TYPE_CODE&returnGeometry=false&f=json` (FAA ADDS airways) | 200 (no quota error this time) | 0.94 s | `*` | `geometryType esriGeometryPolyline`, `wkid 4269` (NAD83), `Last-Modified: Thu, 03 Sep 2026`; public domain. **Not wired**: the earlier probe returned a 429 inside a 200 body, and `route-airways` is left out until a cached, quota-aware provider exists |

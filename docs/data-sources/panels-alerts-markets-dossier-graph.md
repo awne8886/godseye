@@ -10,7 +10,7 @@ each file name.
 ## Live Alerts — Telegram public previews (`/api/news`)
 
 Public channel previews (`https://t.me/s/<handle>`), server-rendered HTML with no API. Low volume
-(10 newest posts per channel, 2-minute feed TTL, `providerBucket('t.me', 2/s)`), shown to people with a
+(8 newest posts per channel — OSIRIS and contract §6; was 10 before 2026-09-30 round-1 fix — 2-minute feed TTL, `providerBucket('t.me', 2/s)`), shown to people with a
 link to the post; never used for training. Posts without their own `<time datetime>` are dropped.
 
 | Handle | Name / declared stance | Bloc | Status | Latency | Size | CORS |
@@ -106,3 +106,29 @@ Live layers within 150 km are read in-process from the registered feeds (`flight
 | `OLLAMA_URL/api/tags`, `/api/chat` | operator-hosted | — | Never visitor-supplied |
 
 Keyless default: the deterministic ANALYST (keyword digest), labelled as such with `fallbackReason`.
+
+## Re-probe 2026-09-30 22:47 UTC (Phase 3 round-1 fixes)
+
+Same honest UA, `curl -sS -m 25`, one request each (one retry where noted), `Origin: http://localhost:3000`.
+
+| URL | Status | Latency | CORS | Auth | Notes |
+|---|---|---|---|---|---|
+| `https://query1.finance.yahoo.com/v8/finance/chart/%5EIXIC?interval=1d&range=5d` | **429** | 0.38 s | none | none (unofficial) | body `Too Many Requests` from the shared sandbox egress; the app keeps SOURCE OFFLINE / last-good for that symbol |
+| `https://query2.finance.yahoo.com/v8/finance/chart/%5EIXIC?interval=1d&range=5d` | 200 | 0.16 s | none | none (unofficial) | 1.7 kB; `meta.regularMarketTime` 1790802959, `exchangeName: "NIM"`, `timezone: "EDT"`. Not wired (query1 only; no host rotation) |
+| `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT` | 200 | 0.79 s | `*` | none | 556 B; `lastPrice`, `priceChangePercent`, `closeTime` (ms) |
+| `https://t.me/s/Osintdefender` | reset, then 200 | 11.2 s (reset) / 0.79 s | none | none | 112 kB, **20 posts** on the page; the feed keeps the newest **8** (`POSTS_PER_CHANNEL`). Saved as fixture `tg-Osintdefender-full.2026-09-30.html` |
+| `https://en.wikipedia.org/api/rest_v1/page/summary/Singapore` | 200 | 0.30 s | `*` | none | 2.7 kB; `title`, `extract`, `content_urls.desktop.page`, `thumbnail.source` (CC BY-SA 4.0) |
+| `https://query.wikidata.org/sparql?query=SELECT ?c WHERE {?c wdt:P297 "SG"}&format=json` | 200 | 0.20 s | `*` | none | `results.bindings[0].c.value` = `http://www.wikidata.org/entity/Q334` (CC0) |
+| `https://www.gov.uk/bank-holidays.json` | 200 | 0.33 s | `*` | none | OGL v3; `england-and-wales.events[].date` 2026 → 01-01, 04-03, 04-06, 05-04, 05-25, 08-31, 12-25, 12-28 (LSE closures, bundled in `sessions.ts`, not fetched at runtime) |
+
+Holiday calendars bundled in `src/components/panels/intel/server/sessions.ts` (read once, 2026 only):
+NYSE/Nasdaq from `https://www.nyse.com/markets/hours-calendars` (200, 0.35 s; 2026 column: Jan 1, Jan 19,
+Feb 16, Apr 3, May 25, Jun 19, Jul 3, Sep 7, Nov 26, Dec 25); SSE from the Shanghai Futures Exchange
+circular of 2025-12-17 "Trading Schedule during National Holidays for Year 2026" (mainland calendar:
+Jan 1–3, Feb 15–23, Apr 4–6, May 1–5, Jun 19–21, Sep 25–27, Oct 1–7); HKEX 2026 securities-market
+full-day closures (14 dates, as published by HKEX and reported by globalexchanges.com). Every other
+exchange reports `holidaysModelled: false` and the panel marks it with `*`.
+
+Region Dossier live layers read other owners' feeds in-process (no HTTP): `cctv:<region>` (the regions
+whose box, grown by 150 km, holds the point), `maritime` (ports + chokepoints REFERENCE; vessels only
+with `AIS_API_KEY`), `cables` (TeleGeography REFERENCE, CC BY-NC-SA, only with `nc_sources`).

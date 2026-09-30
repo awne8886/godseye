@@ -48,10 +48,11 @@ export default function DrawPanel(_: PanelProps) {
   const tool = TOOLS.find((t) => t.id === drawMode);
   return (
     <div className="flex flex-col gap-3" data-testid="draw-panel">
-      <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Drawing tools">
+      {/* Two columns: at 326 px a 4-up grid squeezed the icons to nothing next to "POLYGON" (visual-qa M7). */}
+      <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Drawing tools">
         {TOOLS.map(({ id, label, Icon }) => (
           <HudButton key={id} tone={drawMode === id ? 'cyan' : 'muted'} pressed={drawMode === id} onClick={() => setDrawMode(drawMode === id ? null : id)}>
-            <Icon size={14} aria-hidden /> {label}
+            <Icon size={14} aria-hidden className="shrink-0" data-testid={`draw-tool-icon-${id}`} /> {label}
           </HudButton>
         ))}
       </div>

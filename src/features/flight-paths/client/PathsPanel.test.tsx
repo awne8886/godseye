@@ -99,7 +99,7 @@ describe('PATHS panel', () => {
       fireEvent.click(screen.getByRole('button', { name: 'LHR → JFK' }));
     });
     expect(useUiStore.getState().plannedRoute).toEqual({ from: 'LHR', to: 'JFK' });
-    await waitFor(() => expect(screen.getByText('LHR → JFK')).toBeTruthy(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByText('LHR → JFK')).toBeTruthy(), { timeout: 30_000 });
     expect(screen.getByText('GREAT-CIRCLE ESTIMATE')).toBeTruthy();
     expect(screen.getByText('FILED · NOT AVAILABLE')).toBeTruthy();
     expect(screen.getByText('TYPICAL · NOT AVAILABLE')).toBeTruthy();
@@ -109,6 +109,26 @@ describe('PATHS panel', () => {
     expect(screen.getByText(/DIVERSION AIRPORTS/)).toBeTruthy();
     expect(screen.getAllByText(/METAR EGLL/).length).toBeGreaterThan(0);
     expect(screen.getByLabelText(/Daylight:/)).toBeTruthy();
+    // visual-qa M4: unavailable legend rows are full-contrast text with a dashed swatch, never dimmed.
+    const legend = screen.getByRole('list', { name: 'Path types' });
+    for (const li of Array.from(legend.querySelectorAll('li'))) expect((li as HTMLElement).style.opacity).toBe('');
+    expect(legend.querySelectorAll('li[data-available="false"] .border-dashed').length).toBe(2);
+    // visual-qa m3: km and nm on two lines, no dangling separator.
+    expect(screen.getByText('5,540 KM')).toBeTruthy();
+    expect(screen.getByText('2,991 NM')).toBeTruthy();
+  }, 40_000); // first test loads the bundled airport/route indexes cold; slow on a loaded 4-vCPU box
+
+  it('ALL AIRFIELDS is a labelled button with the switch track inside (visual-qa M3); short placeholders (m3)', async () => {
+    await act(async () => {
+      renderPanel();
+    });
+    const toggle = screen.getByRole('button', { name: 'ALL AIRFIELDS' });
+    expect(toggle.className).not.toContain('hud-toggle');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.querySelector('.hud-toggle')?.getAttribute('data-on')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByLabelText('FROM').getAttribute('placeholder')).toBe('IATA / CITY');
   });
 
   it('LIVE tab lists matched aircraft with progress and ETA; offline feed says so', async () => {
