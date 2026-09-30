@@ -46,3 +46,12 @@ Poll: 5 min while read, gzip requested; RTSW files are the heaviest (≈ 4.5 MB/
 ## Env keys
 
 None required. (N2YO passes would be a keyed upgrade behind a capability; not implemented.)
+
+## Live integration check (local `next start`, 2026-09-30 19:31 UTC)
+
+- `/api/satellites` 200 in 11.2 s cold: 16 612 rows (comms 12 930, military 334, navigation 170, earth_obs 490,
+  science 79, other 2 609); `celestrak` ok 1.4 s; `celestrak-groups` 4/12 — the 5th group request was reset
+  and the run stopped there as designed (membership for the rest falls back to the previous run / name rules).
+- `/api/space-weather` 200: Kp 0.33 Quiet (15:00Z interval), X-ray B2.6, RTSW SOLAR1 299.8 km/s, 3.81 p/cc,
+  Bt 3.78 nT, Bz +0.55 nT, R0/S0/G0, 25 alerts; all six providers ok.
+- `/api/iss` 200 with a propagated ground track; `/api/satellites/orbit?id=25544` LEO, 92.98 min.
