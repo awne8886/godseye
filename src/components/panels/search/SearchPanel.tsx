@@ -75,10 +75,7 @@ export default function SearchPanel(_: PanelProps) {
           id={inputId}
           autoFocus
           value={text}
-          role="combobox"
-          aria-expanded={results.length > 0}
           aria-controls={listId}
-          aria-autocomplete="list"
           placeholder="City, place, or 50.45, 30.52"
           onChange={(e) => {
             setText(e.target.value);
@@ -93,9 +90,9 @@ export default function SearchPanel(_: PanelProps) {
       <Prose>Type-ahead uses Photon; press Enter for a full search (Nominatim, queued at 1 request/s). Coordinates like “51.5, -0.12” jump straight there.</Prose>
       {res.data && !res.data.ok && <ErrorLine error={body?.error} detail={body?.detail} />}
       {res.data && <ProviderChips providers={body?.providers} at={res.data.ok ? (body as GeoResponse).timestamp : null} />}
-      <ul id={listId} role="listbox" aria-label="Search results" className="flex flex-col gap-1">
+      <ul id={listId} aria-label="Search results" aria-live="polite" className="flex flex-col gap-1">
         {results.map((p, i) => (
-          <li key={`${p.source}-${i}-${p.lat}-${p.lng}`} role="option" aria-selected={false}>
+          <li key={`${p.source}-${i}-${p.lat}-${p.lng}`}>
             <button
               type="button"
               onClick={() => go(p)}
