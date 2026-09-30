@@ -17,7 +17,7 @@ import type { NewsChannel } from '@/lib/types';
 
 type Seed = Omit<NewsChannel, 'embedUrl' | 'externalUrl' | 'live' | 'observedAt' | 'source'> & { youtubeChannelId: string };
 
-/** Broadcaster HQ coordinates (where the dot sits on the map). */
+/** Broadcaster HQ coordinates, approximate (where the dot sits on the map; not a stream location). */
 export const CHANNELS: readonly Seed[] = [
   { id: 'aljazeera', name: 'Al Jazeera English', city: 'Doha', country: 'QA', lat: 25.3155, lng: 51.4939, youtubeChannelId: 'UCNye-wNBqNL5ZzHSJj3l8Bg', embedAllowed: true, category: 'mainstream', language: 'en' },
   { id: 'dwnews', name: 'DW News', city: 'Berlin', country: 'DE', lat: 52.5033, lng: 13.3274, youtubeChannelId: 'UCknLrEdhRCp1aegoMqRaCZg', embedAllowed: true, category: 'mainstream', language: 'en' },
