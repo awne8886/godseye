@@ -180,6 +180,46 @@ export const AiGeneratedBy = z.enum(['claude', 'gemini', 'ollama', 'analyst']);
 
 export const AiCitation = z.object({ feed: z.string(), id: z.string(), label: z.string() });
 
+/** Heuristic alert digest (keyword clustering by theatre/topic; groups reports, never verifies them). */
+export const AiAlertBrief = z.object({
+  bottomLine: z.string(),
+  threads: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      count: z.number().int().nonnegative(),
+      itemIds: z.array(z.string()),
+      sources: z.array(z.string()),
+      blocs: z.partialRecord(Bloc, z.number().int().nonnegative()),
+      perspective: z.enum(['cross', 'single', 'mixed']),
+      topics: z.array(z.string()),
+      breaking: z.number().int().nonnegative(),
+      latest: IsoTime.nullable(),
+      lead: z.object({ id: z.string(), title: z.string(), source: z.string(), link: z.url(), publishedAt: IsoTime }).nullable(),
+    }),
+  ),
+  seismic: z
+    .object({
+      count: z.number().int().nonnegative(),
+      significant: z.number().int().nonnegative(),
+      minMagnitude: z.number(),
+      strongest: z.object({ magnitude: z.number(), place: z.string().nullable(), observedAt: IsoTime.nullable(), url: z.url().nullable(), tsunami: z.boolean().optional() }).nullable(),
+    })
+    .nullable(),
+  coverage: z.object({
+    reports: z.number().int().nonnegative(),
+    channels: z.number().int().nonnegative(),
+    blocs: z.partialRecord(Bloc, z.number().int().nonnegative()),
+    newest: IsoTime.nullable(),
+    oldest: IsoTime.nullable(),
+    breaking: z.number().int().nonnegative(),
+    corroborated: z.number().int().nonnegative(),
+  }),
+  facts: z.array(z.string()),
+  highlights: z.array(z.string()),
+  method: z.string(),
+});
+
 export const AiOverviewResponse = z.object({
   generatedBy: AiGeneratedBy,
   model: z.string().nullable(),
@@ -190,6 +230,8 @@ export const AiOverviewResponse = z.object({
   text: z.string(),
   citations: z.array(AiCitation),
   timestamp: IsoTime,
+  /** Present for alert-scoped answers: the heuristic digest the answer was built from. */
+  brief: AiAlertBrief.optional(),
 });
 
 /** GET /api/crypto */
