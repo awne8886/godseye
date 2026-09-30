@@ -38,7 +38,7 @@ export const TOOLS = [
   { id: 'alerts', label: 'ALERTS', tooltip: 'Live Alerts — earthquakes, conflicts, breaking news', icon: 'Radio', accentToken: '--alert-red', owner: 'panels-alerts-markets-dossier-graph' },
   { id: 'draw', label: 'DRAW', tooltip: 'Draw — measure areas of interest on the map', icon: 'PenLine', accentToken: '--cyan-primary', owner: 'panels-recon' },
   { id: 'route', label: 'ROUTE', tooltip: 'Directions — turn-by-turn routing', icon: 'Navigation', accentToken: '--gold-primary', mobileTab: true, owner: 'panels-recon' },
-  { id: 'paths', label: 'PATHS', tooltip: 'Flight Paths — planned routes between airports', icon: 'Route', accentToken: '--gold-primary', mobileTab: true, owner: 'feature-flight-paths' },
+  { id: 'paths', label: 'FLIGHT PATHS', tooltip: 'Flight Paths — planned routes between airports', icon: 'Route', accentToken: '--gold-primary', mobileTab: true, owner: 'feature-flight-paths' },
   { id: 'search', label: 'SEARCH', tooltip: 'Search — find locations, cities, coordinates', icon: 'Search', accentToken: '--gold-primary', mobileTab: true, owner: 'panels-recon' },
   { id: 'arcgis', label: 'ARCGIS', tooltip: 'ArcGIS — search & import geospatial intel layers', icon: 'Database', accentToken: '--gold-primary', separatorBefore: true, owner: 'panels-recon' },
   { id: 'remote', label: 'REMOTE', tooltip: 'World Remote — control nearby Bluetooth devices', icon: 'Bluetooth', accentToken: '--cyan-primary', separatorBefore: true, featureDetect: 'bluetooth', owner: 'panels-recon' },

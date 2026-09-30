@@ -7,7 +7,7 @@ import { gotoMap, readCamera, waitForMapIdle } from '../map-engine/helpers';
  * only asserted when present. Screenshots are taken in both projections (clocks masked).
  */
 const status = (page: Page) => page.getByTestId('flight-paths-status');
-const panel = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { name: 'PATHS' }) });
+const panel = (page: Page) => page.locator('section').filter({ has: page.getByRole('heading', { name: 'FLIGHT PATHS' }) });
 
 test('GET /api/route/plan?from=EGLL&to=KJFK matches the §8 shape', async ({ request }) => {
   const res = await request.get('/api/route/plan?from=EGLL&to=KJFK', { timeout: 60_000 });
