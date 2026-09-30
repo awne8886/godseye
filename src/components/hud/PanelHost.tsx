@@ -123,9 +123,9 @@ function MobileSheet({ id }: { id: PanelId | null }) {
           style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
         >
           <div className="glass-3 flex min-h-0 flex-1 flex-col rounded-b-none">
-            <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-[var(--gold-dim)]" aria-hidden />
+            <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--gold-dim)]" aria-hidden />
             {siblings.length > 1 && (
-              <div role="tablist" aria-label="Sheet sections" className="flex gap-1 overflow-x-auto px-3 pt-2">
+              <div role="tablist" aria-label="Sheet sections" className="flex shrink-0 gap-1 overflow-x-auto px-3 pt-2">
                 {siblings.map((p) => (
                   <button
                     key={p}

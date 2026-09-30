@@ -177,7 +177,7 @@ export default function ViewControls() {
       )}
       <div className="hud-micro pointer-events-none fixed bottom-8 left-72 z-[var(--z-hud)] hidden items-end gap-4 text-[var(--text-secondary)] md:flex">
         {bar && (
-          <span className="flex flex-col items-start gap-0.5" aria-label={`Scale ${bar.label}`}>
+          <span className="flex flex-col items-start gap-0.5">
             <span>{bar.label}</span>
             <span aria-hidden className="block h-1.5 border-x border-b border-[var(--text-secondary)]" style={{ width: `${Math.round(bar.widthPx)}px` }} />
           </span>
