@@ -14,7 +14,7 @@ import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { Earthquake, EarthquakesResponse } from '@/lib/types';
 import { magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken } from '../shared';
 import { nearestPoint, useHitTester } from './hit-test';
-import { selectEntity } from './pick';
+import { entitySelection } from './pick';
 import { useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
 
@@ -73,7 +73,7 @@ export default function EarthquakeLayer() {
   useDeckLayers('hazards:earthquakes', layers, Z);
   useHitTester('earthquakes', (map, e) => {
     const hit = items && nearestPoint(map, e, items, (q) => [q.lng, q.lat], (q) => quakeRadiusPx(q.magnitude));
-    return hit ? { layer: 'earthquakes', distancePx: hit.distancePx, open: () => selectEntity('earthquake', 'earthquakes', hit.item, hit.item as unknown as Record<string, unknown>) } : null;
+    return hit ? { layer: 'earthquakes', distancePx: hit.distancePx, selection: entitySelection('earthquake', 'earthquakes', hit.item, hit.item as unknown as Record<string, unknown>) } : null;
   });
   return null;
 }

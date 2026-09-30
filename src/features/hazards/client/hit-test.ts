@@ -1,25 +1,31 @@
 'use client';
 /**
- * Click routing for the hazards layers. One MapLibre `click` listener asks every mounted hazards
- * sub-layer for a hit at the clicked point (screen-space distance via map.project for points,
- * H3 cell lookup for gpsjam, rendered-feature queries for native polygons) and opens the hit
- * whose layer has the highest registry pickPriority (choosePick). Independent of deck's event
- * plumbing, so it behaves the same on the globe and in mercator. Owner: layers-hazards.
+ * CPU hit-testing for the hazards layers. Every mounted hazards sub-layer registers a tester
+ * (screen-space distance via map.project for points, H3 cell lookup for gpsjam, rendered-feature
+ * queries for native polygons); one module-level hit-tester registered with the map's click router
+ * (src/lib/map/picking.ts) returns their hits as pick candidates. The map host arbitrates across
+ * every module (registry pickPriority, then distance) and opens exactly one card per click.
+ * Independent of deck's event plumbing, so it behaves the same on the globe and in mercator.
+ * Owner: layers-hazards.
  */
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { isFacing } from '@/lib/geo';
-import { choosePick, type LayerId } from '@/lib/layer-registry';
-import { useMapInstanceStore } from '@/lib/layer-host';
+import type { LayerId } from '@/lib/layer-registry';
+import type { Selection } from '@/lib/layer-host';
+import { registerHitTester, type HitTestMap, type PickCandidate } from '@/lib/map/picking';
 
 export interface Hit {
   layer: LayerId;
   /** Screen distance in px (0 for area hits); the nearest hit wins within a layer. */
   distancePx: number;
-  open: () => void;
+  selection: Selection;
 }
 
-export type HitTester = (map: MapLibreMap, e: MapMouseEvent) => Hit | null;
+/** The pointer: screen point and its geographic position. */
+export type HitEvent = Pick<MapMouseEvent, 'point' | 'lngLat'>;
+
+export type HitTester = (map: MapLibreMap, e: HitEvent) => Hit | null;
 
 const TESTERS = new Map<string, HitTester>();
 
@@ -40,7 +46,7 @@ export function useHitTester(key: string, tester: HitTester): void {
 /** Nearest point within `tolerancePx` of the click, skipping points on the far side of the globe. */
 export function nearestPoint<T>(
   map: MapLibreMap,
-  e: MapMouseEvent,
+  e: HitEvent,
   items: readonly T[],
   pos: (t: T) => [number, number],
   radiusPx: (t: T) => number,
@@ -69,31 +75,22 @@ export function nearestPoint<T>(
   return best;
 }
 
-/** Install the single click router for the hazards module (mounted by HazardsLayer). */
-export function useHazardsClickRouter(): void {
-  // Clicks only need the loaded map (set on `load`), not the first `idle` that gates adding sources.
-  const map = useMapInstanceStore((s) => s.map);
-  useEffect(() => {
-    if (!map) return;
-    const onClick = (e: MapMouseEvent) => {
-      const hits: Hit[] = [];
-      for (const t of TESTERS.values()) {
-        try {
-          const h = t(map, e);
-          if (h) hits.push(h);
-        } catch {
-          // A layer mid-update is simply not hit this time.
-        }
-      }
-      if (!hits.length) return;
-      const top = choosePick(hits);
-      if (!top) return;
-      const sameLayer = hits.filter((h) => h.layer === top.layer).sort((a, b) => a.distancePx - b.distancePx);
-      sameLayer[0]!.open();
-    };
-    map.on('click', onClick);
-    return () => {
-      map.off('click', onClick);
-    };
-  }, [map]);
+/** Every mounted hazards tester's hit at `point`, as pick candidates (a tester mid-update misses). */
+export function hazardsCandidates(map: MapLibreMap, point: { x: number; y: number }): PickCandidate[] {
+  const e = { point, lngLat: map.unproject([point.x, point.y]) } as HitEvent;
+  const out: PickCandidate[] = [];
+  for (const t of TESTERS.values()) {
+    try {
+      const h = t(map, e);
+      if (h) out.push({ layer: h.layer, selection: h.selection, distancePx: h.distancePx });
+    } catch {
+      // A layer mid-update is simply not hit this time.
+    }
+  }
+  return out;
+}
+
+/** Register the hazards module with the map's single click/hover router (mounted by HazardsLayer). */
+export function useHazardsHitTesting(): void {
+  useEffect(() => registerHitTester('hazards', (point, map: HitTestMap) => hazardsCandidates(map as unknown as MapLibreMap, point)), []);
 }

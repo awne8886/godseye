@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { LayersList, PickingInfo } from '@deck.gl/core';
 import type { LayerComponentProps } from '@/lib/feature-module';
-import { useDeckLayers, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
+import { type Selection, useDeckLayers, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import { readCssColor } from '@/lib/tokens';
 import type { LayerId } from '@/lib/layer-registry';
@@ -84,7 +84,6 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
   const projection = useMapInstanceStore((s) => s.projection);
   const theme = useUiStore((s) => s.theme);
   const selection = useSelectionStore((s) => s.selection);
-  const select = useSelectionStore((s) => s.select);
   const updateStatus = useLayerStatusStore((s) => s.update);
   const setFrame = useSpaceStore((s) => s.setFrame);
   const reduced = useReducedMotion();
@@ -203,15 +202,17 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
         billboard: true,
         stroked: false,
         pickable: true,
-        onClick: (info: PickingInfo) => {
+        // Read by the map's single click/hover router (src/lib/map/picking.ts), which arbitrates
+        // with every other module (aircraft and cameras outrank satellites) and opens one card.
+        toSelection: (info: PickingInfo): Selection | null => {
           const f = frame;
-          if (info.index < 0 || info.index >= f.count) return false;
+          if (info.index < 0 || info.index >= f.count) return null;
           const rec = recordAt(f.index[info.index]!);
-          if (!rec) return false;
+          if (!rec) return null;
           const lng = f.positions[info.index * 3]!;
           const lat = f.positions[info.index * 3 + 1]!;
           const layer: LayerId = active.has('satellites') ? 'satellites' : ((Object.entries(LAYER_CATEGORY).find(([, c]) => c === rec.category)?.[0] as LayerId | undefined) ?? 'satellites');
-          select({
+          return {
             kind: 'satellite',
             id: String(rec.noradId),
             layer,
@@ -219,8 +220,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
             observedAt: rec.epoch,
             data: selectionDataFor(rec, f.at),
             lngLat: [lng, lat],
-          });
-          return true;
+          };
         },
         updateTriggers: { getPosition: frame.at, getFillColor: frame.at, getRadius: frame.at },
       }),
@@ -246,7 +246,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
       );
     }
     return out;
-  }, [frame, orbit.data, selData, active, select]);
+  }, [frame, orbit.data, selData, active]);
 
   useDeckLayers('space', layers, DECK_Z);
   return null;

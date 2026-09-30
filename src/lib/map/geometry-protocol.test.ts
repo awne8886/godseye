@@ -79,6 +79,32 @@ describe('geometry client', () => {
     expect((await client.terminator(AT)).features).toHaveLength(4);
   });
 
+  it('fetches night-lights tiles through the worker, transfers the bytes and forwards aborts', async () => {
+    const sent: GeometryRequest[] = [];
+    const port: GeometryPort = {
+      onmessage: null,
+      onerror: null,
+      terminate: vi.fn(),
+      postMessage(m) {
+        sent.push(m);
+        if (m.type === 'nightTile' && m.url.includes('/1/0/0')) queueMicrotask(() => port.onmessage?.({ data: { id: m.id, type: 'nightTile', data: new Uint8Array([7]).buffer } } as MessageEvent<GeometryResponse>));
+        if (m.type === 'nightTile' && m.url.includes('/1/1/1')) queueMicrotask(() => port.onmessage?.({ data: { id: m.id, type: 'error', message: 'HTTP 503' } } as MessageEvent<GeometryResponse>));
+      },
+    };
+    const client = createGeometryClient(() => port);
+    expect(client.hasWorker()).toBe(true);
+    expect(new Uint8Array(await client.nightTile('godseye-night://1/0/0?t=0', new AbortController().signal))).toEqual(new Uint8Array([7]));
+    await expect(client.nightTile('godseye-night://1/1/1?t=0', new AbortController().signal)).rejects.toThrow('HTTP 503');
+    const ac = new AbortController();
+    const pending = client.nightTile('godseye-night://1/0/1?t=0', ac.signal);
+    ac.abort(new Error('panned away'));
+    await expect(pending).rejects.toThrow('panned away');
+    const req = sent.find((m) => m.type === 'nightTile' && m.url.includes('/1/0/1'))!;
+    expect(sent.at(-1)).toMatchObject({ type: 'abort', target: req.id });
+    await expect(createGeometryClient(() => null).nightTile('x', new AbortController().signal)).rejects.toThrow(/unavailable/);
+    expect(handleGeometryRequest({ id: 9, type: 'nightTile', url: 'x' })).toMatchObject({ type: 'error' });
+  });
+
   it('recomputes in-thread when the worker dies mid-request', async () => {
     const port: GeometryPort = { onmessage: null, onerror: null, terminate: vi.fn(), postMessage: () => queueMicrotask(() => port.onerror?.(new Error('crash'))) };
     const client = createGeometryClient(() => port);

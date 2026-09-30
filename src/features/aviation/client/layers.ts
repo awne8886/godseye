@@ -10,6 +10,7 @@ import { latLngToCell } from 'h3-js';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
 import { isFacing, splitAtAntimeridian, type LngLatTuple } from '@/lib/geo';
 import { readCssColor, type MapToken, type Rgba } from '@/lib/tokens';
+import type { Selection } from '@/lib/layer-host';
 import type { FlightRecord } from '../adsb';
 import type { Bucket } from '../classify';
 import { deadReckon } from '../codec';
@@ -100,7 +101,8 @@ export interface BuildOptions {
   selectedId: string | null;
   /** H3 cells when the aggregate replaces icons. */
   cells: H3Cell[] | null;
-  onSelect: (r: FlightRecord, lngLat: [number, number]) => void;
+  /** Selection for a picked aircraft (the map's click router opens it; see select.ts). */
+  toSelection: (r: FlightRecord, lngLat: [number, number]) => Selection;
 }
 
 export function buildLayers(o: BuildOptions): LayersList | null {
@@ -165,11 +167,9 @@ export function buildLayers(o: BuildOptions): LayersList | null {
           alphaCutoff: 0.2,
           pickable: true,
           parameters: { depthCompare: 'always' },
-          onClick: (info: PickingInfo) => {
-            if (info.index < 0) return false;
-            o.onSelect(rec(info.index), at(info.index, [0, 0]));
-            return true;
-          },
+          // Read by the map's click/hover router (src/lib/map/picking.ts); no own onClick handler,
+          // so a GPU pick and the CPU hit-test of the same aircraft still open one card.
+          toSelection: (info: PickingInfo) => (info.index < 0 ? null : o.toSelection(rec(info.index), at(info.index, [0, 0]))),
           updateTriggers: {
             getPosition: [o.tick],
             getAngle: [o.tick, bearing],

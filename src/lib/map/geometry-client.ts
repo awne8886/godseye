@@ -71,6 +71,29 @@ export function createGeometryClient(spawn: () => GeometryPort | null) {
       if (r.type === 'greatCircle') return r.points;
       throw new Error(r.type === 'error' ? r.message : 'unexpected geometry response');
     },
+    /** One night-lights tile, computed in the worker (rejects when the worker is unavailable or the tile fails). */
+    nightTile(url: string, signal: AbortSignal): Promise<ArrayBuffer> {
+      const w = start();
+      if (!w) return Promise.reject(new Error('geometry worker unavailable'));
+      if (signal.aborted) return Promise.reject(signal.reason);
+      const id = ++seq;
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        const onAbort = () => {
+          pending.delete(id);
+          w.postMessage({ id: ++seq, type: 'abort', target: id });
+          reject(signal.reason);
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        pending.set(id, (r) => {
+          signal.removeEventListener('abort', onAbort);
+          if (r.type === 'nightTile') resolve(r.data);
+          else reject(new Error(r.type === 'error' ? r.message : 'unexpected geometry response'));
+        });
+        w.postMessage({ id, type: 'nightTile', url });
+      });
+    },
+    /** True when a worker is running (or can be started). */
+    hasWorker: () => !!start(),
     dispose() {
       port?.terminate?.();
       port = undefined;

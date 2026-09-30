@@ -9,7 +9,7 @@ import { useMapInstanceStore } from '@/lib/layer-host';
 import { readCssColor } from '@/lib/tokens';
 import type { SentinelResponse, SentinelScene } from '@/lib/types';
 import { useHitTester } from './hit-test';
-import { selectEntity } from './pick';
+import { entitySelection } from './pick';
 import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
 
@@ -60,7 +60,7 @@ export default function SentinelLayer() {
     const ring = s.footprint.type === 'Polygon' ? s.footprint.coordinates[0] : s.footprint.coordinates[0]?.[0];
     const lng = ring?.length ? ring.reduce((a, p) => a + (p[0] ?? 0), 0) / ring.length : 0;
     const lat = ring?.length ? ring.reduce((a, p) => a + (p[1] ?? 0), 0) / ring.length : 0;
-    return { layer: 'sentinel', distancePx: 0, open: () => selectEntity('sentinel_scene', 'sentinel', { id: s.id, lat, lng, source: 'cdse_stac', observedAt: s.datetime }, s as unknown as Record<string, unknown>) };
+    return { layer: 'sentinel', distancePx: 0, selection: entitySelection('sentinel_scene', 'sentinel', { id: s.id, lat, lng, source: 'cdse_stac', observedAt: s.datetime }, s as unknown as Record<string, unknown>) };
   });
   return null;
 }

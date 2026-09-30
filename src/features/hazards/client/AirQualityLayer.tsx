@@ -13,7 +13,7 @@ import { readCssColor } from '@/lib/tokens';
 import type { AirQuality, AirQualityResponse } from '@/lib/types';
 import { aqiCategory } from '../shared';
 import { nearestPoint, useHitTester } from './hit-test';
-import { selectEntity } from './pick';
+import { entitySelection } from './pick';
 import { useHazardData } from './useHazardData';
 
 const Z = LAYERS.find((l) => l.id === 'air_quality')!.z;
@@ -70,7 +70,7 @@ export default function AirQualityLayer() {
   useDeckLayers('hazards:air_quality', layers, Z);
   useHitTester('air_quality', (m, e) => {
     const hit = items && nearestPoint(m, e, items, (a) => [a.lng, a.lat], () => 6);
-    return hit ? { layer: 'air_quality', distancePx: hit.distancePx, open: () => selectEntity('air_quality', 'air_quality', hit.item, hit.item as unknown as Record<string, unknown>) } : null;
+    return hit ? { layer: 'air_quality', distancePx: hit.distancePx, selection: entitySelection('air_quality', 'air_quality', hit.item, hit.item as unknown as Record<string, unknown>) } : null;
   });
   return null;
 }

@@ -14,6 +14,7 @@
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Map, type MapLayerMouseEvent, type MapRef, type ViewStateChangeEvent } from 'react-map-gl/maplibre';
 import { normalizeLng } from '@/lib/geo';
@@ -22,49 +23,60 @@ import { publishCursor, publishView } from '@/lib/map/cursor';
 import { cameraFromMap, isFacing, setFarSideCamera } from '@/lib/map/far-side';
 import { createDoubleRightClick, createLongPress } from '@/lib/map/gestures';
 import { BLACK_MARBLE_LABEL, ESRI_LABEL, gibsTrueColorLabel } from '@/lib/map/imagery';
+import { geometryClient } from '@/lib/map/geometry-client';
 import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
-import {
-  candidatesFromDeck,
-  candidatesFromNative,
-  getPickOverlay,
-  nativePickLayerIds,
-  routePick,
-  type DeckPickInfo,
-  type NativeFeature,
-} from '@/lib/map/picking';
+import { collectCandidates, routePick, type PickMap } from '@/lib/map/picking';
+import { onceStyleLoaded, styleParsed } from '@/lib/map/ready';
+import { useStyleVersion } from '@/lib/map/style-version';
+import { useAfterIdle, useSticky } from '@/lib/map/defer';
 import { installMissingImageResolver } from '@/lib/map/style-images';
-import { BASEMAP_STYLE_URL, IMAGERY_BEFORE_ID, firstLabelLayerId, transformStyle } from '@/lib/map/style-transform';
+import { BASEMAP_ATTRIBUTION, BASEMAP_STYLE_URL, IMAGERY_BEFORE_ID, firstLabelLayerId, paintDiff, themedBasemap, transformStyle } from '@/lib/map/style-transform';
 import { attachTerrain, TERRAIN_MAX_PITCH, TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
 import { CONTEXT_ATTRIBUTE_LADDER, effectiveProjection, GLOBE_SKY, initialCamera, normalizeCamera, projectionPitchEase } from '@/lib/map/view';
 import { useUiStore } from '@/lib/store';
 import BuildingsLayer from './BuildingsLayer';
-import DeckOverlay from './DeckOverlay';
-import FeatureLayers from './FeatureLayers';
 import ImageryChips, { type ImageryChip } from './ImageryChips';
 import ImageryLayers, { useGibsDate } from './ImageryLayers';
 import TerminatorLayer from './TerminatorLayer';
 import WebGLFallback from './WebGLFallback';
 
+// deck.gl/luma and every feature module are split out of the map chunk and only load once the
+// basemap has loaded and the browser is idle (§11 TBT budget); the globe paints first.
+const DeckOverlay = dynamic(() => import('./DeckOverlay'), { ssr: false });
+const FeatureLayers = dynamic(() => import('./FeatureLayers'), { ssr: false });
+
 maplibregl.setWorkerUrl(`/maplibre/${maplibregl.getVersion()}/maplibre-gl-worker.mjs`);
-installNightProtocol(maplibregl.addProtocol as Parameters<typeof installNightProtocol>[0]);
+// Night-lights tiles are fetched, clipped and encoded in the geometry worker when it can start.
+installNightProtocol(
+  maplibregl.addProtocol as Parameters<typeof installNightProtocol>[0],
+  geometryClient().hasWorker() ? (url, signal) => geometryClient().nightTile(url, signal) : undefined,
+);
 
 /** A lost WebGL context that is not restored within this window is rebuilt on the next ladder rung. */
 const CONTEXT_RESTORE_MS = 4000;
 const DEFAULT_MAX_PITCH = 85;
 
+/**
+ * API presence only. Creating a throw-away WebGL2 context to probe costs a synchronous GPU
+ * round-trip (seconds under SwiftShader, the Lighthouse/CI renderer); a browser that has the API
+ * but cannot give MapLibre a context is caught by the constructor and the context ladder below.
+ */
 function hasWebGL2(): boolean {
-  try {
-    return !!document.createElement('canvas').getContext('webgl2');
-  } catch {
-    return false;
-  }
+  return typeof window !== 'undefined' && typeof window.WebGL2RenderingContext === 'function';
 }
+
+const cssVar = (name: string) => (typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name));
 
 async function loadBasemap(signal: AbortSignal): Promise<StyleSpecification> {
   const res = await fetch(BASEMAP_STYLE_URL, { signal, credentials: 'omit' });
   if (!res.ok) throw new Error(`basemap style HTTP ${res.status}`);
-  return transformStyle((await res.json()) as StyleSpecification);
+  const raw = (await res.json()) as StyleSpecification;
+  rawBasemap = raw;
+  return transformStyle(raw, themedBasemap(cssVar));
 }
+
+/** The upstream style as fetched, for recolouring in place on theme changes. */
+let rawBasemap: StyleSpecification | null = null;
 
 const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -194,6 +206,8 @@ export default function MapView() {
     // Host features that only need the parsed style (terrain, gestures, flyTo) do not wait for every
     // tile: `style.load` fires first; `load` covers a style that finished before we subscribed.
     const styleReady = () => setLoaded(true);
+    // `style.load` may already have fired before React handed us the map.
+    if (styleParsed(map)) styleReady();
     map.once('style.load', styleReady);
     map.once('load', styleReady);
   }, []);
@@ -203,11 +217,29 @@ export default function MapView() {
     if (!map) return;
     setMap(map);
     setLoaded(true);
-    map.once('idle', () => {
+    // Not the first `idle`: a permanently failing tile or a 1 Hz animated layer can postpone it forever.
+    onceStyleLoaded(map, () => {
       setReady(true);
       map.getContainer().dataset.mapReady = 'true';
     });
   }, [setMap, setReady]);
+
+  // Style Studio / Ghost Protocol: recolour the basemap in place from the live CSS tokens.
+  const styleVersion = useStyleVersion();
+  const shownStyle = useRef<StyleSpecification | null>(null);
+  useEffect(() => {
+    if (style && !shownStyle.current) shownStyle.current = style;
+  }, [style]);
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    const prev = shownStyle.current;
+    if (!styleVersion || !map || !prev || !rawBasemap || !styleParsed(map)) return;
+    const next = transformStyle(rawBasemap, themedBasemap(cssVar));
+    for (const { id, prop, value } of paintDiff(prev, next)) {
+      if (map.getLayer(id)) (map.setPaintProperty as (l: string, p: string, v: unknown) => void).call(map, id, prop, value);
+    }
+    shownStyle.current = next;
+  }, [styleVersion]);
 
   // Constructor rejected the context, or it never came back: next rung of the ladder, then give up.
   const attemptRef = useRef(attempt);
@@ -263,21 +295,10 @@ export default function MapView() {
     [setCamera],
   );
 
-  // ── Picking ──────────────────────────────────────────────────────────────────
-  /** Everything selectable under (x, y); `hover` asks deck for the top object only (cheap). */
+  // ── Picking: the one click router (deck + native + CPU hit-testers, far-side filtered) ──────
   const pickAt = useCallback((map: maplibregl.Map, x: number, y: number, hover = false) => {
-    let deck: DeckPickInfo[] = [];
-    const overlay = useDeckLayerStore.getState().version > 0 ? getPickOverlay() : null;
-    try {
-      if (overlay) deck = hover ? [overlay.pickObject({ x, y, radius: 4 })].filter((i): i is DeckPickInfo => !!i) : overlay.pickMultipleObjects({ x, y, radius: 4, depth: 10 });
-    } catch {
-      deck = []; // deck not initialised yet (first frames, context restore)
-    }
-    const ids = nativePickLayerIds().filter((id) => map.getLayer(id));
-    const native = ids.length ? (map.queryRenderedFeatures([x, y], { layers: ids }) as unknown as NativeFeature[]) : [];
     const far = useMapInstanceStore.getState().projection === 'globe' ? cameraFromMap(map) : null;
-    // Billboards behind the globe still pick (§3): drop candidates beyond the horizon.
-    return [...candidatesFromDeck(deck), ...candidatesFromNative(native)].filter((c) => !c.selection.lngLat || isFacing(c.selection.lngLat, far));
+    return collectCandidates(map as unknown as PickMap, { x, y }, { hover, facing: far ? (p) => isFacing(p, far) : undefined });
   }, []);
 
   const onClick = useCallback(
@@ -359,6 +380,13 @@ export default function MapView() {
     [setMap],
   );
 
+  // Feature modules (and their first fetches) and the deck overlay start after the basemap has
+  // loaded and the main thread is idle, so the first paint never waits for them.
+  const ready = useMapInstanceStore((s) => s.ready);
+  const deferred = useAfterIdle(ready, 1500);
+  // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
+  const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
+
   const chips = useMemo(() => {
     const out: ImageryChip[] = [];
     if (dayNight && nightLightsSupported()) out.push({ id: 'night', text: BLACK_MARBLE_LABEL });
@@ -385,7 +413,7 @@ export default function MapView() {
         maxZoom={18}
         maxPitch={terrainOn ? TERRAIN_MAX_PITCH : DEFAULT_MAX_PITCH}
         canvasContextAttributes={CONTEXT_ATTRIBUTE_LADDER[attempt]}
-        attributionControl={{ compact: false }}
+        attributionControl={{ compact: false, customAttribution: BASEMAP_ATTRIBUTION }}
         dragRotate
         onLoad={onLoad}
         onMove={onMove}
@@ -403,8 +431,8 @@ export default function MapView() {
         <ImageryLayers beforeId={imageryAnchor} satellite={satellite} trueColor={trueColor} gibsDate={gibsDate} />
         <BuildingsLayer beforeId={labelAnchor} visible={buildings} />
         <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
-        <DeckOverlay beforeId={labelAnchor} />
-        <FeatureLayers />
+        {deferred && hasDeckLayers && <DeckOverlay beforeId={labelAnchor} />}
+        {deferred && <FeatureLayers />}
         <ImageryChips chips={chips} />
       </Map>
       {contextLost && (

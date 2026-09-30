@@ -58,6 +58,57 @@ export const HORUS_BASEMAP: BasemapPalette = {
   placeDot: '#d4af37',
 };
 
+const RGB_LIST = /^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/;
+const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/**
+ * The basemap palette for the live theme: accent-derived classes (boundaries, road casings, the
+ * place dot, water labels, label text and halo) follow the CSS tokens Style Studio writes
+ * (`--gold-rgb`, `--gold-primary`, `--cyan-rgb`, `--text-secondary`, `--bg-void`); land, water and
+ * buildings keep the neutral HORUS darks. Malformed or missing values fall back to `base`, so
+ * HORUS yields exactly HORUS_BASEMAP.
+ */
+export function themedBasemap(read: (name: string) => string, base: BasemapPalette = HORUS_BASEMAP): BasemapPalette {
+  const rgb = (name: string) => {
+    const m = RGB_LIST.exec(read(name) ?? '');
+    return m && m.slice(1).every((v) => Number(v) <= 255) ? `${Number(m[1])},${Number(m[2])},${Number(m[3])}` : null;
+  };
+  const hex = (name: string) => {
+    const v = (read(name) ?? '').trim().toLowerCase();
+    return HEX.test(v) ? v : null;
+  };
+  const gold = rgb('--gold-rgb');
+  const cyan = rgb('--cyan-rgb');
+  return {
+    ...base,
+    roadCasing: gold ? `rgba(${gold},0.10)` : base.roadCasing,
+    motorwayLowZoom: gold ? `rgba(${gold},0.30)` : base.motorwayLowZoom,
+    boundaryCountry: gold ? `rgba(${gold},0.45)` : base.boundaryCountry,
+    boundaryState: gold ? `rgba(${gold},0.14)` : base.boundaryState,
+    labelWater: cyan ? `rgba(${cyan},0.45)` : base.labelWater,
+    placeDot: hex('--gold-primary') ?? base.placeDot,
+    labelPlace: hex('--text-secondary') ?? base.labelPlace,
+    halo: hex('--bg-void') ?? base.halo,
+  };
+}
+
+/**
+ * Paint properties that differ between two transformed styles (same layer ids), for recolouring
+ * a live map in place with setPaintProperty instead of setStyle.
+ */
+export function paintDiff(prev: StyleSpecification, next: StyleSpecification): { id: string; prop: string; value: unknown }[] {
+  const before = new Map(prev.layers.map((l) => [l.id, (l as { paint?: Paint }).paint ?? {}]));
+  const out: { id: string; prop: string; value: unknown }[] = [];
+  for (const l of next.layers) {
+    const old = before.get(l.id);
+    if (!old) continue;
+    for (const [prop, value] of Object.entries((l as { paint?: Paint }).paint ?? {})) {
+      if (JSON.stringify(old[prop]) !== JSON.stringify(value)) out.push({ id: l.id, prop, value });
+    }
+  }
+  return out;
+}
+
 /** Style layer id before which basemap imagery (Esri, GIBS) is inserted: boundaries + labels stay on top. */
 export const IMAGERY_BEFORE_ID = 'boundary_state';
 

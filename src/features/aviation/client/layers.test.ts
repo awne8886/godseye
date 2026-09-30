@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FlightRecord } from '../adsb';
 import { advanceFrame, aggregateH3, buildLayers, newFrame } from './layers';
+import { aircraftSelection } from './select';
 
 const rec = (id: string, lng: number, lat: number, p: Partial<FlightRecord> = {}): FlightRecord => ({
   id, callsign: null, registration: null, typeCode: null, bucket: 'commercial', isHelicopter: false, onGround: false, lat, lng,
@@ -35,9 +36,9 @@ describe('aviation frame', () => {
     const layers = buildLayers({
       frame: f, view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 1, dataVersion: 1, colorMode: 'altitude', theme: 'HORUS',
       watched: ['aaaaa1'], tracks: new Map([['aaaaa1', [{ t: '2026-09-30T18:00:00Z', lat: 50, lng: -1, altFt: 1000, onGround: false, gsKt: 200, trackDeg: 90 }]]]),
-      selectedId: null, cells: [{ hex: '831f1dfffffffff', count: 3 }], onSelect: () => undefined,
+      selectedId: null, cells: [{ hex: '831f1dfffffffff', count: 3 }], toSelection: aircraftSelection,
     }) as { id: string }[];
     expect(layers.map((l) => l.id)).toEqual(['aviation-trails', 'aviation-h3', 'aviation-emergency', 'aviation-highlight']);
-    expect(buildLayers({ frame: newFrame([]), view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 0, dataVersion: 0, colorMode: 'bucket', theme: 'HORUS', watched: [], tracks: new Map(), selectedId: null, cells: null, onSelect: () => undefined })).toBeNull();
+    expect(buildLayers({ frame: newFrame([]), view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 0, dataVersion: 0, colorMode: 'bucket', theme: 'HORUS', watched: [], tracks: new Map(), selectedId: null, cells: null, toSelection: aircraftSelection })).toBeNull();
   });
 });

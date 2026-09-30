@@ -11,6 +11,7 @@ import { geometryClient } from '@/lib/map/geometry-client';
 import { TERMINATOR_REFRESH_MS, type TerminatorBands } from '@/lib/map/geometry-protocol';
 import { BLACK_MARBLE_ATTRIBUTION, BLACK_MARBLE_MAX_ZOOM } from '@/lib/map/imagery';
 import { NIGHT_LAYER_ID, NIGHT_REFRESH_MS, NIGHT_SOURCE_ID, nightBucket, nightLightsSupported, nightTileTemplate } from '@/lib/map/night-lights';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { TWILIGHT_OPACITY } from '@/lib/map/view';
 import { useUiStore } from '@/lib/store';
 import { readCssColor } from '@/lib/tokens';
@@ -31,6 +32,7 @@ export default function TerminatorLayer({ beforeId, visible }: { beforeId?: stri
   const minute = useTicker(TERMINATOR_REFRESH_MS);
   const theme = useUiStore((s) => s.theme);
   const ghost = useUiStore((s) => s.ghost);
+  const styleVersion = useStyleVersion();
 
   useEffect(() => {
     if (!visible) return;
@@ -47,8 +49,8 @@ export default function TerminatorLayer({ beforeId, visible }: { beforeId?: stri
   const night = useMemo(() => {
     const [r, g, b] = readCssColor('--map-night');
     return `rgb(${r},${g},${b})`;
-    // Re-read the token when the theme or Ghost Protocol changes (paint updates in place).
-  }, [theme, ghost]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Re-read the token on theme, Ghost Protocol or Style Studio changes (paint updates in place).
+  }, [theme, ghost, styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const bucket = nightBucket(useTicker(NIGHT_REFRESH_MS));
   const tiles = useMemo(() => [nightTileTemplate(bucket)], [bucket]);

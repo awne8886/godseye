@@ -37,6 +37,8 @@ export async function gotoMap(page: Page, opts: { camera?: CameraArg; params?: R
   await page.goto(qs ? `/?${qs}` : '/');
   // The style is fetched from OpenFreeMap with retry/backoff (4, 8, 16, 32 s…): allow for a slow first try.
   await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 90_000 });
+  // The HUD splash covers the map (and swallows pointer events) until it lifts (≤ 7 s cap).
+  await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 30_000 });
 }
 
 /**
