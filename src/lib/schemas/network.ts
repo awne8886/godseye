@@ -106,6 +106,8 @@ export const KevResponse = Envelope.extend({
   catalogVersion: z.string().nullable(),
   /** CVEs enriched from NVD so far (NVD allows 5 requests / 30 s keyless). */
   enriched: z.number().int().nonnegative().optional(),
+  /** Full catalogue size (`items` may be the `?limit=` newest additions only). */
+  total: z.number().int().nonnegative().optional(),
 });
 
 export const Outage = EntityBase.extend({

@@ -385,6 +385,16 @@ Bundled files (prepared 2026-09-30, each carries `_meta` with source, licence an
 `public/data/{zones,zones-countries,cables,ports,chokepoints,nuclear-curated}.json` and
 `src/features/threats/shared/country-centroids.json`.
 
+Re-probe 2026-09-30 22:49 UTC (Phase 3 round-1 fixes; honest UA, `Origin: https://example.org`):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| CISA KEV JSON | 200 · 0.77 s · 1.76 MB | none | `catalogVersion 2026.09.30`, `dateReleased 2026-09-30T16:59:23.0688Z`. `dateAdded` is a calendar date only → Intel Feed events say "(date only)". `/api/cyber-threats?limit=20` serves the newest additions (`total` = full count). |
+| URLhaus `csv_recent/` | 200 · 0.45 s · 2.95 MB | none | Unchanged format. Every added host now reaches clients (detections in chunks of 200) followed by `status {retired, total}`. |
+| Feodo `ipblocklist.json` | 200 · 0.44 s · 1.8 kB | none | Unchanged (frozen list, STALE). |
+| IODA `v2/outages/events?from&until&limit=5` | 200 · 8.9 s · 1.8 kB | reflects Origin | Slow this time (8.9 s); within the feed timeout. |
+| TeleGeography `cable-geo.json` / `landing-point-geo.json` | 200 · 0.49 s · 751 kB / 200 · 0.54 s · 361 kB | none | Unchanged; bundled copy still current. |
+
 ## map-engine — probe log
 
 All map sources are fetched **by the browser, straight from the tile host** (hosts in

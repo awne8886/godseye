@@ -1,11 +1,15 @@
 /**
  * Entry point for the network feature modules. Owner: layers-threats-network.
  * One module renders malware hosts (SSE), botnet C2 and ThreatFox indicators, internet outages,
- * attack origins and submarine cables, and supplies their entity cards.
+ * attack origins and submarine cables, and supplies their entity cards. Layer and cards load
+ * lazily (next/dynamic) so only this metadata is in the initial bundle.
  */
-import { defineModule, type FeatureModule } from '@/lib/feature-module';
-import { AttackOriginCard, C2Card, CableCard, LandingPointCard, MalwareCard, OutageCard, ThreatIndicatorCard } from '../threats/client/cards';
-import NetworkLayer from './client/NetworkLayer';
+import dynamic from 'next/dynamic';
+import type { ComponentType } from 'react';
+import { defineModule, type FeatureModule, type LayerComponentProps } from '@/lib/feature-module';
+import { lazyCard } from '../threats/client/lazy';
+
+const NetworkLayer = dynamic(() => import('./client/NetworkLayer'), { ssr: false }) as ComponentType<LayerComponentProps>;
 
 const modules: FeatureModule[] = [
   defineModule({
@@ -13,13 +17,13 @@ const modules: FeatureModule[] = [
     layers: ['sdk_sea', 'malware', 'cyber_attacks', 'threatfox', 'cf_outages', 'cf_attacks'],
     Layer: NetworkLayer,
     cards: {
-      malware_host: MalwareCard,
-      c2_server: C2Card,
-      threat_indicator: ThreatIndicatorCard,
-      outage: OutageCard,
-      attack_origin: AttackOriginCard,
-      cable: CableCard,
-      landing_point: LandingPointCard,
+      malware_host: lazyCard('MalwareCard'),
+      c2_server: lazyCard('C2Card'),
+      threat_indicator: lazyCard('ThreatIndicatorCard'),
+      outage: lazyCard('OutageCard'),
+      attack_origin: lazyCard('AttackOriginCard'),
+      cable: lazyCard('CableCard'),
+      landing_point: lazyCard('LandingPointCard'),
     },
   }),
 ];
