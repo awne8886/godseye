@@ -131,6 +131,6 @@ for (const s of summary) {
     console.log(`${s.path.padEnd(20)} no successful run`);
     continue;
   }
-  console.log(`${s.path.padEnd(20)} ${String(m.perf).padEnd(5)} ${String(m.a11y).padEnd(5)} ${String(Math.round(m.lcp)).padStart(7)} ${String(Math.round(m.tbt)).padStart(7)} ${m.cls.toFixed(3).padStart(6)} ${String(Math.round(m.fcp)).padStart(8)}  ${s.passes ? 'yes' : 'NO'}`);
+  console.log(`${s.path.padEnd(20)} ${String(m.perf).padEnd(5)} ${String(m.a11y).padEnd(5)} ${String(Math.round(m.lcp)).padStart(7)} ${String(Math.round(m.tbt)).padStart(7)} ${m.cls.toFixed(3).padStart(6)} ${String(Math.round(m.fcp)).padStart(8)}  ${PRESET !== 'desktop' ? 'info (not gated)' : s.passes ? 'yes' : 'NO'}`);
 }
 process.exit(fail ? 1 : 0);
