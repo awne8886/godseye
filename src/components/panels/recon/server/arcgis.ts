@@ -1,0 +1,134 @@
+/**
+ * ArcGIS catalogue search (www.arcgis.com, fixed host) and import of ANY public
+ * …/rest/services/…/(Feature|Map)Server layer as GeoJSON. The user's URL is never proxied as is:
+ * it is parsed, checked against the service-URL shape, and REBUILT to exactly
+ * `<origin>/…/rest/services/<svc>/(Feature|Map)Server/<n>/query?…&f=geojson`, then fetched with
+ * safeFetch() (SSRF guard on every hop, ports 80/443/8080/8443, no credentials). Features are
+ * capped (FEATURE_CAP) and the response says when it was truncated. Owner: panels-recon. Server-only.
+ */
+import 'server-only';
+import { HttpError, httpJson } from '@/lib/http';
+import { providerBucket } from '@/lib/ratelimit';
+import { safeFetch } from '@/lib/ssrf';
+import type { ArcgisResponse, ProviderStatus } from '@/lib/types';
+import { probe } from './lookup';
+
+export const FEATURE_CAP = 1000;
+/** Stay under the 4 MB response cap (§4) with room for the envelope. */
+export const ARCGIS_MAX_BYTES = 3_500_000;
+
+const SERVICE_RE = /^(\/(?:[^/?#]+\/)*rest\/services\/(?:[^/?#]+\/)*?[^/?#]+\/(FeatureServer|MapServer))(?:\/(\d{1,4}))?(?:\/(?:query)?)?\/?$/i;
+
+export interface ServiceRef {
+  origin: string;
+  servicePath: string;
+  kind: 'FeatureServer' | 'MapServer';
+  layer: number;
+}
+
+/** Parse a user-supplied service URL. Throws HttpError('blocked') with a reason. */
+export function parseServiceUrl(raw: string): ServiceRef {
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    throw new HttpError('Not a valid URL', 'blocked', raw);
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new HttpError('Only http(s) service URLs are allowed', 'blocked', raw);
+  if (u.username || u.password) throw new HttpError('Credentials in URLs are not allowed', 'blocked', raw);
+  if (/%2f|%5c|%2e/i.test(u.pathname) || u.pathname.split('/').some((s) => s === '..' || s === '.')) throw new HttpError('Encoded or relative path segments are not allowed', 'blocked', raw);
+  const m = u.pathname.match(SERVICE_RE);
+  if (!m) throw new HttpError('Expected …/rest/services/<name>/FeatureServer[/n] or …/MapServer[/n]', 'blocked', raw);
+  const kind = m[2]!.toLowerCase() === 'featureserver' ? 'FeatureServer' : 'MapServer';
+  return { origin: u.origin, servicePath: m[1]!.replace(/(FeatureServer|MapServer)$/i, kind), kind, layer: m[3] ? Number(m[3]) : 0 };
+}
+
+export type Bbox = [number, number, number, number];
+
+export function queryUrl(ref: ServiceRef, bbox?: Bbox | null): URL {
+  const u = new URL(`${ref.origin}${ref.servicePath}/${ref.layer}/query`);
+  u.searchParams.set('where', '1=1');
+  u.searchParams.set('outFields', '*');
+  u.searchParams.set('returnGeometry', 'true');
+  u.searchParams.set('outSR', '4326');
+  u.searchParams.set('resultRecordCount', String(FEATURE_CAP));
+  u.searchParams.set('f', 'geojson');
+  if (bbox) {
+    u.searchParams.set('geometry', bbox.join(','));
+    u.searchParams.set('geometryType', 'esriGeometryEnvelope');
+    u.searchParams.set('inSR', '4326');
+    u.searchParams.set('spatialRel', 'esriSpatialRelIntersects');
+  }
+  return u;
+}
+
+type Primitive = string | number | boolean | null;
+const GEOMETRY_TYPES = new Set(['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon']);
+
+/** Keep valid features with primitive properties only; cap the count. */
+export function sanitizeFeatures(body: unknown): { fc: GeoJSON.FeatureCollection; truncated: boolean } {
+  const b = body as { type?: string; features?: unknown[]; exceededTransferLimit?: boolean; properties?: { exceededTransferLimit?: boolean }; error?: { message?: string } };
+  if (b?.error) throw new HttpError(`ArcGIS error: ${String(b.error.message ?? 'unknown').slice(0, 200)}`, 'http', '');
+  if (b?.type !== 'FeatureCollection' || !Array.isArray(b.features)) throw new HttpError('The service did not return GeoJSON (f=geojson unsupported?)', 'parse', '');
+  const features: GeoJSON.Feature[] = [];
+  for (const raw of b.features) {
+    const f = raw as { geometry?: { type?: string; coordinates?: unknown }; properties?: Record<string, unknown> | null; id?: unknown };
+    if (!f?.geometry?.type || !GEOMETRY_TYPES.has(f.geometry.type) || !Array.isArray(f.geometry.coordinates)) continue;
+    const props: Record<string, Primitive> = {};
+    for (const [k, v] of Object.entries(f.properties ?? {}).slice(0, 60)) {
+      if (v === null || typeof v === 'number' || typeof v === 'boolean') props[k] = v;
+      else if (typeof v === 'string') props[k] = v.slice(0, 500);
+    }
+    features.push({ type: 'Feature', geometry: f.geometry as GeoJSON.Geometry, properties: props, ...(typeof f.id === 'number' || typeof f.id === 'string' ? { id: f.id } : {}) });
+    if (features.length >= FEATURE_CAP) break;
+  }
+  const truncated = features.length >= FEATURE_CAP || b.exceededTransferLimit === true || b.properties?.exceededTransferLimit === true;
+  return { fc: { type: 'FeatureCollection', features }, truncated };
+}
+
+export async function importLayer(ref: ServiceRef, bbox?: Bbox | null): Promise<{ fc: GeoJSON.FeatureCollection | null; truncated: boolean; status: ProviderStatus }> {
+  const url = queryUrl(ref, bbox);
+  const p = await probe(`arcgis:layer:${url.toString()}`, 10 * 60_000, async () => {
+    const res = await safeFetch(url, { maxBytes: ARCGIS_MAX_BYTES, headers: { accept: 'application/geo+json, application/json' } });
+    if (!res.ok) throw new HttpError(`HTTP ${res.status}`, 'http', url.origin, res.status);
+    let body: unknown;
+    try {
+      body = JSON.parse(res.body.toString('utf8'));
+    } catch {
+      throw new HttpError('Invalid JSON from the service', 'parse', url.origin);
+    }
+    return sanitizeFeatures(body);
+  }, { count: (r) => r.fc.features.length, allowEmpty: true });
+  return { fc: p.value?.fc ?? null, truncated: p.value?.truncated ?? false, status: p.status };
+}
+
+interface ArcgisItem {
+  id: string;
+  title?: string;
+  owner?: string;
+  url?: string | null;
+  snippet?: string | null;
+  type?: string;
+  extent?: [[number, number], [number, number]] | [];
+}
+
+const inRange = (e: number[]) => e.length === 4 && e[0]! >= -180 && e[2]! <= 180 && e[1]! >= -90 && e[3]! <= 90;
+
+export async function searchItems(q: string): Promise<{ items: ArcgisResponse['items']; status: ProviderStatus }> {
+  const p = await probe(`arcgis:search:${q.toLowerCase()}`, 10 * 60_000, async () => {
+    const u = new URL('https://www.arcgis.com/sharing/rest/search');
+    u.searchParams.set('q', `(${q.slice(0, 120)}) AND (type:"Feature Service" OR type:"Map Service") AND access:public`);
+    u.searchParams.set('f', 'json');
+    u.searchParams.set('num', '20');
+    u.searchParams.set('sortField', 'numviews');
+    u.searchParams.set('sortOrder', 'desc');
+    const { data } = await httpJson<{ results?: ArcgisItem[]; error?: { message?: string } }>(u, { timeoutMs: 10_000, retries: 1, limiter: providerBucket('www.arcgis.com', 2, 2) });
+    if (!data || data.error || !Array.isArray(data.results)) throw new HttpError('ArcGIS search failed', 'http', u.origin);
+    return data.results.flatMap((r) => {
+      if (!r.url || !/^https?:\/\//.test(r.url)) return [];
+      const e = r.extent?.length === 2 ? [r.extent[0]![0], r.extent[0]![1], r.extent[1]![0], r.extent[1]![1]] : [];
+      return [{ id: r.id, title: r.title ?? r.id, owner: r.owner ?? null, url: r.url, snippet: r.snippet ?? null, extent: inRange(e) ? (e as Bbox) : null }];
+    });
+  }, { count: (l) => l.length, allowEmpty: true });
+  return { items: p.value ?? [], status: p.status };
+}

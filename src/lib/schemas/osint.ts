@@ -34,6 +34,8 @@ export const Place = z.object({
 /** /api/geo, /api/geo/reverse, /api/geosearch */
 export const GeoResponse = z.object({
   results: z.array(Place),
+  /** /api/geo/reverse: the 0.1° grid cell the answer (and its cache entry) belongs to. */
+  cell: z.string().optional(),
   attribution: z.string(),
   providers: Providers,
   timestamp: IsoTime,
@@ -68,6 +70,8 @@ export const ArcgisResponse = z.object({
   items: z.array(z.object({ id: z.string(), title: z.string(), owner: z.string().nullable(), url: z.url(), snippet: z.string().nullable(), extent: z.tuple([Lng, Lat, Lng, Lat]).nullable() })),
   features: z.custom<GeoJSON.FeatureCollection>().nullable(),
   truncated: z.boolean(),
+  /** Layer import: the rebuilt service layer URL that was queried. */
+  source: z.url().optional(),
   providers: Providers,
   timestamp: IsoTime,
 });
