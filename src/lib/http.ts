@@ -358,6 +358,90 @@ export async function httpText(url: string | URL, opts: HttpOptions = {}): Promi
   return { ...res, text: res.body.toString('utf8').replace(/^﻿/, '') };
 }
 
+export interface StreamResult {
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  url: string;
+  /** Response body chunks as they arrive (identity-encoded). Iterate once. */
+  body: AsyncIterable<Uint8Array>;
+}
+
+/**
+ * Streaming request for incremental upstream bodies (model token streams, SSE). Same honesty and
+ * safety rules as httpRequest — identifying User-Agent, no forged headers, `validateUrl` and the
+ * guarded `lookup` — but no redirects and no retries (a stream cannot be replayed). `timeoutMs`
+ * bounds the wait for headers and every gap between chunks; `maxBytes` caps the whole body; the
+ * caller's `signal` or `deadlineMs` aborts it. Non-2xx answers throw with the upstream status.
+ */
+export async function httpStream(input: string | URL, opts: HttpOptions = {}): Promise<StreamResult> {
+  const url = new URL(input);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new HttpError(`Unsupported protocol ${url.protocol}`, 'blocked', url.toString());
+  let headers: Record<string, string>;
+  try {
+    headers = buildHeaders(opts);
+  } catch (e) {
+    throw e instanceof HttpError ? new HttpError(e.message, e.code, url.toString()) : e;
+  }
+  headers['accept-encoding'] = 'identity'; // chunks must be readable as they arrive
+  const deadline = opts.deadlineMs ? AbortSignal.timeout(opts.deadlineMs) : undefined;
+  const signal = deadline && opts.signal ? AbortSignal.any([deadline, opts.signal]) : (deadline ?? opts.signal);
+  await raceSignal(opts.validateUrl?.(url), signal, url.toString());
+  await raceSignal(opts.limiter?.take(), signal, url.toString());
+  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+  const mod = url.protocol === 'https:' ? https : http;
+
+  return new Promise<StreamResult>((resolve, reject) => {
+    if (signal?.aborted) return reject(new HttpError('Aborted', 'aborted', url.toString()));
+    const req = mod.request(url, { method: opts.method ?? 'GET', headers, family: opts.family, lookup: opts.lookup, agent: false });
+    const timer = setTimeout(() => req.destroy(new HttpError(`Timed out after ${timeoutMs} ms`, 'timeout', url.toString())), timeoutMs);
+    const onAbort = () => req.destroy(new HttpError(deadline?.aborted ? `Deadline of ${opts.deadlineMs} ms exceeded` : 'Aborted', deadline?.aborted ? 'timeout' : 'aborted', url.toString()));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    req.on('error', (e: NodeJS.ErrnoException) => {
+      cleanup();
+      reject(e instanceof HttpError ? e : new HttpError(e.message, e.code === 'EBLOCKED' ? 'blocked' : 'network', url.toString()));
+    });
+    req.on('response', (res) => {
+      const status = res.statusCode ?? 0;
+      if (status < 200 || status >= 300) {
+        cleanup();
+        res.resume();
+        req.destroy();
+        reject(new HttpError(`HTTP ${status}`, status >= 300 && status < 400 ? 'redirect' : 'http', url.toString(), status, parseRetryAfter(res.headers['retry-after'])));
+        return;
+      }
+      clearTimeout(timer);
+      let received = 0;
+      async function* chunks(): AsyncGenerator<Uint8Array> {
+        try {
+          const it = res[Symbol.asyncIterator]();
+          for (;;) {
+            let idle: ReturnType<typeof setTimeout> | undefined;
+            const gap = new Promise<never>((_, rej) => {
+              idle = setTimeout(() => rej(new HttpError(`No data for ${timeoutMs} ms`, 'timeout', url.toString())), timeoutMs);
+            });
+            const next = (await Promise.race([it.next(), gap]).finally(() => clearTimeout(idle))) as IteratorResult<Buffer>;
+            if (next.done) return;
+            received += next.value.length;
+            if (received > maxBytes) throw new HttpError(`Response exceeds ${maxBytes} bytes`, 'too_large', url.toString(), status);
+            yield new Uint8Array(next.value);
+          }
+        } finally {
+          cleanup();
+          req.destroy();
+        }
+      }
+      resolve({ status, headers: res.headers, url: url.toString(), body: chunks() });
+    });
+    if (opts.body !== undefined) req.write(opts.body);
+    req.end();
+  });
+}
+
 /** Short machine reason for provider status (`timeout`, `http_503`, …). */
 export function errorReason(e: unknown): string {
   if (e instanceof HttpError) return e.code === 'http' && e.status ? `http_${e.status}` : e.code;
