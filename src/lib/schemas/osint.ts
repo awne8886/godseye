@@ -67,7 +67,7 @@ export const DirectionsResponse = z.object({
 
 export const ArcgisResponse = z.object({
   mode: z.enum(['search', 'layer']),
-  items: z.array(z.object({ id: z.string(), title: z.string(), owner: z.string().nullable(), url: z.url(), snippet: z.string().nullable(), extent: z.tuple([Lng, Lat, Lng, Lat]).nullable() })),
+  items: z.array(z.object({ id: z.string(), title: z.string(), owner: z.string().nullable(), url: z.url(), snippet: z.string().nullable(), extent: z.tuple([Lng, Lat, Lng, Lat]).nullable(), /** On this server's ArcGIS host allow-list (import will be attempted). */ importable: z.boolean().optional() })),
   features: z.custom<GeoJSON.FeatureCollection>().nullable(),
   truncated: z.boolean(),
   /** Layer import: the rebuilt service layer URL that was queried. */

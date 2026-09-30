@@ -24,7 +24,18 @@ Fixtures recorded from these probes live in `src/components/panels/recon/__fixtu
 | `router.project-osrm.org/route/v1/driving` | `/api/directions` fallback | 200 | 0.55 s | `*` | keyless demo server (fair use) | `providerBucket('osrm', 1/s)` | No instruction text and no toll/highway/ferry flags: phrased from maneuver type/modifier; flags reported false with an explicit "not reported by OSRM" UI note. `OSRM_URL` for self-hosting |
 | `routing.openstreetmap.de/routed-foot`, `/routed-bike` | `/api/directions` walk/bike fallback | 200 | 0.7 s | `*` | keyless FOSSGIS | same bucket | Same OSRM v5 API |
 | `www.arcgis.com/sharing/rest/search` | `/api/arcgis?q=` | 200 | 0.32 s | reflects Origin | keyless public catalogue | 2/s, 10 min cache | Query restricted to `type:"Feature Service" OR type:"Map Service"` and `access:public` |
-| any public `…/rest/services/…/(Feature|Map)Server/n/query?f=geojson` | `/api/arcgis?url=` | 200 (USGS_Seismic_Data_v1 0.46 s; sampleserver6 USA MapServer 0.57 s) | — | varies | service owner's terms | `safeFetch` (public IPs, ports 80/443/8080/8443, no credentials, every redirect hop re-validated), URL rebuilt, 3.5 MB cap, 1000 features (`resultRecordCount` + `exceededTransferLimit` → `truncated`) | Never a raw proxy: only the rebuilt `/query` URL is fetched; properties reduced to primitives |
+| allow-listed `…/rest/services/…/(Feature\|Map)Server/n/query?f=geojson` on `*.arcgis.com` (any path; hosted services are `/<orgId>/arcgis/rest/services/…`), `*.arcgisonline.com` (`/arcgis/rest/services/` only) and exact hosts in `ARCGIS_ALLOWED_HOSTS` | `/api/arcgis?url=` | 200 (services9.arcgis.com USGS_Seismic_Data_v1 0.39 s; sampleserver6.arcgisonline.com Earthquakes_Since1970 FeatureServer 0.25 s; services.arcgisonline.com World_Imagery MapServer `?f=json` 0.35 s) — re-probed 2026-09-30 | — | `*` (services9, services.arcgisonline) / reflects Origin (sampleserver6) | service owner's terms | `allowListedFetch(url, arcgisRules())`: host allow-list + SSRF guard on every hop, URL rebuilt, 3.5 MB cap, 1000 features (`resultRecordCount` + `exceededTransferLimit` → `truncated`). Off-list host → 403 `host_not_allowed` before any DNS/network; redirect off-list → 400 `blocked_target` (SEC-M3) | Never a raw proxy: only the rebuilt `/query` URL is fetched; properties reduced to primitives. Catalogue results carry `importable` (the arcgis.com "earthquakes" search returned 19 results on services{,1,2,4,9}.arcgis.com and 1 on `mapsdep.nj.gov`, which is shown as "Host not allowed" unless the operator lists it) |
+
+#### Routing snap check (R4-M1), probed 2026-09-30
+
+| Request | Status | Latency | CORS | Result |
+|---|---|---|---|---|
+| OSRM `route/v1/driving/13.38,52.52;-74,40.7` (Berlin → New York) | 200 `code: Ok` | 0.97 s (full), 0.50 s (simplified) | `*` | `waypoints[0].distance` 4.8 m, `waypoints[1].distance` **5,534,234 m** (snapped to Cabo da Roca, `[-9.497727, 38.78069]`), route 2,827 km. Now answered 422 `no_route` |
+| OSRM `route/v1/driving/13.38,52.52;2.35,48.86` (Berlin → Paris) | 200 `code: Ok` | 0.41 s | `*` | waypoints 4.8 m / 39.2 m, route 1,050 km — passes the gate |
+| Valhalla `/route` auto Berlin → New York | **400** `error_code 154` "Path distance exceeds the max distance limit: 1500000 meters" | 0.40 s | `*` | provider reported `http_400` |
+| Valhalla `/route` auto Berlin → Paris | 200 | 1.42 s | `*` | 1,112 km; `trip.locations` echoes the requested points (no snapped position), so the gate measures the shape's first/last vertex |
+
+Gate (`snapGap`, `SNAP_LIMIT_M = 5000`): start/destination vs the route's first/last vertex, via points vs the nearest vertex, and OSRM `waypoints[].distance` when present (the larger wins). OSRM `NoRoute` is also 422 `no_route`; both engines failing stays 503 SOURCE OFFLINE.
 
 ### OSINT (passive, infrastructure only)
 

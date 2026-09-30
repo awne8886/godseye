@@ -1,13 +1,14 @@
 /**
  * GET /api/arcgis?q= — search public Feature/Map Services on arcgis.com.
  * GET /api/arcgis?url=…/rest/services/…/(Feature|Map)Server[/n][&bbox=w,s,e,n] — import one layer
- * as GeoJSON (URL rebuilt, SSRF-guarded on every hop, FEATURE_CAP features). Owner: panels-recon.
+ * as GeoJSON from an allow-listed ArcGIS host (*.arcgis.com, *.arcgisonline.com, ARCGIS_ALLOWED_HOSTS);
+ * URL rebuilt, allow-list + SSRF guard on every hop, FEATURE_CAP features. Owner: panels-recon.
  */
 import { z } from 'zod';
 import { HttpError } from '@/lib/http';
 import { apiError, json, parseQuery, withRoute } from '@/lib/respond';
 import { assertPublicUrl } from '@/lib/ssrf';
-import { importLayer, parseServiceUrl, searchItems, type Bbox } from '@/components/panels/recon/server/arcgis';
+import { importLayer, isAllowedService, parseServiceUrl, searchItems, type Bbox } from '@/components/panels/recon/server/arcgis';
 import { offline } from '@/components/panels/recon/server/lookup';
 
 export const dynamic = 'force-dynamic';
@@ -43,13 +44,16 @@ export const GET = withRoute('/api/arcgis', async (req: Request) => {
   let ref;
   try {
     ref = parseServiceUrl(q.data.url!);
+    if (!isAllowedService(ref)) {
+      return apiError(403, 'host_not_allowed', `${new URL(ref.origin).host} is not an ArcGIS host this server imports from (*.arcgis.com, *.arcgisonline.com, or hosts the operator adds in ARCGIS_ALLOWED_HOSTS).`);
+    }
     await assertPublicUrl(new URL(`${ref.origin}/`));
   } catch (e) {
     if (e instanceof HttpError && e.code === 'blocked') return apiError(400, 'blocked_target', e.message);
     throw e;
   }
   const r = await importLayer(ref, q.data.bbox);
-  if (r.status.error === 'blocked' || r.status.error === 'redirect') return apiError(400, 'blocked_target', 'The service redirected to an address or scheme this server will not fetch.');
+  if (r.status.error === 'blocked' || r.status.error === 'redirect') return apiError(400, 'blocked_target', 'The service redirected to a host, address or scheme this server will not fetch.');
   if (!r.fc) return offline({ service: r.status }, 'The ArcGIS service did not return usable GeoJSON.');
   return json(
     { mode: 'layer', items: [], features: r.fc, truncated: r.truncated, providers: { service: r.status }, timestamp: now(), source: `${ref.origin}${ref.servicePath}/${ref.layer}` },
