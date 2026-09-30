@@ -2,17 +2,19 @@
 /**
  * REGION DOSSIER for `dossierTarget` (double right-click / long-press / `?dossier=lat,lng`): place,
  * country facts (Wikidata), Wikipedia summary, weather at the point, and live layers within 150 km
- * with each layer's own state — an offline layer reads SOURCE OFFLINE, never 0.
+ * with each layer's own state — an offline layer reads OFFLINE, never 0; a cold one LOADING, a
+ * keyed/licensed one NO KEY / LICENCE OFF, a reference layer (ports, cables) REF.
  * Owner: panels-alerts-markets-dossier-graph.
  */
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
-import { formatAge, FRESHNESS_COLOR_TOKEN } from '@/lib/freshness';
+import { formatAge } from '@/lib/freshness';
 import { useUiStore } from '@/lib/store';
 import type { RegionDossierResponse } from '@/lib/types';
 import { AiReadout } from '../intel/AiReadout';
+import { layerValue } from './layer-value';
 import { FeedOfflineError, getJson, safeHref, useNow } from '../intel/client';
 
 const LAYER_LABEL: Record<string, string> = {
@@ -21,10 +23,45 @@ const LAYER_LABEL: Record<string, string> = {
   fires: 'Fires',
   weather: 'Severe weather',
   alerts: 'Live alerts',
+  vessels: 'Vessels (AIS)',
+  ports: 'Ports · straits',
   maritime: 'Vessels',
   cameras: 'Cameras',
+  cables: 'Subsea cables',
   incidents: 'GDACS incidents',
 };
+
+/** Content-shaped placeholder while the dossier compiles (location, facts grid, brief, layers). */
+function DossierSkeleton() {
+  const bar = 'rounded-sm bg-[var(--border-primary)] motion-safe:animate-pulse';
+  return (
+    <div className="flex flex-col gap-3" aria-hidden data-testid="dossier-skeleton">
+      <div className="flex flex-col gap-1.5">
+        <div className={`${bar} h-2.5 w-20`} />
+        <div className={`${bar} h-3.5 w-3/4`} />
+      </div>
+      <div className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5">
+        {Array.from({ length: 7 }, (_, i) => (
+          <div key={i} className="contents">
+            <div className={`${bar} h-2.5`} />
+            <div className={`${bar} h-2.5`} style={{ width: `${40 + ((i * 17) % 45)}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <div className={`${bar} h-2.5 w-28`} />
+        {[100, 96, 92, 60].map((w) => (
+          <div key={w} className={`${bar} h-3`} style={{ width: `${w}%` }} />
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+        {Array.from({ length: 10 }, (_, i) => (
+          <div key={i} className={`${bar} h-2.5`} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
@@ -53,7 +90,8 @@ export function DossierPanel(_: PanelProps) {
       <p className="font-mono text-[11px] uppercase tabular-nums tracking-[0.08em] text-[var(--text-secondary)]">
         {target.lat.toFixed(4)}, {target.lng.toFixed(4)}
       </p>
-      {!d && <p className="font-sans text-[12px] text-[var(--text-secondary)]">{q.isPending ? 'Compiling intel…' : q.error instanceof FeedOfflineError ? 'SOURCE OFFLINE — no dossier upstream answered and no live layer has data.' : 'SOURCE OFFLINE.'}</p>}
+      {!d && q.isPending && <DossierSkeleton />}
+      {!d && !q.isPending && <p className="font-sans text-[12px] text-[var(--text-secondary)]">{q.error instanceof FeedOfflineError ? 'SOURCE OFFLINE — no dossier upstream answered and no live layer has data.' : 'SOURCE OFFLINE.'}</p>}
       {d && (
         <>
           <section className="flex flex-col gap-1">
@@ -99,16 +137,30 @@ export function DossierPanel(_: PanelProps) {
           </section>
           <section className="flex flex-col gap-1">
             <h3 className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-heading)]">Live layers within {d.nearby.radiusKm} km</h3>
-            <ul className="grid grid-cols-2 gap-1" aria-live="polite">
-              {Object.entries(d.nearby.counts).map(([layer, c]) => (
-                <li key={layer} className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-                  <span className="text-[var(--text-secondary)]">{LAYER_LABEL[layer] ?? layer}</span>
-                  <span className="ml-auto tabular-nums" style={{ color: `var(${FRESHNESS_COLOR_TOKEN[c.state]})` }}>
-                    {c.count === null ? 'Source offline' : `${c.count}${c.state === 'live' ? '' : ` · ${c.state}`}`}
-                  </span>
-                </li>
-              ))}
+            <ul className="grid grid-cols-2 gap-x-6 gap-y-1" aria-live="polite" data-testid="dossier-layers">
+              {Object.entries(d.nearby.counts).map(([layer, c]) => {
+                const v = layerValue(c);
+                return (
+                  <li key={layer} className="flex min-w-0 items-baseline justify-between gap-2 font-mono text-[10px] uppercase tracking-[0.16em]" title={c.note}>
+                    <span className="min-w-0 truncate text-[var(--text-secondary)]">{LAYER_LABEL[layer] ?? layer}</span>
+                    <span className="shrink-0 whitespace-nowrap tabular-nums" style={{ color: `var(${v.token})` }}>
+                      {v.text}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
+            {Object.values(d.nearby.counts).some((c) => c.note) && (
+              <ul className="flex flex-col gap-0.5 font-sans text-[12px] text-[var(--text-muted)]">
+                {Object.entries(d.nearby.counts)
+                  .filter(([, c]) => c.note)
+                  .map(([layer, c]) => (
+                    <li key={layer}>
+                      {LAYER_LABEL[layer] ?? layer}: {c.note}
+                    </li>
+                  ))}
+              </ul>
+            )}
             {d.nearby.highlights.length > 0 && (
               <ul className="mt-1 flex flex-col gap-0.5 font-sans text-[12px] text-[var(--text-secondary)]">
                 {d.nearby.highlights.map((h) => (

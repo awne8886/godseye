@@ -1,7 +1,8 @@
 /**
  * Exchange trading sessions (SESSION OPEN/CLOSED) from each exchange's regular hours in its own
- * IANA time zone, so daylight-saving shifts are handled by Intl, not by fixed offsets. Public
- * holidays and half days are NOT modelled (stated in the markets feed note).
+ * IANA time zone, so daylight-saving shifts are handled by Intl, not by fixed offsets. Full-day
+ * closures are modelled only where a calendar was sourced (HOLIDAYS below, 2026); every other
+ * exchange/year reports `holidaysModelled: false` and the panel says so. Half days are not modelled.
  * Owner: panels-alerts-markets-dossier-graph. Isomorphic (pure).
  */
 import type { MarketSession } from '@/lib/types';
@@ -31,24 +32,66 @@ export const EXCHANGES: readonly ExchangeHours[] = [
   { exchange: 'ASX', name: 'Australian Securities Exchange', tz: 'Australia/Sydney', ranges: [[hm(10), hm(16)]] },
 ];
 
+/**
+ * Full-day closures in each exchange's local calendar. Sources (retrieved 2026-09-30):
+ * NYSE/Nasdaq — nyse.com/markets/hours-calendars (2026 column); LSE — gov.uk/bank-holidays.json
+ * (England and Wales; LSE closes on these); SSE — Shanghai Futures Exchange circular 2025-12-17
+ * "Trading Schedule during National Holidays for Year 2026" (the mainland exchanges share the State
+ * Council calendar); HKEX — HKEX 2026 holiday schedule (securities market full-day closures).
+ */
+const US_2026 = ['2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25', '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25'];
+export const HOLIDAYS: Readonly<Record<string, { years: readonly number[]; dates: ReadonlySet<string> }>> = {
+  NYSE: { years: [2026], dates: new Set(US_2026) },
+  NASDAQ: { years: [2026], dates: new Set(US_2026) },
+  LSE: { years: [2026], dates: new Set(['2026-01-01', '2026-04-03', '2026-04-06', '2026-05-04', '2026-05-25', '2026-08-31', '2026-12-25', '2026-12-28']) },
+  SSE: {
+    years: [2026],
+    dates: new Set([
+      ...range('2026-01-01', 3),
+      ...range('2026-02-15', 9),
+      ...range('2026-04-04', 3),
+      ...range('2026-05-01', 5),
+      ...range('2026-06-19', 3),
+      ...range('2026-09-25', 3),
+      ...range('2026-10-01', 7),
+    ]),
+  },
+  HKEX: {
+    years: [2026],
+    dates: new Set(['2026-01-01', '2026-02-17', '2026-02-18', '2026-02-19', '2026-04-03', '2026-04-06', '2026-04-07', '2026-05-01', '2026-05-25', '2026-06-19', '2026-07-01', '2026-10-01', '2026-10-19', '2026-12-25']),
+  },
+};
+
+function range(start: string, days: number): string[] {
+  const t = Date.parse(`${start}T00:00:00Z`);
+  return Array.from({ length: days }, (_, i) => new Date(t + i * 86_400_000).toISOString().slice(0, 10));
+}
+
+/** True when a sourced holiday calendar covers this exchange for the local year at `ms`. */
+export function holidaysModelled(ex: ExchangeHours, ms: number): boolean {
+  const h = HOLIDAYS[ex.exchange];
+  return !!h && h.years.includes(Number(localClock(ms, ex.tz).date.slice(0, 4)));
+}
+
 const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
 const WEEKDAY: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
 
-/** Local weekday (0 = Sunday) and minute-of-day at `ms` in time zone `tz`. */
-export function localClock(ms: number, tz: string): { weekday: number; minute: number } {
+/** Local weekday (0 = Sunday), minute-of-day and date (YYYY-MM-DD) at `ms` in time zone `tz`. */
+export function localClock(ms: number, tz: string): { weekday: number; minute: number; date: string } {
   let f = FORMATTERS.get(tz);
   if (!f) {
-    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
     FORMATTERS.set(tz, f);
   }
   const parts = f.formatToParts(new Date(ms));
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return { weekday: WEEKDAY[get('weekday')] ?? 0, minute: Number(get('hour')) * 60 + Number(get('minute')) };
+  return { weekday: WEEKDAY[get('weekday')] ?? 0, minute: Number(get('hour')) * 60 + Number(get('minute')), date: `${get('year')}-${get('month')}-${get('day')}` };
 }
 
 export function isOpen(ex: ExchangeHours, ms: number): boolean {
-  const { weekday, minute } = localClock(ms, ex.tz);
+  const { weekday, minute, date } = localClock(ms, ex.tz);
   if (weekday === 0 || weekday === 6) return false;
+  if (HOLIDAYS[ex.exchange]?.dates.has(date)) return false;
   return ex.ranges.some(([a, b]) => minute >= a && minute < b);
 }
 
@@ -61,7 +104,7 @@ const QUARTER = 15 * 60_000;
 export function nextChange(ex: ExchangeHours, ms: number): number | null {
   const open = isOpen(ex, ms);
   let t = Math.floor(ms / QUARTER) * QUARTER + QUARTER;
-  for (let i = 0; i < 4 * 24 * 8; i++, t += QUARTER) {
+  for (let i = 0; i < 4 * 24 * 16; i++, t += QUARTER) {
     if (isOpen(ex, t) !== open) return t;
   }
   return null;
@@ -70,6 +113,6 @@ export function nextChange(ex: ExchangeHours, ms: number): number | null {
 export function sessionsAt(ms: number): MarketSession[] {
   return EXCHANGES.map((ex) => {
     const next = nextChange(ex, ms);
-    return { exchange: ex.exchange, name: ex.name, tz: ex.tz, open: isOpen(ex, ms), nextChangeAt: next === null ? null : new Date(next).toISOString() };
+    return { exchange: ex.exchange, name: ex.name, tz: ex.tz, open: isOpen(ex, ms), nextChangeAt: next === null ? null : new Date(next).toISOString(), holidaysModelled: holidaysModelled(ex, ms) };
   });
 }

@@ -3,9 +3,9 @@ import { AlertItem } from '@/lib/schemas/intel';
 import { parseFeed } from '@/lib/rss';
 import { FX, fixtureJson, fixtureText } from '../__fixtures__';
 import { alertKind, classify, riskScore } from './classify';
-import { buildAlertBrief, buildThreads } from './digest';
+import { buildAlertBrief, buildThreads, primaryTheatre } from './digest';
 import { geoparse } from './gazetteer';
-import { WIRE_FEEDS, TELEGRAM_CHANNELS, fromTelegram, fromWire, mergeCrossPosts } from './news';
+import { WIRE_FEEDS, TELEGRAM_CHANNELS, POSTS_PER_CHANNEL, fromTelegram, fromWire, latestChannelPosts, mergeCrossPosts } from './news';
 import { isOpen, nextChange, sessionsAt, EXCHANGES } from './sessions';
 import { fingerprint, parseChannelPage, parseDuration, parseViews } from './telegram';
 import { candlesFromChart, quoteFromChart, SYMBOLS, type YahooChart } from './markets';
@@ -130,6 +130,31 @@ describe('alert digest (dossier 14 algorithm)', () => {
     expect(brief.facts.at(-1)).toContain('M4.0+');
     expect(brief.method).toMatch(/does not verify/);
     expect(buildAlertBrief({}, 0).bottomLine).toBe('No reports in the current feed window.');
+  });
+
+  it('never reuses one report as the lead of two theatres; prefers reports primarily about the theatre (R3-m3)', () => {
+    const news = [
+      mk('h1', 'Hezbollah fighters vow to hold the south as Israel presses; Washington urges calm', 'regional', 'Press TV', 0),
+      mk('h2', 'Israel strikes Nabatieh', 'regional', 'Al Mayadeen', 1),
+      mk('h3', 'Gaza aid convoy stopped', 'regional', 'Quds', 2),
+      mk('u1', 'Pentagon briefs Congress on budget', 'western', 'Reuters', 3),
+    ];
+    news[0] = { ...news[0]!, alsoReportedBy: [{ sourceName: 'Al Jazeera', source: 'aljazeera', bloc: 'regional', link: 'https://www.aljazeera.com/x' }] as never };
+    const threads = buildThreads(news);
+    const leads = threads.map((t) => t.lead?.id).filter(Boolean);
+    expect(new Set(leads).size).toBe(leads.length);
+    expect(threads.find((t) => t.id === 'israel-gaza-lebanon')!.lead!.id).toBe('h1');
+    expect(threads.find((t) => t.id === 'us-policy')!.lead!.id).toBe('u1');
+    expect(primaryTheatre('Washington says Hezbollah must disarm', ['israel-gaza-lebanon', 'us-policy'])).toBe('us-policy');
+  });
+
+  it('keeps the 8 newest posts of a full t.me/s page (R3-m2)', () => {
+    const html = fixtureText(FX.tgOsintFull);
+    expect(parseChannelPage(html, 'Osintdefender').length).toBeGreaterThan(POSTS_PER_CHANNEL);
+    const latest = latestChannelPosts(html, 'Osintdefender');
+    expect(POSTS_PER_CHANNEL).toBe(8);
+    expect(latest).toHaveLength(8);
+    expect(latest.at(-1)!.id).toBe(parseChannelPage(html, 'Osintdefender').at(-1)!.id);
   });
 });
 

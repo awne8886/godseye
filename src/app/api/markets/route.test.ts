@@ -46,7 +46,7 @@ describe('GET /api/markets', () => {
     expect(body.providers.crypto).toMatchObject({ ok: true, count: 3 });
     // The maritime feed is not registered in this process: reported, not hidden.
     expect(body.providers.maritime).toMatchObject({ ok: false });
-    expect(body.meta.note).toMatch(/holidays are not modelled/);
+    expect(body.meta.note).toMatch(/other holidays and half days are not modelled/);
   });
 
   it('answers 503 SOURCE OFFLINE when Yahoo and every crypto provider fail', async () => {
