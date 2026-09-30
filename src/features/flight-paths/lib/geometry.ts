@@ -155,7 +155,7 @@ export function selectDiversions(a: LngLatTuple, b: LngLatTuple, candidates: rea
   }
   return [...best.values()]
     .sort((x, y) => x.along - y.along)
-    .map(({ c, off, along }) => ({ code: c.code, name: c.name, runwayM: c.runwayM!, distanceFromPathKm: round(off, 1), alongPathKm: round(along, 1) }));
+    .map(({ c, off, along }) => ({ code: c.code, name: c.name, runwayM: c.runwayM!, distanceFromPathKm: round(off, 1), alongPathKm: round(along, 1), lat: c.lat, lng: c.lng }));
 }
 
 // ── Live aircraft on a route ─────────────────────────────────────────────────────

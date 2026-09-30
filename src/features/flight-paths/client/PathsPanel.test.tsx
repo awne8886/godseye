@@ -1,0 +1,180 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createElement } from 'react';
+import type * as RateLimitModule from '@/lib/ratelimit';
+import type * as HttpModule from '@/lib/http';
+import { MemoryStore, clearL1, setStore } from '@/lib/cache';
+import { useUiStore } from '@/lib/store';
+import { newMode, upstreamBody } from '../__fixtures__/upstreams';
+import { greatCircle } from '../lib/geometry';
+
+// The panel's fetch() is served in-process by the real route handlers; their upstreams are the
+// recorded fixtures (2026-09-30) through the mocked http layer. No network.
+const mode = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof newMode>, flights: null as unknown }));
+
+vi.mock('@/lib/ratelimit', async (orig) => {
+  const actual = await orig<typeof RateLimitModule>();
+  return { ...actual, providerBucket: () => ({ take: async () => undefined }), rateLimit: async () => null };
+});
+vi.mock('@/lib/http', async (orig) => {
+  const actual = await orig<typeof HttpModule>();
+  return {
+    ...actual,
+    httpJson: vi.fn(async (u: string | URL) => {
+      const url = String(u);
+      const body = upstreamBody(url, mode.current);
+      if (body === undefined) throw new actual.HttpError('HTTP 404', 'http', url, 404);
+      return { data: structuredClone(body), status: 200, ok: true, notModified: false, headers: {}, body: Buffer.alloc(0), url, etag: null, lastModified: null, ms: 1, attempts: 1 };
+    }),
+  };
+});
+vi.mock('@/features/aviation/feeds', () => ({ flightsFeed: { get: async () => mode.flights } }));
+vi.mock('@/components/hud/PanelChrome', () => ({ usePanelChip: () => undefined }));
+
+const plan = (await import('@/app/api/route/plan/route')).GET;
+const live = (await import('@/app/api/route/live/route')).GET;
+const search = (await import('@/app/api/airports/search/route')).GET;
+const flight = (await import('@/app/api/flight/[ident]/route')).GET;
+const { default: PathsPanel } = await import('./PathsPanel');
+
+async function serve(input: string | URL | Request): Promise<Response> {
+  const url = new URL(String(input instanceof Request ? input.url : input), 'http://localhost');
+  const req = new Request(url);
+  if (url.pathname === '/api/route/plan') return plan(req, undefined);
+  if (url.pathname === '/api/route/live') return live(req, undefined);
+  if (url.pathname === '/api/airports/search') return search(req, undefined);
+  if (url.pathname.startsWith('/api/flight/')) return flight(req, { params: Promise.resolve({ ident: url.pathname.split('/').pop()! }) });
+  return new Response('{}', { status: 404 });
+}
+
+function renderPanel() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(createElement(QueryClientProvider, { client }, createElement(PathsPanel, { onClose: vi.fn() })));
+}
+
+const mid = greatCircle([-0.461941, 51.4706], [-73.7781, 40.6413]).points[128]!;
+const nowS = Math.round(Date.now() / 1000);
+const meta = (ok: boolean) => ({
+  feed: 'flights',
+  kind: 'live',
+  state: ok ? 'live' : 'offline',
+  fetchedAt: ok ? new Date().toISOString() : null,
+  observedAt: null,
+  lastGoodAt: ok ? new Date().toISOString() : '2026-09-30T03:12:00Z',
+  stale: !ok,
+  ttlSeconds: 15,
+  attribution: [],
+});
+
+describe('PATHS panel', () => {
+  beforeEach(() => {
+    clearL1();
+    setStore(new MemoryStore());
+    mode.current = newMode();
+    mode.flights = {
+      data: {
+        records: [
+          { id: '4ca1fa', callsign: 'BAW117', registration: 'EI-DDH', typeCode: 'B772', bucket: 'commercial', isHelicopter: false, onGround: false, lat: mid[1], lng: mid[0], altFt: 37000, altGeomFt: null, gsKt: 480, trackDeg: 268, vrFpm: 0, squawk: null, emergency: null, category: null, nacP: null, dbFlags: null, seenAt: nowS - 3, source: 'adsblol_tiles', posSource: 'adsb' },
+        ],
+      },
+      meta: meta(true),
+      providers: { adsblol_tiles: { ok: true, count: 1, ms: 5, age_s: 1 } },
+    };
+    vi.stubGlobal('fetch', vi.fn(serve));
+    useUiStore.setState({ plannedRoute: null, flightIdent: null });
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it('empty state offers sample routes; LHR → JFK plots the honest labels and sections', async () => {
+    await act(async () => {
+      renderPanel();
+    });
+    expect(screen.getByText(/Plot a route between two airports/)).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'LHR → JFK' }));
+    });
+    expect(useUiStore.getState().plannedRoute).toEqual({ from: 'LHR', to: 'JFK' });
+    await waitFor(() => expect(screen.getByText('LHR → JFK')).toBeTruthy(), { timeout: 5000 });
+    expect(screen.getByText('GREAT-CIRCLE ESTIMATE')).toBeTruthy();
+    expect(screen.getByText('FILED · NOT AVAILABLE')).toBeTruthy();
+    expect(screen.getByText('TYPICAL · NOT AVAILABLE')).toBeTruthy();
+    expect(screen.getByText('BAW117')).toBeTruthy();
+    expect(screen.getByText('KNOWN SERVICES')).toBeTruthy();
+    expect(screen.getByText(/HISTORICAL AIRLINES \(2014\)/)).toBeTruthy();
+    expect(screen.getByText(/DIVERSION AIRPORTS/)).toBeTruthy();
+    expect(screen.getAllByText(/METAR EGLL/).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/Daylight:/)).toBeTruthy();
+  });
+
+  it('LIVE tab lists matched aircraft with progress and ETA; offline feed says so', async () => {
+    useUiStore.setState({ plannedRoute: { from: 'LHR', to: 'JFK' } });
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: 'LIVE' }));
+    });
+    await waitFor(() => expect(screen.getByText('MATCHED')).toBeTruthy(), { timeout: 5000 });
+    expect(screen.getByRole('progressbar', { name: /BAW117 progress/ })).toBeTruthy();
+    cleanup();
+    mode.flights = { data: null, meta: meta(false), providers: {} };
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('tab', { name: 'LIVE' }));
+    });
+    await waitFor(() => expect(screen.getByText(/Live feed offline — last snapshot 03:12Z/)).toBeTruthy(), { timeout: 5000 });
+  });
+
+  it('FLIGHT mode tracks BA117 and shows tracker links', async () => {
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'BA117' }));
+    });
+    expect(useUiStore.getState().flightIdent).toBe('BA117');
+    await waitFor(() => expect(screen.getByText('BAW117')).toBeTruthy(), { timeout: 5000 });
+    const fa = screen.getByRole('link', { name: /FlightAware/ });
+    expect(fa.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(fa.getAttribute('href')).toBe('https://www.flightaware.com/live/flight/BAW117');
+  });
+
+  it('unknown airport → friendly message; swap reverses the plotted route', async () => {
+    useUiStore.setState({ plannedRoute: { from: 'ZZZZ', to: 'JFK' } });
+    await act(async () => {
+      renderPanel();
+    });
+    await waitFor(() => expect(screen.getByText(/Unknown airport: ZZZZ — check the code/)).toBeTruthy(), { timeout: 5000 });
+    cleanup();
+    useUiStore.setState({ plannedRoute: { from: 'LHR', to: 'JFK' } });
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Swap origin and destination' }));
+    });
+    expect(useUiStore.getState().plannedRoute).toEqual({ from: 'JFK', to: 'LHR' });
+  });
+
+  it('typing a city shows the metro chips and picking one fills the field', async () => {
+    await act(async () => {
+      renderPanel();
+    });
+    const [fromInput] = screen.getAllByRole('combobox');
+    await act(async () => {
+      fireEvent.change(fromInput!, { target: { value: 'London' } });
+    });
+    await waitFor(() => expect(screen.getByLabelText('London airports')).toBeTruthy(), { timeout: 5000 });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'LGW' }));
+    });
+    expect((fromInput as HTMLInputElement).value).toBe('LGW');
+  });
+});

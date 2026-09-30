@@ -112,6 +112,9 @@ export const DiversionAirport = z.object({
   runwayM: z.number().positive(),
   distanceFromPathKm: z.number().nonnegative(),
   alongPathKm: z.number().nonnegative(),
+  /** Airport position (for the map layer). */
+  lat: Lat.optional(),
+  lng: Lng.optional(),
 });
 
 export const RouteEndpoint = Airport.pick({ ident: true, icao: true, iata: true, name: true, lat: true, lng: true, tz: true, municipality: true, isoCountry: true });
