@@ -25,6 +25,10 @@ export default defineConfig({
     launchOptions: {
       executablePath,
       args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
+      // Sandbox only: route browser tile/font fetches through the egress proxy (never in CI).
+      ...(process.env.E2E_IGNORE_HTTPS_ERRORS === '1' && process.env.HTTPS_PROXY
+        ? { proxy: { server: process.env.HTTPS_PROXY, bypass: '127.0.0.1,localhost' } }
+        : {}),
     },
   },
   projects: [

@@ -70,7 +70,7 @@ Turbopack). Run lint + typecheck + test before every commit.
   inherit the feed state). Per-frame data lives in refs/typed arrays/workers, never in zustand.
 - deck.gl on the globe: `parameters: {cullMode: 'none'}` on Arc/GreatCircle (`greatCircle: true`,
   `numSegments ≥ 64`)/Line/Path/Trips/Text/non-billboard Icon; `antialiasing: true` on arc/path/line;
-  billboard icons + far-side filter (`isFacing()`); no Hexagon/Heatmap/Contour on the globe (H3 or
+  billboard icons + far-side filter (`isFacing()` in `src/lib/map/far-side.ts`); no Hexagon/Heatmap/Contour on the globe (H3 or
   MapLibre heatmap); big circles as geodesic polygons; never pass a view with id `maplibre`;
   projection only `{type:'globe'|'mercator'}`.
 

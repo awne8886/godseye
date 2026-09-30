@@ -9,6 +9,8 @@ const nextConfig: NextConfig = {
   // Docker/self-host is the primary target; Vercel builds its own artefacts.
   output: process.env.VERCEL ? undefined : 'standalone',
   reactStrictMode: true,
+  // `next dev` would otherwise write its own agent rules into CLAUDE.md (lead-owned).
+  agentRules: false,
   poweredByHeader: false,
   // Type errors must fail the build (OSIRIS shipped with this off).
   typescript: { ignoreBuildErrors: false },

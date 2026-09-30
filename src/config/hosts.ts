@@ -34,6 +34,8 @@ export const FRAME_HOSTS = [
 export const IMAGE_HOSTS = [
   'https://i.ytimg.com/vi/',
   'https://upload.wikimedia.org/wikipedia/commons/',
+  'https://image.airport-data.com/aircraft/', // adsbdb aircraft photos (credited on the card)
+  'https://airport-data.com/images/aircraft/',
   'https://datahub.creodias.eu/', // Copernicus Data Space STAC quicklooks
   'https://zipper.creodias.eu/', // …which redirect here
   'https://*.telesco.pe/file/', // public Telegram channel media (t.me/s previews)

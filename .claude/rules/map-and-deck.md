@@ -13,7 +13,8 @@ paths:
 - Globe workarounds: `parameters: {cullMode: 'none'}` on ArcLayer/GreatCircleLayer (`greatCircle: true`,
   `numSegments ≥ 64`), LineLayer, PathLayer, TripsLayer, TextLayer and non-billboard IconLayer;
   `antialiasing: true` on arc/path/line; billboard IconLayers for aircraft/ships/satellites with a
-  far-side filter (`isFacing(center, p)` from `src/lib/geo.ts`); no HexagonLayer/HeatmapLayer/
+  far-side filter (`isFacing(p, getFarSideCamera(), altitudeM?)` from `src/lib/map/far-side.ts`, horizon
+  `acos(R/(R+h))`); no HexagonLayer/HeatmapLayer/
   ContourLayer on the globe (use H3HexagonLayer or MapLibre's native heatmap); large circles as geodesic
   polygons (`geodesicCircle`); `depthCompare: 'always'` on point layers that z-fight.
 - Insert data layers under labels (`beforeId` = first symbol layer; the host defaults it).

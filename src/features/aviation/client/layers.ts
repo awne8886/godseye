@@ -107,9 +107,9 @@ export function buildLayers(o: BuildOptions): LayersList | null {
   const f = o.frame;
   if (!f.records.length) return null;
   const colors = bucketColors();
-  const ramp = { ground: readCssColor('--map-flight-unknown'), low: readCssColor('--map-flight-private'), high: readCssColor('--map-flight-civil') };
-  const emergency = readCssColor('--map-alert-rocket');
-  const watchColor = readCssColor('--map-airport-watch');
+  const ramp = { ground: readCssColor('--map-flight-unknown'), low: readCssColor('--map-alt-low'), high: readCssColor('--map-alt-high') };
+  const emergency = readCssColor('--map-flight-emergency');
+  const watchColor = readCssColor('--map-flight-watch');
   const colorOf = (r: FlightRecord): Rgba => {
     if (o.colorMode === 'altitude') return r.onGround ? ramp.ground : mix(ramp.low, ramp.high, altitudeRamp(r.altFt));
     return colors[r.bucket];

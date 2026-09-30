@@ -10,7 +10,7 @@ import { create } from 'zustand';
 import type { LayersList } from '@deck.gl/core';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import type { LayerId } from './layer-registry';
-import type { EntityKind, FeedEvent, FreshnessState, Providers } from './types';
+import type { EntityKind, FeedEvent, FreshnessState, Providers, Attribution } from './types';
 
 // ── Deck layers published by feature modules ─────────────────────────────────────
 interface DeckEntry {
@@ -95,6 +95,8 @@ export interface LayerStatus {
   providers?: Providers;
   /** Per-sub-category counts (satellite categories). */
   categoryCounts?: Record<string, number>;
+  /** The feed's attribution (meta.attribution), shown in the rail flyout and the sources panel. */
+  attribution?: Attribution[];
 }
 
 const IDLE: LayerStatus = { state: 'idle', count: null, fetchedAt: null, observedAt: null, lastGoodAt: null };
