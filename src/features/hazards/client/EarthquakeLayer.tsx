@@ -1,0 +1,79 @@
+'use client';
+/**
+ * USGS earthquakes: magnitude-scaled deck points plus magnitude rings drawn as geodesic outlines in a
+ * native MapLibre line layer (draped on the globe without z-fighting; never a deck "big circle").
+ * Significant quakes go to the Intel Feed.
+ * Owner: layers-hazards.
+ */
+import { ScatterplotLayer } from '@deck.gl/layers';
+import { useEffect, useMemo } from 'react';
+import { geodesicCircle } from '@/lib/geo';
+import { LAYERS } from '@/lib/layer-registry';
+import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
+import { readCssColor, type Rgba } from '@/lib/tokens';
+import type { Earthquake, EarthquakesResponse } from '@/lib/types';
+import { magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken } from '../shared';
+import { nearestPoint, useHitTester } from './hit-test';
+import { selectEntity } from './pick';
+import { useGeoJsonLayers } from './useGeoJsonLayers';
+import { useHazardData } from './useHazardData';
+
+const Z = LAYERS.find((l) => l.id === 'earthquakes')!.z;
+const count = (b: EarthquakesResponse) => b.items.length;
+
+const rgba = ([r, g, b, a]: Rgba) => `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
+const RING_LAYERS = [{ id: 'hazards-quake-rings', type: 'line' as const, paint: { 'line-color': ['get', 'color'] as unknown as string, 'line-width': 1.25 } }];
+
+export default function EarthquakeLayer() {
+  const data = useHazardData<EarthquakesResponse>('earthquakes', '/api/earthquakes', count);
+  const items = data?.items;
+  const push = useFeedEventStore((s) => s.push);
+
+  useEffect(() => {
+    if (items) push(quakeEvents(items));
+  }, [items, push]);
+
+  const rings = useMemo<GeoJSON.FeatureCollection | null>(() => {
+    if (!items) return null;
+    return {
+      type: 'FeatureCollection',
+      features: items
+        .filter((q) => q.magnitude >= 4.5)
+        .map((q) => ({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: geodesicCircle([q.lng, q.lat], magnitudeRingKm(q.magnitude), 96) },
+          properties: { id: q.id, color: rgba(readCssColor(quakeToken(q.magnitude), 0.55)) },
+        })),
+    };
+  }, [items]);
+  useGeoJsonLayers('hazards-quake-rings', rings, RING_LAYERS);
+
+  const layers = useMemo(() => {
+    if (!items) return null;
+    // Largest first so small quakes draw on top and stay clickable.
+    const points = [...items].sort((a, b) => b.magnitude - a.magnitude);
+    return [
+      new ScatterplotLayer<Earthquake>({
+        id: 'hazards-quakes',
+        data: points,
+        getPosition: (q) => [q.lng, q.lat],
+        getRadius: (q) => quakeRadiusPx(q.magnitude),
+        radiusUnits: 'pixels',
+        getFillColor: (q) => readCssColor(quakeToken(q.magnitude), 0.75),
+        getLineColor: (q) => readCssColor(quakeToken(q.magnitude), 1),
+        stroked: true,
+        lineWidthUnits: 'pixels',
+        getLineWidth: 1,
+        pickable: true,
+        autoHighlight: true,
+      }),
+    ];
+  }, [items]);
+
+  useDeckLayers('hazards:earthquakes', layers, Z);
+  useHitTester('earthquakes', (map, e) => {
+    const hit = items && nearestPoint(map, e, items, (q) => [q.lng, q.lat], (q) => quakeRadiusPx(q.magnitude));
+    return hit ? { layer: 'earthquakes', distancePx: hit.distancePx, open: () => selectEntity('earthquake', 'earthquakes', hit.item, hit.item as unknown as Record<string, unknown>) } : null;
+  });
+  return null;
+}

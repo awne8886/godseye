@@ -1,0 +1,89 @@
+import type * as Http from '@/lib/http';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FX, type Route } from '@/features/hazards/server/__fixtures__';
+import { freshCache, req, resetCache } from '@/features/hazards/server/__fixtures__/routes';
+import { resetLookups } from '@/features/hazards/server/lookup';
+import { defineFeed, getFeed, resetFeeds } from '@/lib/feeds';
+import { GpsInterferenceResponse } from '@/lib/schemas';
+import { GET } from './route';
+
+const state = vi.hoisted(() => ({ routes: [] as Route[] }));
+vi.mock('@/lib/http', async (importOriginal) => {
+  const orig = await importOriginal<typeof Http>();
+  const { httpMock } = await import('@/features/hazards/server/__fixtures__');
+  return { ...orig, ...httpMock(() => state.routes, orig.HttpError) };
+});
+
+beforeEach(() => {
+  freshCache();
+  resetLookups();
+});
+afterEach(() => {
+  getFeed('flights')?.stop();
+  resetFeeds();
+  resetCache();
+});
+
+const ALL: Route[] = [
+  ['gpsjam.org/data/manifest.csv', FX.gpsManifest],
+  ['gpsjam.org/data/2026-09-29-h3_4.csv', FX.gpsDay],
+];
+
+describe('GET /api/gps-interference', () => {
+  it('serves the latest gpsjam day: bad > 0 cells, totalCells and the suspect flag', async () => {
+    state.routes = ALL;
+    const res = await GET(req('/api/gps-interference'), undefined);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(GpsInterferenceResponse.safeParse(body).success).toBe(true);
+    expect(body.totalCells).toBe(399);
+    expect(body.suspect).toBe(false);
+    expect(body.items.every((c: { bad: number; date: string }) => c.bad > 0 && c.date === '2026-09-29')).toBe(true);
+    expect(body.providers.gpsjam_manifest.ok).toBe(true);
+    expect(body.providers.gpsjam).toMatchObject({ ok: true });
+    expect(body.providers.live_nacp).toBeUndefined();
+    expect(body.meta).toMatchObject({ feed: 'gps-interference', kind: 'live' });
+    expect(body.meta.attribution[0].licence).toMatch(/unstated/i);
+  });
+
+  it('adds live NACp bins from the in-process flights feed', async () => {
+    state.routes = ALL;
+    const flights = defineFeed({
+      key: 'flights',
+      ttlMs: 60_000,
+      kind: 'live',
+      attribution: [],
+      count: (d: { rows: unknown[] }) => d.rows.length,
+      run: async () => ({
+        data: { fields: ['id', 'lat', 'lng', 'nacP'], rows: [['a', 51.47, -0.45, 3], ['b', 51.471, -0.452, 9], ['c', 51.472, -0.451, 10]] },
+        providers: {},
+      }),
+    });
+    await flights.get();
+    const body = await (await GET(req('/api/gps-interference'), undefined)).json();
+    expect(GpsInterferenceResponse.safeParse(body).success).toBe(true);
+    const live = body.items.filter((c: { basis: string }) => c.basis === 'live-nacp');
+    expect(live).toHaveLength(1);
+    expect(live[0]).toMatchObject({ aircraft: 3, bad: 1, date: null });
+    expect(body.providers.live_nacp).toMatchObject({ ok: true, count: 1 });
+  });
+
+  it('validates the date', async () => {
+    expect((await GET(req('/api/gps-interference?date=2021-01-01'), undefined)).status).toBe(400);
+    expect((await GET(req('/api/gps-interference?date=yesterday'), undefined)).status).toBe(400);
+  });
+
+  it('serves a requested day without live bins', async () => {
+    state.routes = [['gpsjam.org/data/manifest.csv', FX.gpsManifest], ['gpsjam.org/data/2026-09-28-h3_4.csv', FX.gpsDay]];
+    const body = await (await GET(req('/api/gps-interference?date=2026-09-28'), undefined)).json();
+    expect(body.items[0].date).toBe('2026-09-28');
+    expect(body.suspect).toBe(false);
+  });
+
+  it('is SOURCE OFFLINE when gpsjam is unreachable', async () => {
+    state.routes = [];
+    const res = await GET(req('/api/gps-interference'), undefined);
+    expect(res.status).toBe(503);
+    expect((await res.json()).providers.gpsjam_manifest).toMatchObject({ ok: false, error: 'network' });
+  });
+});

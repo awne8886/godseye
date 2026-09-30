@@ -43,6 +43,10 @@ export const FiresResponse = columnarResponse(FIRE_FIELDS, 30_000).extend({
   /** Pixels available upstream before FRP/confidence sampling. */
   totalDetections: z.number().int().nonnegative(),
   sampling: z.string(),
+  /** Valid pixels per satellite file before sampling (files that answered). */
+  perSatellite: z.record(z.string(), z.number().int().nonnegative()).optional(),
+  /** NASA EONET open wildfire events (supplement; WeatherEvent shape, type `wildfire`). */
+  wildfireEvents: z.array(z.lazy(() => WeatherEvent)).optional(),
 });
 
 export const WeatherEventType = z.enum([
@@ -75,9 +79,17 @@ export const WeatherEvent = EntityBase.extend({
    */
   zones: z.array(z.string()).optional(),
   positionBasis: z.enum(['geometry', 'point', 'zone-centroid']).optional(),
+  /** GDACS alert level, lower-cased (GDACS answers `Orange`). */
+  alertLevel: z.enum(['green', 'orange', 'red']).optional(),
+  /** Short plain-text detail (NWS event name, GDACS severity text, GVP report excerpt, NHC wind/pressure). */
+  detail: z.string().optional(),
 });
 
-export const WeatherResponse = Envelope.extend({ items: z.array(WeatherEvent) });
+export const WeatherResponse = Envelope.extend({
+  items: z.array(WeatherEvent),
+  /** NWS alerts without their own polygon whose zone geometry is still being looked up (not placed, never guessed). */
+  unplacedAlerts: z.number().int().nonnegative().optional(),
+});
 
 export const AirQuality = EntityBase.extend({
   pm25: z.number().nullable(),
@@ -86,7 +98,11 @@ export const AirQuality = EntityBase.extend({
   provider: z.enum(['Open-Meteo', 'OpenAQ', 'WAQI']),
 });
 
-export const AirQualityResponse = Envelope.extend({ items: z.array(AirQuality) });
+export const AirQualityResponse = Envelope.extend({
+  items: z.array(AirQuality),
+  /** Sampling points queried: `cities` (default list) or `grid` (bbox grid). */
+  sampling: z.enum(['cities', 'grid']).optional(),
+});
 
 export const GpsJamCell = z.object({
   /** H3 resolution-4 index. */
@@ -119,6 +135,10 @@ export const SentinelScene = z.object({
   footprint: z.custom<GeoJSON.Polygon | GeoJSON.MultiPolygon>(),
   thumbnailUrl: z.url().nullable(),
   browserUrl: z.url().nullable(),
+  /** e.g. `sentinel-2c`. */
+  platform: z.string().nullable().optional(),
+  /** MGRS tile, e.g. `MGRS-30UYC`. */
+  tile: z.string().nullable().optional(),
 });
 
 export const SentinelResponse = Envelope.extend({ items: z.array(SentinelScene), center: z.tuple([Lng, Lat]) });

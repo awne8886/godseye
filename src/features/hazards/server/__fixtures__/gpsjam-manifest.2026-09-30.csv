@@ -1,0 +1,13 @@
+date,suspect,num_bad_aircraft_hexes,source
+2022-02-14,true,89,adsbexchange
+2022-02-15,false,190,adsbexchange
+2026-09-20,false,514,merged
+2026-09-21,false,519,merged
+2026-09-22,false,510,merged
+2026-09-23,false,568,merged
+2026-09-24,false,526,merged
+2026-09-25,false,504,merged
+2026-09-26,false,568,merged
+2026-09-27,false,606,merged
+2026-09-28,false,556,merged
+2026-09-29,false,549,merged
