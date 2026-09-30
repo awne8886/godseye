@@ -6,7 +6,7 @@
  * Owner: design-system-hud.
  */
 import { AnimatePresence, motion } from 'motion/react';
-import { createElement, useCallback } from 'react';
+import { createElement, useCallback, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { panelFor } from '@/features/registry';
 import { MOBILE_SHEETS, type PanelId } from '@/lib/tool-registry';
 import { useUiStore } from '@/lib/store';
@@ -50,6 +50,62 @@ function SidePanel({ id, pinned }: { id: PanelId; pinned: boolean }) {
   );
 }
 
+const WIDTH_KEY = 'godseye:panel-width';
+export const PANEL_MIN = 320;
+export const PANEL_MAX = 640;
+const clampWidth = (w: number) => Math.round(Math.min(PANEL_MAX, Math.max(PANEL_MIN, w)));
+
+function readWidth(): number {
+  try {
+    const v = Number(globalThis.localStorage?.getItem(WIDTH_KEY));
+    return Number.isFinite(v) && v > 0 ? clampWidth(v) : 360;
+  } catch {
+    return 360;
+  }
+}
+
+/** Drag (or arrow-key) handle on the docked column's left edge; the width is remembered per browser. */
+function useDockWidth() {
+  const [width, setWidth] = useState(readWidth);
+  const drag = useRef<{ x: number; w: number } | null>(null);
+  const commit = (w: number) => {
+    const c = clampWidth(w);
+    setWidth(c);
+    try {
+      localStorage.setItem(WIDTH_KEY, String(c));
+    } catch {
+      /* storage blocked */
+    }
+  };
+  const handle = {
+    role: 'separator' as const,
+    tabIndex: 0,
+    'aria-orientation': 'vertical' as const,
+    'aria-label': 'Resize panel',
+    'aria-valuemin': PANEL_MIN,
+    'aria-valuemax': PANEL_MAX,
+    'aria-valuenow': width,
+    onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+      drag.current = { x: e.clientX, w: width };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
+      if (drag.current) setWidth(clampWidth(drag.current.w + (drag.current.x - e.clientX)));
+    },
+    onPointerUp: (e: PointerEvent<HTMLDivElement>) => {
+      if (drag.current) commit(drag.current.w + (drag.current.x - e.clientX));
+      drag.current = null;
+    },
+    onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'ArrowLeft') commit(width + 20);
+      else if (e.key === 'ArrowRight') commit(width - 20);
+      else return;
+      e.preventDefault();
+    },
+  };
+  return { width, handle };
+}
+
 export default function PanelHost() {
   const openPanel = useUiStore((s) => s.openPanel);
   const pinned = useUiStore((s) => s.pinnedPanels);
@@ -60,6 +116,8 @@ export default function PanelHost() {
   const modal = openPanel && MODAL_PANELS.has(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
   const side = openPanel && !MODAL_PANELS.has(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
   const pinnedShown = pinned.filter((p) => !MODAL_PANELS.has(p) && isPanelAvailable(p, bt));
+  const dock = useDockWidth();
+  const widthVar = { '--panel-width': `${dock.width}px` } as CSSProperties;
 
   return (
     <>
@@ -77,8 +135,9 @@ export default function PanelHost() {
                 exit={{ opacity: 0, x: 20 }}
                 transition={{ duration: 0.22, ease: EASE }}
                 className="fixed bottom-10 right-16 top-16 z-[var(--z-docked)] w-[var(--panel-width)]"
-                style={side === 'dossier' ? { zIndex: 'var(--z-dossier)' } : undefined}
+                style={side === 'dossier' ? { ...widthVar, zIndex: 'var(--z-dossier)' } : widthVar}
               >
+                <div {...dock.handle} className="absolute -left-1.5 top-1/2 z-10 h-16 w-3 -translate-y-1/2 cursor-ew-resize rounded-full hover:bg-[rgba(var(--gold-rgb),0.25)] focus-visible:bg-[rgba(var(--gold-rgb),0.25)]" />
                 <SidePanel id={side} pinned={false} />
               </motion.div>
             )}
@@ -86,7 +145,7 @@ export default function PanelHost() {
           {pinnedShown.length > 0 && (
             <div
               className="fixed bottom-10 top-16 z-[var(--z-docked)] flex w-[var(--panel-width)] flex-col gap-3"
-              style={{ right: side ? 'calc(4rem + var(--panel-width) + var(--panel-gap))' : '4rem' }}
+              style={{ ...widthVar, right: side ? 'calc(4rem + var(--panel-width) + var(--panel-gap))' : '4rem' }}
               aria-label="Pinned panels"
               role="group"
             >
