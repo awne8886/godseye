@@ -16,7 +16,9 @@ nuqs 2 · motion 13 (`motion/react`) · satellite.js 7.1 (OMM JSON + `json2satre
 ## Commands
 `pnpm dev` · `pnpm build` · `pnpm lint` · `pnpm typecheck` · `pnpm test` · `pnpm test:coverage` ·
 `pnpm e2e` (in sandboxes: `E2E_IGNORE_HTTPS_ERRORS=1 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium`) ·
-`node tools/gen-types.mjs` after adding a schema. Run lint + typecheck + test before every commit.
+`node tools/gen-types.mjs` after adding a schema; `pnpm docs:api && pnpm docs:sources` after catalogue or
+probe-log changes. Worktrees: `pnpm install --frozen-lockfile --offline` (a symlinked node_modules breaks
+Turbopack). Run lint + typecheck + test before every commit.
 
 ## Non-negotiable rules (§0 of the contract)
 1. **Honesty.** Never fabricate, randomise, jitter, clone or pad data (`Math.random` is lint-banned).
@@ -91,7 +93,7 @@ labels and the mobile nav). Glass panels radius 12, blur 24. Motion honours redu
 - panels-alerts-markets-dossier-graph: `src/components/panels/{alerts,markets,dossier,graph,intel}/**`, routes `news, markets, crypto, chain, ticker, scm-suppliers, region-dossier, entity, ai`, `src/lib/schemas/intel.ts`
 - panels-recon: `src/components/panels/{recon,search,directions,draw,arcgis,remote}/**`, routes `osint, scanner, geo, geosearch, directions, arcgis`, `src/lib/schemas/osint.ts`
 - feature-flight-paths: `src/features/flight-paths/**`, `src/app/api/{airports,route,flight}/**`, `tools/build-airports.ts`, `tools/build-routes.ts`, `public/data/{airports,routes}*`, `src/lib/schemas/flight-paths.ts`
-- pages-docs-privacy-ops: `src/app/{docs,privacy}/**`, `Dockerfile`, `docker-compose.yml`, `.github/**`, `README.md`, `docs/{ARCHITECTURE,API,DATA_SOURCES}.md`, `tools/gen-api-docs.ts`, `lighthouserc.json`
+- pages-docs-privacy-ops: `src/app/{docs,privacy}/**`, `Dockerfile`, `.dockerignore`, `docker-compose.yml`, `Caddyfile`, `.github/**`, `README.md`, `docs/{ARCHITECTURE,API,DATA_SOURCES}.md` (API.md and DATA_SOURCES.md are generated: `pnpm docs:api`, `pnpm docs:sources`), `tools/{gen-api-docs,compile-data-sources,ts-loader}.*`, `tools/ops-config.test.ts`, `lighthouserc.json`
 - Every builder also owns `e2e/<agent>/**` (its Playwright specs) and `docs/data-sources/<agent>.md`
   (its probe log: status, latency, CORS, auth, licence, sample fields, date). pages-docs-privacy-ops
   compiles those into `docs/DATA_SOURCES.md`; nobody else edits that file.
