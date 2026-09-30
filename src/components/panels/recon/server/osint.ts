@@ -612,7 +612,7 @@ export async function cveLookup(id: string): Promise<ToolResult> {
     probe(`cve:nvd:${id}`, HOUR, async () => {
       const key = process.env.NVD_API_KEY;
       const s = fromNvd(
-        (await httpJson<NvdBody>(`https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${id}`, { timeoutMs: 10_000, retries: 0, limiter: nvdBucket(), headers: key ? { apiKey: key } : {} })).data ?? {},
+        (await httpJson<NvdBody>(`https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=${id}`, { timeoutMs: 10_000, retries: 0, deadlineMs: 20_000, limiter: nvdBucket(), headers: key ? { apiKey: key } : {} })).data ?? {},
       );
       if (!s) throw new HttpError('NVD has no record', 'parse', 'https://services.nvd.nist.gov/');
       return s;

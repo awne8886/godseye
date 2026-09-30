@@ -6,7 +6,7 @@
  * active (ReconOverlays). Owner: panels-recon.
  */
 import { Circle, Download, FileUp, MapPin, Pentagon, Spline, Target, Trash2, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
 import { useUiStore } from '@/lib/store';
@@ -29,6 +29,8 @@ export default function DrawPanel(_: PanelProps) {
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   usePanelChip(drawMode ? 'PLOTTING' : features.length ? `${features.length} SHAPES` : 'STANDBY', drawMode ? 'busy' : features.length ? 'live' : 'idle');
+  // Closing the panel ends the drawing session: map clicks go back to normal selection.
+  useEffect(() => () => useOverlayStore.getState().setDrawMode(null), []);
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
