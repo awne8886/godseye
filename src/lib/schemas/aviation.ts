@@ -1,0 +1,134 @@
+/**
+ * Aviation contracts. Owner: layers-aviation (may add optional fields; never rename/remove).
+ * Altitudes are FEET (barometric unless named geom), speeds KNOTS, vertical rate FEET/MIN,
+ * headings/tracks DEGREES TRUE [0, 360). OSIRIS mixed metres and feet; GODSEYE does not.
+ */
+import { z } from 'zod';
+import { EntityBase, Envelope, IsoTime, Lat, Lng, columnarResponse } from './common';
+
+/** OSIRIS's four rail buckets, classified with its exact rules (docs/reference/03 §1). */
+export const AircraftBucket = z.enum(['commercial', 'private', 'jet', 'military']);
+
+export const Aircraft = EntityBase.extend({
+  /** ICAO 24-bit address, lowercase hex (6 chars; `~` prefix for non-ICAO/TIS-B). */
+  id: z.string().regex(/^~?[0-9a-f]{6}$/),
+  callsign: z.string().nullable(),
+  registration: z.string().nullable(),
+  /** ICAO type designator, e.g. `B77W`. */
+  typeCode: z.string().nullable(),
+  bucket: AircraftBucket,
+  isHelicopter: z.boolean(),
+  onGround: z.boolean(),
+  /** Barometric altitude in feet; null if not reported. */
+  altFt: z.number().nullable(),
+  altGeomFt: z.number().nullable(),
+  gsKt: z.number().nonnegative().nullable(),
+  trackDeg: z.number().min(0).lt(360).nullable(),
+  vrFpm: z.number().nullable(),
+  squawk: z.string().regex(/^[0-7]{4}$/).nullable(),
+  /** 7500 hijack, 7600 radio failure, 7700 general emergency. */
+  emergency: z.enum(['7500', '7600', '7700']).nullable(),
+  /** ADS-B emitter category, e.g. `A3`. */
+  category: z.string().nullable(),
+  /** Navigation accuracy category for position (used for GPS-interference binning). */
+  nacP: z.number().int().min(0).max(11).nullable(),
+  /** readsb dbFlags bitfield (1 = military, 2 = interesting, 4 = PIA, 8 = LADD). */
+  dbFlags: z.number().int().nonnegative().nullable(),
+  /** 3-letter ICAO airline designator parsed from the callsign, e.g. `BAW`. */
+  airlineCode: z.string().length(3).nullable(),
+});
+
+/** Columnar row layout of GET /api/flights (keeps 20k+ aircraft under the 4 MB cap). */
+export const FLIGHT_FIELDS = [
+  'id',
+  'callsign',
+  'registration',
+  'typeCode',
+  'bucket',
+  'isHelicopter',
+  'onGround',
+  'lat',
+  'lng',
+  'altFt',
+  'gsKt',
+  'trackDeg',
+  'vrFpm',
+  'squawk',
+  'category',
+  'nacP',
+  'dbFlags',
+  'observedAt',
+  'source',
+] as const;
+
+export const FlightsResponse = columnarResponse(FLIGHT_FIELDS).extend({
+  counts: z.object({
+    commercial: z.number().int().nonnegative(),
+    private: z.number().int().nonnegative(),
+    jet: z.number().int().nonnegative(),
+    military: z.number().int().nonnegative(),
+    total: z.number().int().nonnegative(),
+  }),
+});
+
+/** A point of a flown track (readsb trace row), newest last. */
+export const TrackPoint = z.object({
+  t: IsoTime,
+  lat: Lat,
+  lng: Lng,
+  /** null when the aircraft reported `ground`. */
+  altFt: z.number().nullable(),
+  onGround: z.boolean(),
+  gsKt: z.number().nullable(),
+  trackDeg: z.number().nullable(),
+});
+
+export const AircraftIdentity = z.object({
+  hex: z.string(),
+  registration: z.string().nullable(),
+  typeCode: z.string().nullable(),
+  model: z.string().nullable(),
+  manufacturer: z.string().nullable(),
+  operator: z.string().nullable(),
+  operatorIcao: z.string().nullable(),
+  country: z.string().nullable(),
+  photoUrl: z.url().nullable(),
+  photoCredit: z.string().nullable(),
+});
+
+/** GET /api/aircraft?icao24= */
+export const AircraftDetailResponse = Envelope.extend({
+  hex: z.string(),
+  identity: AircraftIdentity.nullable(),
+  /** Current leg only (split on ≥4 consecutive ground samples), downsampled to ≤700 points keeping endpoints. */
+  track: z.array(TrackPoint),
+  trackSource: z.string().nullable(),
+});
+
+/** Airport reference embedded in route lookups. */
+export const RouteAirport = z.object({
+  icao: z.string().nullable(),
+  iata: z.string().nullable(),
+  name: z.string(),
+  city: z.string().nullable(),
+  country: z.string().nullable(),
+  lat: Lat,
+  lng: Lng,
+});
+
+/** GET /api/flight-route?callsign=&icao24=&lat=&lng=&speed= */
+export const FlightRouteResponse = z.object({
+  callsign: z.string(),
+  found: z.boolean(),
+  origin: RouteAirport.nullable(),
+  destination: RouteAirport.nullable(),
+  /** `observed` = departure corroborated from the flown track; `schedule` = standing data only. */
+  basis: z.enum(['observed', 'schedule', 'corridor']).nullable(),
+  status: z.enum(['scheduled', 'airborne', 'landed', 'unknown']),
+  /** 0..1 along the great circle, only when airborne and on-corridor. */
+  progress: z.number().min(0).max(1).nullable(),
+  distanceKm: z.number().nonnegative().nullable(),
+  source: z.string().nullable(),
+  providers: Envelope.shape.providers,
+  timestamp: IsoTime,
+});

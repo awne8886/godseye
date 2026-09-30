@@ -1,0 +1,26 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+@import '../styles/base.css';
+
+@theme inline {
+  --color-void: var(--bg-void);
+  --color-primary-bg: var(--bg-primary);
+  --color-secondary-bg: var(--bg-secondary);
+  --color-tertiary-bg: var(--bg-tertiary);
+  --color-gold: var(--gold-primary);
+  --color-gold-light: var(--gold-light);
+  --color-gold-dim: var(--gold-dim);
+  --color-cyan: var(--cyan-primary);
+  --color-cyan-dim: var(--cyan-dim);
+  --color-alert-red: var(--alert-red);
+  --color-alert-orange: var(--alert-orange);
+  --color-alert-green: var(--alert-green);
+  --color-alert-blue: var(--alert-blue);
+  --color-fg: var(--text-primary);
+  --color-fg-secondary: var(--text-secondary);
+  --color-fg-muted: var(--text-muted);
+  --color-fg-heading: var(--text-heading);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-hud);
+  --font-display: var(--font-display);
+}

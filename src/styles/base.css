@@ -1,0 +1,103 @@
+/*
+ * Base layer + shared primitives (glass, HUD type, instrument chrome, focus rings, overlays).
+ * Owner: design-system-hud. No global `* { transition }` (theme swaps use .theme-transition).
+ */
+@layer base {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold-primary);
+    outline-offset: 2px;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    background: var(--bg-panel);
+    backdrop-filter: blur(24px) saturate(1.3);
+    -webkit-backdrop-filter: blur(24px) saturate(1.3);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-panel);
+    box-shadow:
+      0 4px 30px rgba(0, 0, 0, 0.5),
+      0 1px 0 rgba(var(--gold-rgb), 0.06) inset,
+      0 -1px 0 rgba(0, 0, 0, 0.3) inset;
+    transition:
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+  .glass-panel:hover {
+    border-color: rgba(var(--gold-rgb), 0.22);
+  }
+  .glass-rail {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(24px) saturate(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  }
+  .hud-text {
+    font-family: var(--font-hud);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-micro {
+    font-family: var(--font-hud);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-title {
+    font-family: var(--font-hud);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    color: var(--text-heading);
+  }
+  .vignette {
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(4, 4, 10, 0.6) 80%, rgba(4, 4, 10, 0.95) 100%);
+  }
+  .crt-scanlines {
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255, 255, 255, 0.02) 3px, rgba(255, 255, 255, 0.02) 4px);
+  }
+}
+
+/* MapLibre controls restyled, never hidden (attribution must stay visible). */
+.maplibregl-ctrl-attrib.maplibregl-attrib-empty {
+  display: none;
+}
+.maplibregl-ctrl.maplibregl-ctrl-attrib {
+  background: rgba(4, 4, 10, 0.72);
+  color: var(--text-secondary);
+  font: 10px/1.4 var(--font-body);
+}
+.maplibregl-ctrl-attrib a {
+  color: var(--text-secondary);
+}
+.maplibregl-ctrl-bottom-right {
+  bottom: 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
