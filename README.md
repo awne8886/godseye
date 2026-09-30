@@ -107,6 +107,8 @@ variables.
 | `AIS_API_KEY` | `ais` | Live AIS vessels via a server-side AISStream relay |
 | `WINDY_WEBCAMS_KEY` | `windy` | Windy Webcams |
 | `TFL_APP_KEY` | `tfl` | TfL Unified API ("Powered by TfL Open Data") |
+| `CCTV_LINK_OUT_ONLY` | — | Region keys or country codes whose cameras are shown as operator links only (no previews) |
+| `CCTV_REMOVED_IDS` | — | Camera ids removed on request (report/remove button), comma-separated |
 | `WSDOT_ACCESS_CODE` | `wsdot` | WSDOT Traveler API (camera KML is keyless) |
 | `TRAFIKVERKET_KEY` | `trafikverket` | Trafikverket API (stills are keyless) |
 | `IBI511_KEYS` | `ibi511` | IBI 511 state camera APIs, e.g. `fl:KEY,ga:KEY` |
@@ -129,6 +131,7 @@ variables.
 | `ANTHROPIC_API_KEY` | `anthropic` | Language-model briefings and overviews |
 | `GEMINI_API_KEY_1` | `gemini` | Fallback analyst model |
 | `OLLAMA_URL` | `ollama` | Operator-configured local model (visitors can never supply a URL) |
+| `ANTHROPIC_MODEL`, `GEMINI_MODEL`, `OLLAMA_MODEL` | — | Optional model overrides; by default the newest suitable model from each provider's model list is used |
 | `DISABLE_USER_AI_KEYS=true` | `ai_user_keys` | Refuse visitor-supplied keys (`x-ai-key` header, used once, never stored) |
 | `GOOGLE_MAPS_API_KEY` | `photoreal` | Standalone Photoreal City View (Google 3D Tiles terms apply) |
 

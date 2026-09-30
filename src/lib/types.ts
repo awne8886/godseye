@@ -120,6 +120,9 @@ export type AttackOriginsResponse = z.infer<typeof S.AttackOriginsResponse>;
 export type SubmarineCable = z.infer<typeof S.SubmarineCable>;
 export type LandingPoint = z.infer<typeof S.LandingPoint>;
 export type CablesResponse = z.infer<typeof S.CablesResponse>;
+export type SdkEntityInput = z.infer<typeof S.SdkEntityInput>;
+export type SdkIngestBatch = z.infer<typeof S.SdkIngestBatch>;
+export type SdkEntity = z.infer<typeof S.SdkEntity>;
 export type SdkIngestResponse = z.infer<typeof S.SdkIngestResponse>;
 
 // intel

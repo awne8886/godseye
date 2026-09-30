@@ -194,13 +194,13 @@ export const LAYERS = [
   // ── THREATS & INTEL ────────────────────────────────────────────────────────────
   {
     id: 'infrastructure', group: 'threats', label: 'Nuclear Facilities', icon: 'Atom', colorToken: '--map-nuclear',
-    route: '/api/infrastructure', transport: 'poll', refreshMs: 24 * 60 * MIN, renderer: 'maplibre', card: 'nuclear_site',
+    route: '/api/infrastructure', transport: 'poll', refreshMs: 24 * 60 * MIN, renderer: 'deck', card: 'nuclear_site',
     feedEvents: false, capability: null, defaultOn: false, kind: 'reference', z: 45, pickPriority: 65, owner: 'layers-threats-network',
   },
   {
     id: 'global_incidents', group: 'threats', label: 'Global Incidents', description: 'GDACS disaster alerts',
     icon: 'Siren', colorToken: '--map-incident', route: '/api/gdacs', transport: 'poll', refreshMs: 10 * MIN,
-    renderer: 'maplibre', card: 'gdacs_incident', feedEvents: true, capability: null, defaultOn: true, kind: 'live', z: 46, pickPriority: 62,
+    renderer: 'deck', card: 'gdacs_incident', feedEvents: true, capability: null, defaultOn: true, kind: 'live', z: 46, pickPriority: 62,
     owner: 'layers-threats-network',
   },
   {
@@ -256,7 +256,7 @@ export const LAYERS = [
   {
     id: 'cf_outages', group: 'netintel', label: 'Internet Outages', description: 'IODA (keyless) + Cloudflare Radar (keyed)',
     icon: 'Signal', colorToken: '--map-outage', route: '/api/outages', transport: 'poll', refreshMs: 5 * MIN,
-    renderer: 'maplibre', card: 'outage', feedEvents: true, capability: null, defaultOn: false, kind: 'live', z: 48, pickPriority: 50,
+    renderer: 'deck', card: 'outage', feedEvents: true, capability: null, defaultOn: false, kind: 'live', z: 48, pickPriority: 50,
     owner: 'layers-threats-network',
   },
   {

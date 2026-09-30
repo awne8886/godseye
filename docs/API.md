@@ -487,7 +487,9 @@ Ports + chokepoints (reference) and AIS vessels (keyed relay)
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/maritime` |
 
-No parameters.
+| Parameter | In | Type | Required | Description |
+|---|---|---|---|---|
+| `bbox` | query | string | no | w,s,e,n vessel filter |
 
 ## Threats
 
@@ -554,7 +556,7 @@ Conflict zones (REFERENCE polygons) with live event counts from GDELT/alerts
 | Cache | s-maxage 15 min, stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ConflictsResponse` |
-| Upstreams | None: served from this server only |
+| Upstreams | `data.gdeltproject.org` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/conflicts` |
@@ -634,7 +636,7 @@ No parameters.
 
 ### `GET /api/cyber-attacks`
 
-Feodo Tracker botnet C2 indicators (+ ThreatFox botnet_cc IPs)
+Feodo Tracker botnet C2 indicators
 
 | | |
 |---|---|
@@ -642,7 +644,7 @@ Feodo Tracker botnet C2 indicators (+ ThreatFox botnet_cc IPs)
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `C2Response` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras. |
-| Upstreams | `feodotracker.abuse.ch`, `threatfox.abuse.ch` |
+| Upstreams | `feodotracker.abuse.ch`, `ip-api.com` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/cyber-attacks` |
@@ -760,7 +762,7 @@ SSE stream of SDK entities
 | Cache | Not cached: text/event-stream |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Stream | Server-Sent Events (text/event-stream) |
-| Response | `SdkIngestResponse` |
+| Response | `SdkEntity` |
 | Capability | `sdk`: On when SDK_INGEST_KEY set. GODSEYE SDK entity ingest (fail-closed without a key). |
 | Upstreams | None: served from this server only |
 | Forwards user input upstream | No |
@@ -819,7 +821,7 @@ Entity Graph expansion (Wikidata + OpenSanctions + RIPEstat)
 | Cache | s-maxage 1 d, stale-while-revalidate 2 d |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `EntityGraphResponse` |
-| Upstreams | `query.wikidata.org`, `data.opensanctions.org`, `stat.ripe.net` |
+| Upstreams | `query.wikidata.org`, `www.wikidata.org`, `api.opensanctions.org`, `stat.ripe.net` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/entity/expand?type=company&id=Q95` |
@@ -842,7 +844,7 @@ Indices, defense, energy, commodities, crypto, FX quotes + breadth
 | Cache | s-maxage 1 min, stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MarketsResponse` |
-| Upstreams | `query1.finance.yahoo.com`, `api.coingecko.com`, `data-api.binance.vision` |
+| Upstreams | `query1.finance.yahoo.com`, `api.coingecko.com`, `data-api.binance.vision`, `api.exchange.coinbase.com`, `api.kraken.com` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/markets` |
@@ -877,7 +879,7 @@ BTC/ETH/SOL spot prices (Binance → Coinbase → Kraken; CoinGecko only with a 
 | Cache | s-maxage 1 min, stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CryptoResponse` |
-| Upstreams | `data-api.binance.vision`, `api.coinbase.com`, `api.kraken.com`, `api.coingecko.com` |
+| Upstreams | `data-api.binance.vision`, `api.exchange.coinbase.com`, `api.kraken.com`, `api.coingecko.com` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/crypto` |
@@ -893,7 +895,7 @@ Daily chain brief: exploits, crypto CVEs, sanctioned wallets
 | Cache | s-maxage 30 min, stale-while-revalidate 1 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ChainBriefResponse` |
-| Upstreams | `api.llama.fi`, `services.nvd.nist.gov`, `data.opensanctions.org` |
+| Upstreams | `api.llama.fi`, `services.nvd.nist.gov`, `api.opensanctions.org` |
 | Forwards user input upstream | No |
 | Compatibility | Same path as the OSIRIS endpoint |
 | Example | `GET /api/chain/daily` |
@@ -911,7 +913,7 @@ Status-bar ticker (BTC/ETH/SOL + five latest M4.0+ quakes from USGS 2.5_day), se
 | Cache | s-maxage 1 min, stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `TickerResponse` |
-| Upstreams | `data-api.binance.vision`, `api.coinbase.com`, `earthquake.usgs.gov` |
+| Upstreams | `data-api.binance.vision`, `api.exchange.coinbase.com`, `api.kraken.com`, `earthquake.usgs.gov` |
 | Forwards user input upstream | No |
 | Example | `GET /api/ticker` |
 
@@ -946,7 +948,7 @@ One-click overview (Claude when keyed, heuristic ANALYST otherwise)
 | Cache | Not cached (POST) |
 | Rate limit | 5 requests per 1 min per client IP; shared bucket "ai"; fail-closed: denied while the limiter store is unavailable |
 | Response | `AiOverviewResponse` |
-| Upstreams | `api.anthropic.com`, `generativelanguage.googleapis.com` |
+| Upstreams | `api.anthropic.com`, `generativelanguage.googleapis.com`, `(OLLAMA_URL)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 
@@ -964,7 +966,7 @@ Region/selection analysis citing feed rows
 | Cache | Not cached (POST) |
 | Rate limit | 5 requests per 1 min per client IP; shared bucket "ai"; fail-closed: denied while the limiter store is unavailable |
 | Response | `AiOverviewResponse` |
-| Upstreams | `api.anthropic.com`, `generativelanguage.googleapis.com` |
+| Upstreams | `api.anthropic.com`, `generativelanguage.googleapis.com`, `(OLLAMA_URL)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 
@@ -982,7 +984,7 @@ Daily briefing (BLUF / PIRs / forecast)
 | Cache | Not cached (POST) |
 | Rate limit | 5 requests per 1 min per client IP; shared bucket "ai"; fail-closed: denied while the limiter store is unavailable |
 | Response | `AiOverviewResponse` |
-| Upstreams | `api.anthropic.com`, `generativelanguage.googleapis.com` |
+| Upstreams | `api.anthropic.com`, `generativelanguage.googleapis.com`, `(OLLAMA_URL)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Compatibility | Same path as the OSIRIS endpoint |
 
@@ -993,7 +995,7 @@ Daily briefing (BLUF / PIRs / forecast)
 
 ### `POST /api/ai/chat`
 
-Streaming analyst chat over current feeds
+Analyst chat over current feeds, streamed as NDJSON (meta → delta → done)
 
 | | |
 |---|---|
@@ -1001,7 +1003,7 @@ Streaming analyst chat over current feeds
 | Rate limit | 5 requests per 1 min per client IP; shared bucket "ai"; fail-closed: denied while the limiter store is unavailable |
 | Stream | Streamed text (chunked) |
 | Response | `AiOverviewResponse` |
-| Upstreams | `api.anthropic.com` |
+| Upstreams | `api.anthropic.com`, `generativelanguage.googleapis.com`, `(OLLAMA_URL)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 
 | Parameter | In | Type | Required | Description |
