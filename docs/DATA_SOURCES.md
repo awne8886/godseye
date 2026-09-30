@@ -348,6 +348,28 @@ CBC's page had neither marker (→ `live: null`, unknown). Embeds use
 `https://www.youtube-nocookie.com/embed/live_stream?channel=<id>` only for the 7 broadcasters that
 allow embedding (OSIRIS's verified split); the other 7 open on YouTube. RT is excluded (Rumble only).
 
+#### Phase 3 round 1 re-probes (2026-09-30 22:20–22:55 UTC, same honest UA)
+
+| Probe | Result | Used for |
+|---|---|---|
+| TfL `api.tfl.gov.uk/Place/Type/JamCam`, no key | 200 · 0.53 s · 1.15 MB · ACAO `*` | Keyless tier still answers; the row stays keyed as the contract requires (`TFL_APP_KEY`). |
+| TfL same URL, `?app_key=bogus0000` | 429 · 0.45 s · "Invalid app_key is provided." | — |
+| TfL same URL, header `app_key: bogus0000` | 429 · 0.21 s · "Invalid app_key is provided." | **The header is honoured** → the loader sends `app_key` as a header; the key is never in a URL (SEC-m4). |
+| TfL same URL, header `Ocp-Apim-Subscription-Key: bogus0000` | 200 (header ignored) | Not used. |
+| Caltrans `cwwp2.dot.ca.gov/data/d7/cctv/cctvStatusD07.json` | 200 · 3.14 s · 1.85 MB · ACAO `*` | HLS URLs across d1–d12: 2 300 under `wzmedia.dot.ca.gov/D<n>/`, 1 at the root (`/EB91WO57.STREAM…`, now refused → still fallback). |
+| `wzmedia.dot.ca.gov/D7/CCTV-196.stream/playlist.m3u8` | 200 · 0.73 s · 128 B · `application/vnd.apple.mpegurl` | Rule narrowed `/` → `/D1/`…`/D12/`. |
+| Caltrans still `…/d7/cctv/image/i110196avenue26offramp/…jpg` | 200 · 0.69 s · 34 kB · image/jpeg | unchanged rule. |
+| WSDOT KML | 200 · 1.15 s · 568 kB | Image directories seen: `nw` 756, `sw` 221, `orflow` 181, `rweather` 110, `airports` 99, `spokane` 75, `nc` 62, `sc` 57, `wsf/…` 45, `SC` 13, `ORFlow` 11, `traffic` 3 (map icons only). Rule narrowed `/` → those 11 directories. |
+| `images.wsdot.wa.gov/nw/525vc00694.jpg`, `/ORFlow/005vc12750.jpg` | 200 · 1.09 s · 78 kB / 200 · 0.94 s · 80 kB · image/jpeg | — |
+| MDOT list | 200 · 0.98 s · 543 kB | Stills: 714 `/thumbs/<x>_cam_<n>.flv.jpg`, 2 root `/image-<n>-<n>-<n>.jpg`. |
+| `micamerasimages.net/thumbs/semtoc_cam_253.flv.jpg?item=1` | 301 → `/semtoc_cam_253.jpg?item=1` → 200 · 0.34 s · 55 kB | Rule narrowed `/` → `/thumbs/` + one exact root file per camera (its redirect target). |
+| `micamerasimages.net/image-000705102-00-04.jpg?bucket=ftp` | 200 · 0.40 s · 38 kB | exact-file rule. |
+| `weathercam.digitraffic.fi/C0150200.jpg` | 200 · 0.53 s · 9.9 kB | Root files → exact-file rule `/[A-Z]\d{5,10}.jpg` (was `/`). |
+| `tdcctv.data.one.gov.hk/AID01101.JPG`; HK list | 200 · 1.26 s · 6.7 kB; list 200 · 1.13 s · 405 kB (1 013 keys, all root `/<KEY>.JPG`) | Exact-file rule (was `/`). |
+| THB list; `cctv-ss02.thb.gov.tw/T74-3+903/snapshot` | 200 · 2.23 s · 430 kB (ss01–ss08 only); 200 · 1.01 s · 10 kB image/jpeg | Exact `/<stake>/snapshot` rule on ss01–ss08 (was `/`). |
+| Trafikverket `api.trafikinfo.trafikverket.se/v2/Images/data/road.infrastructure.camera/TrafficFlowCamera_39636115.jpg` | 200 · 1.43 s · 29 kB · image/jpeg | Rule unchanged (directory prefix). |
+| `open.toronto.ca/open-data-license/` vs `/open-data-licence/` | 404 · 0.44 s vs 200 · 0.49 s | Toronto `terms_url` fixed to `open-data-licence`. |
+
 ### layers-threats-network
 
 Probed **2026-09-30 20:02–20:10 UTC** from the build sandbox with
