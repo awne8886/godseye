@@ -1,0 +1,21 @@
+# Caddy in front of GODSEYE (docker-compose.yml). Automatic HTTPS for GODSEYE_DOMAIN; with the
+# default `localhost` Caddy serves its own locally trusted certificate.
+# No `log` directive: Caddy writes no access log unless one is configured.
+{
+	admin off
+}
+
+{$GODSEYE_DOMAIN:localhost} {
+	# The app ships its own CSP/HSTS/X-Frame-Options/nosniff (src/config/csp.ts); just hide the banner.
+	header -Server
+
+	reverse_proxy app:3000 {
+		# OVERWRITE the client-IP headers with the address Caddy actually saw. The app keys its
+		# per-route rate limits on the rightmost X-Forwarded-For entry (TRUSTED_PROXY_HOPS=1), or on
+		# X-Real-IP only when TRUST_PROXY_HEADER=x-real-ip; a client-supplied value must never survive.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		# Server-Sent Events (/api/*/stream): forward every chunk immediately.
+		flush_interval -1
+	}
+}

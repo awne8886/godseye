@@ -1,29 +1,208 @@
 # GODSEYE
 
-A build kit for a "god's-eye" global intelligence monitor: a 1:1-or-better, open-source replica of
-[osirisai.live](https://osirisai.live) (OSIRIS) with better visuals, honest data handling, and a new
-**Flight Path Planner** that shows the planned path between any two airports (IATA/ICAO code or place
-name) for generic routes and specific flights.
+**GLOBAL INTELLIGENCE MONITOR** — an open-source, keyless, real-time "god's-eye" view of the planet on a
+WebGL globe: aircraft, maritime, satellites, public traffic cameras, hazards, conflict and cyber
+indicators, markets and live alerts, plus a Flight Path Planner for the route between any two airports.
 
-This repository currently contains the **specification and research pack**, not the application yet:
+It runs with **zero API keys**. Keys only unlock upgrades. Every number on screen comes from a named
+source, with the time it was observed and how fresh it is.
 
-| Path | What it is |
+- In the app: `/docs` (API reference), `/privacy` (what leaves the instance), `/cameras-notice` (camera
+  policy and takedown).
+- In this repository: [docs/API.md](docs/API.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
+  [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) · [.env.example](.env.example).
+
+## Honest data, by construction
+
+GODSEYE replicates the feature set of [OSIRIS](https://github.com/simplifaisoul/osiris) and was built to
+answer the criticism that project received: synthetic data shown as live intelligence, docs that drifted
+from the API, and weak security and licensing. The rules are enforced in code and tests, not just stated:
+
+- **Nothing is fabricated.** No random, jittered, cloned or padded data (`Math.random` is a lint error in
+  shipped code). Blocklist hits are drawn as **INDICATOR** points; attack arcs appear only when a source
+  reports both ends. Static layers (nuclear sites, chokepoints, conflict zones, ports) are badged
+  **REFERENCE**, never LIVE.
+- **Observation time is not fetch time.** Responses carry `observedAt` and `fetchedAt` separately; LIVE
+  only appears for data observed within its cadence. A source that fails shows **SOURCE OFFLINE** with
+  its last-good time — the API answers `503 source_offline`, never an empty list pretending to be current.
+- **Every aggregate response names its providers** with `{ok, count, ms, age_s}`.
+- **A heuristic is called a heuristic.** Without a model key, summaries come from the deterministic
+  ANALYST digest and say so; "AI" is used only for actual language-model output.
+- **One catalogue, no drift.** `src/lib/api-catalog.ts` generates `/docs`, `docs/API.md`, the Privacy
+  page's list of third parties and the per-route rate limits; tests fail when they disagree.
+
+## Quick start (no keys needed)
+
+Requirements: Node.js ≥ 22.12 and pnpm 10 (via Corepack).
+
+```sh
+corepack enable
+pnpm i
+pnpm dev            # http://localhost:3000
+```
+
+`pnpm dev` and `pnpm build` first vendor the MapLibre worker into `public/maplibre/<version>/`.
+`pnpm build && pnpm start` serves a production build. The first build downloads the three web fonts
+through `next/font`, which then self-hosts them.
+
+## Docker
+
+```sh
+docker compose up -d                                  # app + Caddy on https://localhost (Caddy's internal CA)
+GODSEYE_DOMAIN=monitor.example.org docker compose up -d   # automatic HTTPS for your domain
+docker compose --profile redis up -d                  # add Redis (set REDIS_URL=redis://redis:6379 in .env)
+```
+
+The image (`Dockerfile`) is a multi-stage `node:22-alpine` build: `pnpm install --frozen-lockfile`,
+`pnpm build`, then the standalone server with `.next/static` and `public/`, running as a non-root user
+with a `HEALTHCHECK` on `/api/health`. No secrets are baked in: put keys in `.env` (read at run time by
+compose) or pass them as environment variables. The app container is never published directly; Caddy
+(`Caddyfile`) terminates TLS, overwrites `X-Forwarded-For` / `X-Real-IP`, streams Server-Sent Events
+unbuffered and keeps no access log. Feed snapshots persist in the `snapshots` volume.
+
+## Configuration
+
+Every variable is optional; copy `.env.example` to `.env` and fill in only what you need.
+`GET /api/health` shows which capabilities are on and, if not, why. Never put secrets in `NEXT_PUBLIC_*`
+variables.
+
+### Identity, licensing and deployment
+
+| Variable | Effect |
 |---|---|
-| [`docs/OPUS_5_5_BUILD_PROMPT.md`](docs/OPUS_5_5_BUILD_PROMPT.md) | The complete build prompt for Claude Opus 5.5. It defines the parity target, pinned stack, architecture, verified data-source matrix, visual specification, the Flight Path Planner, quality gates, and a mandatory subagent orchestration plan. |
-| [`docs/reference/00-INDEX.md`](docs/reference/00-INDEX.md) | Index of the research pack the prompt refers to: 27 dossiers produced on 2026-09-30 from the OSIRIS source (MIT), the live site, and live probes of every upstream API, including licences and breaking changes. |
+| `GODSEYE_CONTACT` | Email or URL appended to the User-Agent sent to every upstream (default: this repo's issue tracker). Please set it on public instances. |
+| `COMMERCIAL_DEPLOYMENT` | `true` turns off every non-commercial source (capabilities `nc_sources`, `openmeteo`, `cloudflare`, `deepstate`). |
+| `NONCOMMERCIAL` | `true` enables DeepStateMap frontlines (`deepstate`; never with `COMMERCIAL_DEPLOYMENT`). |
+| `TRUSTED_PLATFORM` | `cloudflare`, `vercel` or `akamai`: trust that edge's client-IP header. Leave empty behind your own proxy. |
+| `TRUSTED_PROXY_HOPS` | Number of proxies appending to `X-Forwarded-For` (default 1: the rightmost entry is the client). |
+| `TRUST_PROXY_HEADER` | Trust exactly one header your proxy overwrites, e.g. `x-real-ip`. |
+| `HSTS_PRELOAD` | `true` adds `preload` to HSTS (commits the whole domain to HTTPS). |
+| `SSE_MAX_DURATION_MS` | Close event streams after this many ms so capped hosts reconnect cleanly (Vercel default 280000). |
+| `GODSEYE_DISABLE_POLLER` | `true` disables the background upstream poller (tests, static previews). |
 
-## How to use
+### Caching and self-hosted engines
 
-1. Open this repository in Claude Code with Opus 5.5 (for example `claude --model claude-opus-5-5`).
-2. Paste the contents of `docs/OPUS_5_5_BUILD_PROMPT.md` as the first message, or ask Claude to read it
-   and start at its section 13.
-3. The prompt instructs Opus 5.5 to clone the OSIRIS reference repository read-only, run research and
-   build subagents in parallel with strict file ownership, and drive lint, tests, visual QA and
-   Lighthouse to green before declaring completion.
+| Variable | Capability / effect |
+|---|---|
+| `REDIS_URL` | `redis`: shared snapshots, single-writer locks and rate limits across instances. |
+| `SNAPSHOT_STORE` | Force `memory`, `filesystem` or `redis`. |
+| `SNAPSHOT_DIR` | Filesystem snapshot store directory (survives restarts). |
+| `PHOTON_URL`, `NOMINATIM_URL` | Self-hosted geocoders instead of the public demo servers. |
+| `VALHALLA_URL`, `OSRM_URL` | Self-hosted routing engines. |
 
-## Provenance and licensing
+### Upgrades by capability
 
-The reference dossiers describe [`simplifaisoul/osiris`](https://github.com/simplifaisoul/osiris)
-(MIT, © 2026 simplifaisoul) and publicly documented third-party services. They are research notes to be
-re-verified at build time, not instructions. GODSEYE itself is MIT-licensed and must not reuse OSIRIS
-branding, links or promotions (see prompt §0).
+| Variable(s) | Capability | Unlocks |
+|---|---|---|
+| `ADSBLOL_REAPI=true` | `adsblol_reapi` | adsb.lol re-api (only from a feeder IP) |
+| `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`, `OPENSKY_LICENSED=true` | `opensky` | OpenSky (requires a written licence for live products) |
+| `ADSBFI_PERSONAL_USE=true` | `adsbfi` | adsb.fi open data (personal, non-commercial use only) |
+| `AEROAPI_KEY` | `aeroapi` | FlightAware AeroAPI filed routes and schedules |
+| `FPDB_API_KEY` | `fpdb` | FlightPlanDatabase plans (flight simulation only) |
+| `N2YO_API_KEY` | `n2yo` | Visual satellite passes |
+| `FIRMS_MAP_KEY` | `firms_area` | NASA FIRMS area API |
+| `OPENAQ_API_KEY` | `openaq` | OpenAQ v3 air quality |
+| `WAQI_TOKEN` | `waqi` | World Air Quality Index |
+| `CDSE_CLIENT_ID`, `CDSE_CLIENT_SECRET` | `cdse` | Copernicus Data Space (Sentinel Hub) |
+| `AIS_API_KEY` | `ais` | Live AIS vessels via a server-side AISStream relay |
+| `WINDY_WEBCAMS_KEY` | `windy` | Windy Webcams |
+| `TFL_APP_KEY` | `tfl` | TfL Unified API ("Powered by TfL Open Data") |
+| `WSDOT_ACCESS_CODE` | `wsdot` | WSDOT Traveler API (camera KML is keyless) |
+| `TRAFIKVERKET_KEY` | `trafikverket` | Trafikverket API (stills are keyless) |
+| `IBI511_KEYS` | `ibi511` | IBI 511 state camera APIs, e.g. `fl:KEY,ga:KEY` |
+| `CLOUDFLARE_API_TOKEN` | `cloudflare` | Cloudflare Radar outages and attack origins (CC BY-NC data) |
+| `ACLED_EMAIL`, `ACLED_PASSWORD` | `acled` | ACLED conflict events |
+| `UCDP_TOKEN` | `ucdp` | UCDP GED events |
+| `ABUSECH_AUTH_KEY` | `abusech` | abuse.ch APIs (bulk files stay keyless) |
+| `NVD_API_KEY` | `nvd` | Higher NVD rate limit |
+| `OTX_KEY` | `otx` | AlienVault OTX |
+| `SDK_INGEST_KEY` | `sdk` | GODSEYE SDK entity ingest (fail-closed without a key) |
+| `SHODAN_KEY` | `shodan` | Shodan full API (InternetDB is keyless) |
+| `IPINFO_TOKEN` | `ipinfo` | IPinfo Lite |
+| `OPENSANCTIONS_KEY` | `opensanctions` | OpenSanctions API |
+| `ETHERSCAN_API_KEY` | `etherscan` | Etherscan |
+| `HELIUS_API_KEY` | `helius` | Helius Solana RPC |
+| `SCANNER_URL`, `SCANNER_KEY` | `scanner` | Optional allow-listed scanner backend (passive scan types) |
+| `SCANNER_ALLOW_ACTIVE=true` | `scanner_active` | Operator opt-in for active scan types |
+| `FINNHUB_KEY` | `finnhub` | Finnhub quotes |
+| `COINGECKO_DEMO_KEY` | `coingecko_demo` | CoinGecko demo key |
+| `ANTHROPIC_API_KEY` | `anthropic` | Language-model briefings and overviews |
+| `GEMINI_API_KEY_1` | `gemini` | Fallback analyst model |
+| `OLLAMA_URL` | `ollama` | Operator-configured local model (visitors can never supply a URL) |
+| `DISABLE_USER_AI_KEYS=true` | `ai_user_keys` | Refuse visitor-supplied keys (`x-ai-key` header, used once, never stored) |
+| `GOOGLE_MAPS_API_KEY` | `photoreal` | Standalone Photoreal City View (Google 3D Tiles terms apply) |
+
+Keyless licence gates that are on by default: `nc_sources` (TeleGeography cables, OpenSanctions bulk,
+abuse.ch, ip-api, Shodan InternetDB, Edmonton cameras) and `openmeteo` (Open-Meteo free tier); both are
+off when `COMMERCIAL_DEPLOYMENT=true`.
+
+## Deployment notes
+
+- **Always put a reverse proxy in front, and make it overwrite `X-Forwarded-For`.** Rate limits are per
+  route and per client IP; if clients can supply their own `X-Forwarded-For`, they choose their own
+  bucket. Caddy: `header_up X-Forwarded-For {remote_host}` (as in `Caddyfile`); nginx:
+  `proxy_set_header X-Forwarded-For $remote_addr;`. Never expose `next start` or `node server.js`
+  directly. Behind Cloudflare, Vercel or Akamai set `TRUSTED_PLATFORM` instead.
+- **Streaming:** disable proxy buffering for `text/event-stream` (the app also sends
+  `X-Accel-Buffering: no`) and keep read timeouts above the 15 s heartbeat.
+- **Several instances:** set `REDIS_URL` so they share snapshots, the single-writer locks and the rate
+  limits; otherwise each instance polls every upstream itself.
+- **Vercel (secondary target):** function bodies are capped at 4.5 MB (bulk layers are compressed and
+  split to stay under it), durations are capped (event streams close at `SSE_MAX_DURATION_MS`, 280 s by
+  default there, and the browser reconnects), egress IPs are shared, so per-IP quotas such as CelesTrak
+  and Nominatim behave worse, and the Hobby plan is non-commercial. Use one region and a Redis
+  (for example Upstash) `REDIS_URL`.
+- **Security headers** (CSP, HSTS, `X-Frame-Options`, `nosniff`, `Permissions-Policy`) are set by the
+  app itself; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#accepted-trade-offs) for the trade-offs.
+
+## Privacy and responsible use
+
+- No accounts, no cookies, no analytics. Upstreams see the server, never the visitor's IP; `/privacy`
+  lists every third party that receives something a visitor typed, generated from the endpoint catalogue.
+- The visitor is never geolocated automatically: "centre on my region" is an explicit click.
+- OSINT tools are **passive and about infrastructure only** (domains, IPs, certificates, networks,
+  vulnerabilities). There is no username, email, phone or identity search.
+- Active scanning is available only if the operator connects a separate scanner backend; scans are
+  allow-listed and **proxied through this server**, never run "from your browser". Scanning systems you
+  are not authorised to test may be unlawful.
+- Cameras are official public feeds for situational and traffic awareness: no recording, archiving, or
+  face/plate recognition, a "Report / remove this camera" button on every feed, and a camera notice at
+  `/cameras-notice`.
+- Respect each provider's terms: the licence summary in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
+  lists attribution duties and which sources are non-commercial.
+
+## Contributing
+
+```sh
+pnpm lint          # ESLint 10, zero warnings
+pnpm typecheck     # TypeScript strict
+pnpm test          # Vitest (pnpm test:coverage enforces ≥ 80 % lines on src/lib, src/app/api, src/features/flight-paths)
+pnpm build
+pnpm e2e           # Playwright (starts the production server itself)
+```
+
+After changing the endpoint catalogue or a probe log, regenerate the generated docs (tests fail when they
+are stale):
+
+```sh
+node --experimental-transform-types --import ./tools/ts-loader.mjs tools/gen-api-docs.ts
+node --experimental-transform-types --import ./tools/ts-loader.mjs tools/compile-data-sources.ts
+```
+
+Probe every new upstream with `curl` and the GODSEYE User-Agent before wiring it, and record status,
+latency, CORS, auth and licence in `docs/data-sources/<area>.md`. Project rules for contributors and
+coding agents are in [CLAUDE.md](CLAUDE.md). CI runs all of the above plus Lighthouse CI and
+`pnpm audit --prod` on every push and pull request.
+
+## Credits and licence
+
+GODSEYE is released under the [MIT licence](LICENSE). It is an independent project that replicates the
+features of OSIRIS — **OSIRIS © 2026 simplifaisoul, MIT licence** — and reuses some of its data tables and
+behaviours with attribution; the NOTICE section of [LICENSE](LICENSE) lists files substantially derived
+from it. GODSEYE does not use the OSIRIS name, logo, links or promotions. World Monitor and Orodruin
+(AGPL) were studied for ideas only; no code was copied from them.
+
+Map data © OpenStreetMap contributors (ODbL), tiles by OpenFreeMap; satellite imagery: Esri, Vantor,
+Earthstar Geographics, and the GIS User Community; night lights and imagery courtesy of NASA GIBS. Every
+other source and its licence is listed in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) and in the in-app
+attribution panel.
