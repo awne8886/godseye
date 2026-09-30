@@ -128,7 +128,9 @@ export function attachTerrain(map: TerrainMap, { onStatus, onEngagedChange, isHi
     }
   };
   const onData = (e: MapSourceDataEvent) => {
-    if (active && !failed && e.sourceId === TERRAIN_SOURCE_ID && e.isSourceLoaded && (e.tile || e.sourceDataType === 'idle')) report('ready');
+    // The first DEM tile that arrives means terrain is drawing (R1-m2: `isSourceLoaded` can stay
+    // false for a long time while the pitched view keeps requesting more tiles).
+    if (active && !failed && e.sourceId === TERRAIN_SOURCE_ID && (e.tile || (e.isSourceLoaded && e.sourceDataType === 'idle'))) report('ready');
   };
   const onError = (e: ErrorEvent & { sourceId?: string }) => {
     if (!active || e.sourceId !== TERRAIN_SOURCE_ID) return;

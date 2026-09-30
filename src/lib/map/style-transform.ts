@@ -4,7 +4,10 @@
  * Also moves every symbol layer to the top so data layers and the terminator can be inserted
  * *under* the labels via `beforeId: firstLabelLayerId(style)`, sets our own attribution on the
  * vector source (never the upstream HTML), drops the `wood-pattern` fill pattern the sprite does
- * not ship, and thins place labels at z 3–5 so the globe stays readable.
+ * not ship, thins place labels at z 3–5 so the globe stays readable and labels in English where
+ * OSM has an English name (native script otherwise; visual-qa m18). The TileJSON of the vector
+ * source is fetched with the style and inlined (`inlineTileJson`) so a TileJSON failure takes
+ * the style's retry-with-backoff path instead of leaving a blank globe (R1-m2).
  * Owner: map-engine. Pure and unit-tested.
  */
 import type { FillExtrusionLayerSpecification, LayerSpecification, StyleSpecification } from 'maplibre-gl';
@@ -185,6 +188,19 @@ function dropMissingPatterns(l: LayerSpecification): LayerSpecification {
   return { ...l, paint } as LayerSpecification;
 }
 
+/** One label per place: English where OSM has it (`name:en`, the OMT `name_en`), else the local name. */
+export const ENGLISH_NAME: unknown[] = ['coalesce', ['get', 'name:en'], ['get', 'name_en'], ['get', 'name']];
+
+/** Replace name-based `text-field`s (the upstream bilingual latin/nonlatin stack); refs stay. */
+function englishLabels(l: LayerSpecification): LayerSpecification {
+  if (l.type !== 'symbol') return l;
+  const layout: Paint = { ...((l as { layout?: Paint }).layout ?? {}) };
+  const tf = layout['text-field'];
+  if (tf === undefined || !/"name(:|_|")|\{name/.test(JSON.stringify(tf))) return l;
+  layout['text-field'] = ENGLISH_NAME;
+  return { ...l, layout } as LayerSpecification;
+}
+
 /** Label density at z 3–5: raise place minzooms, prefer important places, pad labels at low zoom. */
 function thinLabels(l: LayerSpecification): LayerSpecification {
   if (l.type !== 'symbol' || sourceLayer(l) !== 'place') return l;
@@ -202,13 +218,53 @@ function thinLabels(l: LayerSpecification): LayerSpecification {
  * to the top (stable order within each group).
  */
 export function transformStyle(style: StyleSpecification, palette: BasemapPalette = HORUS_BASEMAP): StyleSpecification {
-  const layers = style.layers.map((l) => thinLabels(dropMissingPatterns(recolor(l, palette))));
+  const layers = style.layers.map((l) => englishLabels(thinLabels(dropMissingPatterns(recolor(l, palette)))));
   const base = layers.filter((l) => l.type !== 'symbol');
   const labels = layers.filter((l) => l.type === 'symbol');
   const sources = { ...style.sources };
   const omt = sources.openmaptiles;
   if (omt) sources.openmaptiles = { ...omt, attribution: BASEMAP_ATTRIBUTION } as typeof omt;
   return { ...style, sources, layers: [...base, ...labels] };
+}
+
+/** Vector source of the OpenFreeMap style whose TileJSON is inlined. */
+export const BASEMAP_SOURCE_ID = 'openmaptiles';
+
+export interface TileJson {
+  tiles: string[];
+  minzoom?: number;
+  maxzoom?: number;
+  bounds?: [number, number, number, number];
+}
+
+/** TileJSON URL of the basemap's vector source, if it is referenced by URL. */
+export function tileJsonUrl(style: StyleSpecification, sourceId = BASEMAP_SOURCE_ID): string | null {
+  const src = style.sources[sourceId] as { url?: unknown } | undefined;
+  return typeof src?.url === 'string' ? src.url : null;
+}
+
+/** Validate a fetched TileJSON: https tile templates on the same host as the TileJSON only. */
+export function parseTileJson(raw: unknown, from: string): TileJson {
+  const t = raw as Partial<TileJson> | null;
+  const host = new URL(from).host;
+  const tiles = Array.isArray(t?.tiles) ? t.tiles.filter((u): u is string => typeof u === 'string' && u.startsWith('https://') && new URL(u.replace(/[{}]/g, '')).host === host) : [];
+  if (!tiles.length) throw new Error('basemap TileJSON has no usable tiles');
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const b = t?.bounds;
+  const bounds = Array.isArray(b) && b.length === 4 && b.every((v) => typeof v === 'number' && Number.isFinite(v)) ? (b as TileJson['bounds']) : undefined;
+  return { tiles, minzoom: num(t?.minzoom), maxzoom: num(t?.maxzoom), bounds };
+}
+
+/** Replace the source's `url` with the TileJSON's tiles/zoom range/bounds (attribution kept ours). */
+export function inlineTileJson(style: StyleSpecification, tj: TileJson, sourceId = BASEMAP_SOURCE_ID): StyleSpecification {
+  const src = style.sources[sourceId];
+  if (!src) return style;
+  const { url: _url, ...rest } = src as { url?: string } & Record<string, unknown>;
+  const next: Record<string, unknown> = { ...rest, tiles: tj.tiles };
+  if (tj.minzoom !== undefined) next.minzoom = tj.minzoom;
+  if (tj.maxzoom !== undefined) next.maxzoom = tj.maxzoom;
+  if (tj.bounds) next.bounds = tj.bounds;
+  return { ...style, sources: { ...style.sources, [sourceId]: next as unknown as (typeof style.sources)[string] } };
 }
 
 /**
