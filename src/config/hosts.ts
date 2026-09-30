@@ -7,12 +7,17 @@
  * Owner: lead (shared file). Builders request additions in their report.
  */
 
-/** Map tile, style, glyph and sprite hosts fetched by MapLibre in the browser. */
+/**
+ * Map tile, style, glyph and sprite sources fetched by MapLibre in the browser. Entries with a
+ * path are CSP directory prefixes (must end in '/'), so a shared host like s3.amazonaws.com only
+ * admits the one bucket.
+ */
 export const TILE_HOSTS = [
   'https://tiles.openfreemap.org',
-  'https://server.arcgisonline.com',
-  'https://gibs.earthdata.nasa.gov',
-  'https://s3.amazonaws.com', // AWS Terrain Tiles (Terrarium) — elevation-tiles-prod bucket
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/',
+  'https://gibs.earthdata.nasa.gov/wmts/',
+  'https://s3.amazonaws.com/elevation-tiles-prod/', // AWS Terrain Tiles (Terrarium)
+  'https://tilecache.rainviewer.com/', // RainViewer radar tiles (metadata goes through /api)
 ] as const;
 
 /** Official embed hosts allowed in <iframe> (YouTube live channels, ISS stream). */
@@ -22,20 +27,30 @@ export const FRAME_HOSTS = [
 ] as const;
 
 /**
- * Hosts whose images the browser may load directly (thumbnails in panels).
- * Camera stills are never loaded from here: they go through the stills-only
- * /api/cctv/proxy with an exact-prefix allow-list.
+ * Image sources for panel thumbnails, rendered through next/image (the optimiser fetches them
+ * server-side) and allowed in img-src for plain <img> fallbacks. Camera stills are never loaded
+ * from here: they go through the stills-only /api/cctv/proxy with an exact-prefix allow-list.
  */
 export const IMAGE_HOSTS = [
-  'https://i.ytimg.com',
-  'https://upload.wikimedia.org',
+  'https://i.ytimg.com/vi/',
+  'https://upload.wikimedia.org/wikipedia/commons/',
+  'https://datahub.creodias.eu/', // Copernicus Data Space STAC quicklooks
+  'https://zipper.creodias.eu/', // …which redirect here
+  'https://*.telesco.pe/file/', // public Telegram channel media (t.me/s previews)
 ] as const;
 
 /**
- * Direct video/HLS hosts for official public camera streams (populated by the
- * surveillance builder from its provider registry; each entry must be an
- * operator's own public streaming host).
+ * Direct video/HLS sources for official public camera streams and channel media: each entry is
+ * an operator's own public streaming host (or path), never a re-streamer. Non-commercial-only
+ * hosts are not listed here; they would need a licence-gated CSP.
  */
-export const MEDIA_HOSTS: readonly string[] = [];
+export const MEDIA_HOSTS = [
+  'https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/', // TfL JamCams mp4 loops
+  'https://*.its.nv.gov', // Nevada DOT HLS
+  'https://*.dotd.la.gov', // Louisiana DOTD HLS
+  'https://skysfs4.trafficwise.org', // Indiana DOT HLS
+  'https://*.telesco.pe/file/', // public Telegram channel video
+  'https://*.cdn-telegram.org/file/',
+] as const;
 
 export type HostList = readonly string[];

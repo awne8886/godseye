@@ -116,6 +116,8 @@ export const SpaceWeatherResponse = Envelope.extend({
     btNt: z.number().nullable(),
     bzNt: z.number().nullable(),
     observedAt: IsoTime.nullable(),
+    /** Spacecraft the active RTSW row came from (ACE, DSCOVR, IMAP). */
+    source: z.string().nullable(),
   }),
   alerts: z.array(z.object({ id: z.string(), issuedAt: IsoTime, message: z.string() })),
 });

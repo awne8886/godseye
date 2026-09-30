@@ -86,11 +86,14 @@ export function isReservedIPv6(ip: string): boolean {
     const v4 = `${g[6]! >>> 8}.${g[6]! & 0xff}.${g[7]! >>> 8}.${g[7]! & 0xff}`;
     return isReservedIPv4(v4) || g[5] === 0; // deprecated compatible form: always block
   }
+  if (allZeroUntil(4) && g[4] === 0xffff && g[5] === 0) return true; // ::ffff:0:0/96 IPv4-translated (SIIT)
   if (a === 0x64 && b === 0xff9b) return true; // 64:ff9b::/96 and 64:ff9b:1::/48 NAT64
   if (a === 0x0100 && g[1] === 0 && g[2] === 0 && g[3] === 0) return true; // 100::/64 discard
   if (a === 0x2001 && b === 0x0db8) return true; // documentation
   if (a === 0x2001 && b < 0x0200) return true; // 2001::/23 IETF protocol assignments (Teredo etc.)
   if (a === 0x2002) return true; // 6to4 can embed private IPv4
+  if (a === 0x3fff && (b & 0xf000) === 0) return true; // 3fff::/20 documentation (RFC 9637)
+  if (a === 0x5f00) return true; // 5f00::/16 SRv6 SIDs (RFC 9602)
   if ((a & 0xfe00) === 0xfc00) return true; // fc00::/7 ULA
   if ((a & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
   if ((a & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local
@@ -115,11 +118,14 @@ export type Resolver = (host: string) => Promise<{ address: string; family: numb
 
 const defaultResolver: Resolver = (host) => dns.promises.lookup(host, { all: true, verbatim: true });
 
+/** Predicate deciding whether an address is off-limits (tests may narrow it; production uses isReservedIp). */
+export type IsBlocked = (ip: string) => boolean;
+
 /** Validate a hostname or IP literal (from user input) and every address it resolves to. */
-export async function validateHost(rawHost: string, resolve: Resolver = defaultResolver): Promise<HostCheck> {
+export async function validateHost(rawHost: string, resolve: Resolver = defaultResolver, isBlocked: IsBlocked = isReservedIp): Promise<HostCheck> {
   const host = rawHost.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
   if (!host) return { ok: false, reason: 'empty host' };
-  if (net.isIP(host)) return isReservedIp(host) ? { ok: false, reason: 'reserved address' } : { ok: true, addresses: [host] };
+  if (net.isIP(host)) return isBlocked(host) ? { ok: false, reason: 'reserved address' } : { ok: true, addresses: [host] };
   // Anything numeric-looking that is not a canonical dotted quad (e.g. 2130706433, 0x7f.1, 127.1).
   if (/^[0-9a-fx.]+$/.test(host) && !/[g-wyz]/.test(host) && /^(0x[0-9a-f]+|\d+)(\.(0x[0-9a-f]+|\d+))*$/.test(host)) {
     return { ok: false, reason: 'non-canonical IPv4 literal' };
@@ -134,47 +140,77 @@ export async function validateHost(rawHost: string, resolve: Resolver = defaultR
     return { ok: false, reason: 'dns lookup failed' };
   }
   if (!answers.length) return { ok: false, reason: 'no dns answers' };
-  const bad = answers.find((a) => isReservedIp(a.address));
+  const bad = answers.find((a) => isBlocked(a.address));
   if (bad) return { ok: false, reason: 'resolves to a reserved address' };
   return { ok: true, addresses: answers.map((a) => a.address) };
 }
 
-const ALLOWED_PORTS = new Set(['', '80', '443', '8080', '8443']);
+export const ALLOWED_PORTS: ReadonlySet<string> = new Set(['', '80', '443', '8080', '8443']);
 
 /** Throws HttpError('blocked') unless `url` is an http(s) URL to a public host on an allowed port. */
-export async function assertPublicUrl(url: URL, resolve: Resolver = defaultResolver): Promise<void> {
+export async function assertPublicUrl(
+  url: URL,
+  resolve: Resolver = defaultResolver,
+  isBlocked: IsBlocked = isReservedIp,
+  ports: ReadonlySet<string> = ALLOWED_PORTS,
+): Promise<void> {
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new HttpError('Only http(s) URLs are allowed', 'blocked', url.toString());
   if (url.username || url.password) throw new HttpError('Credentials in URLs are not allowed', 'blocked', url.toString());
-  if (!ALLOWED_PORTS.has(url.port)) throw new HttpError(`Port ${url.port} is not allowed`, 'blocked', url.toString());
-  const check = await validateHost(url.hostname, resolve);
+  if (!ports.has(url.port)) throw new HttpError(`Port ${url.port} is not allowed`, 'blocked', url.toString());
+  const check = await validateHost(url.hostname, resolve, isBlocked);
   if (!check.ok) throw new HttpError(`Blocked host: ${check.reason}`, 'blocked', url.toString());
 }
 
 /**
- * DNS lookup for the socket that rejects reserved answers at connect time (defeats rebinding).
- * Node calls it with `{all: true}` when happy-eyeballs is on; handle both shapes.
+ * DNS lookup for the socket that rejects reserved answers at connect time (defeats rebinding:
+ * the address actually connected to is the one checked). Node calls it with `{all: true}` when
+ * happy-eyeballs is on; both shapes are handled.
  */
-export const guardedLookup: LookupFunction = (hostname, options, callback) => {
-  dns.lookup(hostname, { ...options, all: true, verbatim: true }, (err, addresses) => {
-    if (err) return (callback as (e: Error | null) => void)(err);
-    const list = addresses as dns.LookupAddress[];
-    if (!list.length || list.some((a) => isReservedIp(a.address))) {
-      const e = Object.assign(new Error(`Blocked: ${hostname} resolves to a reserved address`), { code: 'EBLOCKED' });
-      return (callback as (e: Error | null) => void)(e);
-    }
-    if ((options as dns.LookupOptions).all) return (callback as (e: null, a: dns.LookupAddress[]) => void)(null, list);
-    const first = list[0]!;
-    return (callback as (e: null, a: string, f: number) => void)(null, first.address, first.family);
-  });
-};
+export function makeGuardedLookup(resolve: Resolver = defaultResolver, isBlocked: IsBlocked = isReservedIp): LookupFunction {
+  return (hostname, options, callback) => {
+    const cb = callback as (e: NodeJS.ErrnoException | null, a?: string | dns.LookupAddress[], f?: number) => void;
+    resolve(hostname).then(
+      (list) => {
+        if (!list.length || list.some((a) => isBlocked(a.address))) {
+          cb(Object.assign(new Error(`Blocked: ${hostname} resolves to a reserved address`), { code: 'EBLOCKED' }));
+          return;
+        }
+        if ((options as dns.LookupOptions).all) cb(null, list.map((a) => ({ address: a.address, family: a.family })));
+        else cb(null, list[0]!.address, list[0]!.family);
+      },
+      (err: NodeJS.ErrnoException) => cb(err),
+    );
+  };
+}
 
-/** Fetch a user-supplied URL through the guard: validated host, guarded socket lookup, every hop re-checked. */
-export function safeFetch(url: string | URL, opts: Omit<HttpOptions, 'validateUrl' | 'lookup'> = {}): Promise<HttpResult> {
+export const guardedLookup: LookupFunction = makeGuardedLookup();
+
+export interface SafeFetchOptions extends Omit<HttpOptions, 'validateUrl' | 'lookup'> {
+  /** Injectable resolver (tests); production uses the system resolver. */
+  resolve?: Resolver;
+  /** Injectable address predicate (tests only). */
+  isBlocked?: IsBlocked;
+  /** Allowed ports ('' = scheme default). */
+  ports?: ReadonlySet<string>;
+}
+
+/**
+ * Fetch a user-supplied URL through the guard: validated host, guarded socket lookup, every hop
+ * re-checked, no retries, 8 s per hop, 20 s overall, 2 MB cap (callers may lower, not raise blindly).
+ */
+export function safeFetch(
+  url: string | URL,
+  { resolve = defaultResolver, isBlocked = isReservedIp, ports = ALLOWED_PORTS, ...opts }: SafeFetchOptions = {},
+): Promise<HttpResult> {
   return httpRequest(url, {
     maxRedirects: 3,
+    retries: 0,
+    timeoutMs: 8000,
+    deadlineMs: 20_000,
+    maxBytes: 2 * 1024 * 1024,
     ...opts,
-    validateUrl: (u) => assertPublicUrl(u),
-    lookup: guardedLookup,
+    validateUrl: (u) => assertPublicUrl(u, resolve, isBlocked, ports),
+    lookup: makeGuardedLookup(resolve, isBlocked),
   });
 }
 
@@ -182,7 +218,7 @@ export function safeFetch(url: string | URL, opts: Omit<HttpOptions, 'validateUr
 export interface AllowRule {
   /** Exact hostname, or `*.example.com` for one-or-more subdomain labels (never the apex). */
   host: string;
-  /** Required path prefix (after normalisation), e.g. `/jamcams.tfl.gov.uk/`. */
+  /** Required path prefix, matched on a `/` boundary, e.g. `/jamcams.tfl.gov.uk/`. */
   pathPrefix: string;
   protocols?: readonly ('https:' | 'http:')[];
 }
@@ -200,6 +236,9 @@ export function matchesAllowList(url: URL, rules: readonly AllowRule[]): boolean
     const protocols = r.protocols ?? ['https:'];
     if (!protocols.includes(url.protocol as 'https:' | 'http:')) return false;
     const hostOk = r.host.startsWith('*.') ? host.endsWith(r.host.slice(1)) && host.length > r.host.length - 1 : host === r.host.toLowerCase();
-    return hostOk && rawPath.startsWith(r.pathPrefix);
+    // A prefix is a directory boundary: `/arcgis` matches `/arcgis` and `/arcgis/…`, never `/arcgis-evil/`.
+    const prefix = r.pathPrefix;
+    const pathOk = prefix.endsWith('/') ? rawPath.startsWith(prefix) : rawPath === prefix || rawPath.startsWith(`${prefix}/`);
+    return hostOk && pathOk;
   });
 }

@@ -1,7 +1,9 @@
 /**
- * Shareable, restorable URL state: camera + layers + theme + open panel + route + flight.
- *   ?c=lat,lng,zoom[,pitch,bearing]   ?layers=a,b,c   ?theme=HORUS   ?panel=paths
- *   ?route=LHR-JFK                    ?flight=BA117   ?proj=mercator
+ * Shareable, restorable URL state: camera + layers + theme + open/pinned panels + route + flight
+ * + dossier target.
+ *   ?c=lat,lng,zoom[,pitch,bearing]   ?layers=a,b,c   ?theme=HORUS   ?panel=paths   ?pinned=a,b
+ *   ?route=LHR-JFK   ?flight=BA117   ?dossier=lat,lng   ?proj=mercator
+ * OSIRIS links (`?lat=&lon=&zoom=`) are accepted on read and never written.
  * Pure parse/serialise helpers (unit-tested); the client hook that syncs them with nuqs lives in
  * src/components/UrlStateSync.tsx. Owner: lead.
  */
@@ -34,6 +36,28 @@ export function serializeCamera(c: CameraParam): string {
   return parts.join(',');
 }
 
+/** OSIRIS-era `?lat=&lon=&zoom=` links (read-only compatibility). */
+export function parseLegacyCamera(params: URLSearchParams): CameraParam | null {
+  const lat = params.get('lat');
+  const lon = params.get('lon') ?? params.get('lng');
+  if (lat === null || lon === null) return null;
+  return parseCamera(`${lat},${lon},${params.get('zoom') ?? '4'}`);
+}
+
+/** `?dossier=lat,lng` */
+export function parseLatLngParam(value: string | null | undefined): { lat: number; lng: number } | null {
+  if (!value) return null;
+  const parts = value.split(',').map((s) => Number(s.trim()));
+  if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n))) return null;
+  const [lat, lng] = parts as [number, number];
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+export function serializeLatLng(p: { lat: number; lng: number }): string {
+  return `${round(p.lat, 4)},${round(p.lng, 4)}`;
+}
+
 /** `LHR-JFK`, `EGLL-KJFK` (also accepts `→`, `>`, spaces). Codes are 3–4 alphanumerics. */
 export function parseRouteParam(value: string | null | undefined): { from: string; to: string } | null {
   if (!value) return null;
@@ -59,13 +83,22 @@ export function parsePanelParam(value: string | null | undefined): PanelId | nul
   return value && PANEL_IDS.has(value) ? (value as PanelId) : null;
 }
 
+/** `?pinned=flight-watch,camera` — unknown ids dropped, duplicates removed, at most 6. */
+export function parsePinnedParam(value: string | null | undefined): PanelId[] | null {
+  if (!value) return null;
+  const ids = [...new Set(value.split(',').map((s) => s.trim()))].filter((id) => PANEL_IDS.has(id)) as PanelId[];
+  return ids.length ? ids.slice(0, 6) : null;
+}
+
 export interface UrlState {
   camera: CameraParam | null;
   layers: LayerId[] | null;
   theme: string | null;
   panel: PanelId | null;
+  pinned: PanelId[] | null;
   route: { from: string; to: string } | null;
   flight: string | null;
+  dossier: { lat: number; lng: number } | null;
   projection: 'globe' | 'mercator' | null;
 }
 
@@ -73,12 +106,14 @@ export function parseUrlState(params: URLSearchParams): UrlState {
   const proj = params.get('proj');
   const theme = params.get('theme');
   return {
-    camera: parseCamera(params.get('c')),
+    camera: parseCamera(params.get('c')) ?? parseLegacyCamera(params),
     layers: parseLayersParam(params.get('layers')),
     theme: theme && /^[A-Z0-9_-]{2,24}$/i.test(theme) ? theme.toUpperCase() : null,
     panel: parsePanelParam(params.get('panel')),
+    pinned: parsePinnedParam(params.get('pinned')),
     route: parseRouteParam(params.get('route')),
     flight: parseFlightParam(params.get('flight')),
+    dossier: parseLatLngParam(params.get('dossier')),
     projection: proj === 'globe' || proj === 'mercator' ? proj : null,
   };
 }
@@ -89,8 +124,10 @@ export function buildShareUrl(origin: string, s: Partial<UrlState> & { layers?: 
   if (s.layers) url.searchParams.set('layers', serializeLayersParam(s.layers));
   if (s.theme) url.searchParams.set('theme', s.theme);
   if (s.panel) url.searchParams.set('panel', s.panel);
+  if (s.pinned?.length) url.searchParams.set('pinned', s.pinned.join(','));
   if (s.route) url.searchParams.set('route', serializeRouteParam(s.route));
   if (s.flight) url.searchParams.set('flight', s.flight);
+  if (s.dossier) url.searchParams.set('dossier', serializeLatLng(s.dossier));
   if (s.projection && s.projection !== 'globe') url.searchParams.set('proj', s.projection);
   return url.toString();
 }

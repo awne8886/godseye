@@ -46,24 +46,47 @@ export const TOOLS = [
 
 export type ToolId = (typeof TOOLS)[number]['id'];
 
-/** Panels opened from elsewhere (keys, cards, rail bottom, double right-click). */
+/**
+ * Where a panel is launched from (besides keys and the command palette):
+ * rail-bottom = under the layer rail; status-bar = footer link; card = from an entity card;
+ * map = a map gesture (double right-click / long-press); key = keyboard/palette only.
+ */
+export type Launcher = 'rail-bottom' | 'status-bar' | 'card' | 'map' | 'key';
+
+/** Panels opened from elsewhere (keys, cards, rail bottom, status bar, map gestures). */
 export const PANELS = [
-  { id: 'layers', label: 'LAYERS', owner: 'design-system-hud' },
-  { id: 'intel', label: 'INTEL FEED', owner: 'panels-alerts-markets-dossier-graph' },
-  { id: 'dossier', label: 'REGION DOSSIER', owner: 'panels-alerts-markets-dossier-graph' },
-  { id: 'graph', label: 'ENTITY GRAPH', owner: 'panels-alerts-markets-dossier-graph' },
-  { id: 'flight-watch', label: 'FLIGHT WATCH', owner: 'layers-aviation' },
-  { id: 'camera', label: 'CAMERA VIEWER', owner: 'layers-surveillance' },
-  { id: 'satellite', label: 'SATELLITE', owner: 'layers-space' },
-  { id: 'settings', label: 'SETTINGS', owner: 'design-system-hud' },
-  { id: 'style-studio', label: 'STYLE STUDIO', owner: 'design-system-hud' },
-  { id: 'share', label: 'SHARE', owner: 'design-system-hud' },
-  { id: 'help', label: 'SHORTCUTS', owner: 'design-system-hud' },
-  { id: 'palette', label: 'COMMAND PALETTE', owner: 'design-system-hud' },
-  { id: 'attribution', label: 'SOURCES & LICENCES', owner: 'design-system-hud' },
-] as const satisfies readonly { id: string; label: string; owner: PanelOwner }[];
+  { id: 'layers', label: 'LAYERS', launcher: 'key', owner: 'design-system-hud' },
+  { id: 'presets', label: 'REGION PRESETS', launcher: 'key', owner: 'design-system-hud' },
+  { id: 'intel', label: 'INTEL FEED', launcher: 'key', owner: 'panels-alerts-markets-dossier-graph' },
+  { id: 'dossier', label: 'REGION DOSSIER', launcher: 'map', owner: 'panels-alerts-markets-dossier-graph' },
+  { id: 'graph', label: 'ENTITY GRAPH', launcher: 'card', owner: 'panels-alerts-markets-dossier-graph' },
+  { id: 'flight-watch', label: 'FLIGHT WATCH', launcher: 'card', owner: 'layers-aviation' },
+  { id: 'camera', label: 'CAMERA VIEWER', launcher: 'card', owner: 'layers-surveillance' },
+  { id: 'live-news', label: 'LIVE NEWS', launcher: 'card', owner: 'layers-surveillance' },
+  { id: 'satellite', label: 'SATELLITE', launcher: 'card', owner: 'layers-space' },
+  { id: 'settings', label: 'SETTINGS', launcher: 'rail-bottom', owner: 'design-system-hud' },
+  { id: 'style-studio', label: 'STYLE STUDIO', launcher: 'rail-bottom', owner: 'design-system-hud' },
+  { id: 'share', label: 'SHARE', launcher: 'status-bar', owner: 'design-system-hud' },
+  { id: 'help', label: 'SHORTCUTS', launcher: 'status-bar', owner: 'design-system-hud' },
+  { id: 'palette', label: 'COMMAND PALETTE', launcher: 'key', owner: 'design-system-hud' },
+  { id: 'attribution', label: 'SOURCES & LICENCES', launcher: 'status-bar', owner: 'design-system-hud' },
+] as const satisfies readonly { id: string; label: string; launcher: Launcher; owner: PanelOwner }[];
 
 export type PanelId = ToolId | (typeof PANELS)[number]['id'];
 
 /** Mobile bottom nav (7 tabs, §7). */
 export const MOBILE_TABS = ['layers', 'markets', 'intel', 'recon', 'search', 'paths', 'route'] as const satisfies readonly PanelId[];
+
+/**
+ * What each mobile tab's bottom sheet contains, so every tool stays reachable on phones
+ * (ALERTS, SPACE, DRAW, ARCGIS, REMOTE and the rail-bottom panels have no tab of their own).
+ */
+export const MOBILE_SHEETS = {
+  layers: ['layers', 'presets', 'style-studio', 'settings'],
+  markets: ['markets', 'space'],
+  intel: ['intel', 'alerts'],
+  recon: ['recon', 'arcgis', 'remote'],
+  search: ['search', 'share', 'attribution'],
+  paths: ['paths'],
+  route: ['route', 'draw'],
+} as const satisfies Record<(typeof MOBILE_TABS)[number], readonly PanelId[]>;

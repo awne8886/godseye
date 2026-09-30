@@ -39,6 +39,8 @@ export interface HttpOptions {
   lookup?: LookupFunction;
   /** Wait on an upstream politeness limiter before each attempt. */
   limiter?: { take(): Promise<void> };
+  /** Overall deadline in ms across every attempt and redirect hop (default: none). */
+  deadlineMs?: number;
   signal?: AbortSignal;
 }
 
@@ -70,6 +72,8 @@ export class HttpError extends Error {
 }
 
 const FORBIDDEN_HEADERS = ['x-forwarded-for', 'x-real-ip', 'forwarded', 'true-client-ip', 'cf-connecting-ip', 'x-client-ip'];
+/** Credentials that must never follow a redirect to another origin. */
+const CREDENTIAL_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'x-api-key', 'auth-key', 'api-key', 'x-ai-key', 'x-windy-api-key', 'x-ucdp-access-token'];
 const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const DEFAULT_MAX_BYTES = 50 * 1024 * 1024;
 const MAX_RETRY_AFTER_MS = 10_000;
@@ -102,19 +106,22 @@ function parseRetryAfter(value: string | string[] | undefined): number | undefin
   return Number.isFinite(at) ? Math.max(0, at - Date.now()) : undefined;
 }
 
-function decode(buf: Buffer, encoding: string | undefined): Buffer {
+/** Decompress with an output cap so a decompression bomb cannot exhaust memory. */
+function decode(buf: Buffer, encoding: string | undefined, maxOutputLength: number): Buffer {
+  const opts = { maxOutputLength };
   switch ((encoding ?? '').trim().toLowerCase()) {
     case 'gzip':
     case 'x-gzip':
-      return zlib.gunzipSync(buf);
+      return zlib.gunzipSync(buf, opts);
     case 'deflate':
       try {
-        return zlib.inflateSync(buf);
-      } catch {
-        return zlib.inflateRawSync(buf);
+        return zlib.inflateSync(buf, opts);
+      } catch (e) {
+        if (e instanceof RangeError) throw e;
+        return zlib.inflateRawSync(buf, opts);
       }
     case 'br':
-      return zlib.brotliDecompressSync(buf);
+      return zlib.brotliDecompressSync(buf, opts);
     default:
       return buf;
   }
@@ -131,6 +138,10 @@ function attempt(url: URL, opts: HttpOptions, headers: Record<string, string>): 
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
   const mod = url.protocol === 'https:' ? https : http;
   return new Promise((resolve, reject) => {
+    if (opts.signal?.aborted) {
+      reject(new HttpError('Aborted', 'aborted', url.toString()));
+      return;
+    }
     let settled = false;
     const done = (fn: () => void) => {
       if (settled) return;
@@ -166,13 +177,13 @@ function attempt(url: URL, opts: HttpOptions, headers: Record<string, string>): 
           done(() => {
             try {
               const raw = Buffer.concat(chunks);
-              const body = opts.method === 'HEAD' ? raw : decode(raw, res.headers['content-encoding'] as string | undefined);
-              if (body.length > maxBytes) {
+              const body = opts.method === 'HEAD' ? raw : decode(raw, res.headers['content-encoding'] as string | undefined, maxBytes);
+              resolve({ status: res.statusCode ?? 0, headers: res.headers, body });
+            } catch (e) {
+              if (e instanceof RangeError || (e as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') {
                 reject(new HttpError(`Decoded response exceeds ${maxBytes} bytes`, 'too_large', url.toString(), res.statusCode));
                 return;
               }
-              resolve({ status: res.statusCode ?? 0, headers: res.headers, body });
-            } catch (e) {
               reject(new HttpError(`Could not decode response: ${(e as Error).message}`, 'parse', url.toString(), res.statusCode));
             }
           });
@@ -222,22 +233,35 @@ export async function httpRequest(input: string | URL, opts: HttpOptions = {}): 
     throw e instanceof HttpError ? new HttpError(e.message, e.code, String(input)) : e;
   }
 
+  // Overall deadline: combine the caller's signal with a timer across attempts and hops.
+  const deadline = opts.deadlineMs ? AbortSignal.timeout(opts.deadlineMs) : undefined;
+  const signal = deadline && opts.signal ? AbortSignal.any([deadline, opts.signal]) : (deadline ?? opts.signal);
+  const attemptOpts: HttpOptions = { ...opts, signal };
+
   let lastError: HttpError | null = null;
   for (let n = 0; n <= retries; n++) {
-    if (n > 0) await sleep(Math.min(MAX_RETRY_AFTER_MS, lastError?.retryAfterMs ?? backoffMs(n)), opts.signal);
+    if (n > 0) await sleep(Math.min(MAX_RETRY_AFTER_MS, lastError?.retryAfterMs ?? backoffMs(n)), signal);
     let url = new URL(input);
+    let hopHeaders = headers;
     try {
       let hops = 0;
       for (;;) {
         if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new HttpError(`Unsupported protocol ${url.protocol}`, 'blocked', url.toString());
         await opts.validateUrl?.(url);
         await opts.limiter?.take();
-        const res = await attempt(url, opts, headers);
+        const res = await attempt(url, attemptOpts, hopHeaders);
         const location = res.headers.location;
         if (res.status >= 300 && res.status < 400 && res.status !== 304 && location && maxRedirects > 0) {
           if (hops >= maxRedirects) throw new HttpError(`Too many redirects (> ${maxRedirects})`, 'redirect', url.toString(), res.status);
           hops++;
-          url = new URL(location, url);
+          const next = new URL(location, url);
+          if (url.protocol === 'https:' && next.protocol === 'http:') {
+            throw new HttpError('Refusing to follow an https → http downgrade', 'redirect', next.toString(), res.status);
+          }
+          if (next.origin !== url.origin) {
+            hopHeaders = Object.fromEntries(Object.entries(hopHeaders).filter(([k]) => !CREDENTIAL_HEADERS.includes(k)));
+          }
+          url = next;
           continue;
         }
         if (RETRY_STATUS.has(res.status) && idempotent && n < retries) {
@@ -262,8 +286,9 @@ export async function httpRequest(input: string | URL, opts: HttpOptions = {}): 
         };
       }
     } catch (e) {
-      const err = e instanceof HttpError ? e : new HttpError((e as Error).message, 'network', url.toString());
-      if (err.code === 'blocked' || err.code === 'too_large' || err.code === 'aborted' || err.code === 'redirect' || !idempotent || n >= retries) throw err;
+      let err = e instanceof HttpError ? e : new HttpError((e as Error).message, 'network', url.toString());
+      if (err.code === 'aborted' && deadline?.aborted) err = new HttpError(`Deadline of ${opts.deadlineMs} ms exceeded`, 'timeout', url.toString());
+      if (err.code === 'blocked' || err.code === 'too_large' || err.code === 'aborted' || err.code === 'redirect' || !idempotent || n >= retries || deadline?.aborted) throw err;
       lastError = err;
     }
   }

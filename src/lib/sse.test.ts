@@ -55,3 +55,13 @@ describe('SSE', () => {
     expect(hub.subscribe(new Request('http://x/')).status).toBe(503);
   });
 });
+
+describe('SSE per-IP cap', () => {
+  it('allows at most 4 concurrent streams per client IP', () => {
+    const hub = new SseHub('per-ip', () => null);
+    const open = Array.from({ length: 4 }, () => hub.subscribe(new Request('http://x/'), undefined, '5.6.7.8'));
+    expect(open.every((r) => r.status === 200)).toBe(true);
+    expect(hub.subscribe(new Request('http://x/'), undefined, '5.6.7.8').status).toBe(429);
+    expect(hub.subscribe(new Request('http://x/'), undefined, '5.6.7.9').status).toBe(200);
+  });
+});

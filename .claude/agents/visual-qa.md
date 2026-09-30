@@ -35,4 +35,4 @@ chrome missing, mobile issues) as severity · file · fix · e2e specs written a
 - **Stack:** Next 16.3.7 App Router · React 19.3 · TS 6.0.3 strict · Tailwind 4 tokens · MapLibre 6 globe
   + deck.gl 9.4 interleaved · zustand (UI only) · react-query · zod contracts in `src/lib/schemas`.
 - **Tokens (HORUS):** bg #04040A/#06060C, panel rgba(8,10,20,.88), gold #D4AF37, cyan #00E5FF,
-  text #E8E6E0/#9B978E/muted #7A776F; map classes via `--map-*` tokens — never hard-code colours.
+  text #E8E6E0/#9B978E/muted #848178; map classes via `--map-*` tokens — never hard-code colours.

@@ -111,3 +111,62 @@ describe('allow-lists', () => {
     expect(matchesAllowList(new URL('https://a:b@s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/1.jpg'), rules)).toBe(false);
   });
 });
+
+describe('SSRF guard: regression cases from Phase 0', () => {
+  it('blocks IPv4-translated, new documentation and SRv6 prefixes', () => {
+    for (const ip of ['::ffff:0:127.0.0.1', '::ffff:0:a00:1', '3fff::1', '3fff:0fff::1', '5f00::1']) expect(isReservedIPv6(ip), ip).toBe(true);
+    expect(isReservedIPv6('3fff:1000::1')).toBe(false);
+  });
+
+  it('treats allow-list prefixes as directory boundaries', () => {
+    const rules = [{ host: 'services.arcgis.com', pathPrefix: '/arcgis' }];
+    expect(matchesAllowList(new URL('https://services.arcgis.com/arcgis/rest/x'), rules)).toBe(true);
+    expect(matchesAllowList(new URL('https://services.arcgis.com/arcgis'), rules)).toBe(true);
+    expect(matchesAllowList(new URL('https://services.arcgis.com/arcgis-evil/x'), rules)).toBe(false);
+  });
+
+  describe('with a local "public" origin', () => {
+    let server: http.Server;
+    let port = 0;
+    const hits: string[] = [];
+    beforeAll(async () => {
+      server = http.createServer((req, res) => {
+        hits.push(req.url ?? '');
+        if (req.url === '/to-metadata') {
+          res.statusCode = 302;
+          res.setHeader('location', 'http://metadata.test/latest/');
+        } else if (req.url === '/to-private-literal') {
+          res.statusCode = 302;
+          res.setHeader('location', 'http://10.0.0.1/admin');
+        } else res.statusCode = 200;
+        res.end('ok');
+      });
+      await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+      port = (server.address() as AddressInfo).port;
+    });
+    afterAll(() => new Promise<void>((r) => server.close(() => r())));
+    // Test-only policy: pretend 127.0.0.1 is public so the local server can play the external origin.
+    const isBlocked = (ip: string) => ip !== '127.0.0.1' && (ip.includes(':') ? isReservedIPv6(ip) : isReservedIPv4(ip));
+    const resolve: Resolver = async (host) =>
+      host === 'origin.test' ? [{ address: '127.0.0.1', family: 4 }] : host === 'metadata.test' ? [{ address: '169.254.169.254', family: 4 }] : [];
+
+    it('re-validates redirect hops (to a metadata name and to a private literal)', async () => {
+      const ports = new Set(['', String(port)]);
+      const ok = await safeFetch(`http://origin.test:${port}/plain`, { resolve, isBlocked, ports });
+      expect(ok.status).toBe(200);
+      await expect(safeFetch(`http://origin.test:${port}/to-metadata`, { resolve, isBlocked, ports })).rejects.toMatchObject({ code: 'blocked' });
+      await expect(safeFetch(`http://origin.test:${port}/to-private-literal`, { resolve, isBlocked, ports })).rejects.toMatchObject({ code: 'blocked' });
+      // Ports outside the allow-list are refused outright.
+      await expect(safeFetch(`http://origin.test:${port}/plain`, { resolve, isBlocked })).rejects.toMatchObject({ code: 'blocked' });
+    });
+
+    it('blocks DNS rebinding at connect time (validation saw public, the socket sees private)', async () => {
+      let calls = 0;
+      const rebinding: Resolver = async () => (++calls === 1 ? [{ address: '93.184.216.34', family: 4 }] : [{ address: '10.0.0.5', family: 4 }]);
+      const before = hits.length;
+      await expect(safeFetch('http://rebind.test:8080/', { resolve: rebinding })).rejects.toMatchObject({ code: 'blocked' });
+      expect(calls).toBe(2);
+      expect(hits.length).toBe(before);
+    });
+  });
+});

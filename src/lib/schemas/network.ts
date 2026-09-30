@@ -40,25 +40,38 @@ export const C2Server = EntityBase.extend({
   country: z.string().nullable(),
   hostname: z.string().nullable(),
   firstSeen: IsoTime.nullable(),
+  /** Feodo publishes a date only; normalised to 00:00:00Z of that date and labelled date-only in the UI. */
   lastOnline: IsoTime.nullable(),
+  lastOnlineDateOnly: z.boolean(),
   geoPrecision: GeoPrecision,
   label: z.literal('INDICATOR'),
 });
 
 export const C2Response = Envelope.extend({ items: z.array(C2Server) });
 
-export const ThreatIndicator = EntityBase.extend({
+/**
+ * ThreatFox IOC. Most IOCs (domains, URLs, hashes) have no location: they live in the panel list.
+ * Only IP IOCs that could be geolocated carry `geo` and are drawn as INDICATOR points.
+ * Attacker domains are never DNS-resolved by the server.
+ */
+export const ThreatIndicator = z.object({
+  id: z.string(),
+  threatfoxId: z.string(),
   ioc: z.string(),
   iocType: z.string(),
   threatType: z.string(),
   malware: z.string().nullable(),
   confidence: z.number().int().min(0).max(100).nullable(),
+  tags: z.array(z.string()),
+  firstSeen: IsoTime.nullable(),
+  observedAt: IsoTime.nullable(),
   reference: z.url().nullable(),
-  geoPrecision: GeoPrecision,
+  source: z.string(),
+  geo: z.object({ lat: z.number(), lng: z.number(), precision: GeoPrecision, country: z.string().nullable() }).nullable(),
   label: z.literal('INDICATOR'),
 });
 
-export const ThreatFoxResponse = Envelope.extend({ items: z.array(ThreatIndicator) });
+export const ThreatFoxResponse = Envelope.extend({ items: z.array(ThreatIndicator), located: z.number().int().nonnegative() });
 
 export const KevEntry = z.object({
   cveId: z.string().regex(/^CVE-\d{4}-\d{4,}$/),

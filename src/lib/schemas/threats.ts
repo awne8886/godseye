@@ -4,7 +4,7 @@
  * alerts, at their own coordinates. Never jitter events around zone anchors (OSIRIS did).
  */
 import { z } from 'zod';
-import { EntityBase, Envelope, IsoTime } from './common';
+import { EntityBase, Envelope, IsoTime, Lat, Lng } from './common';
 
 export const NuclearStatus = z.enum(['operational', 'under_construction', 'shutdown', 'decommissioned', 'planned', 'unknown']);
 
@@ -45,14 +45,19 @@ export const GdacsResponse = Envelope.extend({ items: z.array(GdacsIncident) });
 
 export const GdeltEvent = EntityBase.extend({
   globalEventId: z.string(),
+  /** GDELT DATEADDED (the 15-minute batch), ISO. `observedAt` is the event's SQLDATE when parseable. */
+  dateAdded: IsoTime,
   /** CAMEO QuadClass 1 verbal coop · 2 material coop · 3 verbal conflict · 4 material conflict. */
   quadClass: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   eventCode: z.string(),
+  rootCode: z.string(),
   actor1: z.string().nullable(),
   actor2: z.string().nullable(),
   goldstein: z.number().min(-10).max(10).nullable(),
   avgTone: z.number().nullable(),
   numArticles: z.number().int().nonnegative(),
+  numMentions: z.number().int().nonnegative(),
+  numSources: z.number().int().nonnegative(),
   place: z.string().nullable(),
   countryCode: z.string().nullable(),
   /** GDELT ActionGeo_Type: 1 country, 2 US state, 3 US city, 4 world city, 5 world state. */
@@ -60,12 +65,21 @@ export const GdeltEvent = EntityBase.extend({
   sourceUrl: z.url().nullable(),
 });
 
-export const GdeltEventsResponse = Envelope.extend({ items: z.array(GdeltEvent) });
+export const GdeltEventsResponse = Envelope.extend({
+  items: z.array(GdeltEvent),
+  /** 15-minute export windows aggregated, oldest → newest. */
+  window: z.object({ from: IsoTime, to: IsoTime, batches: z.number().int().positive() }),
+  /** Rows read before geo/quad filtering. */
+  scanned: z.number().int().nonnegative(),
+});
 
 export const ConflictZone = z.object({
   id: z.string(),
   label: z.string(),
   severity: z.enum(['war', 'high', 'elevated']),
+  region: z.string(),
+  /** Label anchor [lng, lat] (for the icon/label only; never used to place events). */
+  anchor: z.tuple([Lng, Lat]),
   description: z.string(),
   polygon: z.custom<GeoJSON.Polygon | GeoJSON.MultiPolygon>(),
   /** Always 'reference' — zones are curated, not observed. */
@@ -75,7 +89,20 @@ export const ConflictZone = z.object({
   liveEventCount: z.number().int().nonnegative(),
 });
 
-export const ConflictsResponse = Envelope.extend({ zones: z.array(ConflictZone) });
+/** A real event drawn inside/near zones, always at its own reported coordinates (never jittered). */
+export const ConflictEvent = z.object({
+  id: z.string(),
+  lat: Lat,
+  lng: Lng,
+  title: z.string(),
+  source: z.enum(['gdelt', 'alerts']),
+  zoneId: z.string().nullable(),
+  observedAt: IsoTime,
+  url: z.url().nullable(),
+  precision: z.enum(['settlement', 'region', 'country']),
+});
+
+export const ConflictsResponse = Envelope.extend({ zones: z.array(ConflictZone), events: z.array(ConflictEvent).max(500) });
 
 export const FrontlinesResponse = Envelope.extend({
   geojson: z.custom<GeoJSON.FeatureCollection>(),

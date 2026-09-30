@@ -22,10 +22,13 @@ export const CAPABILITIES = {
   // Maritime
   ais: { env: ['AIS_API_KEY'], note: 'AISStream.io server relay' },
   // Surveillance
-  windy: { env: ['WINDY_WEBCAMS_KEY'], note: 'Windy Webcams v3' },
-  tfl: { env: ['TFL_APP_KEY'], note: 'TfL Unified API app_key' },
+  windy: { env: ['WINDY_WEBCAMS_KEY'], note: 'Windy Webcams v3 (x-windy-api-key header)' },
+  tfl: { env: ['TFL_APP_KEY'], note: 'TfL Unified API app_key ("Powered by TfL Open Data")' },
+  wsdot: { env: ['WSDOT_ACCESS_CODE'], note: 'WSDOT Traveler API (the camera KML is keyless)' },
+  trafikverket: { env: ['TRAFIKVERKET_KEY'], note: 'Trafikverket API (stills are keyless)' },
+  ibi511: { env: ['IBI511_KEYS'], note: 'IBI 511 developer keys, e.g. "fl:KEY,ga:KEY" (FL, GA, NC, AZ, LA, NV, UT)' },
   // Threats / network
-  cloudflare: { env: ['CLOUDFLARE_API_TOKEN'], note: 'Cloudflare Radar (Radar: Read)' },
+  cloudflare: { env: ['CLOUDFLARE_API_TOKEN'], invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'Cloudflare Radar (Radar: Read; data CC BY-NC)' },
   acled: { env: ['ACLED_EMAIL', 'ACLED_PASSWORD'], note: 'ACLED OAuth' },
   ucdp: { env: ['UCDP_TOKEN'], note: 'UCDP GED x-ucdp-access-token' },
   abusech: { env: ['ABUSECH_AUTH_KEY'], note: 'abuse.ch APIs (bulk files stay keyless)' },
@@ -37,19 +40,27 @@ export const CAPABILITIES = {
   opensanctions: { env: ['OPENSANCTIONS_KEY'], note: 'OpenSanctions API' },
   etherscan: { env: ['ETHERSCAN_API_KEY'], note: 'Etherscan' },
   helius: { env: ['HELIUS_API_KEY'], note: 'Helius Solana RPC' },
-  scanner: { env: ['SCANNER_URL', 'SCANNER_KEY'], note: 'Optional allow-listed scanner backend' },
+  scanner: { env: ['SCANNER_URL', 'SCANNER_KEY'], note: 'Optional allow-listed scanner backend (passive scan types)' },
+  scanner_active: { env: ['SCANNER_URL', 'SCANNER_KEY'], flag: 'SCANNER_ALLOW_ACTIVE', note: 'Operator opt-in for active scan types (quick/vuln)' },
   // Markets
   finnhub: { env: ['FINNHUB_KEY'], note: 'Finnhub quotes' },
   coingecko_demo: { env: ['COINGECKO_DEMO_KEY'], note: 'CoinGecko demo key' },
   // AI
   anthropic: { env: ['ANTHROPIC_API_KEY'], note: 'Claude analyst (briefings/overviews)' },
   gemini: { env: ['GEMINI_API_KEY_1'], note: 'Gemini fallback analyst' },
-  ollama: { env: ['OLLAMA_URL'], note: 'Local Ollama analyst' },
+  /** Server-configured only; a visitor can never supply an Ollama URL (that would be an SSRF path). */
+  ollama: { env: ['OLLAMA_URL'], note: 'Local Ollama analyst (operator-configured URL)' },
+  ai_user_keys: { env: [], invertFlag: 'DISABLE_USER_AI_KEYS', note: 'Visitors may send their own provider key in the x-ai-key header (used once, never stored)' },
   // Infra
   redis: { env: ['REDIS_URL'], note: 'Shared cache + rate limits across instances' },
   sdk: { env: ['SDK_INGEST_KEY'], note: 'GODSEYE SDK entity ingest (fail-closed without a key)' },
   // Licensing gates
-  nc_sources: { env: [], invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'CC BY-NC sources (TeleGeography cables, Cloudflare Radar data, OpenSanctions bulk)' },
+  nc_sources: {
+    env: [],
+    invertFlag: 'COMMERCIAL_DEPLOYMENT',
+    note: 'Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), Edmonton cameras',
+  },
+  openmeteo: { env: [], invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'Open-Meteo free tier (non-commercial; CC BY 4.0 data)' },
   deepstate: { env: [], flag: 'NONCOMMERCIAL', note: 'DeepStateMap frontlines (non-commercial, attribution)' },
   photoreal: { env: ['GOOGLE_MAPS_API_KEY'], note: 'Standalone Photoreal City View (Google 3D Tiles)' },
 } as const satisfies Record<string, CapabilitySpec>;

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { MAP_TOKENS, UI_TOKENS, contrastRatio, hexToRgba } from './tokens';
+import { MAP_TOKENS, UI_TOKENS, compositeOver, contrastRatio, hexToRgba, parseCssColor } from './tokens';
 
 const css = readFileSync(new URL('../styles/tokens.css', import.meta.url), 'utf8');
 const cssVar = (name: string) => css.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{3,8})\\s*;`))?.[1]?.toLowerCase();
@@ -23,6 +23,26 @@ describe('design tokens', () => {
     expect(contrastRatio(UI_TOKENS['--text-muted'], UI_TOKENS['--bg-primary'])).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(UI_TOKENS['--text-secondary'], UI_TOKENS['--bg-primary'])).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(UI_TOKENS['--gold-primary'], UI_TOKENS['--bg-primary'])).toBeGreaterThan(9);
+  });
+
+  it('muted text passes 4.5:1 on the tertiary surface and on the glass panel over the void', () => {
+    const muted = UI_TOKENS['--text-muted'];
+    expect(contrastRatio(muted, UI_TOKENS['--bg-tertiary'])).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(muted, UI_TOKENS['--bg-secondary'])).toBeGreaterThanOrEqual(4.5);
+    const panel = css.match(/--bg-panel:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/);
+    expect(panel).not.toBeNull();
+    const [, r, g, b, a] = panel!;
+    const glass = compositeOver([Number(r), Number(g), Number(b), Math.round(Number(a) * 255)], UI_TOKENS['--bg-void']);
+    expect(contrastRatio(muted, glass)).toBeGreaterThanOrEqual(4.5);
+    // Worst realistic backdrop: glass over the brightest basemap land colour.
+    expect(contrastRatio(muted, compositeOver([Number(r), Number(g), Number(b), Math.round(Number(a) * 255)], '#1c2233'))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('parses rgb()/rgba() in comma and space syntax', () => {
+    expect(parseCssColor('rgb(1, 2, 3)')).toEqual([1, 2, 3, 255]);
+    expect(parseCssColor('rgba(10 20 30 / 0.5)', 0.5)).toEqual([10, 20, 30, 128]);
+    expect(parseCssColor('#fff')).toEqual([255, 255, 255, 255]);
+    expect(parseCssColor('tomato')).toBeNull();
   });
 
   it('parses hex colours', () => {

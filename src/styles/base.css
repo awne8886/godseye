@@ -80,7 +80,8 @@
   display: none;
 }
 .maplibregl-ctrl.maplibregl-ctrl-attrib {
-  background: rgba(4, 4, 10, 0.72);
+  /* ≥ .85 so secondary text keeps 4.5:1 over bright satellite imagery. */
+  background: rgba(4, 4, 10, 0.88);
   color: var(--text-secondary);
   font: 10px/1.4 var(--font-body);
 }
@@ -89,6 +90,11 @@
 }
 .maplibregl-ctrl-bottom-right {
   bottom: 28px;
+}
+/* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome. */
+.maplibregl-ctrl-bottom-left,
+.maplibregl-ctrl-bottom-right {
+  z-index: 5;
 }
 
 @media (prefers-reduced-motion: reduce) {

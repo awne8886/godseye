@@ -50,6 +50,7 @@ export const FLIGHT_FIELDS = [
   'lat',
   'lng',
   'altFt',
+  'altGeomFt',
   'gsKt',
   'trackDeg',
   'vrFpm',
@@ -57,6 +58,7 @@ export const FLIGHT_FIELDS = [
   'category',
   'nacP',
   'dbFlags',
+  'airlineCode',
   'observedAt',
   'source',
 ] as const;
@@ -68,6 +70,8 @@ export const FlightsResponse = columnarResponse(FLIGHT_FIELDS).extend({
     jet: z.number().int().nonnegative(),
     military: z.number().int().nonnegative(),
     total: z.number().int().nonnegative(),
+    /** Aircraft reported by upstreams without a position (e.g. /v2/mil, /v2/ladd rows); not drawn. */
+    noPosition: z.number().int().nonnegative(),
   }),
 });
 
@@ -93,6 +97,8 @@ export const AircraftIdentity = z.object({
   operatorIcao: z.string().nullable(),
   country: z.string().nullable(),
   photoUrl: z.url().nullable(),
+  photoThumbUrl: z.url().nullable(),
+  /** adsbdb supplies no photographer credit; show the photo host instead. */
   photoCredit: z.string().nullable(),
 });
 

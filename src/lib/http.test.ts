@@ -130,3 +130,60 @@ describe('http client', () => {
     await expect(httpText('file:///etc/passwd')).rejects.toMatchObject({ code: 'blocked' });
   });
 });
+
+describe('http client hardening', () => {
+  let srv: http.Server;
+  let other: http.Server;
+  let b1 = '';
+  let b2 = '';
+  const got: Record<string, http.IncomingHttpHeaders> = {};
+  beforeAll(async () => {
+    srv = http.createServer((req, res) => {
+      got[`a${req.url}`] = req.headers;
+      if (req.url === '/bomb') {
+        res.setHeader('content-encoding', 'gzip');
+        res.end(zlib.gzipSync(Buffer.alloc(8 * 1024 * 1024))); // 8 MB of zeros → ~8 KB on the wire
+      } else if (req.url === '/cross') {
+        res.statusCode = 302;
+        res.setHeader('location', `${b2}/landing`);
+        res.end();
+      } else if (req.url === '/same') {
+        res.statusCode = 302;
+        res.setHeader('location', '/landing');
+        res.end();
+      } else if (req.url === '/slow') {
+        setTimeout(() => res.end('x'), 400);
+      } else res.end('ok');
+    });
+    other = http.createServer((req, res) => {
+      got[`b${req.url}`] = req.headers;
+      res.end('landed');
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    await new Promise<void>((r) => other.listen(0, '127.0.0.1', r));
+    b1 = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+    b2 = `http://localhost:${(other.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => {
+    await new Promise<void>((r) => srv.close(() => r()));
+    await new Promise<void>((r) => other.close(() => r()));
+  });
+
+  it('caps decompressed output (gzip bomb) before it lands in memory', async () => {
+    await expect(httpText(`${b1}/bomb`, { maxBytes: 1024 * 1024 })).rejects.toMatchObject({ code: 'too_large' });
+  });
+
+  it('strips credentials on cross-origin redirects but keeps them same-origin', async () => {
+    await httpText(`${b1}/cross`, { headers: { Authorization: 'Bearer secret', 'Auth-Key': 'k' } });
+    expect(got['b/landing']!.authorization).toBeUndefined();
+    expect(got['b/landing']!['auth-key']).toBeUndefined();
+    await httpText(`${b1}/same`, { headers: { Authorization: 'Bearer secret' } });
+    expect(got['a/landing']!.authorization).toBe('Bearer secret');
+  });
+
+  it('enforces an overall deadline across retries', async () => {
+    const t0 = Date.now();
+    await expect(httpText(`${b1}/slow`, { timeoutMs: 1000, deadlineMs: 150, retries: 3 })).rejects.toMatchObject({ code: 'timeout' });
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+});

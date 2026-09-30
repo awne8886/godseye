@@ -1,18 +1,20 @@
 /**
  * Rate limiting (§0.6) and upstream politeness.
- *  - getClientIp(): platform-verified client IP. Default order: cf-connecting-ip →
- *    x-vercel-forwarded-for → true-client-ip (each only if IP-shaped) → x-real-ip → the RIGHTMOST
- *    X-Forwarded-For entry. Behind a single known proxy set TRUST_PROXY_HEADER to that one header
- *    (e.g. `x-real-ip`) so clients cannot pick a header the proxy does not overwrite.
- *  - rateLimit(): per-route buckets keyed `${route}:${ip}` (never one shared bucket), fixed window,
- *    in memory with an LRU cap or in Redis when REDIS_URL is set.
+ *  - getClientIp(): the platform-verified client IP. A platform header is trusted only when that
+ *    platform is actually in front of us (`TRUSTED_PLATFORM=cloudflare|vercel|akamai`, Vercel is
+ *    auto-detected), otherwise any client could rotate `cf-connecting-ip` to get fresh buckets.
+ *    Then `x-real-ip` (set by our nginx/Caddy), then the RIGHTMOST X-Forwarded-For entry.
+ *    `TRUST_PROXY_HEADER=<header>` trusts exactly one header instead. IPv6 clients are keyed by /64.
+ *  - rateLimit(): per-route buckets keyed `${bucket}:${ip}` (AI routes share the `ai` bucket),
+ *    fixed window, in memory with an LRU cap or in Redis (atomic SET NX PX + INCR).
  *  - TokenBucket / SerialQueue: server-side politeness for each upstream's documented limit.
  * Owner: lead. Server-only.
  */
 import net from 'node:net';
 import { apiError } from './respond';
 
-const IP_HEADERS = ['cf-connecting-ip', 'x-vercel-forwarded-for', 'true-client-ip'] as const;
+const PLATFORM_HEADER = { cloudflare: 'cf-connecting-ip', vercel: 'x-vercel-forwarded-for', akamai: 'true-client-ip' } as const;
+type Platform = keyof typeof PLATFORM_HEADER;
 
 function cleanIp(v: string | null | undefined): string | null {
   if (!v) return null;
@@ -23,15 +25,27 @@ function cleanIp(v: string | null | undefined): string | null {
   return net.isIP(s) ? s : null;
 }
 
-export function getClientIp(headers: Headers, trust: string | undefined = process.env.TRUST_PROXY_HEADER): string {
-  if (trust && trust !== 'auto') {
-    const h = trust.toLowerCase();
-    const raw = headers.get(h);
-    if (h === 'x-forwarded-for') return cleanIp(raw?.split(',').at(-1)) ?? 'unknown';
-    return cleanIp(raw?.split(',')[0]) ?? 'unknown';
+export interface IpTrust {
+  /** Exactly one header to trust (overrides everything else). */
+  header?: string;
+  /** The edge platform in front of the app. */
+  platform?: Platform | 'none';
+}
+
+export function ipTrustFromEnv(env: Record<string, string | undefined> = process.env): IpTrust {
+  const header = env.TRUST_PROXY_HEADER?.trim().toLowerCase();
+  const p = env.TRUSTED_PLATFORM?.trim().toLowerCase();
+  const platform = p && p in PLATFORM_HEADER ? (p as Platform) : env.VERCEL ? 'vercel' : 'none';
+  return { header: header && header !== 'auto' ? header : undefined, platform };
+}
+
+export function getClientIp(headers: Headers, trust: IpTrust = ipTrustFromEnv()): string {
+  if (trust.header) {
+    const raw = headers.get(trust.header);
+    return (trust.header === 'x-forwarded-for' ? cleanIp(raw?.split(',').at(-1)) : cleanIp(raw?.split(',')[0])) ?? 'unknown';
   }
-  for (const h of IP_HEADERS) {
-    const ip = cleanIp(headers.get(h)?.split(',')[0]);
+  if (trust.platform && trust.platform !== 'none') {
+    const ip = cleanIp(headers.get(PLATFORM_HEADER[trust.platform])?.split(',')[0]);
     if (ip) return ip;
   }
   const real = cleanIp(headers.get('x-real-ip'));
@@ -42,6 +56,17 @@ export function getClientIp(headers: Headers, trust: string | undefined = proces
     if (ip) return ip;
   }
   return 'unknown';
+}
+
+/** Bucket key for an IP: IPv4 as-is, IPv6 by its /64 (one subscriber usually owns a whole /64). */
+export function ipBucketKey(ip: string): string {
+  if (!net.isIPv6(ip)) return ip;
+  const full = new URL(`http://[${ip}]/`).hostname.slice(1, -1);
+  const [head = '', tail] = full.split('::');
+  const h = head ? head.split(':') : [];
+  const t = tail !== undefined && tail ? tail.split(':') : [];
+  const groups = tail === undefined ? h : [...h, ...Array<string>(8 - h.length - t.length).fill('0'), ...t];
+  return `${groups.slice(0, 4).join(':')}::/64`;
 }
 
 export interface RateLimitResult {
@@ -76,8 +101,8 @@ export class MemoryRateLimitStore implements RateLimitStore {
 }
 
 interface RedisCounter {
+  set(key: string, value: string, ...args: (string | number)[]): Promise<unknown>;
   incr(key: string): Promise<number>;
-  pexpire(key: string, ms: number, mode?: 'NX'): Promise<number>;
   pttl(key: string): Promise<number>;
 }
 
@@ -91,8 +116,9 @@ export class RedisRateLimitStore implements RateLimitStore {
   async hit(key: string, windowMs: number) {
     const r = await this.redis();
     const k = `godseye:rl:${key}`;
+    // Create the window with its expiry atomically, then count; a crash can never leave a key without TTL.
+    await r.set(k, '0', 'PX', windowMs, 'NX');
     const count = await r.incr(k);
-    if (count === 1) await r.pexpire(k, windowMs);
     const ttl = await r.pttl(k);
     return { count, resetAt: Date.now() + (ttl > 0 ? ttl : windowMs) };
   }
@@ -110,13 +136,21 @@ export function setRateLimitStore(s: RateLimitStore | undefined): void {
   G.__godseyeRl = s;
 }
 
-export async function checkRateLimit(route: string, ip: string, limit: number, windowS: number): Promise<RateLimitResult> {
+export interface RateLimitOptions {
+  limit: number;
+  windowS: number;
+  /** Bucket name (defaults to the route); AI routes share `ai`. */
+  bucket?: string;
+  /** Deny when the limiter store is unreachable (AI, scanner). Others fail open. */
+  failClosed?: boolean;
+}
+
+export async function checkRateLimit(bucket: string, ip: string, limit: number, windowS: number, failClosed = false): Promise<RateLimitResult> {
   let hit: { count: number; resetAt: number };
   try {
-    hit = await store().hit(`${route}:${ip}`, windowS * 1000);
+    hit = await store().hit(`${bucket}:${ipBucketKey(ip)}`, windowS * 1000);
   } catch {
-    // Redis down: fail open for reads is safer than blocking the whole app; log via caller.
-    return { allowed: true, limit, remaining: limit, resetAt: Date.now() + windowS * 1000 };
+    return { allowed: !failClosed, limit, remaining: failClosed ? 0 : limit, resetAt: Date.now() + windowS * 1000 };
   }
   return { allowed: hit.count <= limit, limit, remaining: Math.max(0, limit - hit.count), resetAt: hit.resetAt };
 }
@@ -124,9 +158,9 @@ export async function checkRateLimit(route: string, ip: string, limit: number, w
 export const DEFAULT_LIMIT = { limit: 120, windowS: 60 } as const;
 
 /** Returns a 429 Response when over the limit, otherwise null. */
-export async function rateLimit(req: Request, route: string, opts: { limit: number; windowS: number } = DEFAULT_LIMIT): Promise<Response | null> {
+export async function rateLimit(req: Request, route: string, opts: RateLimitOptions = DEFAULT_LIMIT): Promise<Response | null> {
   const ip = getClientIp(req.headers);
-  const r = await checkRateLimit(route, ip, opts.limit, opts.windowS);
+  const r = await checkRateLimit(opts.bucket ?? route, ip, opts.limit, opts.windowS, opts.failClosed);
   if (r.allowed) return null;
   const retryAfter = Math.max(1, Math.ceil((r.resetAt - Date.now()) / 1000));
   return apiError(429, 'rate_limited', `Limit is ${opts.limit} requests per ${opts.windowS} s for this endpoint.`, {

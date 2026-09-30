@@ -76,11 +76,13 @@ export type MapToken = keyof typeof MAP_TOKENS;
 export const UI_TOKENS = {
   '--bg-void': '#04040a',
   '--bg-primary': '#06060c',
+  '--bg-secondary': '#0c0e1a',
+  '--bg-tertiary': '#121628',
   '--gold-primary': '#d4af37',
   '--cyan-primary': '#00e5ff',
   '--text-primary': '#e8e6e0',
   '--text-secondary': '#9b978e',
-  '--text-muted': '#7a776f',
+  '--text-muted': '#848178',
   '--up': '#00e676',
   '--down': '#ff3d3d',
 } as const;
@@ -97,9 +99,43 @@ export function hexToRgba(hex: string, alpha = 1): Rgba {
   return [n(0), n(2), n(4), a];
 }
 
+/** Parse `#hex`, `rgb()`/`rgba()` (comma or space syntax). Returns null for anything else. */
+export function parseCssColor(raw: string, alpha = 1): Rgba | null {
+  const v = raw.trim();
+  if (v.startsWith('#')) {
+    try {
+      return hexToRgba(v, alpha);
+    } catch {
+      return null;
+    }
+  }
+  const m = v.match(/^rgba?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)/i);
+  return m ? [Math.round(Number(m[1])), Math.round(Number(m[2])), Math.round(Number(m[3])), Math.round(alpha * 255)] : null;
+}
+
+let probe: CanvasRenderingContext2D | null | undefined;
+
+/** Resolve any CSS colour (named, hsl(), oklch()…) through a 1×1 canvas; null when unsupported. */
+function resolveViaCanvas(raw: string, alpha: number): Rgba | null {
+  if (probe === undefined) {
+    try {
+      probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    } catch {
+      probe = null;
+    }
+  }
+  if (!probe) return null;
+  probe.fillStyle = '#000';
+  probe.fillStyle = raw;
+  const normalised = String(probe.fillStyle);
+  if (normalised === '#000000' && !/^(#000|#000000|black|rgb\(0,\s*0,\s*0\))$/i.test(raw)) return null;
+  return parseCssColor(normalised, alpha);
+}
+
 /**
  * Read a CSS colour variable from the document and return RGBA. Falls back to the token
- * default on the server or when the variable is not a parseable colour.
+ * default on the server or when the variable is not a parseable colour. Style Studio may set
+ * any CSS colour syntax, so non-hex/rgb values are normalised through a canvas probe.
  */
 export function readCssColor(token: MapToken, alpha = 1, el?: Element): Rgba {
   const fallback = hexToRgba(MAP_TOKENS[token], alpha);
@@ -107,15 +143,15 @@ export function readCssColor(token: MapToken, alpha = 1, el?: Element): Rgba {
   const target = el ?? document.documentElement;
   const raw = getComputedStyle(target).getPropertyValue(token).trim();
   if (!raw) return fallback;
-  if (raw.startsWith('#')) {
-    try {
-      return hexToRgba(raw, alpha);
-    } catch {
-      return fallback;
-    }
-  }
-  const m = raw.match(/^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i);
-  return m ? [Number(m[1]), Number(m[2]), Number(m[3]), Math.round(alpha * 255)] : fallback;
+  return parseCssColor(raw, alpha) ?? resolveViaCanvas(raw, alpha) ?? fallback;
+}
+
+/** Composite a translucent colour over an opaque background (for contrast checks on glass). */
+export function compositeOver(fg: Rgba, bgHex: string): string {
+  const bg = hexToRgba(bgHex);
+  const a = fg[3] / 255;
+  const mix = (i: number) => Math.round(fg[i]! * a + bg[i]! * (1 - a));
+  return `#${[0, 1, 2].map((i) => mix(i).toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** WCAG 2 relative-luminance contrast ratio between two hex colours. */

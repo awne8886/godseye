@@ -26,7 +26,7 @@ export type ApiGroup =
 
 export interface ApiParam {
   name: string;
-  in: 'query' | 'path' | 'body';
+  in: 'query' | 'path' | 'body' | 'header';
   type: 'string' | 'number' | 'boolean' | 'enum' | 'json';
   required: boolean;
   description: string;
@@ -51,8 +51,8 @@ export interface ApiEndpoint {
   /** True when user-supplied input (query, coordinates, identifiers) is forwarded upstream. */
   forwardsUserInput: boolean;
   capability?: CapabilityId;
-  /** Per-IP limit on this route (default applies when omitted). */
-  rateLimit?: { limit: number; windowS: number };
+  /** Per-IP limit on this route (default applies when omitted). `bucket` shares a limit across routes. */
+  rateLimit?: { limit: number; windowS: number; bucket?: string; failClosed?: boolean };
   /** Old paths kept as aliases (OSIRIS misnamed routes). */
   aliases?: readonly string[];
   /** Example query string for the docs "Send request" button. */
@@ -68,7 +68,9 @@ const q = (name: string, type: ApiParam['type'], required: boolean, description:
 const p = (name: string, description: string, example?: string): ApiParam => ({ name, in: 'path', type: 'string', required: true, description, example });
 const body = (description: string, example?: string): ApiParam => ({ name: 'body', in: 'body', type: 'json', required: true, description, example });
 
-const AI_LIMIT = { limit: 5, windowS: 60 } as const;
+/** One shared 5/min bucket for every AI route, denied if the limiter store is down. */
+const AI_LIMIT = { limit: 5, windowS: 60, bucket: 'ai', failClosed: true } as const;
+const aiKeyHeader: ApiParam = { name: 'x-ai-key', in: 'header', type: 'string', required: false, description: 'Optional user-supplied provider key; used for this request only, never stored or logged.' };
 const OSINT_LIMIT = { limit: 20, windowS: 60 } as const;
 
 export const API_CATALOG = [
@@ -99,14 +101,14 @@ export const API_CATALOG = [
   {
     method: 'GET', path: '/api/satellites', group: 'space', summary: 'CelesTrak OMM catalogue (columnar) with mission colours and categories',
     params: [q('category', 'enum', false, 'Restrict to one category', 'navigation', ['comms', 'military', 'navigation', 'earth_obs', 'science', 'other'])],
-    ttlSeconds: 7200, responseSchema: 'SatellitesResponse', upstreams: ['celestrak.org'], forwardsUserInput: false, example: '?category=navigation', osiris: true, owner: 'layers-space',
+    ttlSeconds: 7200, responseSchema: 'SatellitesResponse', upstreams: ['celestrak.org', 'db.satnogs.org'], forwardsUserInput: false, example: '?category=navigation', osiris: true, owner: 'layers-space',
   },
   {
     method: 'GET', path: '/api/satellites/orbit', group: 'space', summary: 'Orbit track ±½ period around t, split at the antimeridian',
     params: [q('id', 'number', true, 'NORAD catalogue number', '25544'), q('t', 'number', false, 'Epoch ms the markers were propagated for')],
     ttlSeconds: 600, responseSchema: 'OrbitResponse', upstreams: [], forwardsUserInput: false, example: '?id=25544', osiris: true, owner: 'layers-space',
   },
-  { method: 'GET', path: '/api/space-weather', group: 'space', summary: 'NOAA SWPC Kp, scales, X-ray flux, solar wind, alerts', params: [], ttlSeconds: 300, responseSchema: 'SpaceWeatherResponse', upstreams: ['services.swpc.noaa.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-space' },
+  { method: 'GET', path: '/api/space-weather', group: 'space', summary: 'NOAA SWPC Kp, scales, X-ray flux, solar wind (rtsw_wind_1m + rtsw_mag_1m), alerts', params: [], ttlSeconds: 300, responseSchema: 'SpaceWeatherResponse', upstreams: ['services.swpc.noaa.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-space' },
   { method: 'GET', path: '/api/iss', group: 'space', summary: 'ISS position (wheretheiss.at)', params: [], ttlSeconds: 5, responseSchema: 'IssResponse', upstreams: ['api.wheretheiss.at'], forwardsUserInput: false, osiris: false, owner: 'layers-space' },
 
   // ── hazards ────────────────────────────────────────────────────────────────────
@@ -116,7 +118,7 @@ export const API_CATALOG = [
     ttlSeconds: 60, responseSchema: 'EarthquakesResponse', upstreams: ['earthquake.usgs.gov'], forwardsUserInput: false, example: '?feed=4.5_day', osiris: true, owner: 'layers-hazards',
   },
   { method: 'GET', path: '/api/fires', group: 'hazards', summary: 'NASA FIRMS VIIRS/MODIS 24 h fire pixels sampled by FRP/confidence', params: [], ttlSeconds: 900, responseSchema: 'FiresResponse', upstreams: ['firms.modaps.eosdis.nasa.gov', 'eonet.gsfc.nasa.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-hazards' },
-  { method: 'GET', path: '/api/weather', group: 'hazards', summary: 'Severe weather/natural events: EONET, NWS, GDACS, NHC, GVP', params: [], ttlSeconds: 300, responseSchema: 'WeatherResponse', upstreams: ['eonet.gsfc.nasa.gov', 'api.weather.gov', 'www.gdacs.org', 'www.nhc.noaa.gov', 'volcano.si.edu'], forwardsUserInput: false, osiris: true, owner: 'layers-hazards' },
+  { method: 'GET', path: '/api/weather', group: 'hazards', summary: 'Severe weather/natural events: EONET, NWS, GDACS, NHC, GVP', params: [], ttlSeconds: 300, responseSchema: 'WeatherResponse', upstreams: ['eonet.gsfc.nasa.gov', 'api.weather.gov', 'www.gdacs.org', 'www.nhc.noaa.gov', 'mapservices.weather.noaa.gov', 'volcano.si.edu'], forwardsUserInput: false, osiris: true, owner: 'layers-hazards' },
   {
     method: 'GET', path: '/api/air-quality', group: 'hazards', summary: 'PM2.5 / US AQI (Open-Meteo keyless; OpenAQ/WAQI keyed)',
     params: [q('bbox', 'string', false, 'west,south,east,north', '-10,35,30,60')], ttlSeconds: 900, responseSchema: 'AirQualityResponse',
@@ -136,8 +138,14 @@ export const API_CATALOG = [
   // ── surveillance ───────────────────────────────────────────────────────────────
   {
     method: 'GET', path: '/api/cctv', group: 'surveillance', summary: 'Public camera catalogue by region (columnar, < 4 MB per response)',
-    params: [q('region', 'string', false, 'Comma list of region keys (default: all regions, paginated by region)', 'uk')], ttlSeconds: 1800, responseSchema: 'CctvResponse',
-    upstreams: ['api.tfl.gov.uk', 'cwwp2.dot.ca.gov', 'wsdot.wa.gov', 'data.gov.hk', 'api.data.gov.sg'], forwardsUserInput: false, example: '?region=uk', osiris: true, owner: 'layers-surveillance',
+    params: [
+      q('region', 'string', false, 'Comma list of region keys (one region per response keeps it < 4 MB)', 'uk'),
+      q('lat', 'number', false, 'pick regions around a point'),
+      q('lng', 'number', false, 'pick regions around a point'),
+    ],
+    ttlSeconds: 1800, responseSchema: 'CctvResponse',
+    upstreams: ['api.tfl.gov.uk', 'cwwp2.dot.ca.gov', 'caltrans-gis.dot.ca.gov', 'wsdot.wa.gov', 'its.txdot.gov', 'tdcctv.data.one.gov.hk', 'api.data.gov.sg', 'tie.digitraffic.fi', 'api.trafikinfo.trafikverket.se', '(other public camera operators per the provider registry)'],
+    forwardsUserInput: false, example: '?region=uk', osiris: true, owner: 'layers-surveillance',
   },
   { method: 'GET', path: '/api/cctv/providers', group: 'surveillance', summary: 'Camera provider registry rows (operator, licence, attribution, terms)', params: [], ttlSeconds: 3600, responseSchema: 'CameraProvidersResponse', upstreams: [], forwardsUserInput: false, osiris: false, owner: 'layers-surveillance' },
   { method: 'GET', path: '/api/cctv/proxy', group: 'surveillance', summary: 'Stills-only frame proxy (exact-prefix allow-list, no storage)', params: [q('id', 'string', true, 'Camera id from the catalogue', 'tfl-00001.06514')], ttlSeconds: 5, responseSchema: 'image/*', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
@@ -162,11 +170,11 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/country-risk', group: 'threats', summary: 'Country risk (INFORM + World Bank WGI) with method', params: [], ttlSeconds: 86400, responseSchema: 'CountryRiskResponse', upstreams: ['drmkc.jrc.ec.europa.eu', 'api.worldbank.org'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
 
   // ── network ────────────────────────────────────────────────────────────────────
-  { method: 'GET', path: '/api/malware', group: 'network', summary: 'URLhaus malware hosts (geolocated IPs, precision labelled)', params: [], ttlSeconds: 60, responseSchema: 'MalwareResponse', upstreams: ['urlhaus.abuse.ch', 'ip-api.com'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
-  { method: 'GET', path: '/api/malware/stream', group: 'network', summary: 'SSE malware detections (snapshot, detections, status, heartbeat)', params: [], ttlSeconds: null, stream: 'sse', responseSchema: 'MalwareResponse', upstreams: [], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
-  { method: 'GET', path: '/api/cyber-attacks', group: 'network', summary: 'Feodo Tracker botnet C2 indicators', params: [], ttlSeconds: 300, responseSchema: 'C2Response', upstreams: ['feodotracker.abuse.ch'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
-  { method: 'GET', path: '/api/threatfox', group: 'network', summary: 'ThreatFox recent IOCs (geolocated IP indicators)', params: [], ttlSeconds: 600, responseSchema: 'ThreatFoxResponse', upstreams: ['threatfox.abuse.ch'], forwardsUserInput: false, osiris: false, owner: 'layers-threats-network' },
-  { method: 'GET', path: '/api/cyber-threats', group: 'network', summary: 'CISA Known Exploited Vulnerabilities', params: [], ttlSeconds: 3600, responseSchema: 'KevResponse', upstreams: ['www.cisa.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/malware', group: 'network', summary: 'URLhaus malware hosts (geolocated IPs, precision labelled)', params: [], ttlSeconds: 60, responseSchema: 'MalwareResponse', upstreams: ['urlhaus.abuse.ch', 'ip-api.com'], forwardsUserInput: false, capability: 'nc_sources', osiris: true, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/malware/stream', group: 'network', summary: 'SSE malware detections (snapshot, detections, status, heartbeat)', params: [], ttlSeconds: null, stream: 'sse', responseSchema: 'MalwareResponse', upstreams: [], forwardsUserInput: false, capability: 'nc_sources', osiris: true, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/cyber-attacks', group: 'network', summary: 'Feodo Tracker botnet C2 indicators (+ ThreatFox botnet_cc IPs)', params: [], ttlSeconds: 300, responseSchema: 'C2Response', upstreams: ['feodotracker.abuse.ch', 'threatfox.abuse.ch'], forwardsUserInput: false, capability: 'nc_sources', osiris: true, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/threatfox', group: 'network', summary: 'ThreatFox recent IOCs (list; IP IOCs geolocated as INDICATOR points)', params: [], ttlSeconds: 600, responseSchema: 'ThreatFoxResponse', upstreams: ['threatfox.abuse.ch', 'ip-api.com'], forwardsUserInput: false, capability: 'nc_sources', osiris: false, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/cyber-threats', group: 'network', summary: 'CISA Known Exploited Vulnerabilities', params: [], ttlSeconds: 3600, responseSchema: 'KevResponse', upstreams: ['www.cisa.gov', 'services.nvd.nist.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
   { method: 'GET', path: '/api/outages', group: 'network', summary: 'Internet outages: IODA (keyless) + Cloudflare Radar (keyed)', params: [], ttlSeconds: 300, responseSchema: 'OutagesResponse', upstreams: ['api.ioda.inetintel.cc.gatech.edu', 'api.cloudflare.com'], forwardsUserInput: false, aliases: ['/api/radar'], osiris: true, owner: 'layers-threats-network' },
   {
     method: 'GET', path: '/api/cloudflare-radar', group: 'network', summary: 'Cloudflare Radar outages + L3 attack origins',
@@ -190,9 +198,9 @@ export const API_CATALOG = [
     params: [q('symbol', 'string', true, 'Ticker (allow-listed)', 'GC=F'), q('range', 'enum', false, 'Range (case-sensitive)', '1M', ['1m', '15m', '24H', '1W', '1M', '6M', '1Y'])],
     ttlSeconds: 60, responseSchema: 'MarketHistoryResponse', upstreams: ['query1.finance.yahoo.com'], forwardsUserInput: true, example: '?symbol=GC%3DF&range=1M', osiris: true, owner: 'panels-alerts-markets-dossier-graph',
   },
-  { method: 'GET', path: '/api/crypto', group: 'markets', summary: 'BTC/ETH/SOL spot prices', params: [], ttlSeconds: 60, responseSchema: 'CryptoResponse', upstreams: ['api.coingecko.com', 'data-api.binance.vision', 'api.coinbase.com', 'api.kraken.com'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
+  { method: 'GET', path: '/api/crypto', group: 'markets', summary: 'BTC/ETH/SOL spot prices (Binance → Coinbase → Kraken; CoinGecko only with a demo key)', params: [], ttlSeconds: 60, responseSchema: 'CryptoResponse', upstreams: ['data-api.binance.vision', 'api.coinbase.com', 'api.kraken.com', 'api.coingecko.com'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
   { method: 'GET', path: '/api/chain/daily', group: 'markets', summary: 'Daily chain brief: exploits, crypto CVEs, sanctioned wallets', params: [q('days', 'number', false, 'window 1–120', '30')], ttlSeconds: 1800, responseSchema: 'ChainBriefResponse', upstreams: ['api.llama.fi', 'services.nvd.nist.gov', 'data.opensanctions.org'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
-  { method: 'GET', path: '/api/ticker', group: 'markets', summary: 'Status-bar ticker (crypto + latest M4+ quakes), server-side', params: [], ttlSeconds: 60, responseSchema: 'TickerResponse', upstreams: ['api.coingecko.com', 'earthquake.usgs.gov'], forwardsUserInput: false, osiris: false, owner: 'panels-alerts-markets-dossier-graph' },
+  { method: 'GET', path: '/api/ticker', group: 'markets', summary: 'Status-bar ticker (BTC/ETH/SOL + five latest M4.0+ quakes from USGS 2.5_day), server-side', params: [], ttlSeconds: 60, responseSchema: 'TickerResponse', upstreams: ['data-api.binance.vision', 'api.coinbase.com', 'earthquake.usgs.gov'], forwardsUserInput: false, osiris: false, owner: 'panels-alerts-markets-dossier-graph' },
   { method: 'GET', path: '/api/scm-suppliers', group: 'markets', summary: 'Supply-chain sites with hazard proximity checks (method stated)', params: [], ttlSeconds: 900, responseSchema: 'ScmSuppliersResponse', upstreams: ['earthquake.usgs.gov'], forwardsUserInput: false, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
   {
     method: 'GET', path: '/api/region-dossier', group: 'intel', summary: 'Region Dossier: reverse geocode, Wikipedia, Wikidata facts, head of state, live layers within 150 km, weather',
@@ -206,10 +214,10 @@ export const API_CATALOG = [
   },
 
   // ── ai ─────────────────────────────────────────────────────────────────────────
-  { method: 'POST', path: '/api/ai/overview', group: 'ai', summary: 'One-click overview (Claude when keyed, heuristic ANALYST otherwise)', params: [body('{scope, feeds}')], ttlSeconds: null, responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com', 'generativelanguage.googleapis.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
-  { method: 'POST', path: '/api/ai/analyze', group: 'ai', summary: 'Region/selection analysis citing feed rows', params: [body('{lat, lng, selection}')], ttlSeconds: null, responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com', 'generativelanguage.googleapis.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
-  { method: 'POST', path: '/api/ai/briefing', group: 'ai', summary: 'Daily briefing (BLUF / PIRs / forecast)', params: [body('{horizon}')], ttlSeconds: null, responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com', 'generativelanguage.googleapis.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
-  { method: 'POST', path: '/api/ai/chat', group: 'ai', summary: 'Streaming analyst chat over current feeds', params: [body('{messages}')], ttlSeconds: null, stream: 'text', responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: false, owner: 'panels-alerts-markets-dossier-graph' },
+  { method: 'POST', path: '/api/ai/overview', group: 'ai', summary: 'One-click overview (Claude when keyed, heuristic ANALYST otherwise)', params: [body('{scope, feeds}'), aiKeyHeader], ttlSeconds: null, responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com', 'generativelanguage.googleapis.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
+  { method: 'POST', path: '/api/ai/analyze', group: 'ai', summary: 'Region/selection analysis citing feed rows', params: [body('{lat, lng, selection}'), aiKeyHeader], ttlSeconds: null, responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com', 'generativelanguage.googleapis.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
+  { method: 'POST', path: '/api/ai/briefing', group: 'ai', summary: 'Daily briefing (BLUF / PIRs / forecast)', params: [body('{horizon}'), aiKeyHeader], ttlSeconds: null, responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com', 'generativelanguage.googleapis.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: true, owner: 'panels-alerts-markets-dossier-graph' },
+  { method: 'POST', path: '/api/ai/chat', group: 'ai', summary: 'Streaming analyst chat over current feeds', params: [body('{messages}'), aiKeyHeader], ttlSeconds: null, stream: 'text', responseSchema: 'AiOverviewResponse', upstreams: ['api.anthropic.com'], forwardsUserInput: true, rateLimit: AI_LIMIT, osiris: false, owner: 'panels-alerts-markets-dossier-graph' },
 
   // ── osint (infrastructure only, passive) ───────────────────────────────────────
   { method: 'GET', path: '/api/osint/dns', group: 'osint', summary: 'DNS records via DNS-over-HTTPS', params: [q('domain', 'string', true, 'domain', 'example.com'), q('type', 'enum', false, 'record type', 'A', ['A', 'AAAA', 'MX', 'NS', 'TXT', 'CNAME', 'SOA', 'CAA'])], ttlSeconds: 300, responseSchema: 'OsintResponse', upstreams: ['dns.google'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?domain=example.com', osiris: true, owner: 'panels-recon' },
@@ -218,15 +226,15 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/osint/certs', group: 'osint', summary: 'Certificate transparency + subdomains', params: [q('domain', 'string', true, 'domain', 'example.com')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['crt.sh'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?domain=example.com', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/ip', group: 'osint', summary: 'IP intel: geolocation, ASN, hosting/proxy flags, OFAC cross-check', params: [q('ip', 'string', true, 'public IPv4/IPv6', '8.8.8.8')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['ipwho.is', 'ip-api.com', 'stat.ripe.net'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?ip=8.8.8.8', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/bgp', group: 'osint', summary: 'BGP/ASN: prefixes, peers, holder (RIPEstat)', params: [q('query', 'string', true, 'IP or ASN', 'AS15169')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['stat.ripe.net'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?query=AS15169', osiris: true, owner: 'panels-recon' },
-  { method: 'GET', path: '/api/osint/shodan', group: 'osint', summary: 'Shodan InternetDB (ports, CPEs, vulns)', params: [q('ip', 'string', true, 'public IP', '1.1.1.1')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['internetdb.shodan.io'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?ip=1.1.1.1', osiris: true, owner: 'panels-recon' },
-  { method: 'GET', path: '/api/osint/sweep', group: 'osint', summary: 'Passive network sweep of a small public prefix via InternetDB (no packets sent to targets)', params: [q('ip', 'string', true, 'public IPv4', '1.1.1.0'), q('cidr', 'number', false, 'prefix length 28–32', '30')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['internetdb.shodan.io', 'ipwho.is'], forwardsUserInput: true, rateLimit: { limit: 5, windowS: 60 }, osiris: true, owner: 'panels-recon' },
+  { method: 'GET', path: '/api/osint/shodan', group: 'osint', summary: 'Shodan InternetDB (ports, CPEs, vulns; non-commercial)', params: [q('ip', 'string', true, 'public IP', '1.1.1.1')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['internetdb.shodan.io'], forwardsUserInput: true, capability: 'nc_sources', rateLimit: OSINT_LIMIT, example: '?ip=1.1.1.1', osiris: true, owner: 'panels-recon' },
+  { method: 'GET', path: '/api/osint/sweep', group: 'osint', summary: 'Passive network sweep of a small public prefix via InternetDB (no packets sent to targets)', params: [q('ip', 'string', true, 'public IPv4', '1.1.1.0'), q('cidr', 'number', false, 'prefix length 28–32', '30')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['internetdb.shodan.io', 'ipwho.is'], forwardsUserInput: true, capability: 'nc_sources', rateLimit: { limit: 5, windowS: 60 }, osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/mac', group: 'osint', summary: 'MAC vendor lookup', params: [q('mac', 'string', true, 'MAC or OUI', '00:1A:2B')], ttlSeconds: 86400, responseSchema: 'OsintResponse', upstreams: ['api.maclookup.app'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?mac=00:1A:2B', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/cve', group: 'osint', summary: 'CVE detail (MITRE, CIRCL, NVD) with KEV flag', params: [q('id', 'string', true, 'CVE id', 'CVE-2024-3400')], ttlSeconds: 3600, responseSchema: 'OsintResponse', upstreams: ['cveawg.mitre.org', 'cve.circl.lu', 'services.nvd.nist.gov'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, example: '?id=CVE-2024-3400', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/threats', group: 'osint', summary: 'Threat intel for an IP/domain/hash (abuse.ch, OTX, Tor exit exact match)', params: [q('ioc', 'string', true, 'indicator', '1.2.3.4')], ttlSeconds: 600, responseSchema: 'OsintResponse', upstreams: ['threatfox-api.abuse.ch', 'urlhaus-api.abuse.ch', 'otx.alienvault.com', 'check.torproject.org'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/sanctions', group: 'osint', summary: 'OFAC SDN search (OpenSanctions bulk, CC BY-NC)', params: [q('q', 'string', true, 'name / vessel / entity', 'Rosneft')], ttlSeconds: 86400, responseSchema: 'OsintResponse', upstreams: ['data.opensanctions.org'], forwardsUserInput: false, capability: 'nc_sources', rateLimit: OSINT_LIMIT, example: '?q=Rosneft', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/crypto', group: 'osint', summary: 'Wallet trace BTC/ETH/SOL with transparent risk factors', params: [q('address', 'string', true, 'wallet address'), q('chain', 'enum', false, 'chain', 'btc', ['btc', 'eth', 'sol'])], ttlSeconds: 300, responseSchema: 'OsintResponse', upstreams: ['mempool.space', 'eth.blockscout.com', 'api.mainnet-beta.solana.com'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/osint/leaks', group: 'osint', summary: 'Known breaches of an organisation domain (no personal email lookups)', params: [q('domain', 'string', true, 'organisation domain', 'example.com')], ttlSeconds: 86400, responseSchema: 'OsintResponse', upstreams: ['api.xposedornot.com'], forwardsUserInput: true, rateLimit: OSINT_LIMIT, osiris: true, owner: 'panels-recon' },
-  { method: 'GET', path: '/api/scanner', group: 'osint', summary: 'Allow-listed active scan types proxied through this server to an optional backend (disabled unless configured)', params: [q('type', 'string', true, 'allow-listed scan type'), q('target', 'string', true, 'public host/IP')], ttlSeconds: null, responseSchema: 'OsintResponse', upstreams: ['(SCANNER_URL)'], forwardsUserInput: true, capability: 'scanner', rateLimit: { limit: 5, windowS: 60 }, osiris: true, owner: 'panels-recon' },
+  { method: 'GET', path: '/api/scanner', group: 'osint', summary: 'Allow-listed active scan types proxied through this server to an optional backend (disabled unless configured)', params: [q('type', 'string', true, 'allow-listed scan type'), q('target', 'string', true, 'public host/IP')], ttlSeconds: null, responseSchema: 'OsintResponse', upstreams: ['(SCANNER_URL)'], forwardsUserInput: true, capability: 'scanner', rateLimit: { limit: 5, windowS: 60, bucket: 'scanner', failClosed: true }, osiris: true, owner: 'panels-recon' },
 
   // ── geo ────────────────────────────────────────────────────────────────────────
   { method: 'GET', path: '/api/geo', group: 'geo', summary: "Visitor region from IP — only after the user clicks 'centre on my region'", params: [], ttlSeconds: null, responseSchema: 'GeoResponse', upstreams: ['ipwho.is', 'free.freeipapi.com'], forwardsUserInput: true, osiris: true, owner: 'panels-recon' },
@@ -234,10 +242,20 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/geosearch', group: 'geo', summary: 'Place search: Photon type-ahead; Nominatim only on explicit submit', params: [q('q', 'string', true, 'query', 'Kyiv'), q('submit', 'boolean', false, '1 = explicit submit (allows Nominatim promotion)'), q('lat', 'number', false, 'bias latitude'), q('lng', 'number', false, 'bias longitude')], ttlSeconds: 600, responseSchema: 'GeoResponse', upstreams: ['photon.komoot.io', 'nominatim.openstreetmap.org'], forwardsUserInput: true, example: '?q=Kyiv', osiris: true, owner: 'panels-recon' },
   {
     method: 'GET', path: '/api/directions', group: 'geo', summary: 'Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile',
-    params: [q('from', 'string', true, 'lng,lat', '-0.1276,51.5072'), q('to', 'string', true, 'lng,lat', '-0.0877,51.5081'), q('mode', 'enum', false, 'mode', 'drive', ['drive', 'walk', 'bike']), q('avoid', 'string', false, 'tolls,highways,ferries')],
-    ttlSeconds: 300, responseSchema: 'DirectionsResponse', upstreams: ['valhalla1.openstreetmap.de', 'router.project-osrm.org', 'routing.openstreetmap.de'], forwardsUserInput: true, example: '?from=-0.1276,51.5072&to=-0.0877,51.5081', osiris: true, owner: 'panels-recon',
+    params: [
+      q('from', 'string', true, 'lat,lng (OSIRIS order)', '51.5072,-0.1276'),
+      q('to', 'string', true, 'lat,lng', '51.5081,-0.0877'),
+      q('via', 'string', false, 'lat,lng|lat,lng waypoints'),
+      q('mode', 'enum', false, 'mode (OSIRIS names auto/bicycle/pedestrian accepted as aliases)', 'drive', ['drive', 'walk', 'bike', 'auto', 'pedestrian', 'bicycle']),
+      q('avoid', 'string', false, 'tolls,highways,ferries'),
+    ],
+    ttlSeconds: 300, responseSchema: 'DirectionsResponse', upstreams: ['valhalla1.openstreetmap.de', 'router.project-osrm.org', 'routing.openstreetmap.de'], forwardsUserInput: true, example: '?from=51.5072,-0.1276&to=51.5081,-0.0877', osiris: true, owner: 'panels-recon',
   },
-  { method: 'GET', path: '/api/arcgis', group: 'geo', summary: 'ArcGIS catalogue search and Feature Service import (allow-listed URL rebuilding)', params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, 'Feature Service layer URL (arcgis.com hosts only)'), q('bbox', 'string', false, 'west,south,east,north')], ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', 'services.arcgis.com', 'services1.arcgis.com'], forwardsUserInput: true, osiris: true, owner: 'panels-recon' },
+  {
+    method: 'GET', path: '/api/arcgis', group: 'geo', summary: 'ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/services/…/(Feature|Map)Server/<n>/query, SSRF-guarded)',
+    params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, 'any public …/rest/services/…/(Feature|Map)Server[/n] URL'), q('bbox', 'string', false, 'west,south,east,north')],
+    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', '(user-supplied public ArcGIS server)'], forwardsUserInput: true, osiris: true, owner: 'panels-recon',
+  },
 
   // ── flight paths ───────────────────────────────────────────────────────────────
   { method: 'GET', path: '/api/airports/search', group: 'flight-paths', summary: 'Airport resolution: IATA → ICAO → ident → fuzzy → metro → Photon → Nominatim', params: [q('q', 'string', true, 'code, name, city or place', 'London'), q('all', 'boolean', false, '1 = include all airfields')], ttlSeconds: 600, responseSchema: 'AirportSearchResponse', upstreams: ['photon.komoot.io', 'nominatim.openstreetmap.org'], forwardsUserInput: true, example: '?q=London', osiris: false, owner: 'feature-flight-paths' },
@@ -259,6 +277,11 @@ export const EXCLUDED_OSIRIS_ROUTES = [
   { path: '/api/osint/hudsonrock', reason: 'Infostealer lookups by personal email (§0.7).' },
   { path: '/api/github-webhook', reason: "OSIRIS's own deploy hook, not a product feature." },
 ] as const;
+
+/** Look up a catalogue entry by its (templated) path. */
+export function catalogEntry(path: string, method: 'GET' | 'POST' = 'GET'): ApiEndpoint | undefined {
+  return (API_CATALOG as readonly ApiEndpoint[]).find((e) => e.method === method && (e.path === path || e.aliases?.includes(path)));
+}
 
 export function endpointsByGroup(): Map<ApiGroup, ApiEndpoint[]> {
   const out = new Map<ApiGroup, ApiEndpoint[]>();

@@ -86,3 +86,20 @@ describe('response helpers', () => {
     expect(JSON.stringify(await r.json())).not.toContain('secret');
   });
 });
+
+describe('withRoute takes limits from the API catalogue', () => {
+  it('applies the shared 5/min AI bucket across AI routes', async () => {
+    const { setRateLimitStore, MemoryRateLimitStore } = await import('./ratelimit');
+    setRateLimitStore(new MemoryRateLimitStore());
+    const ok = () => new Response('ok');
+    const routes = ['/api/ai/overview', '/api/ai/analyze', '/api/ai/briefing'];
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const route = routes[i % 3]!;
+      const res = await withRoute(route, ok)(new Request(`http://x${route}`, { method: 'POST', headers: { 'x-real-ip': '4.3.2.1' } }), undefined);
+      statuses.push(res.status);
+    }
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
+    setRateLimitStore(undefined);
+  });
+});

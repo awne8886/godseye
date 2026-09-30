@@ -20,7 +20,8 @@ export type KeyAction =
   | 'sensor-crt'
   | 'sensor-nvg'
   | 'sensor-flir'
-  | 'sensor-noir';
+  | 'sensor-noir'
+  | 'sensor-none';
 
 export interface KeyBinding {
   action: KeyAction;
@@ -53,6 +54,7 @@ export const KEY_BINDINGS = [
   { action: 'sensor-nvg', keys: ['2'], display: '2', description: 'Sensor mode: NVG' },
   { action: 'sensor-flir', keys: ['3'], display: '3', description: 'Sensor mode: FLIR' },
   { action: 'sensor-noir', keys: ['4'], display: '4', description: 'Sensor mode: Noir' },
+  { action: 'sensor-none', keys: ['0'], display: '0', description: 'Sensor mode: off' },
 ] as const satisfies readonly KeyBinding[];
 
 export interface KeyEventLike {
@@ -60,11 +62,15 @@ export interface KeyEventLike {
   ctrlKey: boolean;
   metaKey: boolean;
   altKey: boolean;
+  /** Auto-repeat from a held key. */
+  repeat?: boolean;
+  /** IME composition in progress (CJK input etc.). */
+  isComposing?: boolean;
 }
 
 /** Resolve a keydown to an action. Returns null when nothing matches or focus is in a field. */
 export function matchBinding(e: KeyEventLike, inTextField: boolean): KeyAction | null {
-  if (e.altKey) return null;
+  if (e.altKey || e.repeat || e.isComposing) return null;
   const mod = e.ctrlKey || e.metaKey;
   const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   for (const b of KEY_BINDINGS as readonly KeyBinding[]) {

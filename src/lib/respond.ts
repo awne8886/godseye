@@ -10,7 +10,9 @@
 import { createHash } from 'node:crypto';
 import zlib from 'node:zlib';
 import type { z } from 'zod';
+import { catalogEntry } from './api-catalog';
 import type { FeedResult } from './feeds';
+import type { RateLimitOptions } from './ratelimit';
 
 export interface JsonOptions {
   status?: number;
@@ -141,12 +143,14 @@ type Handler<C> = (req: Request, ctx: C) => Promise<Response> | Response;
 
 /**
  * Wrap a route handler with a per-route rate limit and a uniform 500 (details go to the server
- * log only). `route` is the rate-limit bucket name, normally the catalogue path.
+ * log only). `route` is the catalogue path (templated, e.g. `/api/airports/{code}`); the limit,
+ * shared bucket and fail-closed flag come from its catalogue entry unless `limit` overrides them.
  */
-export function withRoute<C = unknown>(route: string, handler: Handler<C>, limit?: { limit: number; windowS: number }): Handler<C> {
+export function withRoute<C = unknown>(route: string, handler: Handler<C>, limit?: RateLimitOptions): Handler<C> {
   return async (req, ctx) => {
-    const { rateLimit } = await import('./ratelimit');
-    const limited = await rateLimit(req, route, limit);
+    const { rateLimit, DEFAULT_LIMIT } = await import('./ratelimit');
+    const entry = catalogEntry(route, req.method === 'POST' ? 'POST' : 'GET');
+    const limited = await rateLimit(req, route, limit ?? entry?.rateLimit ?? DEFAULT_LIMIT);
     if (limited) return limited;
     try {
       return await handler(req, ctx);

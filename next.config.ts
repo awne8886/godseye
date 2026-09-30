@@ -25,7 +25,10 @@ const nextConfig: NextConfig = {
   images: {
     // Exact hosts only (never '**'). AVIF optimisation stays off (Next < 16.3.3 AVIF RCE class).
     formats: ['image/webp'],
-    remotePatterns: IMAGE_HOSTS.map((h) => ({ protocol: 'https' as const, hostname: new URL(h).hostname })),
+    remotePatterns: IMAGE_HOSTS.map((h) => {
+      const u = new URL(h);
+      return { protocol: 'https' as const, hostname: u.hostname, pathname: u.pathname === '/' ? '/**' : `${u.pathname}**` };
+    }),
   },
   async headers() {
     return [

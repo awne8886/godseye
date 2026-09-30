@@ -5,6 +5,7 @@
  * globalThis so one server-side poll loop fans out to every client.
  * Owner: lead. Server-only.
  */
+import { getClientIp, ipBucketKey } from './ratelimit';
 
 export const SSE_HEADERS = {
   'Content-Type': 'text/event-stream; charset=utf-8',
@@ -97,33 +98,43 @@ export function sseResponse(
   return new Response(stream, { headers: SSE_HEADERS });
 }
 
-/** A broadcaster: one upstream loop, many subscribers. */
+/** A broadcaster: one upstream loop, many subscribers (≤ maxClients total, ≤ perIp per client IP). */
 export class SseHub {
   private readonly clients = new Set<SseSend>();
+  private readonly perIpCount = new Map<string, number>();
   constructor(
     readonly name: string,
     private readonly snapshot: () => unknown | null,
     private readonly maxClients = 2000,
+    private readonly perIp = 4,
   ) {}
 
   get size(): number {
     return this.clients.size;
   }
 
-  subscribe(req: Request, opts?: SseOptions): Response {
-    if (this.clients.size >= this.maxClients) {
-      return new Response(JSON.stringify({ error: 'too_many_streams', detail: 'Try again shortly.' }), {
-        status: 503,
+  subscribe(req: Request, opts?: SseOptions, ip = getClientIp(req.headers)): Response {
+    const key = ipBucketKey(ip);
+    const mine = this.perIpCount.get(key) ?? 0;
+    if (this.clients.size >= this.maxClients || mine >= this.perIp) {
+      return new Response(JSON.stringify({ error: 'too_many_streams', detail: 'Too many open streams; close another tab or try again shortly.' }), {
+        status: mine >= this.perIp ? 429 : 503,
         headers: { 'Content-Type': 'application/json', 'Retry-After': '30', 'Cache-Control': 'no-store' },
       });
     }
+    this.perIpCount.set(key, mine + 1);
     return sseResponse(
       req,
       (send) => {
         const snap = this.snapshot();
         if (snap !== null && snap !== undefined) send('snapshot', snap);
         this.clients.add(send);
-        return () => this.clients.delete(send);
+        return () => {
+          this.clients.delete(send);
+          const n = (this.perIpCount.get(key) ?? 1) - 1;
+          if (n <= 0) this.perIpCount.delete(key);
+          else this.perIpCount.set(key, n);
+        };
       },
       opts,
     );

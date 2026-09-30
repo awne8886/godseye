@@ -19,7 +19,9 @@ const MapView = dynamic(() => import('@/components/map/MapView'), { ssr: false }
 export default function AppShell() {
   return (
     <main className="fixed inset-0 overflow-hidden bg-[var(--bg-void)]">
-      <div className="absolute inset-0 z-[1]">
+      {/* No z-index on the map wrapper: MapLibre's attribution control must be able to sit above the
+          vignette/sensor overlays (base.css lifts .maplibregl-ctrl-bottom-*). */}
+      <div className="absolute inset-0">
         <MapView />
       </div>
       <Overlays />

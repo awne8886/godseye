@@ -39,15 +39,25 @@ export const GeoResponse = z.object({
   timestamp: IsoTime,
 });
 
-export const DirectionsResponse = z.object({
-  engine: z.enum(['valhalla', 'osrm']),
-  mode: z.enum(['drive', 'walk', 'bike']),
+export const DirectionsRoute = z.object({
   distanceM: z.number().nonnegative(),
   durationS: z.number().nonnegative(),
   geometry: z.custom<GeoJSON.LineString>(),
   steps: z.array(z.object({ instruction: z.string(), distanceM: z.number(), durationS: z.number(), maneuver: z.string().nullable(), startIndex: z.number().int() })),
+  hasToll: z.boolean(),
+  hasHighway: z.boolean(),
+  hasFerry: z.boolean(),
+});
+
+/** Modes accept OSIRIS's names (auto/bicycle/pedestrian) as aliases of drive/bike/walk. */
+export const DirectionsResponse = z.object({
+  engine: z.enum(['valhalla', 'osrm']),
+  mode: z.enum(['drive', 'walk', 'bike']),
+  /** Primary route first, then alternates. */
+  routes: z.array(DirectionsRoute).min(1),
   elevation: z.array(z.object({ distanceM: z.number(), elevationM: z.number() })).nullable(),
-  alternates: z.array(z.custom<GeoJSON.LineString>()),
+  ascentM: z.number().nullable(),
+  descentM: z.number().nullable(),
   attribution: z.string(),
   providers: Providers,
   timestamp: IsoTime,

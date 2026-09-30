@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_FEED_EVENTS, orderedDeckLayers, useDeckLayerStore, useFeedEventStore, useLayerStatusStore, useSelectionStore } from './layer-host';
 import { DEFAULT_ACTIVE_LAYERS } from './layer-registry';
-import { useUiStore } from './store';
+import { DEFAULT_SETTINGS, MAX_WATCHED_FLIGHTS, sanitizeSettings, useUiStore } from './store';
 import type { FeedEvent } from './types';
 
 describe('UI store', () => {
@@ -15,12 +15,12 @@ describe('UI store', () => {
     s.setLayer('fires', false);
     expect(useUiStore.getState().activeLayers.has('fires')).toBe(false);
   });
-  it('keeps one open tool, pins panels and sequences fly-to requests', () => {
+  it('keeps one open panel, pins panels and sequences fly-to requests', () => {
     const s = useUiStore.getState();
-    s.toggleTool('paths');
-    expect(useUiStore.getState().openTool).toBe('paths');
-    s.toggleTool('paths');
-    expect(useUiStore.getState().openTool).toBeNull();
+    s.togglePanel('paths');
+    expect(useUiStore.getState().openPanel).toBe('paths');
+    s.togglePanel('paths');
+    expect(useUiStore.getState().openPanel).toBeNull();
     s.pinPanel('flight-watch');
     s.pinPanel('flight-watch');
     expect(useUiStore.getState().pinnedPanels).toEqual(['flight-watch']);
@@ -28,6 +28,32 @@ describe('UI store', () => {
     const a = useUiStore.getState().flyTo!.ts;
     s.requestFlyTo({ lng: 1, lat: 2 });
     expect(useUiStore.getState().flyTo!.ts).toBeGreaterThan(a);
+  });
+});
+
+describe('UI store: dossier, watch list, settings', () => {
+  it('opens and closes the dossier with its target', () => {
+    const s = useUiStore.getState();
+    s.openDossier({ lat: 50.45, lng: 30.52 });
+    expect(useUiStore.getState()).toMatchObject({ openPanel: 'dossier', dossierTarget: { lat: 50.45, lng: 30.52 } });
+    s.closeDossier();
+    expect(useUiStore.getState()).toMatchObject({ openPanel: null, dossierTarget: null });
+  });
+  it('caps the watch list at MAX_WATCHED_FLIGHTS, normalises and rejects non-hex ids', () => {
+    const s = useUiStore.getState();
+    for (const h of ['A00001', 'a00002', 'a00003', 'a00004', 'a00005', 'a00006', 'a00007']) s.watchFlight(h);
+    s.watchFlight('a00007');
+    s.watchFlight('BAW117');
+    expect(useUiStore.getState().watchedFlights).toHaveLength(MAX_WATCHED_FLIGHTS);
+    expect(useUiStore.getState().watchedFlights[0]).toBe('a00002');
+    s.unwatchFlight('A00007');
+    expect(useUiStore.getState().watchedFlights).not.toContain('a00007');
+  });
+  it('merges settings and sanitises persisted values', () => {
+    useUiStore.getState().updateSettings({ units: 'metric' });
+    expect(useUiStore.getState().settings).toEqual({ ...DEFAULT_SETTINGS, units: 'metric' });
+    expect(sanitizeSettings({ units: 'furlongs' as never, previewAutoplay: 'yes' as never, geoConsent: 'granted' })).toEqual({ ...DEFAULT_SETTINGS, geoConsent: 'granted' });
+    expect(sanitizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
   });
 });
 
@@ -57,7 +83,7 @@ describe('layer host stores', () => {
     expect(useFeedEventStore.getState().events).toHaveLength(MAX_FEED_EVENTS);
   });
   it('selects and clears the entity card', () => {
-    useSelectionStore.getState().select({ kind: 'aircraft', id: '4ca2b3', layer: 'flights', data: {}, lngLat: [0, 0] });
+    useSelectionStore.getState().select({ kind: 'aircraft', id: '4ca2b3', layer: 'flights', source: 'adsblol', observedAt: '2026-09-30T16:00:00Z', data: {}, lngLat: [0, 0] });
     expect(useSelectionStore.getState().selection?.id).toBe('4ca2b3');
     useSelectionStore.getState().clear();
     expect(useSelectionStore.getState().selection).toBeNull();

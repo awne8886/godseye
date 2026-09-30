@@ -67,9 +67,10 @@ nuqs 2 · motion 13 (`motion/react`) · satellite.js 7.1 (OMM JSON + `json2satre
 ## Design tokens (theme HORUS — `src/styles/tokens.css`, mirrored in `src/lib/tokens.ts`)
 bg-void #04040A · bg-primary #06060C · panel rgba(8,10,20,.88) · gold #D4AF37 / light #F0D060 / dim
 #8B7325 · cyan #00E5FF · red #FF3D3D · orange #FF9500 · green #00E676 · blue #448AFF · text #E8E6E0 /
-secondary #9B978E / muted #7A776F (≥ 4.5:1) / heading #F5F0E0 · map classes `--map-*` (use tokens,
+secondary #9B978E / muted #848178 (≥ 4.5:1 on glass panels and tertiary; replaces the contract value, which failed there) / heading #F5F0E0 · map classes `--map-*` (use tokens,
 never hard-code). HUD text: JetBrains Mono uppercase, tracking .08em (≥ 11 px) / .16em (≤ 10 px),
-tabular-nums; prose Inter 12–13 px. Glass panels radius 12, blur 24. Motion honours reduced motion.
+tabular-nums; prose Inter 12–13 px. Type scale 10/11/13/17 px + display 28/40 (9 px only for decorative
+labels and the mobile nav). Glass panels radius 12, blur 24. Motion honours reduced motion.
 
 ## File ownership (Phase 2 builders — edit only what you own)
 - map-engine: `src/components/map/**`, `src/lib/map/**`, `src/workers/geometry.ts`, `public/maplibre/**`

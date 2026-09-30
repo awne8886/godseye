@@ -1,6 +1,7 @@
 /*
  * GODSEYE design tokens — theme "HORUS" (the OSIRIS default, copied exactly per §7) plus
- * GODSEYE's contrast fix (--text-muted #7A776F ≥ 4.5:1 on #06060C) and per-class map colours.
+ * GODSEYE's contrast fix (--text-muted #848178 ≥ 4.5:1 on #06060C, the tertiary surface and the
+ * glass panel) and per-class map colours.
  * The --map-* values are mirrored in src/lib/tokens.ts (deck.gl needs RGB arrays); a unit
  * test pins the two copies together. Themes/presets override these on :root[data-theme].
  * Owner: design-system-hud (extend freely; never rename a token other code reads).
@@ -39,7 +40,7 @@
   --text-primary: #e8e6e0;
   --text-secondary: #9b978e;
   /* OSIRIS used #5C5A54 (~3:1). GODSEYE raises it to pass WCAG AA at small sizes. */
-  --text-muted: #7a776f;
+  --text-muted: #848178;
   --text-heading: #f5f0e0;
 
   --font-hud: var(--font-jetbrains-mono), 'JetBrains Mono', 'Courier New', monospace;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildShareUrl, parseCamera, parseRouteParam, parseUrlState, serializeCamera } from './url-state';
+import { buildShareUrl, parseCamera, parseLatLngParam, parsePinnedParam, parseRouteParam, parseUrlState, serializeCamera } from './url-state';
 
 describe('url state', () => {
   it('parses and clamps camera params', () => {
@@ -33,5 +33,25 @@ describe('url state', () => {
     expect(s.route).toEqual({ from: 'LHR', to: 'JFK' });
     expect(s.projection).toBe('mercator');
     expect(parseUrlState(new URLSearchParams('panel=evil&theme=<x>')).panel).toBeNull();
+  });
+
+  it('accepts legacy OSIRIS ?lat=&lon=&zoom= links but prefers ?c=', () => {
+    expect(parseUrlState(new URLSearchParams('lat=48.85&lon=2.35&zoom=6')).camera).toEqual({ lat: 48.85, lng: 2.35, zoom: 6, pitch: 0, bearing: 0 });
+    expect(parseUrlState(new URLSearchParams('lat=48.85&lon=2.35')).camera?.zoom).toBe(4);
+    expect(parseUrlState(new URLSearchParams('c=1,2,3&lat=48.85&lon=2.35')).camera?.lat).toBe(1);
+    expect(parseUrlState(new URLSearchParams('lat=abc&lon=2')).camera).toBeNull();
+  });
+
+  it('parses dossier targets and pinned panels, dropping junk', () => {
+    expect(parseLatLngParam('50.45,30.52')).toEqual({ lat: 50.45, lng: 30.52 });
+    expect(parseLatLngParam('95,0')).toBeNull();
+    expect(parseLatLngParam('1,2,3')).toBeNull();
+    expect(parsePinnedParam('flight-watch,camera,flight-watch,evil')).toEqual(['flight-watch', 'camera']);
+    expect(parsePinnedParam('evil')).toBeNull();
+    const url = buildShareUrl('https://godseye.example', { dossier: { lat: 50.450012, lng: 30.523 }, pinned: ['camera'], flight: 'BA117' });
+    const s = parseUrlState(new URL(url).searchParams);
+    expect(s.dossier).toEqual({ lat: 50.45, lng: 30.523 });
+    expect(s.pinned).toEqual(['camera']);
+    expect(s.flight).toBe('BA117');
   });
 });

@@ -40,7 +40,7 @@ describe('api catalogue', () => {
 
   it('references known capabilities and rate-limits AI at 5/min', () => {
     for (const e of catalog) if (e.capability) expect(CAPABILITIES).toHaveProperty(e.capability);
-    for (const e of catalog.filter((x) => x.group === 'ai')) expect(e.rateLimit).toEqual({ limit: 5, windowS: 60 });
+    for (const e of catalog.filter((x) => x.group === 'ai')) expect(e.rateLimit).toEqual({ limit: 5, windowS: 60, bucket: 'ai', failClosed: true });
   });
 
   it('keeps misnamed OSIRIS routes as aliases of the renamed ones', () => {

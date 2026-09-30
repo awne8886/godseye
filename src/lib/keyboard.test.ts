@@ -29,11 +29,14 @@ describe('keyboard map', () => {
     expect(matchBinding(ev('k', { ctrlKey: true }), true)).toBe('open-palette');
     expect(matchBinding(ev('f', { ctrlKey: true }), false)).toBe('open-search');
     expect(matchBinding(ev('3'), false)).toBe('sensor-flir');
+    expect(matchBinding(ev('0'), false)).toBe('sensor-none');
   });
 
   it('ignores plain keys while typing but still honours Escape', () => {
     expect(matchBinding(ev('f'), true)).toBeNull();
     expect(matchBinding(ev('Escape'), true)).toBe('close');
     expect(matchBinding(ev('f', { altKey: true }), false)).toBeNull();
+    expect(matchBinding({ ...ev('f'), repeat: true }, false)).toBeNull();
+    expect(matchBinding({ ...ev('f'), isComposing: true }, false)).toBeNull();
   });
 });

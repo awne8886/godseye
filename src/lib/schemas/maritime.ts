@@ -16,6 +16,9 @@ export const Port = EntityBase.extend({
   dataset: z.enum(['wpi', 'natural-earth', 'curated']),
   harborSize: z.string().nullable(),
   rank: z.number().int().positive().nullable(),
+  /** Curated throughput/fleet notes (reference text, e.g. "37.2M TEU"). */
+  volume: z.string().nullable(),
+  fleet: z.string().nullable(),
   /** Only set when vessels are live: ships within 50 km and how many are waiting (<0.5 kn). */
   live: z
     .object({

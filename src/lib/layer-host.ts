@@ -118,6 +118,10 @@ export interface Selection {
   kind: EntityKind;
   id: string;
   layer: LayerId | null;
+  /** Provider key that supplied the record (shown on the card with its attribution). */
+  source: string;
+  /** Upstream observation time (drives the card's freshness badge); null for reference data. */
+  observedAt: string | null;
   /** The entity record as rendered (small object, never a bulk array). */
   data: Record<string, unknown>;
   lngLat: [number, number] | null;

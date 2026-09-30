@@ -28,7 +28,7 @@ export const FirePixel = EntityBase.extend({
   frpMw: z.number().nonnegative().nullable(),
   /** VIIRS I-4 or MODIS brightness temperature, Kelvin. */
   brightnessK: z.number().nullable(),
-  /** Normalised confidence: VIIRS n/l/h → nominal/low/high; MODIS 0–100 → bucketed. */
+  /** Normalised confidence: VIIRS words low/nominal/high; MODIS 0–100 → low (<30) / nominal / high (≥80). */
   confidence: z.enum(['low', 'nominal', 'high']),
   dayNight: z.enum(['D', 'N']).nullable(),
 });
@@ -62,8 +62,14 @@ export const WeatherEvent = EntityBase.extend({
   expiresAt: IsoTime.nullable(),
   area: z.string().nullable(),
   url: z.url().nullable(),
-  /** Optional footprint polygon (NWS alert areas, cyclone cones). */
+  /** Optional footprint polygon (NWS alert areas, NHC cones). */
   geometry: z.custom<GeoJSON.Polygon | GeoJSON.MultiPolygon>().nullable(),
+  /**
+   * NWS zone/county ids when the alert has no geometry (most do not); lat/lng is then the zone
+   * centroid (zones cached 30 days) and `positionBasis` says so.
+   */
+  zones: z.array(z.string()).optional(),
+  positionBasis: z.enum(['geometry', 'point', 'zone-centroid']).optional(),
 });
 
 export const WeatherResponse = Envelope.extend({ items: z.array(WeatherEvent) });
@@ -84,12 +90,20 @@ export const GpsJamCell = z.object({
   lng: Lng,
   /** Share of aircraft in the cell with degraded NACp (0..1). */
   badRatio: z.number().min(0).max(1),
+  /** Aircraft counted in the cell, and how many of them were degraded. */
   aircraft: z.number().int().nonnegative(),
+  bad: z.number().int().nonnegative(),
   basis: z.enum(['gpsjam-daily', 'live-nacp']),
   date: z.string().nullable(),
 });
 
-export const GpsInterferenceResponse = Envelope.extend({ items: z.array(GpsJamCell) });
+export const GpsInterferenceResponse = Envelope.extend({
+  /** Only cells with bad > 0 are returned (the full grid would exceed 4 MB). */
+  items: z.array(GpsJamCell),
+  totalCells: z.number().int().nonnegative(),
+  /** gpsjam's own "suspect data" flag for the day, when published. */
+  suspect: z.boolean().nullable(),
+});
 
 export const SentinelScene = z.object({
   id: z.string(),

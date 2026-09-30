@@ -3,7 +3,7 @@
  * Owner: panels-alerts-markets-dossier-graph.
  */
 import { z } from 'zod';
-import { Envelope, IsoTime, Lat, Lng, Providers } from './common';
+import { Envelope, FreshnessState, IsoTime, Lat, Lng, Providers } from './common';
 
 export const Bloc = z.enum(['western', 'russian', 'regional', 'independent']);
 export const AlertKind = z.enum(['rocket', 'event', 'news']);
@@ -36,6 +36,9 @@ export const AlertItem = z.object({
     .object({ type: z.enum(['photo', 'video']), thumbnailUrl: z.url().nullable(), videoUrl: z.url().nullable(), durationS: z.number().nullable() })
     .nullable(),
   alsoReportedBy: z.array(AlertSourceRef),
+  views: z.number().int().nonnegative().nullable(),
+  forwardedFrom: z.string().nullable(),
+  replyTo: z.url().nullable(),
   place: z
     .object({
       name: z.string(),
@@ -83,8 +86,18 @@ export const Quote = z.object({
 });
 
 /** GET /api/markets */
+/** Exchange trading session state (drives SESSION OPEN/CLOSED), computed from exchange hours + tz. */
+export const MarketSession = z.object({
+  exchange: z.string(),
+  name: z.string(),
+  tz: z.string(),
+  open: z.boolean(),
+  nextChangeAt: IsoTime.nullable(),
+});
+
 export const MarketsResponse = Envelope.extend({
   quotes: z.array(Quote),
+  sessions: z.array(MarketSession),
   breadth: z.object({ up: z.number().int(), down: z.number().int(), flat: z.number().int() }),
   scmAlerts: z.array(z.object({ chokepoint: z.string(), risk: z.string(), message: z.string() })),
 });
@@ -110,8 +123,8 @@ export const MarketHistoryResponse = Envelope.extend({
 
 /** GET /api/ticker — status-bar marquee (server-side so browsers never call CoinGecko/USGS). */
 export const TickerResponse = Envelope.extend({
-  crypto: z.array(z.object({ symbol: z.string(), price: z.number(), changePct: z.number().nullable() })),
-  quakes: z.array(z.object({ id: z.string(), magnitude: z.number(), place: z.string().nullable(), observedAt: IsoTime })),
+  crypto: z.array(z.object({ symbol: z.string(), price: z.number(), changePct: z.number().nullable(), source: z.string(), observedAt: IsoTime.nullable() })),
+  quakes: z.array(z.object({ id: z.string(), magnitude: z.number(), place: z.string().nullable(), depthKm: z.number().nullable(), url: z.url().nullable(), observedAt: IsoTime })),
 });
 
 export const RegionDossierResponse = z.object({
@@ -132,10 +145,10 @@ export const RegionDossierResponse = z.object({
     })
     .nullable(),
   brief: z.object({ title: z.string(), extract: z.string(), thumbnailUrl: z.url().nullable(), url: z.url() }).nullable(),
-  /** Live layers aggregated within 150 km of the point. */
+  /** Live layers aggregated within 150 km of the point; an offline feed is reported as such, never as 0. */
   nearby: z.object({
     radiusKm: z.literal(150),
-    counts: z.record(z.string(), z.number().int().nonnegative()),
+    counts: z.record(z.string(), z.object({ count: z.number().int().nonnegative().nullable(), state: FreshnessState })),
     highlights: z.array(z.object({ layer: z.string(), id: z.string(), title: z.string(), distanceKm: z.number(), observedAt: IsoTime.nullable() })),
   }),
   weather: z
@@ -147,9 +160,16 @@ export const RegionDossierResponse = z.object({
 
 export const GraphNodeType = z.enum(['aircraft', 'vessel', 'company', 'person', 'ip', 'asn', 'country', 'sanction']);
 
+/**
+ * Graph node ids are identifiers, never free text: a Wikidata QID, an OpenSanctions entity id,
+ * an ICAO hex, an MMSI/IMO, an IP, an ASN or an ISO country code. `person` nodes only come from
+ * Wikidata/OpenSanctions records (public figures, sanctioned persons) — no people search.
+ */
+export const GraphNodeId = z.string().regex(/^(Q\d+|NK-[A-Za-z0-9]+|[a-z]{2,}-[A-Za-z0-9-]+|[0-9a-f]{6}|\d{9}|IMO\d{7}|AS\d+|[A-Z]{2}|[0-9a-fA-F:.]+)$/);
+
 export const EntityGraphResponse = z.object({
   root: z.string(),
-  nodes: z.array(z.object({ id: z.string(), type: GraphNodeType, label: z.string(), source: z.string(), url: z.url().nullable() })),
+  nodes: z.array(z.object({ id: GraphNodeId, type: GraphNodeType, label: z.string(), source: z.string(), url: z.url().nullable() })),
   links: z.array(z.object({ source: z.string(), target: z.string(), relation: z.string(), provenance: z.string() })),
   providers: Providers,
   timestamp: IsoTime,
@@ -163,6 +183,10 @@ export const AiCitation = z.object({ feed: z.string(), id: z.string(), label: z.
 export const AiOverviewResponse = z.object({
   generatedBy: AiGeneratedBy,
   model: z.string().nullable(),
+  /** Why the heuristic ANALYST answered instead of a model (no key, provider error, rate limit…). */
+  fallbackReason: z.string().nullable(),
+  /** Whose key paid for a model answer: the operator's server key or the visitor's own (never echoed). */
+  keySource: z.enum(['server', 'user', 'none']),
   text: z.string(),
   citations: z.array(AiCitation),
   timestamp: IsoTime,

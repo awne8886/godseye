@@ -53,7 +53,11 @@ export const AirportWeather = z.object({
   tempC: z.number().nullable(),
   windDirDeg: z.number().nullable(),
   windKt: z.number().nullable(),
+  gustKt: z.number().nullable(),
+  /** Visibility as reported (METAR JSON gives strings like "6+"). */
   visibility: z.string().nullable(),
+  altimHpa: z.number().nullable(),
+  clouds: z.array(z.object({ cover: z.string(), baseFt: z.number().nullable() })),
 });
 
 export const Runway = z.object({

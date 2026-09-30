@@ -1,28 +1,43 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { MemoryRateLimitStore, QueueFullError, SerialQueue, TokenBucket, checkRateLimit, getClientIp, rateLimit, setRateLimitStore } from './ratelimit';
+import { MemoryRateLimitStore, QueueFullError, SerialQueue, TokenBucket, checkRateLimit, getClientIp, ipBucketKey, ipTrustFromEnv, rateLimit, setRateLimitStore, type RateLimitStore } from './ratelimit';
 
 const h = (o: Record<string, string>) => new Headers(o);
 
 afterEach(() => setRateLimitStore(undefined));
 
 describe('client IP', () => {
-  it('prefers platform-verified headers, then x-real-ip, then the RIGHTMOST forwarded entry', () => {
-    expect(getClientIp(h({ 'cf-connecting-ip': '203.0.113.5', 'x-forwarded-for': '1.1.1.1' }), 'auto')).toBe('203.0.113.5');
-    expect(getClientIp(h({ 'x-vercel-forwarded-for': '198.51.100.2' }), 'auto')).toBe('198.51.100.2');
-    expect(getClientIp(h({ 'x-real-ip': '9.9.9.9', 'x-forwarded-for': '6.6.6.6' }), 'auto')).toBe('9.9.9.9');
+  const none = { platform: 'none' as const };
+  it('ignores platform headers unless that platform is configured (no spoofed cf-connecting-ip)', () => {
+    expect(getClientIp(h({ 'cf-connecting-ip': '9.9.9.9', 'x-real-ip': '5.5.5.5' }), none)).toBe('5.5.5.5');
+    expect(getClientIp(h({ 'cf-connecting-ip': '203.0.113.5', 'x-forwarded-for': '1.1.1.1' }), { platform: 'cloudflare' })).toBe('203.0.113.5');
+    expect(getClientIp(h({ 'x-vercel-forwarded-for': '198.51.100.2' }), { platform: 'vercel' })).toBe('198.51.100.2');
+    expect(ipTrustFromEnv({ VERCEL: '1' }).platform).toBe('vercel');
+    expect(ipTrustFromEnv({}).platform).toBe('none');
+    expect(ipTrustFromEnv({ TRUSTED_PLATFORM: 'cloudflare' }).platform).toBe('cloudflare');
+  });
+
+  it('then x-real-ip, then the RIGHTMOST forwarded entry', () => {
+    expect(getClientIp(h({ 'x-real-ip': '9.9.9.9', 'x-forwarded-for': '6.6.6.6' }), none)).toBe('9.9.9.9');
     // A client can prepend anything to XFF; only the proxy-appended rightmost entry counts.
-    expect(getClientIp(h({ 'x-forwarded-for': '6.6.6.6, 8.8.4.4' }), 'auto')).toBe('8.8.4.4');
-    expect(getClientIp(h({}), 'auto')).toBe('unknown');
+    expect(getClientIp(h({ 'x-forwarded-for': '6.6.6.6, 8.8.4.4' }), none)).toBe('8.8.4.4');
+    expect(getClientIp(h({}), none)).toBe('unknown');
   });
 
   it('ignores non-IP junk and unwraps mapped/port forms', () => {
-    expect(getClientIp(h({ 'cf-connecting-ip': 'evil', 'x-real-ip': '::ffff:1.2.3.4' }), 'auto')).toBe('1.2.3.4');
-    expect(getClientIp(h({ 'x-real-ip': '1.2.3.4:5555' }), 'auto')).toBe('1.2.3.4');
-    expect(getClientIp(h({ 'x-real-ip': '[2001:db8::1]:443' }), 'auto')).toBe('2001:db8::1');
+    expect(getClientIp(h({ 'x-real-ip': '::ffff:1.2.3.4' }), none)).toBe('1.2.3.4');
+    expect(getClientIp(h({ 'x-real-ip': '1.2.3.4:5555' }), none)).toBe('1.2.3.4');
+    expect(getClientIp(h({ 'x-real-ip': '[2001:db8::1]:443' }), none)).toBe('2001:db8::1');
+    expect(getClientIp(h({ 'x-real-ip': 'evil' }), none)).toBe('unknown');
   });
 
   it('trusts only the configured header when TRUST_PROXY_HEADER is set', () => {
-    expect(getClientIp(h({ 'cf-connecting-ip': '6.6.6.6', 'x-real-ip': '5.5.5.5' }), 'x-real-ip')).toBe('5.5.5.5');
+    expect(getClientIp(h({ 'cf-connecting-ip': '6.6.6.6', 'x-real-ip': '5.5.5.5' }), { header: 'x-real-ip' })).toBe('5.5.5.5');
+  });
+
+  it('keys IPv6 clients by /64 so address rotation inside a subnet does not reset limits', () => {
+    expect(ipBucketKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64');
+    expect(ipBucketKey('2001:db8:1:2:bbbb:cccc:dddd:eeee')).toBe('2001:db8:1:2::/64');
+    expect(ipBucketKey('1.2.3.4')).toBe('1.2.3.4');
   });
 });
 
@@ -43,6 +58,22 @@ describe('rate limiting', () => {
     expect(res?.status).toBe(429);
     expect(Number(res?.headers.get('retry-after'))).toBeGreaterThan(0);
     expect(await res?.json()).toMatchObject({ error: 'rate_limited', retryAfter: expect.any(Number) });
+  });
+
+  it('shares one bucket across routes when a bucket name is given', async () => {
+    setRateLimitStore(new MemoryRateLimitStore());
+    const req = (p: string) => new Request(`http://x${p}`, { headers: { 'x-real-ip': '8.8.8.8' } });
+    const ai = { limit: 2, windowS: 60, bucket: 'ai' };
+    expect(await rateLimit(req('/api/ai/overview'), '/api/ai/overview', ai)).toBeNull();
+    expect(await rateLimit(req('/api/ai/analyze'), '/api/ai/analyze', ai)).toBeNull();
+    expect((await rateLimit(req('/api/ai/briefing'), '/api/ai/briefing', ai))?.status).toBe(429);
+  });
+
+  it('fails closed only when asked to (AI, scanner) if the store is down', async () => {
+    const broken: RateLimitStore = { hit: async () => { throw new Error('redis down'); } };
+    setRateLimitStore(broken);
+    expect((await checkRateLimit('ai', '1.1.1.1', 5, 60, true)).allowed).toBe(false);
+    expect((await checkRateLimit('/api/news', '1.1.1.1', 5, 60)).allowed).toBe(true);
   });
 
   it('caps memory with an LRU', async () => {
