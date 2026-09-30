@@ -10,11 +10,11 @@ import { distanceKm } from '@/lib/geo';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers } from '@/lib/layer-host';
 import { readCssColor, type MapToken } from '@/lib/tokens';
-import type { MaritimeResponse, Vessel } from '@/lib/types';
-import { pointsFc, rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
+import type { Chokepoint, MaritimeResponse, Port, RiskLevel, Vessel } from '@/lib/types';
+import { useDeckPick, useFeedData } from '../../threats/client/hooks';
 
 const Z = LAYERS.find((l) => l.id === 'maritime')!.z;
-const css = (token: MapToken, alpha = 1) => rgbaCss(readCssColor(token, alpha));
+const CHOKE_TOKEN: Record<RiskLevel, MapToken> = { CRITICAL: '--map-choke-critical', HIGH: '--map-choke-high', ELEVATED: '--map-choke-elevated', MODERATE: '--map-choke-elevated', LOW: '--map-choke-low' };
 
 const SHIP_TOKEN: Record<Vessel['type'], MapToken> = {
   military: '--map-ship-military',
@@ -46,50 +46,45 @@ export default function MaritimeLayer() {
   const chokes = data?.chokepoints;
   const vessels = data?.vessels;
 
-  const portFc = useMemo(() => (ports ? pointsFc(ports, (p) => ({ type: p.type, major: p.dataset === 'curated' })) : null), [ports]);
-  const chokeFc = useMemo(() => (chokes ? pointsFc(chokes, (c) => ({ risk: c.risk })) : null), [chokes]);
-  const portLayers = useMemo(
-    () => [
-      {
+  const refLayers = useMemo(() => {
+    if (!ports || !chokes) return null;
+    return [
+      new ScatterplotLayer<Port>({
         id: 'tn-ports',
-        type: 'circle' as const,
-        filter: ['any', ['get', 'major'], ['>=', ['zoom'], 3]] as unknown as boolean,
-        paint: {
-          'circle-radius': ['case', ['get', 'major'], 4.5, 3] as unknown as number,
-          'circle-color': ['match', ['get', 'type'], 'naval', css('--map-port-naval'), 'energy', css('--map-port-energy'), css('--map-port')] as unknown as string,
-          'circle-stroke-color': css('--map-port', 0.5),
-          'circle-stroke-width': 1,
-          'circle-opacity': 0.85,
-        },
-      },
-    ],
-    [],
-  );
-  const chokeLayers = useMemo(
-    () => [
-      {
+        data: ports,
+        getPosition: (p) => [p.lng, p.lat],
+        getRadius: (p) => (p.dataset === 'curated' ? 4.5 : 2.5),
+        radiusUnits: 'pixels',
+        getFillColor: (p) => readCssColor(p.type === 'naval' ? '--map-port-naval' : p.type === 'energy' ? '--map-port-energy' : '--map-port', 0.85),
+        getLineColor: readCssColor('--map-port', 0.5),
+        stroked: true,
+        lineWidthUnits: 'pixels',
+        getLineWidth: 1,
+        pickable: true,
+        autoHighlight: true,
+      }),
+      new ScatterplotLayer<Chokepoint>({
         id: 'tn-chokepoints',
-        type: 'circle' as const,
-        paint: {
-          'circle-radius': 7,
-          'circle-color': 'rgba(0,0,0,0)',
-          'circle-stroke-color': ['match', ['get', 'risk'], 'CRITICAL', css('--map-choke-critical'), 'HIGH', css('--map-choke-high'), 'ELEVATED', css('--map-choke-elevated'), css('--map-choke-low')] as unknown as string,
-          'circle-stroke-width': 2,
-        },
-      },
-    ],
-    [],
-  );
-  useNativeLayers('tn-ports', portFc, portLayers);
-  useNativeLayers('tn-chokepoints', chokeFc, chokeLayers);
-  const pById = useMemo(() => new Map((ports ?? []).map((p) => [p.id, p])), [ports]);
-  const cById = useMemo(() => new Map((chokes ?? []).map((c) => [c.id, c])), [chokes]);
-  useNativePick(['tn-ports'], (id) => {
-    const p = pById.get(id);
+        data: chokes,
+        getPosition: (c) => [c.lng, c.lat],
+        getRadius: 7,
+        radiusUnits: 'pixels',
+        filled: false,
+        stroked: true,
+        getLineColor: (c) => readCssColor(CHOKE_TOKEN[c.risk], 1),
+        lineWidthUnits: 'pixels',
+        getLineWidth: 2,
+        pickable: true,
+      }),
+    ];
+  }, [ports, chokes]);
+  useDeckLayers('maritime:reference', refLayers, Z - 1);
+  useDeckPick('tn-ports', (info) => {
+    const p = info.object as Port | undefined;
     return p ? { kind: 'port', id: p.id, layer: 'maritime', source: p.source, observedAt: null, data: p as unknown as Record<string, unknown>, lngLat: [p.lng, p.lat] } : null;
   });
-  useNativePick(['tn-chokepoints'], (id) => {
-    const c = cById.get(id);
+  useDeckPick('tn-chokepoints', (info) => {
+    const c = info.object as Chokepoint | undefined;
     return c ? { kind: 'chokepoint', id: c.id, layer: 'maritime', source: 'curated', observedAt: null, data: c as unknown as Record<string, unknown>, lngLat: [c.lng, c.lat] } : null;
   });
 

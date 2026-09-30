@@ -12,9 +12,9 @@ import type { LayerComponentProps } from '@/lib/feature-module';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, type Selection } from '@/lib/layer-host';
 import { readCssColor } from '@/lib/tokens';
-import type { ConflictsResponse, CountryRiskResponse, FeedEvent, FrontlinesResponse, GdacsIncident, GdacsResponse, GdeltEvent, GdeltEventsResponse, InfrastructureResponse, NuclearSite } from '@/lib/types';
+import type { ConflictEvent, ConflictsResponse, CountryRiskResponse, FeedEvent, FrontlinesResponse, GdacsIncident, GdacsResponse, GdeltEvent, GdeltEventsResponse, InfrastructureResponse, NuclearSite } from '@/lib/types';
 import { gdeltTitle, QUAD_TOKEN } from '../shared/gdelt';
-import { pointsFc, rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from './hooks';
+import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from './hooks';
 
 const zOf = (id: string) => LAYERS.find((l) => l.id === id)!.z;
 const css = (token: Parameters<typeof readCssColor>[0], alpha = 1) => rgbaCss(readCssColor(token, alpha));
@@ -28,30 +28,42 @@ function nuclearClass(s: NuclearSite): string {
   return 'nuclear';
 }
 
+const NUCLEAR_TOKEN: Record<string, Parameters<typeof readCssColor>[0]> = {
+  conflict: '--map-nuclear-conflict',
+  seismic: '--map-nuclear-seismic',
+  decommissioned: '--map-nuclear-decommissioned',
+  construction: '--map-nuclear-construction',
+  nuclear: '--map-nuclear',
+};
+
 function NuclearLayer() {
   const data = useFeedData<InfrastructureResponse>('infrastructure', '/api/infrastructure', (b) => b.items.length);
   const items = data?.items;
-  const byId = useMemo(() => new Map((items ?? []).map((s) => [s.id, s])), [items]);
-  const fc = useMemo(() => (items ? pointsFc(items, (s) => ({ cls: nuclearClass(s) })) : null), [items]);
   const layers = useMemo(
-    () => [
-      {
-        id: 'tn-nuclear',
-        type: 'circle' as const,
-        paint: {
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 1, 3, 6, 6] as unknown as number,
-          'circle-color': ['match', ['get', 'cls'], 'conflict', css('--map-nuclear-conflict'), 'seismic', css('--map-nuclear-seismic'), 'decommissioned', css('--map-nuclear-decommissioned'), 'construction', css('--map-nuclear-construction'), css('--map-nuclear')] as unknown as string,
-          'circle-stroke-color': css('--map-nuclear', 0.9),
-          'circle-stroke-width': 1,
-          'circle-opacity': 0.9,
-        },
-      },
-    ],
-    [],
+    () =>
+      items
+        ? [
+            new ScatterplotLayer<NuclearSite>({
+              id: 'tn-nuclear',
+              data: items,
+              getPosition: (s) => [s.lng, s.lat],
+              getRadius: (s) => (s.flags.length ? 6 : 4.5),
+              radiusUnits: 'pixels',
+              getFillColor: (s) => readCssColor(NUCLEAR_TOKEN[nuclearClass(s)]!, 0.9),
+              getLineColor: readCssColor('--map-nuclear', 1),
+              stroked: true,
+              lineWidthUnits: 'pixels',
+              getLineWidth: 1,
+              pickable: true,
+              autoHighlight: true,
+            }),
+          ]
+        : null,
+    [items],
   );
-  useNativeLayers('tn-nuclear', fc, layers);
-  useNativePick(['tn-nuclear'], (id) => {
-    const s = byId.get(id);
+  useDeckLayers('threats:nuclear', layers, zOf('infrastructure'));
+  useDeckPick('tn-nuclear', (info) => {
+    const s = info.object as NuclearSite | undefined;
     return s ? { kind: 'nuclear_site', id: s.id, layer: 'infrastructure', source: s.source, observedAt: null, data: s as unknown as Record<string, unknown>, lngLat: [s.lng, s.lat] } : null;
   });
   return null;
@@ -83,27 +95,31 @@ function GdacsLayer() {
   useEffect(() => {
     if (items) push(gdacsEvents(items));
   }, [items, push]);
-  const byId = useMemo(() => new Map((items ?? []).map((s) => [s.id, s])), [items]);
-  const fc = useMemo(() => (items ? pointsFc(items, (i) => ({ level: i.alertLevel ?? 'none' })) : null), [items]);
   const layers = useMemo(
-    () => [
-      {
-        id: 'tn-gdacs',
-        type: 'circle' as const,
-        paint: {
-          'circle-radius': ['match', ['get', 'level'], 'red', 8, 'orange', 6, 4] as unknown as number,
-          'circle-color': ['match', ['get', 'level'], 'red', css('--map-incident'), 'orange', css('--map-seismic'), css('--map-seismic-low')] as unknown as string,
-          'circle-stroke-color': css('--map-incident', 0.9),
-          'circle-stroke-width': 1,
-          'circle-opacity': 0.85,
-        },
-      },
-    ],
-    [],
+    () =>
+      items
+        ? [
+            new ScatterplotLayer<GdacsIncident>({
+              id: 'tn-gdacs',
+              data: items,
+              getPosition: (i) => [i.lng, i.lat],
+              getRadius: (i) => (i.alertLevel === 'red' ? 8 : i.alertLevel === 'orange' ? 6 : 4),
+              radiusUnits: 'pixels',
+              getFillColor: (i) => readCssColor(i.alertLevel === 'red' ? '--map-incident' : i.alertLevel === 'orange' ? '--map-seismic' : '--map-seismic-low', 0.85),
+              getLineColor: readCssColor('--map-incident', 0.9),
+              stroked: true,
+              lineWidthUnits: 'pixels',
+              getLineWidth: 1,
+              pickable: true,
+              autoHighlight: true,
+            }),
+          ]
+        : null,
+    [items],
   );
-  useNativeLayers('tn-gdacs', fc, layers);
-  useNativePick(['tn-gdacs'], (id) => {
-    const s = byId.get(id);
+  useDeckLayers('threats:gdacs', layers, zOf('global_incidents'));
+  useDeckPick('tn-gdacs', (info) => {
+    const s = info.object as GdacsIncident | undefined;
     return s ? { kind: 'gdacs_incident', id: s.id, layer: 'global_incidents', source: 'gdacs', observedAt: s.observedAt, data: s as unknown as Record<string, unknown>, lngLat: [s.lng, s.lat] } : null;
   });
   return null;
@@ -168,7 +184,6 @@ function ConflictLayer() {
         : null,
     [zones],
   );
-  const eventFc = useMemo(() => (events ? pointsFc(events, () => ({})) : null), [events]);
   const zoneLayers = useMemo(
     () => [
       {
@@ -180,20 +195,36 @@ function ConflictLayer() {
     ],
     [],
   );
-  const eventLayers = useMemo(
-    () => [{ id: 'tn-zone-events', type: 'circle' as const, paint: { 'circle-radius': 3.5, 'circle-color': css('--map-gdelt-4', 0.85), 'circle-stroke-color': css('--map-conflict'), 'circle-stroke-width': 0.75 } }],
-    [],
-  );
   useNativeLayers('tn-zones', zoneFc, zoneLayers);
-  useNativeLayers('tn-zone-events', eventFc, eventLayers);
   const zById = useMemo(() => new Map((zones ?? []).map((z) => [z.id, z])), [zones]);
-  const eById = useMemo(() => new Map((events ?? []).map((e) => [e.id, e])), [events]);
+  const eventLayers = useMemo(
+    () =>
+      events
+        ? [
+            new ScatterplotLayer<ConflictEvent>({
+              id: 'tn-zone-events',
+              data: events,
+              getPosition: (e) => [e.lng, e.lat],
+              getRadius: 3.5,
+              radiusUnits: 'pixels',
+              getFillColor: readCssColor('--map-gdelt-4', 0.85),
+              getLineColor: readCssColor('--map-conflict', 1),
+              stroked: true,
+              lineWidthUnits: 'pixels',
+              getLineWidth: 0.75,
+              pickable: true,
+            }),
+          ]
+        : null,
+    [events],
+  );
+  useDeckLayers('threats:zone-events', eventLayers, zOf('conflict_zones'));
   useNativePick(['tn-zones-fill'], (id) => {
     const z = zById.get(id);
     return z ? { kind: 'conflict_zone', id: z.id, layer: 'conflict_zones', source: 'curated', observedAt: null, data: z as unknown as Record<string, unknown>, lngLat: z.anchor } : null;
   });
-  useNativePick(['tn-zone-events'], (id) => {
-    const e = eById.get(id);
+  useDeckPick('tn-zone-events', (info) => {
+    const e = info.object as ConflictEvent | undefined;
     return e ? ({ kind: 'conflict_zone', id: e.id, layer: 'conflict_zones', source: 'gdelt', observedAt: e.observedAt, data: e as unknown as Record<string, unknown>, lngLat: [e.lng, e.lat] } satisfies Selection) : null;
   });
   return null;

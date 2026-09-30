@@ -234,7 +234,7 @@ export const infrastructureFeed = defineFeed<{ items: NuclearSite[] }>({
     const merged = mergeNuclear(wd.data?.items ?? [], curated);
     // Earthquakes: the hazards feed's latest snapshot (started by instrumentation; never fetched here).
     const quakes = quakesInProcess();
-    const conflicts = conflictsFeed.peek().data;
+    const conflicts = (await conflictsFeed.get()).data;
     const items = flagSites(merged, quakes, conflicts?.events ?? []);
     const wdRun = wd.providers.wikidata;
     return {

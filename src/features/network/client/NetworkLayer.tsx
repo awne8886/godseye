@@ -12,9 +12,9 @@ import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
 import type { DeckPickInfo } from '@/lib/map/picking';
 import { readCssColor } from '@/lib/tokens';
-import type { AttackOrigin, AttackOriginsResponse, C2Response, C2Server, CablesResponse, FeedEvent, FeedMeta, MalwareHost, Outage, OutagesResponse, Providers, ThreatFoxResponse, ThreatIndicator } from '@/lib/types';
+import type { AttackOrigin, AttackOriginsResponse, C2Response, C2Server, CablesResponse, FeedEvent, FeedMeta, LandingPoint, MalwareHost, Outage, OutagesResponse, Providers, ThreatFoxResponse, ThreatIndicator } from '@/lib/types';
 import { countryByIso2 } from '../../threats/shared/country';
-import { pointsFc, rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
+import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
 import { spreadPositions, useZoomBucket } from './spread';
 
 const zOf = (id: string) => LAYERS.find((l) => l.id === id)!.z;
@@ -236,26 +236,31 @@ function OutagesLayer() {
   useEffect(() => {
     if (items) push(outageEvents(items));
   }, [items, push]);
-  const byId = useMemo(() => new Map((items ?? []).map((o) => [o.id, o])), [items]);
-  const fc = useMemo(() => (items ? pointsFc(items, (o) => ({ ongoing: o.ongoing })) : null), [items]);
   const layers = useMemo(
-    () => [
-      {
-        id: 'tn-outages',
-        type: 'circle' as const,
-        paint: {
-          'circle-radius': 7,
-          'circle-color': ['case', ['get', 'ongoing'], css('--map-outage', 0.55), css('--map-outage-resolved', 0.4)] as unknown as string,
-          'circle-stroke-color': css('--map-outage'),
-          'circle-stroke-width': 1.25,
-        },
-      },
-    ],
-    [],
+    () =>
+      items
+        ? [
+            new ScatterplotLayer<Outage>({
+              id: 'tn-outages',
+              data: items,
+              getPosition: (o) => [o.lng, o.lat],
+              getRadius: 7,
+              radiusUnits: 'pixels',
+              getFillColor: (o) => (o.ongoing ? readCssColor('--map-outage', 0.55) : readCssColor('--map-outage-resolved', 0.4)),
+              getLineColor: readCssColor('--map-outage', 1),
+              stroked: true,
+              lineWidthUnits: 'pixels',
+              getLineWidth: 1.25,
+              pickable: true,
+              autoHighlight: true,
+            }),
+          ]
+        : null,
+    [items],
   );
-  useNativeLayers('tn-outages', fc, layers);
-  useNativePick(['tn-outages'], (id) => {
-    const o = byId.get(id);
+  useDeckLayers('network:outages', layers, zOf('cf_outages'));
+  useDeckPick('tn-outages', (info) => {
+    const o = info.object as Outage | undefined;
     return o ? { kind: 'outage', id: o.id, layer: 'cf_outages', source: o.source, observedAt: o.startedAt, data: o as unknown as Record<string, unknown>, lngLat: [o.lng, o.lat] } : null;
   });
   return null;
@@ -315,19 +320,37 @@ function CablesLayer() {
   const cables = data?.cables;
   const landing = data?.landingPoints;
   const cableFc = useMemo<GeoJSON.FeatureCollection | null>(() => (cables ? { type: 'FeatureCollection', features: cables.map((c) => ({ type: 'Feature', geometry: c.geometry, properties: { id: c.id } })) } : null), [cables]);
-  const landingFc = useMemo(() => (landing ? pointsFc(landing, () => ({})) : null), [landing]);
   const cableLayers = useMemo(() => [{ id: 'tn-cables', type: 'line' as const, paint: { 'line-color': css('--map-cable', 0.75), 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.6, 6, 1.6] as unknown as number } }], []);
-  const landingLayers = useMemo(() => [{ id: 'tn-landing', type: 'circle' as const, minzoom: 3, paint: { 'circle-radius': 2.5, 'circle-color': css('--map-cable'), 'circle-stroke-color': css('--map-cable', 0.4), 'circle-stroke-width': 2 } }], []);
   useNativeLayers('tn-cables', cableFc, cableLayers);
-  useNativeLayers('tn-landing', landingFc, landingLayers);
+  const landingLayers = useMemo(
+    () =>
+      landing
+        ? [
+            new ScatterplotLayer<LandingPoint>({
+              id: 'tn-landing',
+              data: landing,
+              getPosition: (l) => [l.lng, l.lat],
+              getRadius: 2.5,
+              radiusUnits: 'pixels',
+              getFillColor: readCssColor('--map-cable', 1),
+              getLineColor: readCssColor('--map-cable', 0.4),
+              stroked: true,
+              lineWidthUnits: 'pixels',
+              getLineWidth: 2,
+              pickable: true,
+            }),
+          ]
+        : null,
+    [landing],
+  );
+  useDeckLayers('network:landing', landingLayers, zOf('sdk_sea'));
   const cById = useMemo(() => new Map((cables ?? []).map((c) => [c.id, c])), [cables]);
-  const lById = useMemo(() => new Map((landing ?? []).map((l) => [l.id, l])), [landing]);
   useNativePick(['tn-cables'], (id) => {
     const c = cById.get(id);
     return c ? { kind: 'cable', id: c.id, layer: 'sdk_sea', source: 'telegeography', observedAt: null, data: { ...c, geometry: null } as unknown as Record<string, unknown>, lngLat: null } : null;
   });
-  useNativePick(['tn-landing'], (id) => {
-    const l = lById.get(id);
+  useDeckPick('tn-landing', (info) => {
+    const l = info.object as LandingPoint | undefined;
     return l ? { kind: 'landing_point', id: l.id, layer: 'sdk_sea', source: 'telegeography', observedAt: null, data: l as unknown as Record<string, unknown>, lngLat: [l.lng, l.lat] } : null;
   });
   return null;
