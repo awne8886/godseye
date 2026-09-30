@@ -194,8 +194,21 @@ promoted a crypto token.
   vendor path with `Cache-Control: public, max-age=31536000, immutable`; add a Turbopack rule that
   rewrites `new URL(x, import.meta.url)` in `maplibre-gl.mjs` to `new globalThis.URL(...)`.
 - GPU layers: `@deck.gl/{core,layers,geo-layers,aggregation-layers,react,maplibre}@9.4.0` with
-  `MapLibreOverlay` interleaved (`beforeId` under labels, `antialiasing: true`, `cullMode: 'none'` on arcs
-  and trips in globe mode; use MapLibre's native `heatmap` layer on the globe, not deck's HeatmapLayer).
+  `MapLibreOverlay` interleaved (`beforeId` under labels). **Globe workarounds (deck 9.4 swaps in its
+  experimental GlobeView on the MapLibre globe):** set `parameters: {cullMode: 'none'}` on every
+  ArcLayer/GreatCircleLayer (`greatCircle: true`, `numSegments ≥ 64`), LineLayer, PathLayer, TripsLayer,
+  TextLayer and non-billboard IconLayer; `antialiasing: true` on arc/path/line layers; aircraft, ships
+  and satellites as billboard IconLayers with a far-side filter (drop or dim points > 90° great-circle
+  distance from the map centre, since billboards behind the globe still draw and can be picked); no
+  HexagonLayer, HeatmapLayer or ContourLayer on the globe (pre-aggregate with `h3-js` and use
+  H3HexagonLayer, or MapLibre's native `heatmap` layer); large-radius circles as geodesic polygons
+  (`turf.circle` + PolygonLayer); `parameters: {depthCompare: 'always'}` on point layers if they
+  z-fight; never pass a custom view with id `maplibre`. **React 19.3 / Next 16:** create the overlay
+  through `react-map-gl` `useControl` with `deviceProps: {_reuseDevices: true}` (StrictMode double-mount
+  throws "WebGL context already attached" until deck PR #10682 lands); never hide the map with
+  `<Activity>` (use `display: none`); after the map's first `idle` call `overlay.setProps({layers})` again
+  to work around the `beforeId` ordering regression (#10733); expect interleaved picking to miss over
+  high terrain until the release containing PR #10756, so keep terrain off by default.
 - State/data: `zustand@5` (UI state only; use `useShallow`; per-frame entity data lives in typed arrays
   in refs/workers), `@tanstack/react-query@5` (polling from each route's `refreshInterval`), SSE via
   `ReadableStream` route handlers, `nuqs@2` for URL state, `@tanstack/react-virtual` for feeds.
@@ -241,8 +254,10 @@ connect, `detections`/`update` batches, `status` with retired ids, `heartbeat` e
 renderer, card component, feed-event mapper, capability requirement, default state);
 `src/lib/api-catalog.ts` (method, path, params, summary, TTL, sample; drives `/docs` and `docs/API.md`).
 
-**Client.** One MapLibre map; projection toggled `globe`/`mercator` (interpolate `vertical-perspective`
-→ `mercator` between z7 and z9 when terrain is on); deck.gl overlay for high-count/animated layers; all
+**Client.** One MapLibre map; projection set only through `map.setProjection({type:'globe'})` or
+`{type:'mercator'}` (never `vertical-perspective` or an interpolate expression: `@deck.gl/maplibre`
+throws "Unsupported MapLibre projection"; when terrain engages at z ≥ 10 switch to `mercator`); deck.gl
+overlay for high-count/animated layers with the globe workarounds listed in §3; all
 GeoJSON sources created empty on load and updated from per-layer effects; big data in refs + a version
 counter; layer data fetched lazily on first toggle with per-layer polling that pauses when the tab is
 hidden; theme switches update paint properties in place (no map remount); URL state = camera + layers +
@@ -542,6 +557,13 @@ real-world navigation"), FAA (public); never bulk-store adsbdb routes; treat Jon
 5. **Forecast panel** (optional, keyed): salience-ranked world brief and probabilistic forecasts per
    horizon with map rings, modelled on OSIRIS's unshipped PYTHIA engine (§`docs/reference/05-*.md`).
 6. **Export** any panel as CSV/GeoJSON; screenshot with legend; PWA manifest that actually has a name.
+7. **Photoreal City View (optional, keyed, standalone).** Google Photorealistic 3D Tiles may not be used
+   "with or near a non-Google map" (Google Maps Platform terms §3.2.3(e)), so never draw them in the
+   MapLibre view. If offered at all: `GOOGLE_MAPS_API_KEY`, a separate full-screen Deck `Tile3DLayer` (or
+   CesiumJS with the globe and imagery off) with no basemap, only GODSEYE's own non-derived data overlaid,
+   the Google logo plus aggregated per-tile copyright, no extra caching, hidden on HTTP 403 (EEA), one root
+   session per page load (1,000 free/month, then $6 per 1,000), and a README note on the terms' High-Risk
+   Activities clause. Cesium ion's free tier is non-commercial; default to open data instead.
 
 ## 10. How to work — subagent orchestration (mandatory)
 
@@ -608,8 +630,10 @@ background completion notification before declaring a phase done.
 ## 11. Quality gates — definition of done
 
 - `pnpm lint`, `pnpm typecheck`, `pnpm test` (≥ 80% lines in `src/lib`, `src/app/api`,
-  `src/features/flight-paths`), `pnpm e2e` (every layer toggles and renders ≥ 1 entity when its feed is
-  live; every panel opens; §8 acceptance tests; keyboard map matches the help overlay), `pnpm build`,
+  `src/features/flight-paths`), `pnpm e2e` (every layer toggles and renders ≥ 1 entity when its feed is live; every panel opens; §8
+  acceptance tests; keyboard map matches the help overlay; Playwright screenshot baselines in globe AND
+  mercator for each deck layer type (Arc greatCircle, Trips, Icon, Text, H3, Scatter), a far-side
+  occlusion check, a hover/click picking test and a 2D → globe toggle test), `pnpm build`,
   Lighthouse CI (performance ≥ 0.85, accessibility = 1.0, LCP ≤ 2.5 s, CLS ≤ 0.1, TBT ≤ 300 ms) all
   green in CI on every PR.
 - Live smoke: `/api/health` lists every capability and per-upstream status; `/api/stats` non-zero for

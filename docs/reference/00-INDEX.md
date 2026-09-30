@@ -35,3 +35,4 @@ Read the files relevant to your slice before building. Files 01–15 come from r
 | `29-web-cctv-sources-and-compliance.md` | per-agency feeds and licences, tiering, exclusions, player spec, proxy spec, GDPR/takedown design |
 | `30-web-tools-audit.md` | engines, geocoders, Web Bluetooth panel and its covert probes, stream IDs, tickers, GeoJSON schema, ArcGIS endpoints |
 | `31-web-hosting-limits.md` | function body/duration limits, SSE behaviour, cache handlers |
+| `32-web-deckgl-globe-and-3d-tiles.md` | layer compatibility and workarounds for deck.gl 9.4 interleaved on the MapLibre v6 globe, React 19/Next 16 issues, Google Photorealistic 3D Tiles and Cesium ion terms, pricing, attribution and caching rules |
