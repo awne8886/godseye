@@ -10,10 +10,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import type { LayersList } from '@deck.gl/core';
-import type { MapMouseEvent } from 'maplibre-gl';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
+import { registerHitTester } from '@/lib/map/picking';
 import { useUiStore } from '@/lib/store';
 import type { FeedEvent } from '@/lib/types';
 import type { FlightRecord } from '../adsb';
@@ -23,11 +23,10 @@ import type { AircraftDetail } from '../server/aircraft';
 import { AGGREGATE_ABOVE, AGGREGATE_BELOW_ZOOM, advanceFrame, aggregateH3, buildLayers, newFrame, type Frame, type H3Cell, type View } from './layers';
 import { BUCKET_LAYER, useAviationPrefs, useFlights } from './useFlights';
 import { EMERGENCY_LABEL } from './format';
+import { aircraftSelection, hitTestAircraft } from './select';
 
 const Z = getLayer('flights')?.z ?? 80;
 const TICK_MS = 1000;
-/** Click tolerance around an aircraft icon, in CSS pixels. */
-const HIT_PX = 14;
 const SEVERITY: Record<'7500' | '7600' | '7700', FeedEvent['severity']> = { '7500': 'critical', '7700': 'high', '7600': 'medium' };
 
 export default function AviationLayer({ active }: LayerComponentProps) {
@@ -82,12 +81,6 @@ export default function AviationLayer({ active }: LayerComponentProps) {
   const [layers, setLayers] = useState<LayersList | null>(null);
   const [drawn, setDrawn] = useState(0);
 
-  const select = useSelectionStore((s) => s.select);
-  const onSelect = useCallback(
-    (r: FlightRecord, lngLat: [number, number]) =>
-      select({ kind: 'aircraft', id: r.id, layer: BUCKET_LAYER[r.bucket], source: r.source, observedAt: new Date(r.seenAt * 1000).toISOString(), data: { ...r }, lngLat }),
-    [select],
-  );
 
   /** Advance positions to now, refilter, and republish the layers (called from effects only). */
   const rebuild = useCallback(
@@ -111,12 +104,12 @@ export default function AviationLayer({ active }: LayerComponentProps) {
           tracks,
           selectedId,
           cells: cells.current,
-          onSelect,
+          toSelection: aircraftSelection,
         }),
       );
       setDrawn(f.count);
     },
-    [projection, buckets, colorMode, theme, watched, tracks, selectedId, onSelect],
+    [projection, buckets, colorMode, theme, watched, tracks, selectedId],
   );
 
   // New snapshot → fresh typed arrays (re-aggregate once per snapshot, not per tick).
@@ -147,32 +140,17 @@ export default function AviationLayer({ active }: LayerComponentProps) {
     const onMove = () => {
       if (!raf) raf = requestAnimationFrame(read);
     };
-    // CPU hit-test on click (projected positions, nearest within HIT_PX): works on the globe and in
-    // 2D regardless of GPU picking support; aircraft carry the highest pickPriority anyway.
-    const onClick = (e: MapMouseEvent) => {
-      const f = frame.current;
-      let best = -1;
-      let bestD = HIT_PX * HIT_PX;
-      for (let k = 0; k < f.count; k++) {
-        const i = f.visible[k]!;
-        const p = map.project([f.pos[i * 2]!, f.pos[i * 2 + 1]!]);
-        const d = (p.x - e.point.x) ** 2 + (p.y - e.point.y) ** 2;
-        if (d < bestD) {
-          bestD = d;
-          best = i;
-        }
-      }
-      if (best >= 0) onSelect(f.records[best]!, [f.pos[best * 2]!, f.pos[best * 2 + 1]!]);
-    };
     read();
     map.on('move', onMove);
-    map.on('click', onClick);
     return () => {
-      map.off('click', onClick);
       map.off('move', onMove);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, [map, rebuild, onSelect]);
+  }, [map, rebuild]);
+
+  // CPU hit-test (projected positions, nearest within HIT_PX) for the map's single click router:
+  // works on the globe and in 2D regardless of GPU picking support.
+  useEffect(() => registerHitTester('aviation', (point, m) => hitTestAircraft(frame.current, point, m)), []);
 
   useDeckLayers('aviation', layers, Z);
 

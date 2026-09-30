@@ -13,7 +13,7 @@ import { readCssColor } from '@/lib/tokens';
 import type { GpsInterferenceResponse, GpsJamCell } from '@/lib/types';
 import { jamLevel } from '../shared';
 import { useHitTester } from './hit-test';
-import { selectEntity } from './pick';
+import { entitySelection } from './pick';
 import { useHazardData } from './useHazardData';
 
 const Z = LAYERS.find((l) => l.id === 'gps_jam')!.z;
@@ -61,7 +61,7 @@ export default function GpsJamLayer() {
     return {
       layer: 'gps_jam',
       distancePx: 0,
-      open: () => selectEntity('gps_jam_cell', 'gps_jam', { id: c.h3, lat: c.lat, lng: c.lng, source: c.basis === 'live-nacp' ? 'live_nacp' : 'gpsjam', observedAt }, { ...c, suspect: data?.suspect ?? null }),
+      selection: entitySelection('gps_jam_cell', 'gps_jam', { id: c.h3, lat: c.lat, lng: c.lng, source: c.basis === 'live-nacp' ? 'live_nacp' : 'gpsjam', observedAt }, { ...c, suspect: data?.suspect ?? null }),
     };
   });
 

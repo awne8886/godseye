@@ -10,11 +10,16 @@ export type TerminatorBands = ReturnType<typeof terminatorBands>;
 
 export type GeometryRequest =
   | { id: number; type: 'terminator'; at: number; stepDeg?: number }
-  | { id: number; type: 'greatCircle'; from: LngLatTuple; to: LngLatTuple; points?: number };
+  | { id: number; type: 'greatCircle'; from: LngLatTuple; to: LngLatTuple; points?: number }
+  /** A `godseye-night://z/x/y?t=` tile: fetched, clipped and PNG-encoded in the worker (async). */
+  | { id: number; type: 'nightTile'; url: string }
+  /** Cancel request `target` (MapLibre aborted the tile). */
+  | { id: number; type: 'abort'; target: number };
 
 export type GeometryResponse =
   | { id: number; type: 'terminator'; at: number; bands: TerminatorBands }
   | { id: number; type: 'greatCircle'; points: LngLatTuple[] }
+  | { id: number; type: 'nightTile'; data: ArrayBuffer }
   | { id: number; type: 'error'; message: string };
 
 /** Twilight polygons are recomputed on this cadence (the sun moves 0.25° per minute). */
@@ -37,6 +42,9 @@ export function handleGeometryRequest(req: GeometryRequest): GeometryResponse {
         const n = finite(req.points) ? Math.min(1024, Math.max(2, Math.floor(req.points))) : 128;
         return { id, type: 'greatCircle', points: greatCirclePoints(req.from, req.to, n) };
       }
+      case 'nightTile':
+      case 'abort':
+        throw new Error(`${req.type} is handled asynchronously by the worker`);
       default:
         throw new Error(`unknown geometry request: ${String((req as { type?: unknown } | null)?.type)}`);
     }

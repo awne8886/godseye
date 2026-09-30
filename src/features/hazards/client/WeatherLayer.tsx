@@ -12,7 +12,7 @@ import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { WeatherEvent, WeatherResponse } from '@/lib/types';
 import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken } from '../shared';
 import { nearestPoint, useHitTester } from './hit-test';
-import { selectEntity } from './pick';
+import { entitySelection } from './pick';
 import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
 
@@ -82,7 +82,7 @@ export default function WeatherLayer() {
     // A marker beats the footprint it sits in; an area hit counts as far as the slack radius.
     const ev = pt?.item ?? byId.current.get(renderedFeatureId(map, e.point, ['hazards-weather-fill']) ?? '');
     if (!ev) return null;
-    return { layer: 'weather', distancePx: pt?.distancePx ?? 12, open: () => selectEntity('weather_event', 'weather', ev, ev as unknown as Record<string, unknown>) };
+    return { layer: 'weather', distancePx: pt?.distancePx ?? 12, selection: entitySelection('weather_event', 'weather', ev, ev as unknown as Record<string, unknown>) };
   });
   return null;
 }

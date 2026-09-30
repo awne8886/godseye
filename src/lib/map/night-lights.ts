@@ -232,7 +232,8 @@ async function fetchBlackMarble(z: number, x: number, y: number, signal: AbortSi
 
 async function encodePng(img: RawImage): Promise<ArrayBuffer> {
   const canvas = new OffscreenCanvas(img.width, img.height);
-  const ctx = canvas.getContext('2d');
+  // Software canvas: a GPU-backed one would need a new raster context and a synchronous pixel readback.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('OffscreenCanvas 2D unavailable');
   ctx.putImageData(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height), 0, 0);
   return (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer();
@@ -243,13 +244,23 @@ export function nightLightsSupported(): boolean {
   return typeof OffscreenCanvas !== 'undefined' && typeof createImageBitmap === 'function';
 }
 
+/** The fetch → decode → clip → encode pipeline with the OffscreenCanvas codec (worker or page). */
+export function createBrowserNightLoader() {
+  return createNightTileLoader({ fetchTile: fetchBlackMarble, encode: encodePng });
+}
+
 type AddProtocol = (name: string, action: (req: { url: string }, ac: AbortController) => Promise<{ data: ArrayBuffer; cacheControl?: string }>) => void;
+type TileLoad = (url: string, signal: AbortSignal) => Promise<ArrayBuffer>;
 let installed = false;
 
-/** Register the `godseye-night://` protocol once per page. */
-export function installNightProtocol(addProtocol: AddProtocol): void {
+/**
+ * Register the `godseye-night://` protocol once per page. `load` normally runs the pipeline in the
+ * geometry worker (decode, per-pixel clip and PNG encode stay off the main thread); without it the
+ * pipeline runs in the page.
+ */
+export function installNightProtocol(addProtocol: AddProtocol, load?: TileLoad): void {
   if (installed || !nightLightsSupported()) return;
-  const loader = createNightTileLoader({ fetchTile: fetchBlackMarble, encode: encodePng });
-  addProtocol(NIGHT_PROTOCOL, async (req, ac) => ({ data: await loader.load(req.url, ac.signal) }));
+  const run: TileLoad = load ?? createBrowserNightLoader().load;
+  addProtocol(NIGHT_PROTOCOL, async (req, ac) => ({ data: await run(req.url, ac.signal) }));
   installed = true;
 }

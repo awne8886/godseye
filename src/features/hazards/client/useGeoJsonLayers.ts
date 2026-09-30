@@ -2,8 +2,8 @@
 /**
  * Native MapLibre GeoJSON source + layers for polygon footprints (NWS alert areas, NHC cones,
  * Sentinel scenes): inserted under the basemap labels, updated with setData, re-added after a
- * style reload, removed on unmount. Clicks are routed by hit-test.ts (queryRenderedFeatures on these
- * layers); this hook only shows the pointer cursor. Owner: layers-hazards.
+ * style reload, removed on unmount. Clicks and the hover cursor come from the map's single router
+ * via hit-test.ts (queryRenderedFeatures on these layers). Owner: layers-hazards.
  */
 import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
@@ -41,20 +41,9 @@ export function useGeoJsonLayers(
       }
     };
     ensure();
-    const handlers = layersRef.current.map((l) => {
-      const enter = () => (map.getCanvas().style.cursor = 'pointer');
-      const leave = () => (map.getCanvas().style.cursor = '');
-      map.on('mouseenter', l.id, enter);
-      map.on('mouseleave', l.id, leave);
-      return { id: l.id, enter, leave };
-    });
     map.on('styledata', ensure);
     return () => {
       map.off('styledata', ensure);
-      for (const h of handlers) {
-        map.off('mouseenter', h.id, h.enter);
-        map.off('mouseleave', h.id, h.leave);
-      }
       try {
         if (!map.getStyle()) return;
         for (const l of layersRef.current) if (map.getLayer(l.id)) map.removeLayer(l.id);
