@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: false },
   serverExternalPackages: ['ioredis'],
   turbopack: {
+    // satellite.js 7.1's pthreads WASM build spawns itself as a Worker, which hangs Turbopack's
+    // build; GODSEYE uses the single-threaded path, so the multi-thread entry resolves to nothing.
+    resolveAlias: { '#wasm-multi-thread': './src/test/empty.ts' },
     rules: {
       // See tools/maplibre-url-loader.cjs: keep MapLibre's runtime worker URL a runtime URL.
       'maplibre-gl.mjs': {
