@@ -11,7 +11,7 @@ import { LAYER_GROUPS, type LayerId } from '@/lib/layer-registry';
 import { useLayerStatusStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import { useVisibleLayers } from '../hooks';
-import { statusAttribution } from '../LayerRows';
+import { AttributionLine, statusAttribution } from '../LayerRows';
 import { usePanelChip } from '../PanelChrome';
 import { refreshLabel } from '../status-logic';
 
@@ -70,9 +70,8 @@ export default function AttributionPanel(_: PanelProps) {
                     {l.description && <p className="font-sans text-[var(--text-secondary)]">{l.description}</p>}
                     {attr.length > 0 ? (
                       attr.map((a) => (
-                        <p key={a.text} className="text-[var(--text-primary)]">
-                          {a.url ? <Ext href={a.url}>{a.text}</Ext> : a.text}
-                          {a.licence && <span className="text-[var(--text-muted)]"> · {a.licence}</span>}
+                        <p key={a.text} className="text-[var(--text-primary)]" data-testid={`sources-${l.id}`}>
+                          <AttributionLine a={a} />
                         </p>
                       ))
                     ) : providers.length > 0 ? (

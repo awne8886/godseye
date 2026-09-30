@@ -3,7 +3,7 @@ import { LAYERS, visibleLayers } from '@/lib/layer-registry';
 import { REGION_PRESETS } from '@/lib/presets';
 import { DEFAULT_SETTINGS, useUiStore } from '@/lib/store';
 import { MOBILE_SHEETS, MOBILE_TABS, PANELS, TOOLS, type PanelId } from '@/lib/tool-registry';
-import { formatLatLng, geoCell, metersPerPixel, scaleBar } from './map-readout';
+import { formatLatLng, geoCell, scaleBarFor } from './map-readout';
 import { paletteItems } from './palette-items';
 import { ALL_PANEL_IDS, MODAL_PANELS, mobileReachable, panelLabel, tabForPanel } from './panel-meta';
 import { feedsReady, splashStage } from './splash-logic';
@@ -136,13 +136,13 @@ describe('splash readiness', () => {
 
 describe('scale bar and cursor readout', () => {
   it('computes ground resolution and a round scale in each unit system', () => {
-    expect(metersPerPixel(0, 0)).toBeCloseTo(78271.5, 0);
-    const mpp = metersPerPixel(51.5, 10);
-    expect(scaleBar(mpp, 100, 'metric')).toMatchObject({ label: '3 KM' });
-    expect(scaleBar(mpp, 100, 'imperial')!.label).toMatch(/MI$/);
-    expect(scaleBar(mpp, 100, 'aviation')!.label).toMatch(/NM$/);
-    expect(scaleBar(mpp, 100, 'metric')!.widthPx).toBeLessThanOrEqual(100);
-    expect(scaleBar(Number.NaN, 100, 'metric')).toBeNull();
+    expect(scaleBarFor(51.5, 10, 100, 'metric')).toMatchObject({ label: '2 KM' });
+    expect(scaleBarFor(51.5, 16, 100, 'metric')!.label).toMatch(/^\d+ M$/);
+    expect(scaleBarFor(51.5, 10, 100, 'imperial')!.label).toMatch(/MI$/);
+    expect(scaleBarFor(51.5, 10, 100, 'aviation')!.label).toMatch(/NM$/);
+    expect(scaleBarFor(51.5, 16, 100, 'aviation')!.label).toMatch(/FT$/);
+    for (const u of ['metric', 'imperial', 'aviation'] as const) expect(scaleBarFor(51.5, 10, 100, u)!.widthPx).toBeLessThanOrEqual(100);
+    expect(scaleBarFor(Number.NaN, 3, 100, 'metric')).toBeNull();
   });
   it('formats coordinates and 0.1° cache cells', () => {
     expect(formatLatLng(51.5074, -0.1278)).toBe('51.507°N 0.128°W');

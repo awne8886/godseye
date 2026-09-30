@@ -5,6 +5,7 @@
  * line (providers / attribution; SOURCE OFFLINE with last-good time). Owner: design-system-hud.
  */
 import { motion } from 'motion/react';
+import { useId } from 'react';
 import { freshnessLabel, FRESHNESS_COLOR_TOKEN } from '@/lib/freshness';
 import type { LayerDef, LayerId } from '@/lib/layer-registry';
 import { useLayerStatus, type LayerStatus } from '@/lib/layer-host';
@@ -25,10 +26,9 @@ export function Toggle({ on }: { on: boolean }) {
   );
 }
 
-/** Attribution a feature module may attach to its status (from the feed's meta.attribution). */
+/** The feed's attribution (meta.attribution) as reported by the feature module. */
 export function statusAttribution(st: LayerStatus): Attribution[] {
-  const a = (st as LayerStatus & { attribution?: unknown }).attribution;
-  return Array.isArray(a) ? (a.filter((x) => x && typeof (x as Attribution).text === 'string') as Attribution[]) : [];
+  return (st.attribution ?? []).filter((a) => typeof a?.text === 'string' && a.text.trim() !== '');
 }
 
 const hhmm = (iso: string | null) => (iso ? `${new Date(iso).toISOString().slice(11, 16)}Z` : '—');
@@ -53,6 +53,23 @@ export function FreshnessLed({ layer, status }: { layer: LayerDef; status: Layer
   );
 }
 
+/** One attribution line; links only for http(s) URLs, always rel="noopener noreferrer". */
+export function AttributionLine({ a }: { a: Attribution }) {
+  const text = `${a.text}${a.licence ? ` · ${a.licence}` : ''}`;
+  return a.url && /^https?:\/\//.test(a.url) ? (
+    <a href={a.url} target="_blank" rel="noopener noreferrer" className="underline decoration-[var(--border-active)] underline-offset-2 hover:text-[var(--gold-light)]">
+      {text}
+    </a>
+  ) : (
+    <span>{text}</span>
+  );
+}
+
+/**
+ * A layer toggle. The button holds only what names it (toggle, label, REFERENCE chip, count), so
+ * its accessible name contains the visible label (WCAG 2.5.3); description, refresh interval,
+ * freshness and the source line sit beside it and are linked with aria-describedby.
+ */
 export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn?: boolean }) {
   const id = layer.id as LayerId;
   const on = useUiStore((s) => s.activeLayers.has(id));
@@ -61,45 +78,47 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
   const attribution = statusAttribution(status);
   const providers = status.providers ? Object.keys(status.providers) : [];
   const offline = status.state === 'offline';
+  const descId = useId();
   return (
     <li className={layer.parent ? 'pl-5' : ''} style={layer.parent && !parentOn ? { opacity: 0.6 } : undefined}>
       <button
         type="button"
         aria-pressed={on}
-        aria-label={layer.label}
+        aria-describedby={descId}
         onClick={() => toggle(id)}
-        className="hud-control flex min-h-[32px] w-full items-start gap-2 px-1.5 py-1.5 text-left hover:bg-[rgba(var(--gold-rgb),0.06)]"
+        className="hud-control flex min-h-[32px] w-full items-center gap-2 px-1.5 pt-1.5 text-left hover:bg-[rgba(var(--gold-rgb),0.06)]"
       >
-        <span className="mt-0.5">
-          <Toggle on={on} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
-            <span className={`hud-text truncate text-[11px] ${on ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{layer.label}</span>
-            {layer.kind === 'reference' && <span className="instrument-chip text-[var(--text-secondary)]">REFERENCE</span>}
-          </span>
-          {layer.description && <span className="block font-sans text-[12px] leading-snug text-[var(--text-muted)]">{layer.description}</span>}
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="hud-micro text-[var(--text-muted)]" title="Refresh interval">
-              {refreshLabel(layer.refreshMs, layer.transport)}
-            </span>
-            {on && <FreshnessLed layer={layer} status={status} />}
-          </span>
-          {on && offline && (
-            <span className="hud-micro block text-[var(--alert-red)]">SOURCE OFFLINE · LAST GOOD {hhmm(status.lastGoodAt)}</span>
-          )}
-          {on && (attribution.length > 0 || providers.length > 0) && (
-            <span className="block truncate font-sans text-[12px] text-[var(--text-muted)]" title={attribution.map((a) => a.text).join(' · ') || providers.join(', ')}>
-              {attribution.length ? attribution.map((a) => a.text).join(' · ') : `Source: ${providers.join(', ')}`}
-            </span>
-          )}
-        </span>
+        <Toggle on={on} />
+        <span className={`hud-text truncate text-[11px] ${on ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{layer.label}</span>
+        {layer.kind === 'reference' && <span className="instrument-chip text-[var(--text-secondary)]">REFERENCE</span>}
+        <span className="flex-1" />
         {on && typeof status.count === 'number' && (
           <span className="hud-micro rounded-[var(--radius-chip)] bg-[rgba(var(--cyan-rgb),0.12)] px-1.5 py-0.5 text-[var(--cyan-primary)]">
             {status.count.toLocaleString('en-US')}
           </span>
         )}
       </button>
+      <div id={descId} className="pb-1.5 pl-[44px] pr-1.5">
+        {layer.description && <p className="font-sans text-[12px] leading-snug text-[var(--text-muted)]">{layer.description}</p>}
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="hud-micro text-[var(--text-muted)]" title="Refresh interval">
+            {refreshLabel(layer.refreshMs, layer.transport)}
+          </span>
+          {on && <FreshnessLed layer={layer} status={status} />}
+        </p>
+        {on && offline && <p className="hud-micro text-[var(--alert-red)]">SOURCE OFFLINE · LAST GOOD {hhmm(status.lastGoodAt)}</p>}
+        {on && attribution.length > 0 && (
+          <p className="font-sans text-[12px] text-[var(--text-muted)]" data-testid={`attribution-${layer.id}`}>
+            {attribution.map((a, i) => (
+              <span key={a.text}>
+                {i > 0 && ' · '}
+                <AttributionLine a={a} />
+              </span>
+            ))}
+          </p>
+        )}
+        {on && attribution.length === 0 && providers.length > 0 && <p className="font-sans text-[12px] text-[var(--text-muted)]">Source: {providers.join(', ')}</p>}
+      </div>
     </li>
   );
 }

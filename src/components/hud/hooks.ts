@@ -25,6 +25,21 @@ export function useHealth() {
   });
 }
 
+/**
+ * Whether this build serves an API route, from `/api/health` `routes` (the mounted API paths).
+ * Routes owned by later builders are only called once the server lists them, so the browser never
+ * logs 404s for features that are not deployed. Absent list → not available (coordinates-only
+ * readout, event-based ticker).
+ */
+export function routeListed(health: HealthResponse | undefined, path: string): boolean {
+  const routes = (health as (HealthResponse & { routes?: unknown }) | undefined)?.routes;
+  return Array.isArray(routes) && routes.includes(path);
+}
+
+export function useApiRoute(path: string): boolean {
+  return routeListed(useHealth().data, path);
+}
+
 /** Layers the deployment can serve (capability-hidden ones excluded). Before health loads: keyless only. */
 export function useVisibleLayers(): LayerDef[] {
   const caps = useHealth().data?.capabilities ?? {};

@@ -62,7 +62,7 @@ export default function LayerRail() {
           <div key={g.id} className="relative" onMouseEnter={() => enter(g.id)} onMouseLeave={leave}>
             <button
               type="button"
-              aria-label={`${g.label} layers`}
+              aria-label={g.label}
               aria-expanded={expanded}
               aria-controls={panelId}
               title={g.label}

@@ -23,7 +23,8 @@ test('satellites: the catalogue loads, propagates and is counted per category wh
   page.on('pageerror', (e) => errors.push(e.message));
   await bootGlobe(page, '/?layers=satellites');
   await page.getByRole('button', { name: 'SPACE TRACKING' }).click();
-  const flyout = page.getByRole('dialog', { name: 'SPACE TRACKING' });
+  // Rail flyouts are disclosures (button aria-expanded + aria-controls → region "<GROUP> layers").
+  const flyout = page.getByRole('region', { name: 'SPACE TRACKING layers' });
   const allRow = flyout.getByRole('button', { name: /All Satellites/ });
   await expect(allRow).toHaveAttribute('aria-pressed', 'true');
   await expect(allRow).toContainText(/\d/, { timeout: 30_000 });
