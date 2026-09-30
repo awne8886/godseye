@@ -11,6 +11,7 @@ import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
 import { readCssColor } from '@/lib/tokens';
 import type { FiresResponse, WeatherEvent } from '@/lib/types';
 import { FIRE_CONFIDENCE_ALPHA, FIRE_IDX as IDX, fireEvents, fireRadiusPx, fireRowObject } from '../shared';
+import { nearestPoint, useHitTester } from './hit-test';
 import { selectEntity } from './pick';
 import { useHazardData } from './useHazardData';
 
@@ -52,13 +53,6 @@ export default function FireLayer() {
         radiusUnits: 'pixels',
         pickable: true,
         autoHighlight: true,
-        onClick: ({ index }) => {
-          const row = rows[index];
-          if (!row) return false;
-          const o = fireRowObject(row);
-          selectEntity('fire', 'fires', o, o);
-          return true;
-        },
       }),
       new ScatterplotLayer<WeatherEvent>({
         id: 'hazards-wildfire-events',
@@ -72,15 +66,19 @@ export default function FireLayer() {
         getLineWidth: 2,
         lineWidthUnits: 'pixels',
         pickable: true,
-        onClick: ({ object }) => {
-          if (!object) return false;
-          selectEntity('weather_event', 'fires', object, object as unknown as Record<string, unknown>);
-          return true;
-        },
       }),
     ];
   }, [data]);
 
   useDeckLayers('hazards:fires', layers, Z);
+  useHitTester('fires', (map, e) => {
+    if (!data) return null;
+    const wf = nearestPoint(map, e, data.wildfireEvents ?? [], (w) => [w.lng, w.lat], () => 9);
+    if (wf) return { layer: 'fires', distancePx: wf.distancePx, open: () => selectEntity('weather_event', 'fires', wf.item, wf.item as unknown as Record<string, unknown>) };
+    const hit = nearestPoint(map, e, data.rows, (r) => [r[IDX.lng] as number, r[IDX.lat] as number], (r) => fireRadiusPx(r[IDX.frpMw] as number | null));
+    if (!hit) return null;
+    const o = fireRowObject(hit.item);
+    return { layer: 'fires', distancePx: hit.distancePx, open: () => selectEntity('fire', 'fires', o, o) };
+  });
   return null;
 }

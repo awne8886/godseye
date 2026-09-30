@@ -11,8 +11,9 @@ import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
 import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { WeatherEvent, WeatherResponse } from '@/lib/types';
 import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken } from '../shared';
-import { pointJustPicked, selectEntity } from './pick';
-import { useGeoJsonLayers } from './useGeoJsonLayers';
+import { nearestPoint, useHitTester } from './hit-test';
+import { selectEntity } from './pick';
+import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
 
 const Z = LAYERS.find((l) => l.id === 'weather')!.z;
@@ -52,11 +53,7 @@ export default function WeatherLayer() {
     ];
   }, []);
 
-  useGeoJsonLayers('hazards-weather-areas', areas, nativeLayers, (id) => {
-    if (pointJustPicked()) return;
-    const e = byId.current.get(id);
-    if (e) selectEntity('weather_event', 'weather', e, e as unknown as Record<string, unknown>, false);
-  });
+  useGeoJsonLayers('hazards-weather-areas', areas, nativeLayers);
 
   const layers = useMemo(() => {
     if (!items) return null;
@@ -74,15 +71,18 @@ export default function WeatherLayer() {
         getLineWidth: 1,
         pickable: true,
         autoHighlight: true,
-        onClick: ({ object }) => {
-          if (!object) return false;
-          selectEntity('weather_event', 'weather', object, object as unknown as Record<string, unknown>);
-          return true;
-        },
       }),
     ];
   }, [items]);
 
   useDeckLayers('hazards:weather', layers, Z);
+  useHitTester('weather', (map, e) => {
+    if (!items) return null;
+    const pt = nearestPoint(map, e, items, (w) => [w.lng, w.lat], (w) => SEVERITY_RADIUS_PX[w.severity]);
+    // A marker beats the footprint it sits in; an area hit counts as far as the slack radius.
+    const ev = pt?.item ?? byId.current.get(renderedFeatureId(map, e.point, ['hazards-weather-fill']) ?? '');
+    if (!ev) return null;
+    return { layer: 'weather', distancePx: pt?.distancePx ?? 12, open: () => selectEntity('weather_event', 'weather', ev, ev as unknown as Record<string, unknown>) };
+  });
   return null;
 }

@@ -5,18 +5,20 @@
  * Owner: layers-hazards.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMapInstance } from '@/lib/layer-host';
+import { useMapInstanceStore } from '@/lib/layer-host';
 import { readCssColor } from '@/lib/tokens';
 import type { SentinelResponse, SentinelScene } from '@/lib/types';
+import { useHitTester } from './hit-test';
 import { selectEntity } from './pick';
-import { useGeoJsonLayers } from './useGeoJsonLayers';
+import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
 
 const count = (b: SentinelResponse) => b.items.length;
 const MIN_ZOOM = 6;
 
 export default function SentinelLayer() {
-  const map = useMapInstance();
+  // Camera events only need the loaded map (not the first `idle`).
+  const map = useMapInstanceStore((s) => s.map);
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     if (!map) return;
@@ -51,13 +53,14 @@ export default function SentinelLayer() {
     ];
   }, []);
 
-  useGeoJsonLayers('hazards-sentinel', fc, layers, (id) => {
-    const s = byId.current.get(id);
-    if (!s) return;
+  useGeoJsonLayers('hazards-sentinel', fc, layers);
+  useHitTester('sentinel', (map, e) => {
+    const s = byId.current.get(renderedFeatureId(map, e.point, ['hazards-sentinel-fill']) ?? '');
+    if (!s) return null;
     const ring = s.footprint.type === 'Polygon' ? s.footprint.coordinates[0] : s.footprint.coordinates[0]?.[0];
     const lng = ring?.length ? ring.reduce((a, p) => a + (p[0] ?? 0), 0) / ring.length : 0;
     const lat = ring?.length ? ring.reduce((a, p) => a + (p[1] ?? 0), 0) / ring.length : 0;
-    selectEntity('sentinel_scene', 'sentinel', { id: s.id, lat, lng, source: 'cdse_stac', observedAt: s.datetime }, s as unknown as Record<string, unknown>, false);
+    return { layer: 'sentinel', distancePx: 0, open: () => selectEntity('sentinel_scene', 'sentinel', { id: s.id, lat, lng, source: 'cdse_stac', observedAt: s.datetime }, s as unknown as Record<string, unknown>) };
   });
   return null;
 }

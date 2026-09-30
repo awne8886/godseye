@@ -60,6 +60,7 @@ export function dedupeStorms(eonet: WeatherEvent[], nhc: WeatherEvent[]): Weathe
 export const weatherFeed = defineFeed<WeatherData>({
   key: 'weather',
   ttlMs: 5 * 60_000,
+  pollMs: 150_000,
   kind: 'live',
   attribution: WEATHER_ATTRIBUTION,
   eager: true,

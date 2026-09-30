@@ -31,6 +31,9 @@ function feedFor(name: UsgsFeedName): Feed<Collected<Earthquake>> {
   return defineFeed<Collected<Earthquake>>({
     key: isDefault ? 'earthquakes' : `earthquakes:${name}`,
     ttlMs: 60_000,
+    // Poll at half the TTL so the snapshot never ages past 1.5 x TTL (LIVE) between polls; USGS
+    // answers conditional GETs cheaply.
+    pollMs: 30_000,
     kind: 'live',
     attribution: USGS_ATTRIBUTION,
     // The default feed is a core feed: polled from boot (instrumentation).

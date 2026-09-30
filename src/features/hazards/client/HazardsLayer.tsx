@@ -8,11 +8,13 @@ import AirQualityLayer from './AirQualityLayer';
 import EarthquakeLayer from './EarthquakeLayer';
 import FireLayer from './FireLayer';
 import GpsJamLayer from './GpsJamLayer';
+import { useHazardsClickRouter } from './hit-test';
 import RadarLayer from './RadarLayer';
 import SentinelLayer from './SentinelLayer';
 import WeatherLayer from './WeatherLayer';
 
 export default function HazardsLayer({ active }: LayerComponentProps) {
+  useHazardsClickRouter();
   return (
     <>
       {active.has('weather_radar') && <RadarLayer />}

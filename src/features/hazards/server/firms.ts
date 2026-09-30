@@ -52,6 +52,8 @@ async function loadFile(f: (typeof FIRMS_FILES)[number], signal: AbortSignal): P
 export const firesFeed = defineFeed<FiresData>({
   key: 'fires',
   ttlMs: 15 * 60_000,
+  // Half the TTL keeps the badge LIVE between polls; unchanged files answer 304 (ETag).
+  pollMs: 7.5 * 60_000,
   kind: 'live',
   attribution: FIRES_ATTRIBUTION,
   note: 'FIRMS pixels sampled by fire radiative power (top 30 000), never by stride',

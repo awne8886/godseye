@@ -36,6 +36,7 @@ export function normalizeRainViewer(body: WeatherMaps): RadarData {
 export const radarFeed = defineFeed<RadarData>({
   key: 'weather-radar',
   ttlMs: 5 * 60_000,
+  pollMs: 150_000,
   kind: 'live',
   attribution: [{ text: 'Weather radar: RainViewer', url: 'https://www.rainviewer.com/api.html', licence: 'RainViewer API terms (free, attribution)' }],
   note: 'Past radar frames only (no nowcast); tiles up to zoom 7',

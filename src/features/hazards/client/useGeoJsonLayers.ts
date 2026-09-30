@@ -2,9 +2,10 @@
 /**
  * Native MapLibre GeoJSON source + layers for polygon footprints (NWS alert areas, NHC cones,
  * Sentinel scenes): inserted under the basemap labels, updated with setData, re-added after a
- * style reload, removed on unmount. Clicks resolve the feature's `id` property. Owner: layers-hazards.
+ * style reload, removed on unmount. Clicks are routed by hit-test.ts (queryRenderedFeatures on these
+ * layers); this hook only shows the pointer cursor. Owner: layers-hazards.
  */
-import type { LayerSpecification, Map as MapLibreMap, MapLayerMouseEvent } from 'maplibre-gl';
+import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { useMapInstance } from '@/lib/layer-host';
 
@@ -18,16 +19,13 @@ export function useGeoJsonLayers(
   sourceId: string,
   data: GeoJSON.FeatureCollection | null,
   layers: Omit<Spec, 'source'>[],
-  onClick?: (id: string) => void,
 ): void {
   const map = useMapInstance();
   const dataRef = useRef(data);
   const layersRef = useRef(layers);
-  const clickRef = useRef(onClick);
   useEffect(() => {
     dataRef.current = data;
     layersRef.current = layers;
-    clickRef.current = onClick;
   });
 
   // Add (or re-add after a style reload) the source and layers.
@@ -44,22 +42,16 @@ export function useGeoJsonLayers(
     };
     ensure();
     const handlers = layersRef.current.map((l) => {
-      const click = (e: MapLayerMouseEvent) => {
-        const id = e.features?.[0]?.properties?.id;
-        if (typeof id === 'string') clickRef.current?.(id);
-      };
       const enter = () => (map.getCanvas().style.cursor = 'pointer');
       const leave = () => (map.getCanvas().style.cursor = '');
-      map.on('click', l.id, click);
       map.on('mouseenter', l.id, enter);
       map.on('mouseleave', l.id, leave);
-      return { id: l.id, click, enter, leave };
+      return { id: l.id, enter, leave };
     });
     map.on('styledata', ensure);
     return () => {
       map.off('styledata', ensure);
       for (const h of handlers) {
-        map.off('click', h.id, h.click);
         map.off('mouseenter', h.id, h.enter);
         map.off('mouseleave', h.id, h.leave);
       }
@@ -88,4 +80,12 @@ export function useGeoJsonLayers(
       for (const [k, v] of Object.entries(l.paint)) map.setPaintProperty(l.id, k as Parameters<MapLibreMap['setPaintProperty']>[1], v);
     }
   }, [map, layers]);
+}
+
+/** The `id` property of the topmost rendered feature of `layerIds` under the click, if any. */
+export function renderedFeatureId(map: MapLibreMap, point: { x: number; y: number }, layerIds: string[]): string | null {
+  const present = layerIds.filter((id) => map.getLayer(id));
+  if (!present.length) return null;
+  const id = map.queryRenderedFeatures([point.x, point.y], { layers: present })[0]?.properties?.id;
+  return typeof id === 'string' ? id : null;
 }
