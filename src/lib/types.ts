@@ -84,6 +84,7 @@ export type CctvResponse = z.infer<typeof S.CctvResponse>;
 export type StreamStatusResponse = z.infer<typeof S.StreamStatusResponse>;
 export type NewsChannel = z.infer<typeof S.NewsChannel>;
 export type LiveNewsResponse = z.infer<typeof S.LiveNewsResponse>;
+export type RemovalContact = z.infer<typeof S.RemovalContact>;
 export type CameraProvidersResponse = z.infer<typeof S.CameraProvidersResponse>;
 export type CameraResolveResponse = z.infer<typeof S.CameraResolveResponse>;
 

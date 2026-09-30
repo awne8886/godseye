@@ -549,7 +549,7 @@ DeepStateMap frontlines (non-commercial, attributed)
 | Cache | s-maxage 1 h, stale-while-revalidate 2 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FrontlinesResponse` |
-| Capability | `deepstate`: On when NONCOMMERCIAL=true, COMMERCIAL_DEPLOYMENT is not "true". DeepStateMap frontlines (non-commercial, attribution). |
+| Capability | `deepstate`: On when NONCOMMERCIAL=true, COMMERCIAL_DEPLOYMENT is not "true". DeepStateMap frontlines (non-commercial, attribution; commercial API use needs DeepState's prior approval). |
 | Upstreams | `deepstatemap.live` |
 | Forwards user input upstream | No |
 | Example | `GET /api/frontlines` |
@@ -1193,6 +1193,7 @@ Wallet trace BTC/ETH/SOL with transparent risk factors
 | Response | `OsintResponse` |
 | Upstreams | `mempool.space`, `eth.blockscout.com`, `api.mainnet-beta.solana.com` |
 | Forwards user input upstream | Yes (listed on /privacy) |
+| Example | `GET /api/osint/crypto?address=1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa&chain=btc` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
@@ -1228,6 +1229,7 @@ Allow-listed active scan types proxied through this server to an optional backen
 | Capability | `scanner`: On when SCANNER_URL + SCANNER_KEY set. Optional allow-listed scanner backend (passive scan types). |
 | Upstreams | `(SCANNER_URL)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
+| Example | `GET /api/scanner?type=headers&target=example.com` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
@@ -1454,7 +1456,7 @@ Optional upgrades and licence gates, evaluated on the server from environment va
 | `sdk` | On when SDK_INGEST_KEY set | GODSEYE SDK entity ingest (fail-closed without a key) |
 | `nc_sources` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial) |
 | `openmeteo` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Open-Meteo free tier (non-commercial; CC BY 4.0 data) |
-| `deepstate` | On when NONCOMMERCIAL=true, COMMERCIAL_DEPLOYMENT is not "true" | DeepStateMap frontlines (non-commercial, attribution) |
+| `deepstate` | On when NONCOMMERCIAL=true, COMMERCIAL_DEPLOYMENT is not "true" | DeepStateMap frontlines (non-commercial, attribution; commercial API use needs DeepState's prior approval) |
 
 ## Not replicated
 
