@@ -32,9 +32,10 @@ export function usePanelChip(text: string, tone: ChipTone = 'idle'): void {
   }, [set, text, tone]);
 }
 
+/** The chip gives way before the panel title does (long counts truncate, full text in `title`). */
 export function StateChip({ text, tone }: PanelChipState) {
   return (
-    <span className="instrument-chip" style={{ color: TONE_COLOR[tone] }}>
+    <span className="instrument-chip min-w-0 overflow-hidden text-ellipsis" title={text} style={{ color: TONE_COLOR[tone] }}>
       {text}
     </span>
   );
@@ -51,9 +52,14 @@ interface FrameProps {
   as?: 'section' | 'div';
   headerExtra?: ReactNode;
   labelId?: string;
+  /**
+   * Phone sheets whose tab row already names the panel: the title stays for assistive tech
+   * (sr-only, still the region's name) and the corner brackets are dropped.
+   */
+  sheet?: boolean;
 }
 
-export function InstrumentFrame({ title, onClose, onPin, pinned, children, className = '', as = 'section', headerExtra, labelId }: FrameProps) {
+export function InstrumentFrame({ title, onClose, onPin, pinned, children, className = '', as = 'section', headerExtra, labelId, sheet = false }: FrameProps) {
   const [chip, setChip] = useState<PanelChipState>({ text: 'STANDBY', tone: 'idle' });
   const autoId = useId();
   const id = labelId ?? `${autoId}-title`;
@@ -62,13 +68,14 @@ export function InstrumentFrame({ title, onClose, onPin, pinned, children, class
     <ChipContext.Provider value={setChip}>
       <Tag
         {...(as === 'section' ? { 'aria-labelledby': id } : {})}
-        className={`instrument-grid instrument-corners relative flex min-h-0 flex-col ${className}`}
+        className={`instrument-grid ${sheet ? '' : 'instrument-corners'} relative flex min-h-0 flex-col ${className}`}
       >
-        <header className="relative flex items-center gap-2 px-4 pb-2 pt-3">
-          <span className="instrument-accent" aria-hidden />
-          <h2 id={id} className="hud-title flex-1 truncate">
+        <header className={`relative flex items-center gap-2 px-4 ${sheet ? 'pb-1 pt-1' : 'pb-2 pt-3'}`}>
+          {!sheet && <span className="instrument-accent" aria-hidden />}
+          <h2 id={id} className={sheet ? 'sr-only' : 'hud-title min-w-0 shrink-0 truncate'} title={title}>
             {title}
           </h2>
+          <span className="min-w-0 flex-1" aria-hidden />
           {headerExtra}
           <StateChip {...chip} />
           {onPin && (

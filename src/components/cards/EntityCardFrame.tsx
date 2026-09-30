@@ -59,9 +59,15 @@ export default function EntityCardFrame({
     <section aria-labelledby={titleId} className="glass-panel instrument-grid instrument-corners relative flex max-h-full min-h-0 flex-col">
       <header className="relative flex items-center gap-2 px-4 pb-2 pt-3">
         <span className="instrument-accent" aria-hidden />
-        <h2 id={titleId} className="hud-title min-w-0 flex-1 truncate">
-          {kindLabel} <span className="text-[var(--text-secondary)]">· {selection.id}</span>
-        </h2>
+        <div className="min-w-0 flex-1">
+          <h2 id={titleId} className="hud-title truncate">
+            {kindLabel}
+          </h2>
+          {/* The id gets its own line so a long one never pushes the kind out of the title. */}
+          <p className="hud-micro truncate text-[var(--text-secondary)] normal-case tabular-nums" title={selection.id}>
+            {selection.id}
+          </p>
+        </div>
         <FreshnessBadge selection={selection} feed={feed} now={now} />
         <button type="button" onClick={onClose} aria-label="Close card" className="hud-control grid h-7 w-7 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
           <X size={15} />

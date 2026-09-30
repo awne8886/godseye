@@ -360,19 +360,43 @@
 .maplibregl-ctrl-attrib a {
   color: var(--text-secondary);
 }
-.maplibregl-ctrl-bottom-right {
-  bottom: 28px;
+/* HUD text drawn straight on the map (header): a void-coloured halo keeps basemap labels from
+   running through it. */
+.hud-legible {
+  text-shadow:
+    0 0 4px var(--bg-void),
+    0 0 8px var(--bg-void);
 }
-/* Phones: keep attribution above the bottom nav (56 px + safe area), never under it. */
+
+/* Horizontal scrollers (phone sheet tabs): the right-edge fade says "more this way". */
+.hud-fade-right {
+  mask-image: linear-gradient(90deg, #000 85%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+}
+
+/*
+ * Placement of MapLibre's corner stacks. maplibre-gl.css is emitted after globals.css and uses the
+ * same single-class selectors, so every override here is scoped under .maplibregl-map to win on
+ * specificity whatever the chunk order. Desktop: above the 28 px status bar and inside the corner
+ * brackets; phones: above the 56 px bottom nav + its 1 px border + the safe-area inset.
+ */
+.maplibregl-map .maplibregl-ctrl-bottom-right {
+  bottom: 28px;
+  right: 6px;
+}
 @media (max-width: 767px), (max-height: 499px) and (orientation: landscape) {
-  .maplibregl-ctrl-bottom-right,
-  .maplibregl-ctrl-bottom-left {
-    bottom: calc(56px + env(safe-area-inset-bottom));
+  .maplibregl-map .maplibregl-ctrl-bottom-right,
+  .maplibregl-map .maplibregl-ctrl-bottom-left {
+    bottom: calc(57px + env(safe-area-inset-bottom));
+  }
+  .maplibregl-map .maplibregl-ctrl-bottom-right {
+    right: 0;
   }
 }
-/* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome. */
-.maplibregl-ctrl-bottom-left,
-.maplibregl-ctrl-bottom-right {
+/* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome (z ≥ 40). The map wrapper
+   has no z-index, so these compete in the root stacking context. */
+.maplibregl-map .maplibregl-ctrl-bottom-left,
+.maplibregl-map .maplibregl-ctrl-bottom-right {
   z-index: 5;
 }
 

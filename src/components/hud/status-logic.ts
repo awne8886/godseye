@@ -76,7 +76,10 @@ export function cardBadge(opts: {
   const kind = def?.kind ?? 'live';
   const cadence = opts.layer ? (OBSERVATION_CADENCE_MS as Record<string, number | null>)[opts.layer] ?? null : null;
   const feedState = feedStateOf(opts.feed) ?? 'recent';
-  const state = entityFreshness({ kind, at: atMs, observationCadenceMs: cadence, feedState, now });
+  let state = entityFreshness({ kind, at: atMs, observationCadenceMs: cadence, feedState, now });
+  // Event layers (no per-entity cadence) inherit the feed state, but an event older than one
+  // refresh interval was not observed live (a 16 h-old quake in a LIVE feed is RECENT).
+  if (cadence === null && state === 'live' && atMs !== null && def?.refreshMs && now - atMs > def.refreshMs) state = 'recent';
   // Without any observation time a live entity cannot be LIVE.
   const honest: FreshnessState = atMs === null && kind !== 'reference' && state === 'live' ? 'recent' : state;
   return {
@@ -84,6 +87,16 @@ export function cardBadge(opts: {
     label: honest === 'recent' && atMs === null ? 'UNTIMED' : freshnessLabel(honest, atMs, now),
     age: atMs === null ? null : `${formatAge(now - atMs)} ago`,
   };
+}
+
+/**
+ * An idle layer that waits for the map to zoom in (`error: 'zoom_min_6'`, e.g. Sentinel below z6)
+ * reads "ZOOM ≥ 6" instead of ACQUIRING or nothing. Null otherwise.
+ */
+export function zoomGateLabel(st: Pick<LayerStatus, 'state' | 'error'> | undefined): string | null {
+  if (!st || st.state !== 'idle' || !st.error?.startsWith('zoom_min_')) return null;
+  const z = st.error.slice(9);
+  return z ? `ZOOM ≥ ${z}` : null;
 }
 
 /** "15S", "2M", "2H", "STATIC", "STREAM" for a layer's refresh interval. */

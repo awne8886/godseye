@@ -11,7 +11,7 @@ import type { LayerDef, LayerId } from '@/lib/layer-registry';
 import { useLayerStatus, type LayerStatus } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import type { Attribution } from '@/lib/types';
-import { refreshLabel } from './status-logic';
+import { refreshLabel, zoomGateLabel } from './status-logic';
 
 export function Toggle({ on }: { on: boolean }) {
   return (
@@ -34,6 +34,8 @@ export function statusAttribution(st: LayerStatus): Attribution[] {
 const hhmm = (iso: string | null) => (iso ? `${new Date(iso).toISOString().slice(11, 16)}Z` : '—');
 
 export function FreshnessLed({ layer, status }: { layer: LayerDef; status: LayerStatus }) {
+  const gate = zoomGateLabel(status);
+  if (gate) return <span className="hud-micro text-[var(--text-secondary)]">{gate}</span>;
   if (status.state === 'idle') return null;
   if (status.state === 'loading')
     return (
@@ -77,6 +79,8 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
   const status = useLayerStatus(id);
   const attribution = statusAttribution(status);
   const providers = status.providers ? Object.keys(status.providers) : [];
+  // Providers the server skipped for want of a key (e.g. TfL cameras on a keyless instance).
+  const needsKey = status.providers ? Object.entries(status.providers).filter(([, p]) => p.skipped === 'not-configured').map(([name]) => name) : [];
   const offline = status.state === 'offline';
   const descId = useId();
   return (
@@ -107,6 +111,16 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
           {on && <FreshnessLed layer={layer} status={status} />}
         </p>
         {on && offline && <p className="hud-micro text-[var(--alert-red)]">SOURCE OFFLINE · LAST GOOD {hhmm(status.lastGoodAt)}</p>}
+        {on && typeof status.staleCount === 'number' && status.staleCount > 0 && (
+          <p className="hud-micro text-[var(--text-muted)] tabular-nums" data-testid={`stale-${layer.id}`}>
+            {status.staleCount.toLocaleString('en-US')} OLDER THAN 60 S
+          </p>
+        )}
+        {on && needsKey.length > 0 && (
+          <p className="hud-micro text-[var(--text-muted)]" data-testid={`needs-key-${layer.id}`}>
+            NEEDS KEY · {needsKey.join(', ').toUpperCase()}
+          </p>
+        )}
         {on && attribution.length > 0 && (
           <p className="font-sans text-[12px] text-[var(--text-muted)]" data-testid={`attribution-${layer.id}`}>
             {attribution.map((a, i) => (

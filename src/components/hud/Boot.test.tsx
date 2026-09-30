@@ -3,9 +3,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ACTIVE_LAYERS } from '@/lib/layer-registry';
+import { resetCameraRequests } from '@/lib/map/camera';
 import { landingCityFor } from '@/lib/presets';
 import { DEFAULT_SETTINGS, useUiStore } from '@/lib/store';
-import Boot, { sameSet } from './Boot';
+import Boot, { applyDeepLink, deepLinkPanel, introSkipReason, sameSet } from './Boot';
 
 function health(caps: Record<string, boolean>) {
   return {
@@ -30,7 +31,8 @@ function mount() {
 }
 
 beforeEach(() => {
-  useUiStore.setState({ activeLayers: new Set(DEFAULT_ACTIVE_LAYERS), splashDone: false, cameraFromUrl: false, flyTo: null, settings: DEFAULT_SETTINGS });
+  resetCameraRequests();
+  useUiStore.setState({ activeLayers: new Set(DEFAULT_ACTIVE_LAYERS), splashDone: false, cameraFromUrl: false, flyTo: null, settings: DEFAULT_SETTINGS, openPanel: null, plannedRoute: null, flightIdent: null, dossierTarget: null });
 });
 afterEach(() => {
   cleanup();
@@ -70,5 +72,44 @@ describe('Boot', () => {
   it('sameSet compares membership', () => {
     expect(sameSet(new Set(['a', 'b']), ['b', 'a'])).toBe(true);
     expect(sameSet(new Set(['a']), ['a', 'b'])).toBe(false);
+  });
+
+  describe('introSkipReason', () => {
+    const none = { cameraFromUrl: false, plannedRoute: null, flightIdent: null, dossierTarget: null };
+    const p = (q: string) => new URLSearchParams(q);
+    it('runs the intro on a bare URL', () => {
+      expect(introSkipReason(p(''), none)).toBeNull();
+      expect(introSkipReason(p('layers=flights&theme=CRIMSON&panel=layers'), none)).toBeNull();
+    });
+    it('skips for an explicit camera, route, flight or dossier in the URL', () => {
+      expect(introSkipReason(p('c=48.85,2.35,6'), none)).toBe('camera');
+      expect(introSkipReason(p('lat=10&lon=20&zoom=4'), none)).toBe('camera');
+      expect(introSkipReason(p('route=LHR-JFK'), none)).toBe('route');
+      expect(introSkipReason(p('route=LHR-JFK&proj=mercator'), none)).toBe('route');
+      expect(introSkipReason(p('flight=BAW117'), none)).toBe('flight');
+      expect(introSkipReason(p('dossier=50.45,30.52'), none)).toBe('dossier');
+    });
+    it('skips when the store already holds a restored camera/route/dossier', () => {
+      expect(introSkipReason(p(''), { ...none, cameraFromUrl: true })).toBe('camera');
+      expect(introSkipReason(p(''), { ...none, plannedRoute: { from: 'NRT', to: 'LAX' } })).toBe('route');
+      expect(introSkipReason(p(''), { ...none, dossierTarget: { lat: 1, lng: 2 } })).toBe('dossier');
+    });
+    it('ignores malformed deep-link values', () => {
+      expect(introSkipReason(p('route=LHR'), none)).toBeNull();
+      expect(introSkipReason(p('dossier=abc'), none)).toBeNull();
+    });
+  });
+
+  it('?route= opens PATHS with the route unless the URL names another panel', () => {
+    expect(deepLinkPanel(new URLSearchParams('route=LHR-JFK'))).toBe('paths');
+    expect(deepLinkPanel(new URLSearchParams('flight=BA117'))).toBe('paths');
+    expect(deepLinkPanel(new URLSearchParams('route=LHR-JFK&panel=layers'))).toBeNull();
+    expect(deepLinkPanel(new URLSearchParams('route=LHR-JFK&dossier=1,2'))).toBeNull();
+    applyDeepLink(new URLSearchParams('route=LHR-JFK'));
+    expect(useUiStore.getState().openPanel).toBe('paths');
+    expect(useUiStore.getState().plannedRoute).toEqual({ from: 'LHR', to: 'JFK' });
+    useUiStore.setState({ openPanel: 'layers' });
+    applyDeepLink(new URLSearchParams('route=LHR-JFK'));
+    expect(useUiStore.getState().openPanel).toBe('layers');
   });
 });

@@ -36,8 +36,16 @@ describe('entity card frame', () => {
     );
     expect(screen.getByText('usgs')).toBeTruthy();
     expect(screen.getByText('3m ago')).toBeTruthy();
-    expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('live');
+    // A 3-minute-old quake is older than the 60 s refresh: RECENT, not LIVE.
+    expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('recent');
     expect(screen.getByText('body')).toBeTruthy();
+    cleanup();
+    render(
+      <EntityCardFrame selection={sel({ observedAt: new Date(Date.now() - 20_000).toISOString() })} feed={feed()} onClose={() => {}}>
+        <p>body</p>
+      </EntityCardFrame>,
+    );
+    expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('live');
   });
 
   it('shows SOURCE OFFLINE with the last-good time when the feed failed', () => {

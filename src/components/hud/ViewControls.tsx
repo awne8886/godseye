@@ -8,12 +8,13 @@
  * coordinates only while the geocoder does not answer). Owner: design-system-hud.
  */
 import { motion } from 'motion/react';
-import { Globe, Layers2, LocateFixed, MapPinned, Mountain, Satellite } from 'lucide-react';
+import { Globe, Layers2, LocateFixed, MapPinned, Maximize, Minimize, Mountain, Navigation2, Satellite } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useLayerStatus } from '@/lib/layer-host';
+import { useLayerStatus, useMapInstanceStore } from '@/lib/layer-host';
 import { getCursor, getView, subscribeCursor, subscribeView, type MapPoint } from '@/lib/map/cursor';
 import { TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
 import { useUiStore, type Settings } from '@/lib/store';
+import { toggleFullscreen } from './actions';
 import { locateOnce } from './Boot';
 import { useApiRoute } from './hooks';
 import { formatLatLng, geoCell, scaleBarFor } from './map-readout';
@@ -30,7 +31,7 @@ function Segmented<T extends string>({ label, value, options, onChange, group }:
             aria-pressed={on}
             title={o.title}
             onClick={() => onChange(o.value)}
-            className={`hud-micro hud-control relative flex min-h-[32px] items-center gap-1.5 px-2.5 ${on ? 'text-[var(--gold-light)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+            className={`hud-micro hud-control relative flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 px-2 md:min-h-[32px] md:min-w-0 md:px-2.5 ${on ? 'text-[var(--gold-light)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
           >
             {on && (
               <motion.span
@@ -41,7 +42,7 @@ function Segmented<T extends string>({ label, value, options, onChange, group }:
               />
             )}
             <span className="relative flex items-center gap-1.5">
-              {o.icon}
+              <span className="hidden md:inline-flex">{o.icon}</span>
               {o.text}
             </span>
           </button>
@@ -136,9 +137,9 @@ export function Readout({ units, geocode = true }: { units: Settings['units']; g
         <span ref={scaleLabel} />
         <span ref={scaleLine} aria-hidden className="block h-1.5 border-x border-b border-[var(--text-secondary)]" style={{ width: 0, visibility: 'hidden' }} />
       </span>
-      <span className="tabular-nums" data-testid="cursor-readout">
-        <span ref={coords} />
-        <span ref={place} className="ml-2 normal-case text-[var(--text-primary)]" />
+      <span className="flex min-w-0 tabular-nums" data-testid="cursor-readout">
+        <span ref={coords} className="shrink-0" />
+        <span ref={place} className="ml-2 min-w-0 max-w-[360px] truncate normal-case text-[var(--text-primary)]" />
       </span>
     </>
   );
@@ -166,8 +167,93 @@ function TerrainLine() {
   );
 }
 
+/** The compass shows only while the view is rotated or tilted (MapLibre's own threshold is similar). */
+export function compassVisible(bearing: number, pitch: number): boolean {
+  const b = (((bearing % 360) + 540) % 360) - 180;
+  return Math.abs(b) > 0.5 || pitch > 0.5;
+}
+
+/**
+ * Compass / reset-north: the needle turns with the map bearing (written straight to the DOM on
+ * rotate/pitch, no React render per frame); a click eases back to north with no tilt. Hidden at
+ * bearing 0 / pitch 0.
+ */
+export function CompassButton() {
+  const map = useMapInstanceStore((s) => s.map);
+  const needle = useRef<HTMLSpanElement>(null);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!map) return;
+    const sync = () => {
+      const bearing = map.getBearing();
+      const pitch = map.getPitch();
+      if (needle.current) needle.current.style.transform = `rotate(${-bearing}deg)`;
+      const v = compassVisible(bearing, pitch);
+      setShown((s) => (s === v ? s : v));
+    };
+    sync();
+    map.on('rotate', sync);
+    map.on('pitch', sync);
+    return () => {
+      map.off('rotate', sync);
+      map.off('pitch', sync);
+    };
+  }, [map]);
+  if (!shown) return null;
+  const reset = () => {
+    const c = map?.getCenter();
+    if (!map || !c) return;
+    useUiStore.getState().requestFlyTo({ lat: c.lat, lng: c.lng, zoom: map.getZoom(), bearing: 0, pitch: 0, durationMs: 600 });
+  };
+  return (
+    <button
+      type="button"
+      onClick={reset}
+      aria-label="Reset north and tilt"
+      title="Reset north and tilt"
+      className="hud-control grid h-11 w-11 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] md:h-8 md:w-8"
+    >
+      <span ref={needle} className="grid place-items-center" data-testid="compass-needle">
+        <Navigation2 size={14} aria-hidden className="text-[var(--gold-primary)]" />
+      </span>
+    </button>
+  );
+}
+
+/** Fullscreen toggle; hidden where the browser offers no Fullscreen API (e.g. iPhone Safari). */
+export function FullscreenButton() {
+  const [supported, setSupported] = useState(false);
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const sync = () => {
+      setSupported(!!document.fullscreenEnabled);
+      setOn(!!document.fullscreenElement);
+    };
+    sync();
+    document.addEventListener('fullscreenchange', sync);
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, []);
+  if (!supported) return null;
+  return (
+    <button
+      type="button"
+      onClick={toggleFullscreen}
+      aria-pressed={on}
+      aria-label="Fullscreen"
+      title={on ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
+      className="hud-control grid h-11 w-11 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] md:h-8 md:w-8"
+    >
+      {on ? <Minimize size={14} aria-hidden /> : <Maximize size={14} aria-hidden />}
+    </button>
+  );
+}
+
 export default function ViewControls() {
-  const projection = useUiStore((s) => s.projection);
+  // The highlight shows the projection the map actually applies (terrain forces mercator), falling
+  // back to the requested one before the map is mounted.
+  const requested = useUiStore((s) => s.projection);
+  const applied = useMapInstanceStore((s) => (s.map ? s.projection : null));
+  const projection = applied ?? requested;
   const setProjection = useUiStore((s) => s.setProjection);
   const basemap = useUiStore((s) => s.basemap);
   const setBasemap = useUiStore((s) => s.setBasemap);
@@ -219,11 +305,13 @@ export default function ViewControls() {
           onClick={() => void locate()}
           aria-label="Centre on my region"
           title="Centre on my region (asks your browser for your location; nothing is sent to the server)"
-          className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]"
+          className="hud-control grid h-11 w-11 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] md:h-8 md:w-8"
           style={locating === 'failed' ? { color: 'var(--alert-orange)' } : undefined}
         >
           <LocateFixed size={14} aria-hidden className={locating === 'busy' ? 'hud-pulse' : ''} />
         </button>
+        <CompassButton />
+        <FullscreenButton />
       </div>
       <TerrainLine />
       {locating === 'failed' && (
@@ -231,9 +319,10 @@ export default function ViewControls() {
           LOCATION UNAVAILABLE
         </p>
       )}
-      <div className="hud-micro pointer-events-none fixed bottom-8 left-72 z-[var(--z-hud)] hidden items-end gap-4 text-[var(--text-secondary)] md:flex">
+      {/* Ends 44rem short of the right edge so it never runs under the attribution / imagery chips. */}
+      <div className="hud-micro pointer-events-none fixed bottom-8 left-72 right-[44rem] z-[var(--z-hud)] hidden min-w-0 items-end gap-4 overflow-hidden text-[var(--text-secondary)] xl:flex">
         <Readout units={units} geocode={geocodeRoute} />
-        <span className="hidden text-[var(--text-muted)] xl:inline">DRAG TO PAN · RIGHT-DRAG TO TILT · DOUBLE RIGHT-CLICK FOR DOSSIER · ⌘K COMMANDS · ? SHORTCUTS</span>
+        <span className="hidden min-w-0 truncate text-[var(--text-muted)] 2xl:inline">DRAG TO PAN · RIGHT-DRAG TO TILT · DOUBLE RIGHT-CLICK FOR DOSSIER · ⌘K COMMANDS · ? SHORTCUTS</span>
       </div>
     </>
   );

@@ -156,4 +156,49 @@ describe('layer row attribution', () => {
     const desc = document.getElementById(btn.getAttribute('aria-describedby')!);
     expect(desc?.textContent).toContain('USGS Earthquake Hazards Program');
   });
+
+  it('names providers skipped for want of a key, only while the layer is on', () => {
+    useUiStore.getState().setLayer('cctv', true);
+    useLayerStatusStore.getState().update('cctv', {
+      state: 'live',
+      count: 10,
+      providers: {
+        caltrans: { ok: true, count: 10, ms: 200, age_s: 5 },
+        tfl: { ok: false, count: 0, ms: 0, age_s: null, skipped: 'not-configured' },
+      },
+    });
+    render(
+      <ul>
+        <LayerRow layer={getLayer('cctv')!} />
+      </ul>,
+    );
+    expect(screen.getByTestId('needs-key-cctv').textContent).toBe('NEEDS KEY · TFL');
+    cleanup();
+    useUiStore.getState().setLayer('cctv', false);
+    render(
+      <ul>
+        <LayerRow layer={getLayer('cctv')!} />
+      </ul>,
+    );
+    expect(screen.queryByTestId('needs-key-cctv')).toBeNull();
+  });
+
+  it('shows how many drawn aircraft are older than 60 s', () => {
+    useUiStore.getState().setLayer('flights', true);
+    useLayerStatusStore.getState().update('flights', { state: 'live', count: 900, staleCount: 1234 });
+    render(
+      <ul>
+        <LayerRow layer={getLayer('flights')!} />
+      </ul>,
+    );
+    expect(screen.getByTestId('stale-flights').textContent).toBe('1,234 OLDER THAN 60 S');
+    cleanup();
+    useLayerStatusStore.getState().update('flights', { staleCount: 0 });
+    render(
+      <ul>
+        <LayerRow layer={getLayer('flights')!} />
+      </ul>,
+    );
+    expect(screen.queryByTestId('stale-flights')).toBeNull();
+  });
 });
