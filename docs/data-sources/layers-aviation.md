@@ -47,5 +47,11 @@ dead-reckoning cap); dense tiles are re-read more often (`(count + 1) × age`), 
 1.5 s/request: 38 % of aircraft behind a tile read > 60 s ago vs 54 % for round-robin at the same
 rate (`tile-sweeper.test.ts`). Upstream `seen_pos` is not the cause: median 0.28 s, p90 4.6 s,
 max 57 s over 932 rows. Global lists every 30 s; aircraft not re-observed for 300 s are dropped.
-The real fix for full-world freshness is the `ADSBLOL_REAPI` feeder upgrade (one request per run). Sparse regions (Africa interior, oceans outside the
+The real fix for full-world freshness is the `ADSBLOL_REAPI` feeder upgrade (one request per run).
+Live check 2026-09-30 23:12–23:17 UTC (production build on :3150, cold start, sampled every 20 s):
+share of rows older than 60 s was 0.5–4 % for the first minute and 40–79 % at 3–5 min, median age
+57–114 s, 8.1k aircraft. api.adsb.lol answered `http_429` in 7 of 16 samples. At least two other
+GODSEYE servers were sweeping from the same sandbox egress IP at the same time; whether those 429s
+carried `Retry-After` was not captured. The exponential back-off (15 s … 5 min) then dominates the sweep. A single
+deployment per IP should see fewer 429s. This was not measured here. Sparse regions (Africa interior, oceans outside the
 NAT tracks, Russia, South America outside the south-east) are not covered by the keyless path.
