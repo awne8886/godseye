@@ -42,12 +42,13 @@ for (const proj of ['mercator', 'globe'] as const) {
     await expect(p.getByText('KNOWN SERVICES')).toBeVisible();
     await expect(p.getByText('BAW117').first()).toBeVisible();
     if (info.project.name === 'desktop') {
-      // The camera flies so the arc midpoint (≈ 52.2°N, 41.3°W) faces the viewer.
+      // Fit-bounds (80 px + the docked panel) puts the whole LHR–JFK span on screen (R4-B2): the
+      // camera centre lies inside the route's box (0.5°W … 73.8°W, 40.6°N … 55°N), not at the intro city.
       await waitForMapIdle(page);
       await expect
         .poll(async () => {
           const c = await readCamera(page);
-          return c ? Math.abs(c.lat - 52.2) < 2 && Math.abs(c.lng + 41.3) < 2 : false;
+          return c ? c.lat > 38 && c.lat < 60 && c.lng < 5 && c.lng > -80 : false;
         }, { timeout: 60_000 })
         .toBe(true);
       await page.waitForTimeout(1500); // tiles settle after the fly
@@ -72,3 +73,28 @@ test('?flight=BA117 restores tracking in FLIGHT mode', async ({ page }) => {
   await expect(fa).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(status(page)).toHaveAttribute('data-layers', /route-planned-arc/, { timeout: 60_000 });
 });
+
+test('?route=ZZZZ-JFK opens PATHS with a friendly message (§8 acceptance)', async ({ page }) => {
+  test.setTimeout(120_000);
+  await gotoMap(page, { params: { route: 'ZZZZ-JFK' } });
+  const p = panel(page);
+  await expect(p).toBeVisible({ timeout: 30_000 });
+  await expect(p.getByText(/Unknown airport: ZZZZ/)).toBeVisible({ timeout: 60_000 });
+});
+
+test('GET /api/flight/ZZZZ → 404 {error} (or 503 while a source is down, never an empty 200)', async ({ request }) => {
+  const res = await request.get('/api/flight/ZZZZ', { timeout: 60_000 });
+  expect([404, 503]).toContain(res.status());
+  expect((await res.json()).error).toMatch(/not_found|source_offline/);
+});
+
+for (const proj of ['mercator', 'globe'] as const) {
+  test(`?route=SYD-SCL draws one continuous line across the antimeridian (${proj})`, async ({ page }) => {
+    test.setTimeout(180_000);
+    await gotoMap(page, { params: { route: 'SYD-SCL', proj } });
+    await expect(status(page)).toHaveAttribute('data-layers', /route-planned-arc/, { timeout: 60_000 });
+    const step = Number(await status(page).getAttribute('data-max-lng-step'));
+    expect(step).toBeLessThanOrEqual(180);
+    await expect(panel(page)).toBeVisible({ timeout: 30_000 });
+  });
+}

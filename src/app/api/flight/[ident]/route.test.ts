@@ -114,6 +114,22 @@ describe('GET /api/flight/{ident}', () => {
     expect(f.sources.find((s) => s.name.startsWith('route'))?.detail).toMatch(/stale/);
   });
 
+  it('ZZZZ → 404 {error} when every source answered and none knows it (§8 acceptance)', async () => {
+    const r = await call('ZZZZ');
+    const body = await r.json();
+    const down = Object.entries((body as { providers?: Record<string, { ok: boolean }> }).providers ?? {});
+    expect(down).toEqual([]);
+    expect(r.status).toBe(404);
+    expect(ApiError.parse(body).error).toBe('not_found');
+  });
+
+  it('unknown ident while a source is down → 503, not a false "not found"', async () => {
+    mode.current.down.add('api.adsb.lol');
+    const r = await call('ZZZZ');
+    expect(r.status).toBe(503);
+    expect(ApiError.parse(await r.json()).error).toBe('source_offline');
+  });
+
   it('400 for idents that are not flight identifiers (no host or path can be smuggled)', async () => {
     for (const bad of ['%3Cx%3E', 'A', 'TOOLONGIDENT1', '127.0.0.1', 'a%2F..%2Fb', 'localhost%3A80']) {
       const r = await call(bad);

@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 import { apiError, json, withRoute } from '@/lib/respond';
-import { flightDetail } from '@/features/flight-paths/server/flight';
+import { flightDetail, nothingFound, upstreamFailures } from '@/features/flight-paths/server/flight';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,5 +22,10 @@ export const GET = withRoute<Ctx>('/api/flight/{ident}', async (_req: Request, c
   if (!parsed.success) return apiError(400, 'invalid_request', parsed.error.issues[0]?.message);
   const detail = await flightDetail(parsed.data);
   if (!detail) return apiError(400, 'invalid_request', 'Not a recognisable callsign, flight number, registration or hex.');
+  if (nothingFound(detail)) {
+    const down = upstreamFailures(detail);
+    if (!down.length) return apiError(404, 'not_found', `No live position, route or aircraft record for ${parsed.data}.`);
+    return apiError(503, 'source_offline', `Nothing found for ${parsed.data} while ${down.join(', ')} ${down.length === 1 ? 'was' : 'were'} unavailable.`, { retryAfter: 60 });
+  }
   return json(detail, { ttl: detail.status === 'airborne' ? 30 : 60 });
 });

@@ -10,7 +10,8 @@
  *   node --experimental-transform-types --import ./tools/ts-loader.mjs tools/build-airports.ts [--src DIR]
  *
  * `--src DIR` reads airports.csv, runways.csv, countries.csv, regions.csv and mwgg.json from DIR
- * (a previous download) instead of fetching them. Owner: feature-flight-paths.
+ * (a previous download) instead of fetching them, plus the upstream Last-Modified headers from
+ * DIR/last-modified.json when present. The output records upstream URLs, never the local path. Owner: feature-flight-paths.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
@@ -134,7 +135,7 @@ export function buildAirportIndex(src: AirportSources, now = new Date()): BuiltA
     allRows.push(row);
     if (type <= 1 || scheduled || row[2]) minRows.push(row);
   }
-  const base = { version: 1 as const, generatedAt: now.toISOString(), sources: src.lastModified ?? {}, fields: AIRPORT_FIELDS, countries, regions };
+  const base = { version: 1 as const, generatedAt: now.toISOString(), sources: provenance(src.lastModified ?? {}), fields: AIRPORT_FIELDS, countries, regions };
   return {
     min: { ...base, rows: minRows },
     all: { ...base, rows: allRows },
@@ -142,10 +143,38 @@ export function buildAirportIndex(src: AirportSources, now = new Date()): BuiltA
   };
 }
 
+/**
+ * Provenance recorded in every index file: the upstream URLs, their licences and the upstream
+ * `Last-Modified` of the copy that was built (null when the copy did not carry one). Never a
+ * local path (docs minor 4).
+ */
+export function provenance(lastModified: Record<string, string | null>): Record<string, string | null> {
+  const lm = (k: string) => {
+    const v = lastModified[k];
+    return typeof v === 'string' && !Number.isNaN(Date.parse(v)) ? new Date(v).toISOString() : null;
+  };
+  return {
+    ourairports: `${OURAIRPORTS}/{airports,runways,countries,regions}.csv`,
+    ourairportsLicence: 'Public Domain (OurAirports)',
+    ourairportsLastModified: lm('ourairports'),
+    mwgg: MWGG_URL,
+    mwggLicence: 'MIT (mwgg/Airports) — time zones only',
+    mwggLastModified: lm('mwgg'),
+  };
+}
+
 async function download(url: string, ua: string): Promise<{ text: string; lastModified: string | null }> {
   const res = await fetch(url, { headers: { 'User-Agent': ua } });
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
   return { text: await res.text(), lastModified: res.headers.get('last-modified') };
+}
+
+function readLastModified(dir: string): Record<string, string | null> {
+  try {
+    return JSON.parse(readFileSync(`${dir}last-modified.json`, 'utf8')) as Record<string, string | null>;
+  } catch {
+    return {};
+  }
 }
 
 export function buildUserAgent(): string {
@@ -165,7 +194,8 @@ async function main(argv: string[]) {
       countriesCsv: read('countries.csv'),
       regionsCsv: read('regions.csv'),
       mwggJson: read('mwgg.json'),
-      lastModified: { ourairports: `local copy (${dir})`, mwgg: null },
+      // Upstream Last-Modified headers saved next to the copy ({"ourairports": "...", "mwgg": "..."}), if any.
+      lastModified: readLastModified(dir),
     };
   } else {
     const ua = buildUserAgent();

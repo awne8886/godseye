@@ -132,7 +132,7 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
           }
           if (e.key === 'Escape') setOpen(false);
         }}
-        placeholder="CODE, CITY OR AIRPORT"
+        placeholder="IATA / CITY"
         autoComplete="off"
         role="combobox"
         aria-expanded={open && results.length > 0}
@@ -171,8 +171,13 @@ function Legend({ labels }: { labels: Plan['pathLabels'] }) {
       {PATH_TYPES.map((t) => {
         const on = (labels as readonly string[]).includes(t.label);
         return (
-          <li key={t.label} className="flex items-start gap-2" style={{ opacity: on ? 1 : 0.55 }}>
-            <span aria-hidden className="mt-1.5 inline-block h-0.5 w-5" style={{ background: on ? t.token : 'var(--border-secondary)' }} />
+          <li key={t.label} className="flex items-start gap-2" data-available={on}>
+            {/* Unavailability is carried by the dashed swatch and the words, never by dimmed text (≥ 4.5:1). */}
+            {on ? (
+              <span aria-hidden className="mt-1.5 inline-block h-0.5 w-5 shrink-0" style={{ background: t.token }} />
+            ) : (
+              <span aria-hidden className="mt-1.5 inline-block w-5 shrink-0 border-t border-dashed border-[var(--border-active)]" />
+            )}
             <span className="flex flex-col">
               <span className="hud-text text-[11px]" style={{ color: on ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                 {t.label}
@@ -220,7 +225,15 @@ export function PlanView({ plan }: { plan: Plan }) {
         </p>
       </div>
       <div className="grid grid-cols-3 gap-2" aria-label="Route summary">
-        <Stat label="DISTANCE" value={`${fmtKm(plan.greatCircle.distanceKm)} · ${fmtNm(plan.greatCircle.distanceNm)}`} />
+        <Stat
+          label="DISTANCE"
+          value={
+            <>
+              <span className="block whitespace-nowrap">{fmtKm(plan.greatCircle.distanceKm)}</span>
+              <span className="block whitespace-nowrap text-[var(--text-secondary)]">{fmtNm(plan.greatCircle.distanceNm)}</span>
+            </>
+          }
+        />
         <Stat label="BEARING" value={`${Math.round(plan.greatCircle.initialBearing)}° → ${Math.round(plan.greatCircle.finalBearing)}°`} />
         <Stat label="EST. BLOCK" value={fmtMinutes(wide.blockMinutes)} />
         <Stat label="TZ Δ" value={fmtOffsetHours(plan.timezones.offsetHours)} />
@@ -450,7 +463,8 @@ export function FlightView({ flight }: { flight: Flight }) {
 
 function failureText(e: unknown): string {
   if (e instanceof ApiFailure) {
-    if (e.status === 404) return `${e.detail ?? 'Unknown airport'} — check the code.`;
+    if (e.status === 404) return `${(e.detail ?? 'Unknown airport').replace(/\.$/, '')} — check the code.`;
+    if (e.status === 503) return `SOURCE OFFLINE — ${e.detail ?? 'an upstream did not answer'}`;
     if (e.status === 400) return e.detail ?? 'That input is not valid.';
     return e.detail ?? `Request failed (${e.code}).`;
   }
@@ -550,7 +564,15 @@ export default function PathsPanel(_props: PanelProps) {
             <AirportField label="TO" value={to} onPick={setTo} all={all} />
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" aria-pressed={all} onClick={() => setAll((v) => !v)} className="hud-toggle hud-micro border border-[var(--border-secondary)] px-2 py-1 text-[var(--text-secondary)]" data-on={all}>
+            <button
+              type="button"
+              aria-pressed={all}
+              onClick={() => setAll((v) => !v)}
+              className="hud-micro inline-flex min-h-11 items-center gap-2 whitespace-nowrap text-[var(--text-secondary)] md:min-h-8"
+            >
+              <span aria-hidden className="hud-toggle" data-on={all}>
+                <span className="h-2.5 w-2.5 rounded-full bg-current" />
+              </span>
               ALL AIRFIELDS
             </button>
             <button type="submit" className="hud-text hud-control ml-auto inline-flex items-center gap-1 border border-[var(--border-active)] px-3 py-1 text-[11px] text-[var(--gold-light)]">
