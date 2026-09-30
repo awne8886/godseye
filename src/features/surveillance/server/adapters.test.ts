@@ -27,7 +27,9 @@ describe('camera adapters (fixtures captured 2026-09-30)', () => {
     const rows = A.parseOdot(JSON.parse(text(FX.odot)));
     expect(rows).toHaveLength(3);
     expect(valid(rows)).toBe(true);
-    expect(rows[0]!.stillUrl).toBe('https://tripcheck.com/RoadCams/cams/AstoriaUS101MeglerBrNB_pid392.jpg');
+    expect(rows[0]).toMatchObject({ id: 'odot-277-392', stillUrl: 'https://tripcheck.com/RoadCams/cams/AstoriaUS101MeglerBrNB_pid392.jpg' });
+    const odd = A.parseOdot({ features: [{ attributes: { cameraId: 1, publishedImageId: 2, filename: 'I-5@Goshen_pid1504.jpg', latitude: 44, longitude: -123 } }, { attributes: { cameraId: 3, filename: '../x.jpg', latitude: 44, longitude: -123 } }] });
+    expect(odd.map((r) => r.stillUrl)).toEqual(['https://tripcheck.com/RoadCams/cams/I-5%40Goshen_pid1504.jpg']);
   });
 
   it('TxDOT new shape: roadwayCctvStatuses (+ cctvStatusRoadways[].ctts[])', () => {

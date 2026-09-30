@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Cell } from '@/lib/columnar';
-import { useMapInstance } from '@/lib/layer-host';
+import { useMapInstanceStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import { PREVIEW_H, PREVIEW_MAX_TILES, PREVIEW_MAX_VIDEO, PREVIEW_MIN_ZOOM, PREVIEW_W, stillPath } from '../shared';
 import { IDX, rowToCamera } from './rows';
@@ -32,7 +32,8 @@ function useVisibleClock(periodMs: number, enabled: boolean): number {
 }
 
 export default function CctvPreviews({ rows }: { rows: Cell[][] }) {
-  const map = useMapInstance();
+  // Previews only project points and read bounds, which work before the first `idle` (useMapInstance waits for it).
+  const map = useMapInstanceStore((s) => s.map);
   const autoplay = useUiStore((s) => s.settings.previewAutoplay);
   const [picked, setPicked] = useState<Cell[][]>([]);
   const refs = useRef(new Map<string, HTMLButtonElement>());

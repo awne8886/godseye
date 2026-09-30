@@ -261,11 +261,12 @@ export function CameraViewerBody({ camera }: { camera: Camera }) {
   );
 }
 
+function Standby() {
+  usePanelChip('STANDBY', 'idle');
+  return <p className="font-sans text-[13px] text-[var(--text-secondary)]">Select a camera on the map (CCTV layer) and choose Open viewer.</p>;
+}
+
 export default function CameraViewerPanel(_: PanelProps) {
   const camera = useSurveillanceUi((s) => s.camera);
-  usePanelChip(camera ? 'DECRYPTING FEED…' : 'STANDBY', camera ? 'busy' : 'idle');
-  if (!camera) {
-    return <p className="font-sans text-[13px] text-[var(--text-secondary)]">Select a camera on the map (CCTV layer) and choose Open viewer.</p>;
-  }
-  return <CameraViewerBody key={camera.id} camera={camera} />;
+  return camera ? <CameraViewerBody key={camera.id} camera={camera} /> : <Standby />;
 }

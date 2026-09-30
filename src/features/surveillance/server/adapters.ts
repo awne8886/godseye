@@ -113,7 +113,12 @@ export function parseWsdotKml(kml: string): Row[] {
 }
 
 interface EsriFeatureSet {
-  features?: { attributes?: { cameraId?: number; filename?: string; latitude?: number; longitude?: number; route?: string; title?: string } }[];
+  features?: { attributes?: { cameraId?: number; publishedImageId?: number; filename?: string; latitude?: number; longitude?: number; route?: string; title?: string } }[];
+}
+
+/** A single path segment ending in .jpg/.jpeg: no slashes, no `..`, no control characters. */
+export function safeFileName(f: string): boolean {
+  return f.length <= 120 && /\.jpe?g$/i.test(f) && !/[/\\]/.test(f) && !f.includes('..') && [...f].every((ch) => ch.charCodeAt(0) >= 32);
 }
 
 /** ODOT TripCheck `cctvinventory.js` (an Esri FeatureSet served as JavaScript text). */
@@ -122,14 +127,15 @@ export function parseOdot(raw: EsriFeatureSet): Row[] {
   const seen = new Set<string>();
   for (const f of raw.features ?? []) {
     const a = f.attributes;
-    if (!a?.filename || !/^[\w.-]+\.jpg$/i.test(a.filename) || seen.has(a.filename)) continue;
+    // Real filenames carry spaces and '@' ("I-5@Goshen_pid1504.jpg"); refuse only path tricks.
+    if (!a?.filename || !safeFileName(a.filename) || seen.has(a.filename)) continue;
     const lat = num(a.latitude);
     const lng = num(a.longitude);
     if (!validLatLng(lat, lng)) continue;
     seen.add(a.filename);
     out.push(
       cam({
-        id: `odot-${a.cameraId ?? a.filename.replace(/\.jpg$/i, '')}-${a.filename.replace(/\.jpg$/i, '')}`,
+        id: `odot-${a.cameraId ?? 0}-${a.publishedImageId ?? seen.size}`,
         lat,
         lng: lng!,
         source: 'odot',
@@ -137,7 +143,7 @@ export function parseOdot(raw: EsriFeatureSet): Row[] {
         name: text(a.title) || text(a.route) || a.filename,
         country: 'US',
         streamType: 'jpg',
-        stillUrl: `https://tripcheck.com/RoadCams/cams/${a.filename}`,
+        stillUrl: `https://tripcheck.com/RoadCams/cams/${encodeURIComponent(a.filename)}`,
         externalUrl: 'https://www.tripcheck.com/',
       }),
     );

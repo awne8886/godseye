@@ -73,10 +73,16 @@ export const liveNewsFeed = defineFeed<NewsChannel[]>({
   // The list itself is static and always served; the check result is per channel.
   isEmpty: () => false,
   run: async (ctx) => {
-    const checks = await Promise.all(CHANNELS.map((c) => checkLive(c.youtubeChannelId, ctx.signal).then((v) => ({ v, ok: true }), () => ({ v: null, ok: false }))));
-    const determined = checks.filter((c) => c.ok && c.v !== null).length;
-    const run: { run: ProviderRun } = await runProvider(async () => determined, (n) => n);
-    return { data: CHANNELS.map((s, i) => toChannel(s, checks[i]!.v)), providers: { 'youtube-live-check': run.run } };
+    let checks: (boolean | null)[] = CHANNELS.map(() => null);
+    // count = channels whose live state could be determined; 0 → the check failed (flags stay null).
+    const run: { run: ProviderRun } = await runProvider(
+      async () => {
+        checks = await Promise.all(CHANNELS.map((c) => checkLive(c.youtubeChannelId, ctx.signal).catch(() => null)));
+        return checks.filter((v) => v !== null).length;
+      },
+      (n) => n,
+    );
+    return { data: CHANNELS.map((s, i) => toChannel(s, checks[i] ?? null)), providers: { 'youtube-live-check': run.run } };
   },
   count: (d) => d.length,
 });
