@@ -49,6 +49,7 @@ off; licence-gated sources stay off until the operator opts in (see `.env.exampl
 
 - [lead](data-sources/lead.md)
 - [design-system-hud](data-sources/design-system-hud.md)
+- [layers-hazards](data-sources/layers-hazards.md)
 - [map-engine](data-sources/map-engine.md)
 - [pages-docs-privacy-ops](data-sources/pages-docs-privacy-ops.md)
 
@@ -105,6 +106,38 @@ Fonts were not changed: the HUD uses the lead's `next/font` variables, so no fon
 Browser storage keys: `godseye:theme` (preset id, read by the pre-paint boot script),
 `godseye:style-studio` (sanitised Style Studio edits) and `godseye:settings` (lead's store). All
 three stay in the visitor's browser and are never sent to the server.
+
+### layers-hazards
+
+Probed **2026-09-30 18:06–18:25 UTC** from the build sandbox with
+`curl -sS -m 30 -A 'GODSEYE/0.1.0 (+https://github.com/awne8886/godseye; contact https://github.com/awne8886/godseye/issues)' -H 'Origin: http://localhost:3000'`.
+Recorded payloads (trimmed) live in `src/features/hazards/server/__fixtures__/*.2026-09-30.*`.
+"CORS" is the `Access-Control-Allow-Origin` answer to that Origin; the browser never calls these
+hosts (everything goes through `/api`), except RainViewer tiles and CDSE quicklooks (image hosts).
+
+| Upstream | Status · latency · size | CORS | Auth | Licence / attribution | Notes and sample fields |
+|---|---|---|---|---|---|
+| USGS `earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson` | 200 · 0.43 s · 24 kB (33 quakes) | `*` | none | Public domain (USGS) | `properties.{mag,magType,place,time(ms),url,felt,alert(lower-case or null),tsunami(0/1),sig}`, `geometry.coordinates=[lng,lat,depthKm]`, `id`. Last-Modified set → conditional GET. |
+| FIRMS `…/suomi-npp-viirs-c2/csv/SUOMI_VIIRS_C2_Global_24h.csv` | 200 · 0.91 s · 5.8 MB (71 093 rows) | none | none | NASA open data; cite FIRMS/LANCE | `latitude,longitude,bright_ti4,scan,track,acq_date,acq_time(HHMM UTC),satellite(N),confidence(low/nominal/high),version,bright_ti5,frp,daynight`. ETag + Last-Modified. |
+| FIRMS `…/noaa-20-viirs-c2/csv/J1_VIIRS_C2_Global_24h.csv` | 200 · 3.86 s · 6.8 MB (81 270 rows) | none | none | same | `satellite=N20`. |
+| FIRMS `…/noaa-21-viirs-c2/csv/J2_VIIRS_C2_Global_24h.csv` | 200 · 0.70 s · 6.4 MB (76 907 rows) | none | none | same | `satellite=N21`. |
+| FIRMS `…/modis-c6.1/csv/MODIS_C6_1_Global_24h.csv` | 200 · 0.64 s · 1.2 MB (15 839 rows) | none | none | same | `brightness`, `bright_t31`, `confidence` 0–100 (→ low < 30 ≤ nominal < 80 ≤ high), `satellite` T/A. ~245k pixels/day in total → FRP top-30 000 sampling, never stride. Area API (`FIRMS_MAP_KEY`) not needed. |
+| NASA EONET `eonet.gsfc.nasa.gov/api/v3/events?status=open&days=7` | 200 · 3.08 s · 73 kB (16 events) | `*` | none | NASA open data | **Content-Type `application/rss+xml` for JSON** (httpJson parses regardless). `events[].{id,title,categories[0].id,sources[].url,geometry[].{date,type,coordinates,magnitudeValue,magnitudeUnit}}`. Fires layer uses `&category=wildfires&days=30`. |
+| NWS `api.weather.gov/alerts/active?status=actual&message_type=alert` | 200 · 0.70 s · 686 kB (152 alerts) | `*` | none (UA required) | Public domain | **No `limit` param (NWS answers 400).** 112/152 alerts have `geometry: null` and list `affectedZones` (252 distinct: 216 forecast, 36 county). `properties.{id,@id,event,headline,severity,sent,effective,expires,ends,areaDesc,geocode.UGC}` (times carry offsets). |
+| NWS `api.weather.gov/zones/county/ILC007` | 200 · 0.29 s · 4.9 kB | `*` | none | Public domain | `geometry` Polygon/MultiPolygon, `properties.{id,name,type,state}`. Cached 30 days (process + SnapshotStore), ≤ 60 lookups per refresh at 5 req/s; unresolved alerts reported as `unplacedAlerts`. |
+| GDACS `www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=EQ;TC;FL;VO;DR;WF` | 200 · 1.83 s · 128 kB (89 events) | `*` | none | GDACS terms, attribution | `/geteventlist/MAP` answers 400. `features[].properties.{eventtype,eventid,episodeid,name,alertlevel("Orange" → lower-cased),country,fromdate,todate,datemodified (zone-less UTC → normalizeUtc),url.report,severitydata.severitytext}`, Point geometry. EQ skipped (USGS layer). |
+| NHC `www.nhc.noaa.gov/CurrentStorms.json` | 200 · 0.57 s · 19 kB (1 storm: Hanna AT3) | none | none | Public domain | `activeStorms[].{id,binNumber,name,classification,intensity(kt),pressure,latitudeNumeric,longitudeNumeric,lastUpdate,publicAdvisory.url}`. `[]` outside storms → truthful empty (`allowEmpty`). |
+| NHC MapServer `mapservices.weather.noaa.gov/tropical/rest/services/tropical/NHC_tropical_weather/MapServer/60/query?where=1%3D1&outFields=*&f=geojson` | 200 · 0.76 s · 62 kB | echoes Origin | none | Public domain | Forecast-cone layer ids from `MapServer/layers?f=json` (2.3 MB): AT1 8 … AT5 112, EP1 138 … EP5 242, CP1 268 … CP5 372 (stride 26). |
+| Smithsonian GVP `volcano.si.edu/news/WeeklyVolcanoRSS.xml` | 200 · 0.61 s · 26 kB (21 items) | none | none | Smithsonian GVP / USGS weekly report, attribution | **`encoding="ISO-8859-1"`** (bytes 0xE9/0xED/0xF3/0xFA present) → decoded as windows-1252. `item.{title,description (entity-encoded HTML),guid (#vn_…),pubDate,georss:point "lat lng"}`. Weekly (latest 2026-09-17). |
+| Open-Meteo AQ `air-quality-api.open-meteo.com/v1/air-quality?latitude=51.5&longitude=-0.12&current=pm2_5,us_aqi` | 200 · 0.82 s · 335 B | `*` | none | CC BY 4.0; free tier non-commercial → capability `openmeteo` | Comma-separated lat/lng lists answer a JSON array (0.81 s for 3 points). `current.{time ("2026-09-30T18:00", zone-less GMT),pm2_5,us_aqi}`. CAMS model values, not stations. |
+| gpsjam `gpsjam.org/data/manifest.csv` | 200 · 0.99 s · 8 kB gzip | none | none | **Licence unstated** → attributed "gpsjam.org (John Wiseman)" | `date,suspect,num_bad_aircraft_hexes,source`; latest 2026-09-29, suspect=false. |
+| gpsjam `gpsjam.org/data/2026-09-29-h3_4.csv` | 200 · 0.98 s · 191 kB gzip | none | none | same | `hex,count_good_aircraft,count_bad_aircraft`; 47 846 cells, 3 047 with bad > 0 (only those are served). |
+| CDSE STAC `stac.dataspace.copernicus.eu/v1/search?collections=sentinel-2-l2a&bbox=-0.2,51.4,0,51.6&limit=1` | 200 · 3.56 s · 72 kB per item | `*` | none | Copernicus open data ("Contains modified Copernicus Sentinel data") | `datetime`, `sortby=-properties.datetime` works on GET (4.1 s, 12 items over Paris/10 days). `assets.thumbnail.href` = `datahub.creodias.eu/odata/v1/Assets(<uuid>)/$value` → **301 to `zipper.creodias.eu`** (200, CORS `*`, 2.7 s); the card uses the zipper URL directly (next/image follows no redirects). |
+| RainViewer `api.rainviewer.com/public/weather-maps.json` | 200 · 0.77 s · 818 B | `*` | none | RainViewer API terms (free, attribution) | `host=https://tilecache.rainviewer.com`, `radar.past[13]` (10-min spacing, `{time (epoch s), path}`), **`radar.nowcast=[]`, `satellite.infrared=[]`** (§6.2); tiles z ≤ 7, 100 req/IP/min. |
+
+Not wired (no key available to verify): OpenAQ v3 (`OPENAQ_API_KEY`, `X-API-Key` header) and WAQI
+(`WAQI_TOKEN`, token only accepted in the query string). `/api/air-quality` reports them as
+`skipped: not-configured` (or `disabled` when a key is set).
 
 ## map-engine — probe log
 
