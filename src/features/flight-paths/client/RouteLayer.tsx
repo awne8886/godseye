@@ -59,24 +59,26 @@ export default function RouteLayer() {
     return () => cancelAnimationFrame(id);
   }, [theme]);
 
-  // Frame each newly planned route once (midpoint towards the camera on the globe).
-  const framed = useRef<string | null>(null);
+  // Frame each newly planned route once per map instance (midpoint towards the camera on the
+  // globe). A map rebuilt by the host (context loss) starts from its initial camera: frame again.
+  const framed = useRef<{ key: string; map: unknown } | null>(null);
   useEffect(() => {
     const p = plan.data;
-    if (!p) return;
+    if (!p || !map) return;
     const key = `${p.origin.ident}-${p.destination.ident}`;
-    if (framed.current === key) return;
-    framed.current = key;
+    if (framed.current?.key === key && framed.current.map === map) return;
+    framed.current = { key, map };
     requestFlyTo({ ...cameraFor(p), durationMs: 1200 });
-  }, [plan.data, requestFlyTo]);
-  const framedFlight = useRef<string | null>(null);
+  }, [plan.data, map, requestFlyTo]);
+  const framedFlight = useRef<{ key: string; map: unknown } | null>(null);
   useEffect(() => {
     const f = flight.data;
-    if (!f || framedFlight.current === f.ident) return;
-    framedFlight.current = f.ident;
+    if (!f || !map) return;
+    if (framedFlight.current?.key === f.ident && framedFlight.current.map === map) return;
+    framedFlight.current = { key: f.ident, map };
     const target = f.position ?? f.origin;
     if (target) requestFlyTo({ lng: target.lng, lat: target.lat, zoom: 4, durationMs: 1200 });
-  }, [flight.data, requestFlyTo]);
+  }, [flight.data, map, requestFlyTo]);
 
   const layers = useMemo(() => {
     const p = route ? (plan.data ?? null) : null;

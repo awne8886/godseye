@@ -43,6 +43,7 @@ describe('RouteLayer', () => {
     useMapInstanceStore.setState({
       map: { getCenter: () => ({ lng: -30, lat: 50 }), on: (e: string, f: () => void) => handlers.set(e, f), off: (e: string) => handlers.delete(e) } as never,
       projection: 'globe',
+      ready: true,
     });
     useUiStore.setState({ openPanel: null, plannedRoute: null, flightIdent: null, flyTo: null });
   });
@@ -61,6 +62,12 @@ describe('RouteLayer', () => {
     const layers = useDeckLayerStore.getState().entries['flight-paths']!.layers as Layer[];
     expect(layers.map((l) => l.id)).toContain('route-planned-arc');
     expect(useUiStore.getState().flyTo).toMatchObject({ lng: gc.midpoint[0], lat: gc.midpoint[1] });
+    // A rebuilt map (new instance) is framed again.
+    const before = useUiStore.getState().flyTo!.ts;
+    await act(async () => {
+      useMapInstanceStore.setState({ map: { getCenter: () => ({ lng: 0, lat: 0 }), on: () => undefined, off: () => undefined } as never });
+    });
+    await waitFor(() => expect(useUiStore.getState().flyTo!.ts).toBeGreaterThan(before));
   });
 
   it('?flight= draws the planned arc of the tracked flight', async () => {
