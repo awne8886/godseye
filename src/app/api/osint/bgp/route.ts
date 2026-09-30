@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { isReservedIp } from '@/lib/ssrf';
 import { bgpLookup } from '@/components/panels/recon/server/osint';
 import { osintRoute } from '@/components/panels/recon/server/route-kit';
-import { parseAsn } from '@/components/panels/recon/server/targets';
+import { parseAsn } from '@/components/panels/recon/targets';
 
 export const dynamic = 'force-dynamic';
 

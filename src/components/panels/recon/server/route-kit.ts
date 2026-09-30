@@ -11,7 +11,7 @@ import { apiError, parseQuery, withRoute } from '@/lib/respond';
 import { isReservedIp } from '@/lib/ssrf';
 import { osintBody, osintJson, type OsintTool } from './lookup';
 import type { ToolResult } from './osint';
-import { PERSONAL_REFUSAL, looksPersonal } from './targets';
+import { PERSONAL_REFUSAL, looksPersonal } from '../targets';
 
 /** A public IPv4/IPv6 literal (private, loopback, link-local, CGNAT, documentation… refused). */
 export const PublicIpParam = z

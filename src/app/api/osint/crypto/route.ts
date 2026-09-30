@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { cryptoLookup } from '@/components/panels/recon/server/osint';
 import { osintRoute } from '@/components/panels/recon/server/route-kit';
-import { detectChain } from '@/components/panels/recon/server/targets';
+import { detectChain } from '@/components/panels/recon/targets';
 import { identifierHits, sdnCache } from '@/components/panels/recon/server/sanctions';
 
 export const dynamic = 'force-dynamic';

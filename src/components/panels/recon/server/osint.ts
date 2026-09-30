@@ -19,7 +19,7 @@ import type { Providers } from '@/lib/types';
 import { probe, skipped, type Finding } from './lookup';
 import { ipwhoBucket } from './geo';
 import { mergeStatus, ripe } from './ripe';
-import type { Chain } from './targets';
+import type { Chain } from '../targets';
 
 export interface ToolResult {
   data: Record<string, unknown>;

@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { macLookup } from '@/components/panels/recon/server/osint';
 import { osintRoute } from '@/components/panels/recon/server/route-kit';
-import { parseMac } from '@/components/panels/recon/server/targets';
+import { parseMac } from '@/components/panels/recon/targets';
 
 export const dynamic = 'force-dynamic';
 
