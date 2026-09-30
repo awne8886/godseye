@@ -97,6 +97,8 @@ export interface LayerStatus {
   categoryCounts?: Record<string, number>;
   /** The feed's attribution (meta.attribution), shown in the rail flyout and the sources panel. */
   attribution?: Attribution[];
+  /** Drawn entities past their dead-reckoning cap (aviation: > 60 s), shown in the rail. */
+  staleCount?: number;
 }
 
 const IDLE: LayerStatus = { state: 'idle', count: null, fetchedAt: null, observedAt: null, lastGoodAt: null };
