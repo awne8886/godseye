@@ -58,7 +58,11 @@ function ExternalLink({ href, children }: { href: string | null; children: React
 }
 
 /** Source · observed-at · freshness block shared by every hazards card. */
-export function Provenance({ layer, source, observedAt, note }: { layer: LayerId; source: string; observedAt: string | null; note?: string }) {
+/**
+ * @param observedDay  set for daily aggregates (gpsjam): the card names the UTC day instead of a
+ *                     clock time, since no single observation instant exists.
+ */
+export function Provenance({ layer, source, observedAt, observedDay, note }: { layer: LayerId; source: string; observedAt: string | null; observedDay?: string; note?: string }) {
   const status = useLayerStatus(layer);
   const now = useNow();
   const def = getLayer(layer);
@@ -81,7 +85,9 @@ export function Provenance({ layer, source, observedAt, note }: { layer: LayerId
         </span>
       </div>
       <div className="mt-1 font-mono text-[11px] uppercase tracking-[.08em] tabular-nums text-[var(--text-primary)]" data-testid="card-observed">
-        OBSERVED {observedAt ? `${observedAt.slice(0, 16).replace('T', ' ')} UTC · ${formatAge(Math.max(0, now - (at ?? now)))} AGO` : 'TIME UNKNOWN'}
+        {observedDay
+          ? `OBSERVED UTC DAY ${observedDay} · DAILY AGGREGATE`
+          : `OBSERVED ${observedAt ? `${observedAt.slice(0, 16).replace('T', ' ')} UTC · ${formatAge(Math.max(0, now - (at ?? now)))} AGO` : 'TIME UNKNOWN'}`}
       </div>
       {state === 'offline' && status.lastGoodAt && (
         <div className="mt-1 font-mono text-[10px] uppercase tracking-[.16em] text-[var(--alert-red)]">LAST GOOD {status.lastGoodAt.slice(0, 16).replace('T', ' ')} UTC</div>
@@ -203,6 +209,7 @@ export function GpsJamCard({ selection }: CardProps) {
         layer="gps_jam"
         source={selection.source}
         observedAt={selection.observedAt}
+        observedDay={live ? undefined : (c.date ?? undefined)}
         note={live ? 'Live bin: aircraft reporting NACp ≤ 4 in this H3 cell (≥ 3 aircraft).' : `gpsjam.org daily aggregate for ${c.date} (UTC day).`}
       />
       <h3 className="mb-1 font-mono text-[13px] uppercase tracking-[.08em] text-[var(--text-heading)]">GPS interference · {level.label}</h3>

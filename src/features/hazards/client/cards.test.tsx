@@ -93,5 +93,6 @@ describe('hazards cards', () => {
     expect(screen.getByTestId('card-source').textContent).toMatch(/licence unstated/);
     expect(screen.getByText('50.0 %')).toBeTruthy();
     expect(screen.getByText(/daily aggregate for 2026-09-29/)).toBeTruthy();
+    expect(screen.getByTestId('card-observed').textContent).toBe('OBSERVED UTC DAY 2026-09-29 · DAILY AGGREGATE');
   });
 });
