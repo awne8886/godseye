@@ -114,11 +114,12 @@ describe('GET /api/flight/{ident}', () => {
     expect(f.sources.find((s) => s.name.startsWith('route'))?.detail).toMatch(/stale/);
   });
 
-  it('400 for idents that are not flight identifiers', async () => {
-    for (const bad of ['%3Cx%3E', 'A', 'TOOLONGIDENT1']) {
+  it('400 for idents that are not flight identifiers (no host or path can be smuggled)', async () => {
+    for (const bad of ['%3Cx%3E', 'A', 'TOOLONGIDENT1', '127.0.0.1', 'a%2F..%2Fb', 'localhost%3A80']) {
       const r = await call(bad);
       expect(r.status, bad).toBe(400);
       expect(ApiError.safeParse(await r.json()).success).toBe(true);
     }
+    expect(mode.current.calls).toEqual([]);
   });
 });

@@ -86,5 +86,15 @@ export default function RouteLayer() {
   }, [route, ident, plan.data, live.data, flight.data, projection, center, themeTick]);
 
   useDeckLayers('flight-paths', layers, Z);
-  return null;
+  // Diagnostics for tests (what is drawn, from which request); no visible output.
+  return (
+    <div
+      hidden
+      data-testid="flight-paths-status"
+      data-route={route ? `${route.from}-${route.to}` : ''}
+      data-flight={ident ?? ''}
+      data-layers={(layers ?? []).map((l) => (l && typeof l === 'object' && 'id' in l ? String(l.id) : '')).join(',')}
+      data-points={plan.data?.greatCircle.points.length ?? flight.data?.plannedArc.length ?? 0}
+    />
+  );
 }

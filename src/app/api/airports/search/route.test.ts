@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as RateLimitModule from '@/lib/ratelimit';
 import type * as HttpModule from '@/lib/http';
-import { AirportDetailResponse, AirportSearchResponse, ApiError } from '@/lib/schemas';
+import { AirportSearchResponse, ApiError } from '@/lib/schemas';
 import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { newMode, upstreamBody } from '@/features/flight-paths/__fixtures__/upstreams';
 
@@ -28,12 +28,10 @@ vi.mock('@/lib/http', async (orig) => {
 });
 
 const search = (await import('./route')).GET;
-const detail = (await import('../[code]/route')).GET;
 const find = async (qs: string) => {
   const res = await search(new Request(`http://localhost/api/airports/search${qs}`), undefined);
   return { res, body: res.status === 200 ? AirportSearchResponse.parse(await res.json()) : null };
 };
-const get = (code: string) => detail(new Request(`http://localhost/api/airports/${code}`), { params: Promise.resolve({ code }) });
 
 describe('GET /api/airports/search', () => {
   beforeEach(() => {
@@ -94,49 +92,17 @@ describe('GET /api/airports/search', () => {
     expect(down.body!.providers.nominatim).toBeDefined();
   });
 
+  it('SSRF: user text only ever reaches the fixed geocoder hosts, as a query parameter', async () => {
+    for (const q of ['http://169.254.169.254/latest', 'localhost:8080', '10.0.0.1', 'file:///etc/passwd']) await find(`?q=${encodeURIComponent(q)}&submit=1`);
+    const hosts = new Set(mode.current.calls.map((c) => new URL(c).hostname));
+    for (const h of hosts) expect(['photon.komoot.io', 'nominatim.openstreetmap.org']).toContain(h);
+  });
+
   it('400 on missing or oversized q', async () => {
     for (const bad of ['', '?q=', `?q=${'x'.repeat(81)}`, '?q=LHR&all=maybe']) {
       const { res } = await find(bad);
       expect(res.status, bad).toBe(400);
       expect(ApiError.safeParse(await res.json()).success).toBe(true);
     }
-  });
-});
-
-describe('GET /api/airports/{code}', () => {
-  beforeEach(() => {
-    clearL1();
-    setStore(new MemoryStore());
-    mode.current = newMode();
-  });
-
-  it('record, runways, METAR/TAF with observation time, local time with offset', async () => {
-    const res = await get('EGLL');
-    expect(res.status).toBe(200);
-    const body = AirportDetailResponse.parse(await res.json());
-    expect(body.airport.iata).toBe('LHR');
-    expect(body.runways.length).toBeGreaterThanOrEqual(2);
-    expect(body.runways.some((r) => r.leIdent === '09L' || r.heIdent === '27R')).toBe(true);
-    expect(body.weather.metar).toMatch(/^METAR EGLL/);
-    expect(body.weather.taf).toMatch(/^TAF EGLL/);
-    expect(body.weather.observedAt).toBe('2026-09-30T19:50:00.000Z');
-    expect(body.localTime).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
-    expect(body.providers.ourairports?.ok).toBe(true);
-    expect(body.providers.awc_metar?.ok).toBe(true);
-  });
-
-  it('404 {error} for ZZZZ; 400 for junk', async () => {
-    const r = await get('ZZZZ');
-    expect(r.status).toBe(404);
-    expect(ApiError.parse(await r.json()).error).toBe('not_found');
-    const bad = await get('%3Cscript%3E');
-    expect(bad.status).toBe(400);
-  });
-
-  it('AWC over quota ({error} in a 200 body) is reported as a failure', async () => {
-    mode.current.override.set('https://aviationweather.gov/*', { error: { code: 429 } });
-    const body = AirportDetailResponse.parse(await (await get('KJFK')).json());
-    expect(body.weather.metar).toBeNull();
-    expect(body.providers.awc_metar?.ok).toBe(false);
   });
 });

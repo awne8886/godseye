@@ -3,6 +3,7 @@ import type * as RateLimitModule from '@/lib/ratelimit';
 import type * as HttpModule from '@/lib/http';
 import { ApiError, RoutePlanResponse } from '@/lib/schemas';
 import { MemoryStore, clearL1, setStore } from '@/lib/cache';
+import { MAX_RESPONSE_BYTES } from '@/lib/respond';
 import { newMode, upstreamBody } from '@/features/flight-paths/__fixtures__/upstreams';
 import { resetWinds } from '@/features/flight-paths/server/winds';
 
@@ -44,7 +45,9 @@ describe('GET /api/route/plan', () => {
     const res = await call('?from=EGLL&to=KJFK');
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toMatch(/s-maxage=300/);
-    const body = RoutePlanResponse.parse(await res.json());
+    const text = await res.text();
+    expect(text.length).toBeLessThan(MAX_RESPONSE_BYTES);
+    const body = RoutePlanResponse.parse(JSON.parse(text));
     expect(body.origin.iata).toBe('LHR');
     expect(body.destination.iata).toBe('JFK');
     expect(body.greatCircle.points.length).toBeGreaterThanOrEqual(128);
