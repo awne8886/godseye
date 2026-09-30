@@ -7,6 +7,7 @@
  * Pure parse/serialise helpers (unit-tested); the client hook that syncs them with nuqs lives in
  * src/components/UrlStateSync.tsx. Owner: lead.
  */
+import { normalizeLng } from './geo';
 import { LAYER_IDS, parseLayersParam, serializeLayersParam, type LayerId } from './layer-registry';
 import { TOOLS, PANELS, type PanelId } from './tool-registry';
 
@@ -21,17 +22,30 @@ export interface CameraParam {
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const round = (v: number, dp: number) => Number(v.toFixed(dp));
 
+/** Split a comma list of numbers; empty components are invalid (Number('') would be 0). */
+function numbers(value: string): number[] | null {
+  const raw = value.split(',').map((s) => s.trim());
+  if (raw.some((s) => s === '')) return null;
+  const nums = raw.map(Number);
+  return nums.some((n) => !Number.isFinite(n)) ? null : nums;
+}
+
+/**
+ * `lat,lng,zoom[,pitch,bearing]`. Longitudes outside ±180 (MapLibre's unwrapped view after panning
+ * across the antimeridian in mercator) are wrapped, not rejected.
+ */
 export function parseCamera(value: string | null | undefined): CameraParam | null {
   if (!value) return null;
-  const parts = value.split(',').map((s) => Number(s.trim()));
-  if (parts.length < 3 || parts.length > 5 || parts.some((n) => !Number.isFinite(n))) return null;
-  const [lat, lng, zoom, pitch = 0, bearing = 0] = parts as [number, number, number, number?, number?];
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  const parts = numbers(value);
+  if (!parts || parts.length < 3 || parts.length > 5) return null;
+  const [lat, rawLng, zoom, pitch = 0, bearing = 0] = parts as [number, number, number, number?, number?];
+  if (Math.abs(lat) > 90 || Math.abs(rawLng) > 1e6) return null;
+  const lng = normalizeLng(rawLng);
   return { lat, lng, zoom: clamp(zoom, 0, 22), pitch: clamp(pitch ?? 0, 0, 85), bearing: ((((bearing ?? 0) + 180) % 360) + 360) % 360 - 180 };
 }
 
 export function serializeCamera(c: CameraParam): string {
-  const parts = [round(c.lat, 4), round(c.lng, 4), round(c.zoom, 2)];
+  const parts = [round(c.lat, 4), round(normalizeLng(c.lng), 4), round(c.zoom, 2)];
   if (Math.abs(c.pitch) > 0.5 || Math.abs(c.bearing) > 0.5) parts.push(round(c.pitch, 1), round(c.bearing, 1));
   return parts.join(',');
 }
@@ -47,27 +61,36 @@ export function parseLegacyCamera(params: URLSearchParams): CameraParam | null {
 /** `?dossier=lat,lng` */
 export function parseLatLngParam(value: string | null | undefined): { lat: number; lng: number } | null {
   if (!value) return null;
-  const parts = value.split(',').map((s) => Number(s.trim()));
-  if (parts.length !== 2 || parts.some((n) => !Number.isFinite(n))) return null;
+  const parts = numbers(value);
+  if (!parts || parts.length !== 2) return null;
   const [lat, lng] = parts as [number, number];
-  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { lat, lng };
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 1e6) return null;
+  return { lat, lng: normalizeLng(lng) };
 }
 
 export function serializeLatLng(p: { lat: number; lng: number }): string {
-  return `${round(p.lat, 4)},${round(p.lng, 4)}`;
+  return `${round(p.lat, 4)},${round(normalizeLng(p.lng), 4)}`;
 }
 
-/** `LHR-JFK`, `EGLL-KJFK` (also accepts `→`, `>`, spaces). Codes are 3–4 alphanumerics. */
+/**
+ * `LHR-JFK`, `EGLL-KJFK`, `EGLL-CYVR1` (also `→`, `>`, spaces). Codes are 3–8 alphanumerics
+ * (IATA, ICAO, gps_code, OurAirports ident). Idents that contain a hyphen (`US-0001`) use `~` as
+ * the separator: `EGLL~US-0001`.
+ */
 export function parseRouteParam(value: string | null | undefined): { from: string; to: string } | null {
   if (!value) return null;
-  const m = value.trim().toUpperCase().match(/^([A-Z0-9]{3,4})\s*(?:-|→|>|\s)\s*([A-Z0-9]{3,4})$/);
-  if (!m || m[1] === m[2]) return null;
+  const v = value.trim().toUpperCase();
+  const m = v.includes('~')
+    ? v.match(/^([A-Z0-9-]{3,10})~([A-Z0-9-]{3,10})$/)
+    : v.match(/^([A-Z0-9]{3,8})\s*(?:-|→|>|\s)\s*([A-Z0-9]{3,8})$/);
+  if (!m || m[1] === m[2] || /^-|-$/.test(m[1]!) || /^-|-$/.test(m[2]!)) return null;
   return { from: m[1]!, to: m[2]! };
 }
 
 export function serializeRouteParam(r: { from: string; to: string }): string {
-  return `${r.from.toUpperCase()}-${r.to.toUpperCase()}`;
+  const from = r.from.toUpperCase();
+  const to = r.to.toUpperCase();
+  return from.includes('-') || to.includes('-') ? `${from}~${to}` : `${from}-${to}`;
 }
 
 /** Flight idents: ICAO callsign, IATA flight number, registration or 6-hex. */

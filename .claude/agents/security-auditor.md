@@ -3,6 +3,7 @@ name: security-auditor
 description: "Security auditor: SSRF tests, rate limits, headers/CSP, secrets in bundles, dependency audit, honesty/licence gates; read-only except its own test files."
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
+isolation: worktree
 color: red
 ---
 

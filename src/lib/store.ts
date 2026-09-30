@@ -65,6 +65,8 @@ export const DEFAULT_SETTINGS: Settings = {
 
 /** Flight Watch and live trails follow at most this many aircraft (§8). */
 export const MAX_WATCHED_FLIGHTS = 6;
+/** At most this many floating panels are pinned at once (URL `?pinned=` has the same cap). */
+export const MAX_PINNED_PANELS = 6;
 
 export interface UiState {
   activeLayers: ReadonlySet<LayerId>;
@@ -76,11 +78,14 @@ export interface UiState {
   sensor: SensorMode;
   /** The one open right-side panel (tools and card-launched panels are mutually exclusive). */
   openPanel: PanelId | null;
-  /** Floating/pinned panels that may coexist with the open panel. */
+  /** Floating/pinned panels that may coexist with the open panel (≤ 6, never the open panel). */
   pinnedPanels: readonly PanelId[];
-  /** Region Dossier target (double right-click / long-press / palette "Dossier at map centre"). */
+  /**
+   * Region Dossier target (double right-click / long-press / palette "Dossier at map centre").
+   * Invariant: non-null exactly when `openPanel === 'dossier'`.
+   */
   dossierTarget: LatLng | null;
-  /** ICAO 6-hex ids followed by Flight Watch and drawn with live trails, oldest first. */
+  /** ICAO 6-hex ids (`~` prefix for non-ICAO/TIS-B) followed by Flight Watch with trails, oldest first. */
   watchedFlights: readonly string[];
   /** Flight Path Planner origin/destination (`?route=`). */
   plannedRoute: PlannedRoute | null;
@@ -148,7 +153,10 @@ const safeStorage: StateStorage = {
   },
 };
 
-const HEX_RE = /^[0-9a-f]{6}$/;
+/** Same id rule as Aircraft.id: ICAO 24-bit hex, `~` for non-ICAO (TIS-B) addresses. */
+const HEX_RE = /^~?[0-9a-f]{6}$/;
+
+const pinnable = (list: readonly PanelId[], open: PanelId | null) => [...new Set(list)].filter((p) => p !== open).slice(0, MAX_PINNED_PANELS);
 
 export const useUiStore = create<UiState>()(
   persist(
@@ -192,12 +200,27 @@ export const useUiStore = create<UiState>()(
       setTheme: (theme) => set({ theme }),
       setGhost: (ghost) => set({ ghost }),
       setSensor: (sensor) => set({ sensor }),
-      setOpenPanel: (openPanel) => set({ openPanel }),
-      togglePanel: (p) => set((s) => ({ openPanel: s.openPanel === p ? null : p })),
-      pinPanel: (p) => set((s) => (s.pinnedPanels.includes(p) ? s : { pinnedPanels: [...s.pinnedPanels, p] })),
+      setOpenPanel: (openPanel) =>
+        set((s) => ({
+          openPanel,
+          dossierTarget: openPanel === 'dossier' ? s.dossierTarget : null,
+          pinnedPanels: openPanel && s.pinnedPanels.includes(openPanel) ? pinnable(s.pinnedPanels, openPanel) : s.pinnedPanels,
+        })),
+      togglePanel: (p) =>
+        set((s) => {
+          const openPanel = s.openPanel === p ? null : p;
+          return {
+            openPanel,
+            dossierTarget: openPanel === 'dossier' ? s.dossierTarget : null,
+            pinnedPanels: openPanel && s.pinnedPanels.includes(openPanel) ? pinnable(s.pinnedPanels, openPanel) : s.pinnedPanels,
+          };
+        }),
+      pinPanel: (p) =>
+        set((s) => (s.pinnedPanels.includes(p) || p === s.openPanel || s.pinnedPanels.length >= MAX_PINNED_PANELS ? s : { pinnedPanels: [...s.pinnedPanels, p] })),
       unpinPanel: (p) => set((s) => ({ pinnedPanels: s.pinnedPanels.filter((x) => x !== p) })),
-      setPinnedPanels: (p) => set({ pinnedPanels: [...new Set(p)] }),
-      openDossier: (target) => set({ dossierTarget: { lat: target.lat, lng: target.lng }, openPanel: 'dossier' }),
+      setPinnedPanels: (p) => set((s) => ({ pinnedPanels: pinnable(p, s.openPanel) })),
+      openDossier: (target) =>
+        set((s) => ({ dossierTarget: { lat: target.lat, lng: target.lng }, openPanel: 'dossier', pinnedPanels: pinnable(s.pinnedPanels, 'dossier') })),
       closeDossier: () => set((s) => ({ dossierTarget: null, openPanel: s.openPanel === 'dossier' ? null : s.openPanel })),
       watchFlight: (hex) =>
         set((s) => {

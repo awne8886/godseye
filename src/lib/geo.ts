@@ -11,8 +11,9 @@ export type LngLatTuple = [number, number];
 const toRad = (d: number) => (d * Math.PI) / 180;
 const toDeg = (r: number) => (r * 180) / Math.PI;
 
-/** Wrap longitude into [-180, 180). */
+/** Wrap longitude into [-180, 180]. In-range values are returned untouched (no float drift). */
 export function normalizeLng(lng: number): number {
+  if (lng >= -180 && lng <= 180) return lng;
   const x = ((((lng + 180) % 360) + 360) % 360) - 180;
   return x === -180 && lng > 0 ? 180 : x;
 }

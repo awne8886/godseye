@@ -3,7 +3,7 @@
  * Response shapes follow the build prompt §8 field-for-field; units are explicit.
  */
 import { z } from 'zod';
-import { IsoTime, Lat, Lng, LngLat, Providers } from './common';
+import { IsoTime, Lat, Lng, LngLat, LocalTime, Providers } from './common';
 import { AircraftIdentity, TrackPoint } from './aviation';
 
 export const AirportType = z.enum(['large_airport', 'medium_airport', 'small_airport', 'heliport', 'seaplane_base', 'closed', 'balloonport']);
@@ -75,7 +75,7 @@ export const AirportDetailResponse = z.object({
   airport: Airport,
   runways: z.array(Runway),
   weather: AirportWeather,
-  localTime: z.string().nullable(),
+  localTime: LocalTime.nullable(),
   providers: Providers,
   timestamp: IsoTime,
 });
@@ -138,8 +138,8 @@ export const RoutePlanResponse = z.object({
     method: z.string(),
   }),
   timezones: z.object({
-    origin: z.object({ tz: z.string().nullable(), localNow: z.string().nullable() }),
-    destination: z.object({ tz: z.string().nullable(), localNow: z.string().nullable() }),
+    origin: z.object({ tz: z.string().nullable(), localNow: LocalTime.nullable() }),
+    destination: z.object({ tz: z.string().nullable(), localNow: LocalTime.nullable() }),
     offsetHours: z.number().nullable(),
   }),
   daylight: z.array(Daylight).length(10),
@@ -185,7 +185,9 @@ export const LiveRouteAircraft = z.object({
   progress: z.number().min(0).max(1),
   remainingKm: z.number().nonnegative(),
   eta: IsoTime.nullable(),
-  etaLocal: z.string().nullable(),
+  etaLocal: LocalTime.nullable(),
+  /** IANA zone of the destination, for the zone abbreviation on the card. */
+  etaTz: z.string().nullable(),
   observedAt: IsoTime,
 });
 

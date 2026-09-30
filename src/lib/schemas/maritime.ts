@@ -64,6 +64,7 @@ export const Vessel = EntityBase.extend({
 export const MaritimeResponse = Envelope.extend({
   ports: z.array(Port),
   chokepoints: z.array(Chokepoint),
-  vessels: z.array(Vessel),
+  /** Bounded: the route filters by bbox/zoom so a keyed global AIS feed stays < 4 MB. */
+  vessels: z.array(Vessel).max(10_000),
   aisConfigured: z.boolean(),
 });

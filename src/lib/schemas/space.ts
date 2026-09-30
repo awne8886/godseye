@@ -87,7 +87,7 @@ export const OrbitResponse = z.object({
   orbitClass: OrbitClass,
   anchoredAt: IsoTime,
   /** Each segment is `[lng, lat, altKm][]`. */
-  segments: z.array(z.array(z.tuple([Lng, Lat, z.number()]))),
+  segments: z.array(z.array(z.tuple([Lng, Lat, z.number()])).max(2_000)).max(8),
   timestamp: IsoTime,
 });
 

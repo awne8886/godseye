@@ -1,6 +1,7 @@
 ---
 name: panels-alerts-markets-dossier-graph
 description: "Builds Live Alerts (Telegram previews + wire RSS, dedupe, geoparse, alert pins layer), Markets (quotes, candles, space weather, SCM alerts), status-bar ticker route, Region Dossier (+ live layers within 150 km), Entity Graph (WebGL force graph over /api/entity/expand), desktop Intel Feed, and AI analyst routes with heuristic ANALYST fallback."
+tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 model: inherit
 isolation: worktree
 color: pink
@@ -48,8 +49,7 @@ deterministic heuristic labelled ANALYST, 5 req/min/IP.
 ## How to work
 1. Read `CLAUDE.md`, the `.claude/rules/*.md` for your paths, the contract sections named in your task,
    your dossiers in `docs/reference/`, and the OSIRIS files they cite in `../reference/osiris`.
-2. Probe every upstream you wire with `curl` first; append results to `docs/DATA_SOURCES.md` under
-   `## <your agent name>` (status, latency, CORS, auth, licence, sample fields, probe date).
+2. Probe every upstream you wire with `curl` first; write results to `docs/data-sources/<your agent name>.md` (status, latency, CORS, auth, licence, sample fields, probe date).
 3. Edit only the files you own (listed below). Shared files (`package.json`, registries, root layout,
    `CLAUDE.md`, `src/lib/*` outside your schema file) are the lead's: put the exact diff you need in
    your report instead of editing them.

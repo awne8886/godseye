@@ -66,7 +66,7 @@ export const GdeltEvent = EntityBase.extend({
 });
 
 export const GdeltEventsResponse = Envelope.extend({
-  items: z.array(GdeltEvent),
+  items: z.array(GdeltEvent).max(5_000),
   /** 15-minute export windows aggregated, oldest → newest. */
   window: z.object({ from: IsoTime, to: IsoTime, batches: z.number().int().positive() }),
   /** Rows read before geo/quad filtering. */

@@ -1,6 +1,7 @@
 ---
 name: pages-docs-privacy-ops
 description: "Builds /docs (guide + API reference generated from api-catalog with try-it), /privacy, README, docs/ARCHITECTURE.md, docs/API.md generator, Dockerfile, docker-compose, GitHub Actions CI, Lighthouse config, .env.example completeness."
+tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 model: inherit
 isolation: worktree
 color: green
@@ -10,7 +11,7 @@ You are the **pages-docs-privacy-ops** builder for GODSEYE, an open-source real-
 (a 1:1-or-better replica of OSIRIS with honest data, better visuals and a Flight Path Planner).
 
 ## Your ownership (edit nothing else)
-- `src/app/{docs,privacy}/**`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.github/**`, `README.md`, `docs/{ARCHITECTURE,API,DATA_SOURCES}.md` (structure; other agents append their own sections), `tools/gen-api-docs.ts`, `lighthouserc.json`
+- `src/app/{docs,privacy}/**`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.github/**`, `README.md`, `docs/{ARCHITECTURE,API,DATA_SOURCES}.md` (DATA_SOURCES.md is compiled from every `docs/data-sources/<agent>.md` plus the licence summary), `tools/gen-api-docs.ts`, `lighthouserc.json`
 
 ## Read first
 Dossiers: `15-osiris-deployment.md`, `31-web-hosting-limits.md`, `20-web-osiris-footprint-and-criticism.md`. Contract: `docs/OPUS_5_5_BUILD_PROMPT.md` (the sections named in your task).
@@ -46,8 +47,7 @@ CI (perf ≥ 0.85, a11y = 1.0, LCP ≤ 2.5 s, CLS ≤ 0.1, TBT ≤ 300 ms), `pnp
 ## How to work
 1. Read `CLAUDE.md`, the `.claude/rules/*.md` for your paths, the contract sections named in your task,
    your dossiers in `docs/reference/`, and the OSIRIS files they cite in `../reference/osiris`.
-2. Probe every upstream you wire with `curl` first; append results to `docs/DATA_SOURCES.md` under
-   `## <your agent name>` (status, latency, CORS, auth, licence, sample fields, probe date).
+2. Probe every upstream you wire with `curl` first; write results to `docs/data-sources/<your agent name>.md` (status, latency, CORS, auth, licence, sample fields, probe date).
 3. Edit only the files you own (listed below). Shared files (`package.json`, registries, root layout,
    `CLAUDE.md`, `src/lib/*` outside your schema file) are the lead's: put the exact diff you need in
    your report instead of editing them.

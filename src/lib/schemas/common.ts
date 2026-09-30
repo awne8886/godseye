@@ -17,6 +17,11 @@ import { z } from 'zod';
 
 /** ISO-8601 UTC timestamp, e.g. `2026-09-30T16:04:05Z` or with milliseconds. */
 export const IsoTime = z.iso.datetime({ offset: false });
+/**
+ * Wall-clock time at a place WITH its UTC offset, e.g. `2026-09-30T18:29:00+01:00` (airport local
+ * times, ETAs). Never send a local time without its offset: browsers parse that as their own zone.
+ */
+export const LocalTime = z.iso.datetime({ offset: true });
 export const Lat = z.number().min(-90).max(90);
 export const Lng = z.number().min(-180).max(180);
 /** `[lng, lat]` in GeoJSON order. */
@@ -94,14 +99,14 @@ export function feedResponse<T extends z.ZodType>(item: T) {
  */
 export const ColumnarCell = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
-export function columnarResponse(fields: readonly string[]) {
+export function columnarResponse(fields: readonly string[], maxRows = 50_000) {
   return Envelope.extend({
     fields: z
       .array(z.string())
       .refine((f) => f.length === fields.length && f.every((name, i) => name === fields[i]), {
         message: `fields must be exactly [${fields.join(', ')}]`,
       }),
-    rows: z.array(z.array(ColumnarCell).length(fields.length)),
+    rows: z.array(z.array(ColumnarCell).length(fields.length)).max(maxRows),
   });
 }
 
@@ -159,6 +164,7 @@ export const EntityKind = z.enum([
 
 /** One Intel Feed row emitted by a layer's feed-event mapper. */
 export const FeedEvent = z.object({
+  /** Unique within its layer (the store dedupes on layer + id): `${entityId}` or `${entityId}:${revision}`. */
   id: z.string(),
   layer: z.string(),
   entityKind: EntityKind,

@@ -1,6 +1,7 @@
 ---
 name: panels-recon
 description: "Builds RECON and tool panels: passive infrastructure OSINT routes (DNS, RDAP, headers grade, certs/subdomains, IP intel, BGP, InternetDB, sweep, MAC, CVE, threats, sanctions, wallet trace, domain breaches), optional allow-listed scanner proxy, geocoding/search, directions (Valhalla/OSRM), draw + AOI tripwires, ArcGIS import, World Remote (Web Bluetooth, no covert probes)."
+tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 model: inherit
 isolation: worktree
 color: cyan
@@ -46,8 +47,7 @@ Web Bluetooth with explicit user gesture — never WebRTC local-IP harvesting or
 ## How to work
 1. Read `CLAUDE.md`, the `.claude/rules/*.md` for your paths, the contract sections named in your task,
    your dossiers in `docs/reference/`, and the OSIRIS files they cite in `../reference/osiris`.
-2. Probe every upstream you wire with `curl` first; append results to `docs/DATA_SOURCES.md` under
-   `## <your agent name>` (status, latency, CORS, auth, licence, sample fields, probe date).
+2. Probe every upstream you wire with `curl` first; write results to `docs/data-sources/<your agent name>.md` (status, latency, CORS, auth, licence, sample fields, probe date).
 3. Edit only the files you own (listed below). Shared files (`package.json`, registries, root layout,
    `CLAUDE.md`, `src/lib/*` outside your schema file) are the lead's: put the exact diff you need in
    your report instead of editing them.

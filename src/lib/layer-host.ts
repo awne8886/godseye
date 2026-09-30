@@ -153,10 +153,15 @@ export const useFeedEventStore = create<FeedEventState>((set) => ({
   push: (incoming) =>
     set((s) => {
       if (!incoming.length) return s;
+      // Ids are only unique within a layer (a Feodo C2 and a URLhaus host can share an IP key).
       const seen = new Set<string>();
       const merged = [...incoming, ...s.events]
-        .filter((e) => (seen.has(e.id) ? false : (seen.add(e.id), true)))
-        .sort((a, b) => b.observedAt.localeCompare(a.observedAt))
+        .filter((e) => {
+          const k = `${e.layer}\u0000${e.id}`;
+          return seen.has(k) ? false : (seen.add(k), true);
+        })
+        // By time, not by string: '…:00Z' vs '…:00.900Z' sort wrongly as text.
+        .sort((a, b) => Date.parse(b.observedAt) - Date.parse(a.observedAt))
         .slice(0, MAX_FEED_EVENTS);
       return { events: merged };
     }),

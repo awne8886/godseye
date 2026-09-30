@@ -3,6 +3,7 @@ name: perf-auditor
 description: "Performance auditor: Lighthouse, frame rate with 15k aircraft + 20k satellites, main-thread idle during polling, JS budgets, payload sizes; read-only except its own benchmark scripts."
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
+isolation: worktree
 color: orange
 ---
 

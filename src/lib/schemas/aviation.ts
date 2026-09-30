@@ -12,7 +12,8 @@ export const AircraftBucket = z.enum(['commercial', 'private', 'jet', 'military'
 export const Aircraft = EntityBase.extend({
   /** ICAO 24-bit address, lowercase hex (6 chars; `~` prefix for non-ICAO/TIS-B). */
   id: z.string().regex(/^~?[0-9a-f]{6}$/),
-  callsign: z.string().nullable(),
+  /** Trimmed, upper-case (adsb.lol pads `flight` with spaces: trim before matching VRS routes). */
+  callsign: z.string().regex(/^[A-Z0-9]{2,8}$/).nullable(),
   registration: z.string().nullable(),
   /** ICAO type designator, e.g. `B77W`. */
   typeCode: z.string().nullable(),
@@ -36,9 +37,18 @@ export const Aircraft = EntityBase.extend({
   dbFlags: z.number().int().nonnegative().nullable(),
   /** 3-letter ICAO airline designator parsed from the callsign, e.g. `BAW`. */
   airlineCode: z.string().length(3).nullable(),
+  /** ADS-B emergency/priority status as broadcast (distinct from the squawk code). */
+  emergencyStatus: z.enum(['general', 'lifeguard', 'minfuel', 'nordo', 'unlawful', 'downed', 'reserved']).nullable().optional(),
+  /** Position source: MLAT and TIS-B positions are less precise than ADS-B; the card says so. */
+  posSource: z.enum(['adsb', 'mlat', 'tisb', 'adsr', 'other']).nullable().optional(),
 });
 
-/** Columnar row layout of GET /api/flights (keeps 20k+ aircraft under the 4 MB cap). */
+/**
+ * Columnar row layout of GET /api/flights. Compact cells keep 24k+ aircraft under the 4 MB cap:
+ * `bucket` = index into AircraftBucket.options, `isHelicopter`/`onGround` = 0|1, `seenAt` = epoch
+ * SECONDS of the position, `src` = index into the response's `sources`, lat/lng rounded to 5 dp,
+ * speeds/tracks to 1 dp. The airline code is derived client-side from the callsign.
+ */
 export const FLIGHT_FIELDS = [
   'id',
   'callsign',
@@ -58,12 +68,13 @@ export const FLIGHT_FIELDS = [
   'category',
   'nacP',
   'dbFlags',
-  'airlineCode',
-  'observedAt',
-  'source',
+  'seenAt',
+  'src',
 ] as const;
 
-export const FlightsResponse = columnarResponse(FLIGHT_FIELDS).extend({
+export const FlightsResponse = columnarResponse(FLIGHT_FIELDS, 40_000).extend({
+  /** Provider names referenced by the `src` column. */
+  sources: z.array(z.string()),
   counts: z.object({
     commercial: z.number().int().nonnegative(),
     private: z.number().int().nonnegative(),
@@ -84,7 +95,7 @@ export const TrackPoint = z.object({
   altFt: z.number().nullable(),
   onGround: z.boolean(),
   gsKt: z.number().nullable(),
-  trackDeg: z.number().nullable(),
+  trackDeg: z.number().min(0).lt(360).nullable(),
 });
 
 export const AircraftIdentity = z.object({

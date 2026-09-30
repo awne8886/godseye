@@ -4,7 +4,7 @@
  * Excluded by policy: OpenCCTV API, Insecam/Opentopia-style directories, EarthCam/Skyline frames.
  */
 import { z } from 'zod';
-import { EntityBase, Envelope, columnarResponse } from './common';
+import { EntityBase, Envelope, columnarResponse, IsoTime } from './common';
 
 export const StreamType = z.enum(['jpg', 'mjpeg', 'hls', 'mp4', 'iframe', 'link']);
 
@@ -57,6 +57,7 @@ export const CAMERA_FIELDS = [
   'streamUrl',
   'externalUrl',
   'observedAt',
+  'source',
 ] as const;
 
 /** GET /api/cctv?region= — split by region so each response stays < 4 MB. */
@@ -69,7 +70,7 @@ export const CctvResponse = columnarResponse(CAMERA_FIELDS).extend({
 export const StreamStatusResponse = z.object({
   id: z.string(),
   status: z.enum(['online', 'offline', 'unknown']),
-  checkedAt: z.string(),
+  checkedAt: IsoTime,
   httpStatus: z.number().int().nullable(),
 });
 
@@ -98,5 +99,5 @@ export const CameraResolveResponse = z.object({
   camera: Camera,
   provider: CameraProvider,
   playable: z.object({ type: StreamType, url: z.string() }).nullable(),
-  timestamp: z.string(),
+  timestamp: IsoTime,
 });

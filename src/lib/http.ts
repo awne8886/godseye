@@ -71,7 +71,14 @@ export class HttpError extends Error {
   }
 }
 
-const FORBIDDEN_HEADERS = ['x-forwarded-for', 'x-real-ip', 'forwarded', 'true-client-ip', 'cf-connecting-ip', 'x-client-ip'];
+/** Client-identity and routing headers we never forge upstream (§0.5), plus Host (virtual-host confusion). */
+const FORBIDDEN_HEADERS = [
+  'x-forwarded-for', 'x-real-ip', 'forwarded', 'forwarded-for', 'x-forwarded', 'x-forwarded-host', 'x-forwarded-proto',
+  'true-client-ip', 'cf-connecting-ip', 'x-client-ip', 'x-originating-ip', 'x-remote-ip', 'x-remote-addr',
+  'x-cluster-client-ip', 'fastly-client-ip', 'via', 'host',
+];
+/** Browser product tokens: a GODSEYE UA with a browser suffix is still UA spoofing. */
+const BROWSER_UA = /mozilla|chrome|safari|applewebkit|gecko|edg\/|opr\//i;
 /** Credentials that must never follow a redirect to another origin. */
 const CREDENTIAL_HEADERS = ['authorization', 'proxy-authorization', 'cookie', 'x-api-key', 'auth-key', 'api-key', 'x-ai-key', 'x-windy-api-key', 'x-ucdp-access-token'];
 const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -85,8 +92,8 @@ function buildHeaders(opts: HttpOptions): Record<string, string> {
     if (h in headers) throw new HttpError(`Refusing to send ${h} upstream (no header spoofing)`, 'blocked', '');
   }
   const ua = headers['user-agent'];
-  if (ua !== undefined && !ua.startsWith('GODSEYE/')) {
-    throw new HttpError('User-Agent must identify GODSEYE (no browser UA spoofing)', 'blocked', '');
+  if (ua !== undefined && (!ua.startsWith(userAgent()) || BROWSER_UA.test(ua))) {
+    throw new HttpError('User-Agent must be the GODSEYE identifier (a product suffix may follow; no browser tokens)', 'blocked', '');
   }
   headers['user-agent'] = ua ?? userAgent();
   headers['accept-encoding'] ??= 'gzip, deflate, br';
@@ -109,7 +116,10 @@ function parseRetryAfter(value: string | string[] | undefined): number | undefin
 /** Decompress with an output cap so a decompression bomb cannot exhaust memory. */
 function decode(buf: Buffer, encoding: string | undefined, maxOutputLength: number): Buffer {
   const opts = { maxOutputLength };
-  switch ((encoding ?? '').trim().toLowerCase()) {
+  const enc = (encoding ?? '').trim().toLowerCase();
+  // Stacked codings (`gzip, br`) are never requested; returning them raw would be silently wrong.
+  if (enc.includes(',')) throw new Error(`Unsupported stacked Content-Encoding: ${enc}`);
+  switch (enc) {
     case 'gzip':
     case 'x-gzip':
       return zlib.gunzipSync(buf, opts);
@@ -122,9 +132,26 @@ function decode(buf: Buffer, encoding: string | undefined, maxOutputLength: numb
       }
     case 'br':
       return zlib.brotliDecompressSync(buf, opts);
-    default:
+    case '':
+    case 'identity':
       return buf;
+    default:
+      throw new Error(`Unsupported Content-Encoding: ${enc}`);
   }
+}
+
+/** Reject when `signal` aborts first (so the overall deadline also covers DNS checks and limiter waits). */
+function raceSignal<T>(p: Promise<T> | T, signal: AbortSignal | undefined, url: string): Promise<T> {
+  if (!signal) return Promise.resolve(p);
+  if (signal.aborted) return Promise.reject(new HttpError('Aborted', 'aborted', url));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new HttpError('Aborted', 'aborted', url));
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(p).then(
+      (v) => (signal.removeEventListener('abort', onAbort), resolve(v)),
+      (e) => (signal.removeEventListener('abort', onAbort), reject(e)),
+    );
+  });
 }
 
 interface AttemptResult {
@@ -243,13 +270,14 @@ export async function httpRequest(input: string | URL, opts: HttpOptions = {}): 
     if (n > 0) await sleep(Math.min(MAX_RETRY_AFTER_MS, lastError?.retryAfterMs ?? backoffMs(n)), signal);
     let url = new URL(input);
     let hopHeaders = headers;
+    let hopOpts = attemptOpts;
     try {
       let hops = 0;
       for (;;) {
         if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new HttpError(`Unsupported protocol ${url.protocol}`, 'blocked', url.toString());
-        await opts.validateUrl?.(url);
-        await opts.limiter?.take();
-        const res = await attempt(url, attemptOpts, hopHeaders);
+        await raceSignal(opts.validateUrl?.(url), signal, url.toString());
+        await raceSignal(opts.limiter?.take(), signal, url.toString());
+        const res = await attempt(url, hopOpts, hopHeaders);
         const location = res.headers.location;
         if (res.status >= 300 && res.status < 400 && res.status !== 304 && location && maxRedirects > 0) {
           if (hops >= maxRedirects) throw new HttpError(`Too many redirects (> ${maxRedirects})`, 'redirect', url.toString(), res.status);
@@ -260,6 +288,12 @@ export async function httpRequest(input: string | URL, opts: HttpOptions = {}): 
           }
           if (next.origin !== url.origin) {
             hopHeaders = Object.fromEntries(Object.entries(hopHeaders).filter(([k]) => !CREDENTIAL_HEADERS.includes(k)));
+          }
+          // Fetch semantics: 301/302/303 after a non-GET become a bodiless GET (never replay a POST body).
+          const m = hopOpts.method ?? 'GET';
+          if (m !== 'GET' && m !== 'HEAD' && (res.status === 301 || res.status === 302 || res.status === 303)) {
+            hopOpts = { ...hopOpts, method: 'GET', body: undefined };
+            hopHeaders = Object.fromEntries(Object.entries(hopHeaders).filter(([k]) => k !== 'content-length' && k !== 'content-type'));
           }
           url = next;
           continue;

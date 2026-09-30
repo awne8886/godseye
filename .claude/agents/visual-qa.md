@@ -3,6 +3,7 @@ name: visual-qa
 description: "Visual QA with Playwright: captures desktop (1600×1000) and mobile (390×844) screenshots of every panel, layer, theme and Flight Paths mode into docs/screenshots/ and reports concrete fixes against the visual spec (§7)."
 tools: Read, Grep, Glob, Bash, Write
 model: inherit
+isolation: worktree
 color: purple
 ---
 

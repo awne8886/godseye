@@ -29,7 +29,11 @@ export function decodeEntities(s: string): string {
   });
 }
 
-/** Strip CDATA, tags and entities to plain text; collapse whitespace. */
+/**
+ * Strip CDATA, tags and entities to plain text; collapse whitespace. Entities are decoded twice on
+ * purpose: many feeds entity-encode their HTML (`&lt;p&gt;`), which must become tags to be
+ * stripped. The result is only ever rendered as React text, never as HTML.
+ */
 export function toPlainText(s: string): string {
   const noCdata = s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
   const decodedOnce = decodeEntities(noCdata);
@@ -66,7 +70,8 @@ export function parseFeed(xml: string): FeedItem[] {
       : (tagText(raw, 'link') || tagAttr(raw, 'atom:link', 'href'));
     items.push({
       title: tagText(raw, 'title') ?? '',
-      link: link || null,
+      // Only http(s) links reach the UI (no javascript:/data: URLs from a feed).
+      link: link && /^https?:\/\//i.test(link.trim()) ? link.trim() : null,
       guid: tagText(raw, isAtom ? 'id' : 'guid'),
       publishedAt: toIso(isAtom ? (tagText(raw, 'published') ?? tagText(raw, 'updated')) : (tagText(raw, 'pubDate') ?? tagText(raw, 'dc:date'))),
       description: tagText(raw, isAtom ? 'summary' : 'description') ?? tagText(raw, 'content') ?? '',

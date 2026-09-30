@@ -33,9 +33,12 @@ nuqs 2 · motion 13 (`motion/react`) · satellite.js 7.1 (OMM JSON + `json2satre
    Liveuamap scraping, DeepState only with `NONCOMMERCIAL=true`, NC sources off when
    `COMMERCIAL_DEPLOYMENT=true`.
 3. **Security.** User-supplied hosts/URLs only through `safeFetch()` (SSRF guard, every hop
-   re-validated). Proxy routes use `matchesAllowList()` with exact host + path prefix. Popups/cards are
-   React components — never `setHTML`/`dangerouslySetInnerHTML` with upstream strings. Per-route rate
-   limits via `withRoute(path, handler, limit)`. No secrets in `NEXT_PUBLIC_*` or query strings.
+   re-validated). Proxy routes fetch only via `allowListedFetch(url, RULES)` (exact host + path prefix
+   AND the SSRF guard on every redirect hop) — never `httpRequest` after a one-off `matchesAllowList`.
+   Popups/cards are React components — never `setHTML`/`dangerouslySetInnerHTML` with upstream
+   strings. Per-route rate limits via `withRoute(path, handler)` (limits come from the catalogue; the
+   client IP is the proxy-appended XFF entry, `x-real-ip` only if `TRUST_PROXY_HEADER` names it).
+   No secrets in `NEXT_PUBLIC_*` or query strings.
 4. **Responsible use.** Passive OSINT on infrastructure only (no people-search). Active scanning only
    via the optional allow-listed scanner backend, described as "proxied through this server". Ask
    before IP-geolocating the visitor. Cameras: official/public feeds only, report/remove button,
@@ -43,21 +46,26 @@ nuqs 2 · motion 13 (`motion/react`) · satellite.js 7.1 (OMM JSON + `json2satre
 5. **No placeholders, TODO stubs or mocked data in shipped code.** Tests may use fixtures.
 
 ## Architecture (read before editing)
-- Contracts (lead-owned, request changes in your report): `src/lib/schemas/*` (zod; types via
-  `src/lib/types.ts`), `layer-registry.ts`, `tool-registry.ts`, `keyboard.ts`, `api-catalog.ts`,
-  `capabilities.ts`, `feature-module.ts`, `layer-host.ts`, `store.ts`, `url-state.ts`, `config.ts`,
-  `src/config/{csp,hosts}.ts`, `src/features/registry.ts`, `src/server/feeds.ts`, root layout,
-  `package.json`, `CLAUDE.md`. Domain builders MAY add optional fields/new schemas in their own
-  `src/lib/schemas/<domain>.ts`; never rename or remove.
+- Lead-owned (request changes in your report with the exact diff): every `src/lib/*.ts` file and
+  `src/lib/regression/**` (schemas excepted below), `src/lib/schemas/common.ts`, `src/lib/types.ts`,
+  `src/config/**`, `src/features/registry.ts`, `src/server/**`, `src/instrumentation.ts`,
+  `src/app/(map)/**`, `src/app/{layout,providers}.tsx`, `src/app/globals.css`, `src/app/api/{health,stats}/**`,
+  `src/components/UrlStateSync.tsx`, `next.config.ts`, `vitest.config.ts`, `playwright.config.ts`,
+  `e2e/*.ts`, `.env.example`, `package.json`, `CLAUDE.md`, `.claude/**`, `TODO.md`. Domain builders MAY
+  add optional fields/new schemas in their own `src/lib/schemas/<domain>.ts`; never rename or remove.
 - Server: routes call `feed.get()` (`src/lib/feeds.ts`), never upstreams directly and never other
   routes over HTTP. Upstream calls use `httpJson/httpText` (`src/lib/http.ts`). Caching:
-  `sourceCache`/`defineFeed` over a `SnapshotStore` (memory / filesystem / Redis). Responses:
+  `sourceCache`/`defineFeed` over a `SnapshotStore` (memory / filesystem / Redis); pass `ctx.signal`
+  to `httpJson`, raise `deadlineMs` for big downloads, `runProvider(fn, count, {allowEmpty: true})`
+  only where "none right now" is truthful (no storms, no squawk 7700). Zone-less UTC upstream times go
+  through `normalizeUtc()`; airport-local times are `LocalTime` (with offset). Responses:
   `feedJson`, `json`, `apiError`, `compressedJson` (bulk, < 4 MB) in `src/lib/respond.ts`. SSE:
   `getHub()`/`sseResponse()` in `src/lib/sse.ts`. Geocoding: `src/lib/geocode.ts` only.
 - Client: one MapLibre map (`src/components/map/MapView.tsx`), one interleaved deck overlay. Feature
   modules plug in via `FeatureModule` (`src/lib/feature-module.ts`): publish deck layers with
   `useDeckLayers()`, native layers via `useMapInstance()`, status via `useLayerStatusStore`, cards via
-  `selection`. Per-frame data lives in refs/typed arrays/workers, never in zustand.
+  `selection`. Card badges use `entityFreshness()` with `OBSERVATION_CADENCE_MS[layer]` (events
+  inherit the feed state). Per-frame data lives in refs/typed arrays/workers, never in zustand.
 - deck.gl on the globe: `parameters: {cullMode: 'none'}` on Arc/GreatCircle (`greatCircle: true`,
   `numSegments ≥ 64`)/Line/Path/Trips/Text/non-billboard Icon; `antialiasing: true` on arc/path/line;
   billboard icons + far-side filter (`isFacing()`); no Hexagon/Heatmap/Contour on the globe (H3 or
@@ -79,12 +87,14 @@ labels and the mobile nav). Glass panels radius 12, blur 24. Motion honours redu
 - layers-space: `src/features/space/**`, `src/app/api/{satellites,space-weather,iss}/**`, `src/workers/tle-propagate.ts`, `src/lib/schemas/space.ts`
 - layers-hazards: `src/features/hazards/**`, `src/app/api/{earthquakes,fires,weather,air-quality,gps-interference,sentinel,weather-radar}/**`, `src/lib/schemas/hazards.ts`
 - layers-surveillance: `src/features/surveillance/**`, `src/app/api/{cctv,live-news}/**`, `src/app/cameras-notice/**`, `src/lib/schemas/surveillance.ts`
-- layers-threats-network: `src/features/{threats,network,maritime}/**`, their routes (maritime, infrastructure, gdacs, gdelt, gdelt-events, conflicts, frontlines, country-risk, malware, cyber-attacks, threatfox, cyber-threats, outages, radar, cloudflare-radar, cables, sdk), `src/lib/schemas/{threats,network,maritime}.ts`
+- layers-threats-network: `src/features/{threats,network,maritime}/**`, their routes (maritime, infrastructure, gdacs [+ alias /api/gdelt], gdelt-events, conflicts, frontlines, country-risk, malware, cyber-attacks, threatfox, cyber-threats, outages [+ alias /api/radar], cloudflare-radar, cables, sdk), `src/lib/schemas/{threats,network,maritime}.ts`
 - panels-alerts-markets-dossier-graph: `src/components/panels/{alerts,markets,dossier,graph,intel}/**`, routes `news, markets, crypto, chain, ticker, scm-suppliers, region-dossier, entity, ai`, `src/lib/schemas/intel.ts`
 - panels-recon: `src/components/panels/{recon,search,directions,draw,arcgis,remote}/**`, routes `osint, scanner, geo, geosearch, directions, arcgis`, `src/lib/schemas/osint.ts`
 - feature-flight-paths: `src/features/flight-paths/**`, `src/app/api/{airports,route,flight}/**`, `tools/build-airports.ts`, `tools/build-routes.ts`, `public/data/{airports,routes}*`, `src/lib/schemas/flight-paths.ts`
 - pages-docs-privacy-ops: `src/app/{docs,privacy}/**`, `Dockerfile`, `docker-compose.yml`, `.github/**`, `README.md`, `docs/{ARCHITECTURE,API,DATA_SOURCES}.md`, `tools/gen-api-docs.ts`, `lighthouserc.json`
-- Shared data log: append your probes to `docs/DATA_SOURCES.md` under your own `## <agent>` heading.
+- Every builder also owns `e2e/<agent>/**` (its Playwright specs) and `docs/data-sources/<agent>.md`
+  (its probe log: status, latency, CORS, auth, licence, sample fields, date). pages-docs-privacy-ops
+  compiles those into `docs/DATA_SOURCES.md`; nobody else edits that file.
 
 ## Report format for builders (≤ 300 words)
 Files created/changed · branch + last commit SHA · commands run with pass/fail (lint, typecheck,

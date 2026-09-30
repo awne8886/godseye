@@ -1,11 +1,13 @@
 /**
  * Network intel contracts. Owner: layers-threats-network.
  * Blocklist indicators (Feodo, ThreatFox) render as points labelled INDICATOR. Attack arcs are
- * drawn only from real, attributed telemetry (Cloudflare Radar origin→target), never synthesised.
+ * drawn only from real, attributed telemetry that names both ends; Cloudflare Radar's
+ * `/attacks/layer3/top/locations/origin` gives origin SHARES only, so it renders as origin points
+ * (no fabricated targets) unless `targetCountryCode` is reported.
  * Geolocated IPs carry `geoPrecision` because an IP's position is approximate by nature.
  */
 import { z } from 'zod';
-import { EntityBase, Envelope, IsoTime } from './common';
+import { EntityBase, Envelope, IsoTime, Lat, Lng } from './common';
 
 export const GeoPrecision = z.enum(['city', 'region', 'country-centroid']);
 
@@ -67,7 +69,7 @@ export const ThreatIndicator = z.object({
   observedAt: IsoTime.nullable(),
   reference: z.url().nullable(),
   source: z.string(),
-  geo: z.object({ lat: z.number(), lng: z.number(), precision: GeoPrecision, country: z.string().nullable() }).nullable(),
+  geo: z.object({ lat: Lat, lng: Lng, precision: GeoPrecision, country: z.string().nullable() }).nullable(),
   label: z.literal('INDICATOR'),
 });
 
@@ -78,8 +80,8 @@ export const KevEntry = z.object({
   vendor: z.string(),
   product: z.string(),
   name: z.string(),
-  dateAdded: z.string(),
-  dueDate: z.string().nullable(),
+  dateAdded: z.iso.date(),
+  dueDate: z.iso.date().nullable(),
   ransomware: z.enum(['Known', 'Unknown']),
   description: z.string(),
 });
@@ -106,6 +108,8 @@ export const AttackOrigin = EntityBase.extend({
   country: z.string(),
   /** Percentage share of L3 attack traffic originating here. */
   sharePct: z.number().min(0).max(100),
+  /** Only when the upstream reports the target side; arcs are drawn only then. */
+  targetCountryCode: z.string().length(2).nullable().optional(),
 });
 
 export const AttackOriginsResponse = Envelope.extend({ items: z.array(AttackOrigin), window: z.string() });

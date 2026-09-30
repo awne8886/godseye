@@ -8,6 +8,7 @@ import type * as S from './schemas';
 
 // common
 export type IsoTime = z.infer<typeof S.IsoTime>;
+export type LocalTime = z.infer<typeof S.LocalTime>;
 export type Lat = z.infer<typeof S.Lat>;
 export type Lng = z.infer<typeof S.Lng>;
 export type LngLat = z.infer<typeof S.LngLat>;
@@ -62,6 +63,7 @@ export type Earthquake = z.infer<typeof S.Earthquake>;
 export type EarthquakesResponse = z.infer<typeof S.EarthquakesResponse>;
 export type FireSatellite = z.infer<typeof S.FireSatellite>;
 export type FirePixel = z.infer<typeof S.FirePixel>;
+export type FIRE_FIELDS = z.infer<typeof S.FIRE_FIELDS>;
 export type FiresResponse = z.infer<typeof S.FiresResponse>;
 export type WeatherEventType = z.infer<typeof S.WeatherEventType>;
 export type WeatherEvent = z.infer<typeof S.WeatherEvent>;

@@ -25,6 +25,8 @@ const nextConfig: NextConfig = {
   images: {
     // Exact hosts only (never '**'). AVIF optimisation stays off (Next < 16.3.3 AVIF RCE class).
     formats: ['image/webp'],
+    // The optimiser re-checks redirects for private IPs but not against remotePatterns: follow none.
+    maximumRedirects: 0,
     remotePatterns: IMAGE_HOSTS.map((h) => {
       const u = new URL(h);
       return { protocol: 'https' as const, hostname: u.hostname, pathname: u.pathname === '/' ? '/**' : `${u.pathname}**` };

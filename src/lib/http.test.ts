@@ -2,6 +2,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import zlib from 'node:zlib';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { userAgent } from './config';
 import { HttpError, errorReason, httpJson, httpRequest, httpText } from './http';
 
 let server: http.Server;
@@ -14,7 +15,21 @@ beforeAll(async () => {
     const path = req.url ?? '/';
     hits[path] = (hits[path] ?? 0) + 1;
     seenHeaders[path] = req.headers;
-    if (path === '/json-text') {
+    if (path === '/post-303') {
+      res.statusCode = 303;
+      res.setHeader('location', '/echo-method');
+      res.end();
+    } else if (path === '/echo-method') {
+      let n = 0;
+      req.on('data', (c: Buffer) => (n += c.length));
+      req.on('end', () => res.end(`${req.method} ${n}`));
+    } else if (path === '/stacked') {
+      res.setHeader('content-encoding', 'gzip, br');
+      res.end(zlib.brotliCompressSync(zlib.gzipSync('x')));
+    } else if (path === '/unknown-enc') {
+      res.setHeader('content-encoding', 'zstd');
+      res.end('x');
+    } else if (path === '/json-text') {
       res.setHeader('content-type', 'text/html'); // EONET-style lie
       res.end('{"ok":true}');
     } else if (path === '/gzip') {
@@ -104,7 +119,24 @@ describe('http client', () => {
   it('refuses spoofed forwarding headers and browser user agents', async () => {
     await expect(httpText(`${base}/`, { headers: { 'X-Forwarded-For': '1.2.3.4' } })).rejects.toMatchObject({ code: 'blocked' });
     await expect(httpText(`${base}/`, { headers: { 'User-Agent': 'Mozilla/5.0 Chrome/140' } })).rejects.toMatchObject({ code: 'blocked' });
-    await expect(httpText(`${base}/`, { headers: { 'User-Agent': 'GODSEYE/0.1.0 (test)' } })).resolves.toMatchObject({ status: 200 });
+    await expect(httpText(`${base}/`, { headers: { 'User-Agent': 'GODSEYE/0.1.0 (test)' } })).rejects.toMatchObject({ code: 'blocked' });
+    await expect(httpText(`${base}/`, { headers: { 'User-Agent': `${userAgent()} Mozilla/5.0 Chrome/140` } })).rejects.toMatchObject({ code: 'blocked' });
+    await expect(httpText(`${base}/`, { headers: { 'User-Agent': `${userAgent()} tle-sync/1` } })).resolves.toMatchObject({ status: 200 });
+    for (const h of ['Host', 'Via', 'X-Forwarded-Host', 'Fastly-Client-IP']) {
+      await expect(httpText(`${base}/`, { headers: { [h]: 'x' } })).rejects.toMatchObject({ code: 'blocked' });
+    }
+  });
+
+  it('turns a POST into a bodiless GET on 303, and rejects stacked or unknown encodings', async () => {
+    const r = await httpText(`${base}/post-303`, { method: 'POST', body: 'secret=1', headers: { 'content-type': 'text/plain' } });
+    expect(r.text).toBe('GET 0');
+    await expect(httpText(`${base}/stacked`)).rejects.toMatchObject({ code: 'parse' });
+    await expect(httpText(`${base}/unknown-enc`)).rejects.toMatchObject({ code: 'parse' });
+  });
+
+  it('applies the overall deadline to limiter waits', async () => {
+    const limiter = { take: () => new Promise<void>(() => undefined) };
+    await expect(httpText(`${base}/`, { limiter: limiter as never, deadlineMs: 50, retries: 0 })).rejects.toMatchObject({ code: 'timeout' });
   });
 
   it('follows redirects and validates every hop', async () => {

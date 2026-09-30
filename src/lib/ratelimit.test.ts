@@ -8,7 +8,7 @@ afterEach(() => setRateLimitStore(undefined));
 describe('client IP', () => {
   const none = { platform: 'none' as const };
   it('ignores platform headers unless that platform is configured (no spoofed cf-connecting-ip)', () => {
-    expect(getClientIp(h({ 'cf-connecting-ip': '9.9.9.9', 'x-real-ip': '5.5.5.5' }), none)).toBe('5.5.5.5');
+    expect(getClientIp(h({ 'cf-connecting-ip': '9.9.9.9', 'x-forwarded-for': '5.5.5.5' }), none)).toBe('5.5.5.5');
     expect(getClientIp(h({ 'cf-connecting-ip': '203.0.113.5', 'x-forwarded-for': '1.1.1.1' }), { platform: 'cloudflare' })).toBe('203.0.113.5');
     expect(getClientIp(h({ 'x-vercel-forwarded-for': '198.51.100.2' }), { platform: 'vercel' })).toBe('198.51.100.2');
     expect(ipTrustFromEnv({ VERCEL: '1' }).platform).toBe('vercel');
@@ -16,18 +16,18 @@ describe('client IP', () => {
     expect(ipTrustFromEnv({ TRUSTED_PLATFORM: 'cloudflare' }).platform).toBe('cloudflare');
   });
 
-  it('then x-real-ip, then the RIGHTMOST forwarded entry', () => {
-    expect(getClientIp(h({ 'x-real-ip': '9.9.9.9', 'x-forwarded-for': '6.6.6.6' }), none)).toBe('9.9.9.9');
+  it('then the RIGHTMOST forwarded entry; x-real-ip only when configured', () => {
+    expect(getClientIp(h({ 'x-real-ip': '9.9.9.9', 'x-forwarded-for': '6.6.6.6' }), none)).toBe('6.6.6.6');
     // A client can prepend anything to XFF; only the proxy-appended rightmost entry counts.
     expect(getClientIp(h({ 'x-forwarded-for': '6.6.6.6, 8.8.4.4' }), none)).toBe('8.8.4.4');
     expect(getClientIp(h({}), none)).toBe('unknown');
   });
 
   it('ignores non-IP junk and unwraps mapped/port forms', () => {
-    expect(getClientIp(h({ 'x-real-ip': '::ffff:1.2.3.4' }), none)).toBe('1.2.3.4');
-    expect(getClientIp(h({ 'x-real-ip': '1.2.3.4:5555' }), none)).toBe('1.2.3.4');
-    expect(getClientIp(h({ 'x-real-ip': '[2001:db8::1]:443' }), none)).toBe('2001:db8::1');
-    expect(getClientIp(h({ 'x-real-ip': 'evil' }), none)).toBe('unknown');
+    expect(getClientIp(h({ 'x-forwarded-for': '::ffff:1.2.3.4' }), none)).toBe('1.2.3.4');
+    expect(getClientIp(h({ 'x-forwarded-for': '1.2.3.4:5555' }), none)).toBe('1.2.3.4');
+    expect(getClientIp(h({ 'x-forwarded-for': '[2001:db8::1]:443' }), none)).toBe('2001:db8::1');
+    expect(getClientIp(h({ 'x-forwarded-for': 'evil' }), none)).toBe('unknown');
   });
 
   it('trusts only the configured header when TRUST_PROXY_HEADER is set', () => {

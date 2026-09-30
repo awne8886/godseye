@@ -15,6 +15,14 @@ export const REPO_URL = 'https://github.com/awne8886/godseye';
  * to an email or URL where providers can reach them; the default points at the issue tracker.
  */
 export function userAgent(env: Record<string, string | undefined> = process.env): string {
-  const contact = env.GODSEYE_CONTACT?.trim() || `${REPO_URL}/issues`;
-  return `${APP_NAME}/${APP_VERSION} (+${REPO_URL}; contact ${contact})`;
+  return `${APP_NAME}/${APP_VERSION} (+${REPO_URL}; contact ${contactFrom(env)})`;
+}
+
+/**
+ * GODSEYE_CONTACT must be a plain email or URL in printable ASCII: a newline or non-Latin-1
+ * character would make every upstream request throw. Invalid values fall back to the tracker.
+ */
+export function contactFrom(env: Record<string, string | undefined>): string {
+  const raw = env.GODSEYE_CONTACT?.trim();
+  return raw && /^[\x21-\x7e]{3,200}$/.test(raw) && !/[()]/.test(raw) ? raw : `${REPO_URL}/issues`;
 }

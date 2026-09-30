@@ -2,7 +2,7 @@
  * Natural hazards, air quality, GPS interference and imagery contracts. Owner: layers-hazards.
  */
 import { z } from 'zod';
-import { EntityBase, Envelope, IsoTime, Lat, Lng } from './common';
+import { EntityBase, Envelope, IsoTime, Lat, Lng, columnarResponse } from './common';
 
 export const Earthquake = EntityBase.extend({
   magnitude: z.number(),
@@ -33,8 +33,13 @@ export const FirePixel = EntityBase.extend({
   dayNight: z.enum(['D', 'N']).nullable(),
 });
 
-export const FiresResponse = Envelope.extend({
-  items: z.array(FirePixel),
+/**
+ * Columnar rows of GET /api/fires (global VIIRS over 24 h is > 100k pixels; the route samples by
+ * FRP, never by stride). `seenAt` = epoch SECONDS of the overpass, `satellite` = FireSatellite value.
+ */
+export const FIRE_FIELDS = ['id', 'lat', 'lng', 'frpMw', 'brightnessK', 'confidence', 'dayNight', 'satellite', 'seenAt'] as const;
+
+export const FiresResponse = columnarResponse(FIRE_FIELDS, 30_000).extend({
   /** Pixels available upstream before FRP/confidence sampling. */
   totalDetections: z.number().int().nonnegative(),
   sampling: z.string(),
@@ -94,12 +99,13 @@ export const GpsJamCell = z.object({
   aircraft: z.number().int().nonnegative(),
   bad: z.number().int().nonnegative(),
   basis: z.enum(['gpsjam-daily', 'live-nacp']),
-  date: z.string().nullable(),
+  /** UTC day of the gpsjam aggregate (null for live NACp bins). */
+  date: z.iso.date().nullable(),
 });
 
 export const GpsInterferenceResponse = Envelope.extend({
   /** Only cells with bad > 0 are returned (the full grid would exceed 4 MB). */
-  items: z.array(GpsJamCell),
+  items: z.array(GpsJamCell).max(30_000),
   totalCells: z.number().int().nonnegative(),
   /** gpsjam's own "suspect data" flag for the day, when published. */
   suspect: z.boolean().nullable(),

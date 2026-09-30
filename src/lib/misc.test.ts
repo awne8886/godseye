@@ -78,3 +78,21 @@ describe('config', () => {
     expect(userAgent({ GODSEYE_CONTACT: 'ops@example.org' })).toContain('contact ops@example.org');
   });
 });
+
+describe('userAgent contact', () => {
+  it('falls back to the tracker when GODSEYE_CONTACT is unsafe for a header', async () => {
+    const { contactFrom, REPO_URL, userAgent } = await import('./config');
+    expect(contactFrom({ GODSEYE_CONTACT: 'ops@example.org' })).toBe('ops@example.org');
+    expect(contactFrom({ GODSEYE_CONTACT: 'a\r\nX-Evil: 1' })).toBe(`${REPO_URL}/issues`);
+    expect(contactFrom({ GODSEYE_CONTACT: 'mañana@example.org' })).toBe(`${REPO_URL}/issues`);
+    expect(userAgent({ GODSEYE_CONTACT: 'ops@example.org' })).toMatch(/^GODSEYE\/\d+\.\d+\.\d+ \(\+https:\/\/github\.com\/awne8886\/godseye; contact ops@example\.org\)$/);
+  });
+});
+
+describe('RSS links', () => {
+  it('keeps only http(s) item links', async () => {
+    const { parseFeed } = await import('./rss');
+    const xml = '<rss><channel><item><title>a</title><link>javascript:alert(1)</link></item><item><title>b</title><link> https://example.org/b </link></item></channel></rss>';
+    expect(parseFeed(xml).map((i) => i.link)).toEqual([null, 'https://example.org/b']);
+  });
+});

@@ -200,8 +200,8 @@ export const CryptoResponse = Envelope.extend({
 /** GET /api/chain/daily */
 export const ChainBriefResponse = Envelope.extend({
   windowDays: z.number().int().min(1).max(120),
-  exploits: z.array(z.object({ name: z.string(), date: z.string(), amountUsd: z.number().nullable(), chain: z.string().nullable(), technique: z.string().nullable(), source: z.string() })),
-  cves: z.array(z.object({ id: z.string(), cvss: z.number().nullable(), summary: z.string(), published: z.string() })),
+  exploits: z.array(z.object({ name: z.string(), date: z.iso.date(), amountUsd: z.number().nullable(), chain: z.string().nullable(), technique: z.string().nullable(), source: z.string() })),
+  cves: z.array(z.object({ id: z.string(), cvss: z.number().nullable(), summary: z.string(), published: IsoTime })),
   sanctionedWallets: z.array(z.object({ address: z.string(), chain: z.string(), entity: z.string() })),
   degraded: z.array(z.string()),
 });

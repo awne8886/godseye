@@ -24,6 +24,8 @@ export interface FeedContext<T> {
   previous: T | null;
   etag: string | null;
   lastModified: string | null;
+  /** Aborted when the refresh deadline passes: pass it to httpJson({signal}). */
+  signal: AbortSignal;
 }
 
 export interface FeedData<T> {
@@ -50,8 +52,15 @@ export interface FeedDef<T> {
   idleStopMs?: number;
   /** Start polling at boot (core feeds: quakes, news, weather, markets). */
   eager?: boolean;
-  /** Retry delay after a failure (default 60 s). */
+  /** Retry delay after a failure (default 60 s). The poller honours it too. */
   retryAfterErrorMs?: number;
+  /** Hard deadline for one run() (default 25 s); raise it for large downloads (FIRMS, OurAirports). */
+  deadlineMs?: number;
+  /**
+   * An upstream that keeps answering 200 with frozen data is not LIVE: when the newest observation
+   * (FeedData.observedAt) is older than this, the feed state is capped at `stale`.
+   */
+  maxObservationAgeMs?: number;
 }
 
 export interface FeedResult<T> {
@@ -73,7 +82,8 @@ export interface Feed<T> {
   readonly def: FeedDef<T>;
   get(opts?: { waitForFresh?: boolean }): Promise<FeedResult<T>>;
   peek(): FeedResult<T>;
-  refresh(): Promise<FeedResult<T>>;
+  /** Refresh now; honours the error back-off unless `force`. */
+  refresh(opts?: { force?: boolean }): Promise<FeedResult<T>>;
   health(): FeedHealth;
   start(): void;
   stop(): void;
@@ -88,13 +98,22 @@ interface Registry {
 const G = globalThis as unknown as { __godseyeFeeds?: Registry };
 const registry: Registry = (G.__godseyeFeeds ??= { feeds: new Map(), timers: new Map(), lastRead: new Map() });
 
-/** Measure one provider call. `count` extracts how many records it contributed. */
-export async function runProvider<R>(fn: () => Promise<R>, count: (r: R) => number): Promise<{ result: R | null; run: ProviderRun }> {
+/**
+ * Measure one provider call. `count` extracts how many records it contributed. Zero records is a
+ * failure (`error: 'empty'`) unless `allowEmpty`: set it only for upstreams where "none right now"
+ * is a truthful answer (NHC with no active storms, no emergency squawks, no space-weather alerts).
+ */
+export async function runProvider<R>(
+  fn: () => Promise<R>,
+  count: (r: R) => number,
+  opts: { allowEmpty?: boolean } = {},
+): Promise<{ result: R | null; run: ProviderRun }> {
   const t0 = Date.now();
   try {
     const result = await fn();
     const n = count(result);
-    return { result, run: { status: { ok: n > 0, count: n, ms: Date.now() - t0, age_s: 0, ...(n > 0 ? {} : { error: 'empty' }) }, okAt: n > 0 ? Date.now() : null } };
+    const ok = n > 0 || opts.allowEmpty === true;
+    return { result, run: { status: { ok, count: n, ms: Date.now() - t0, age_s: ok ? 0 : null, ...(ok ? {} : { error: 'empty' }) }, okAt: ok ? Date.now() : null } };
   } catch (e) {
     return { result: null, run: { status: { ok: false, count: 0, ms: Date.now() - t0, age_s: null, error: errorReason(e) }, okAt: null } };
   }
@@ -120,27 +139,37 @@ export function defineFeed<T>(def: FeedDef<T>): Feed<T> {
   const isEmpty = def.isEmpty ?? ((d: T) => def.count(d) === 0);
   const cache: SourceCache<T> = sourceCache<T>(
     `feed:${def.key}`,
-    async (prev) => {
-      const out = await def.run({ previous: prev?.data ?? null, etag: prev?.etag ?? null, lastModified: prev?.lastModified ?? null });
-      if ('notModified' in out) return { notModified: true };
+    async (prev, signal) => {
+      const out = await def.run({ previous: prev?.data ?? null, etag: prev?.etag ?? null, lastModified: prev?.lastModified ?? null, signal });
+      if ('notModified' in out) {
+        // The providers that answered before just revalidated: their age restarts now.
+        const before = (prev?.meta?.providers ?? {}) as Record<string, ProviderRun>;
+        const now = Date.now();
+        const providers = Object.fromEntries(Object.entries(before).map(([k, r]) => [k, r.okAt ? { ...r, okAt: now } : r]));
+        return { notModified: true, meta: { providers } };
+      }
       return { data: out.data, etag: out.etag, lastModified: out.lastModified, meta: { providers: out.providers, observedAt: out.observedAt ?? null } };
     },
-    { ttlMs: def.ttlMs, isEmpty, retryAfterErrorMs: def.retryAfterErrorMs },
+    { ttlMs: def.ttlMs, isEmpty, retryAfterErrorMs: def.retryAfterErrorMs, deadlineMs: def.deadlineMs, pin: true },
   );
 
   const toResult = (r: ReturnType<SourceCache<T>['peek']>): FeedResult<T> => {
     const now = Date.now();
     const lastGood = r.fetchedAt;
     const hasData = r.data !== null && lastGood !== null && lastGood > 0;
-    const state = hasData
+    const observedAt = (r.meta.observedAt as number | null | undefined) ?? null;
+    let state = hasData
       ? freshnessState({ kind: def.kind, at: lastGood, cadenceMs: def.ttlMs, failed: r.error !== null, now })
       : 'offline';
+    if ((state === 'live' || state === 'recent') && def.maxObservationAgeMs && observedAt !== null && now - observedAt > def.maxObservationAgeMs) {
+      state = 'stale';
+    }
     const meta: FeedMeta = {
       feed: def.key,
       kind: def.kind,
       state,
       fetchedAt: toIso(lastGood),
-      observedAt: toIso((r.meta.observedAt as number | null | undefined) ?? null),
+      observedAt: toIso(observedAt),
       lastGoodAt: toIso(lastGood),
       stale: r.stale,
       ttlSeconds: Math.max(1, Math.round(def.ttlMs / 1000)),
@@ -159,8 +188,8 @@ export function defineFeed<T>(def: FeedDef<T>): Feed<T> {
       return toResult(await cache.get(opts));
     },
     peek: () => toResult(cache.peek()),
-    async refresh() {
-      return toResult(await cache.refresh());
+    async refresh(opts) {
+      return toResult(await cache.refresh(opts));
     },
     health() {
       const r = feed.peek();
@@ -183,7 +212,8 @@ export function defineFeed<T>(def: FeedDef<T>): Feed<T> {
           feed.stop();
           return;
         }
-        if (cache.isStale()) void cache.refresh();
+        // dueForRefresh honours the error back-off, so a failing upstream is not hit every poll.
+        if (cache.dueForRefresh()) void cache.refresh();
       }, pollMs);
       timer.unref?.();
       registry.timers.set(def.key, timer);

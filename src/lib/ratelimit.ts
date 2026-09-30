@@ -3,10 +3,15 @@
  *  - getClientIp(): the platform-verified client IP. A platform header is trusted only when that
  *    platform is actually in front of us (`TRUSTED_PLATFORM=cloudflare|vercel|akamai`, Vercel is
  *    auto-detected), otherwise any client could rotate `cf-connecting-ip` to get fresh buckets.
- *    Then `x-real-ip` (set by our nginx/Caddy), then the RIGHTMOST X-Forwarded-For entry.
- *    `TRUST_PROXY_HEADER=<header>` trusts exactly one header instead. IPv6 clients are keyed by /64.
+ *    Otherwise the X-Forwarded-For entry appended by our own proxy: the RIGHTMOST entry, or the
+ *    `TRUSTED_PROXY_HOPS`-th from the right behind a chain of proxies. `x-real-ip` is NOT trusted by
+ *    default (most PaaS edges pass a client-sent one through untouched); an operator whose proxy
+ *    overwrites it sets `TRUST_PROXY_HEADER=x-real-ip`. `TRUST_PROXY_HEADER=<header>` trusts exactly
+ *    that one header. The app must never be exposed without a proxy that overwrites XFF (Next only
+ *    sets XFF when the client did not). IPv6 clients are keyed by /64.
  *  - rateLimit(): per-route buckets keyed `${bucket}:${ip}` (AI routes share the `ai` bucket),
- *    fixed window, in memory with an LRU cap or in Redis (atomic SET NX PX + INCR).
+ *    fixed window, in memory (expired-first eviction; a saturated table denies fail-closed routes)
+ *    or in Redis (one Lua script: INCR + PEXPIRE when the key has no TTL).
  *  - TokenBucket / SerialQueue: server-side politeness for each upstream's documented limit.
  * Owner: lead. Server-only.
  */
@@ -30,13 +35,16 @@ export interface IpTrust {
   header?: string;
   /** The edge platform in front of the app. */
   platform?: Platform | 'none';
+  /** Trusted proxies appending to X-Forwarded-For (default 1: take the rightmost entry). */
+  hops?: number;
 }
 
 export function ipTrustFromEnv(env: Record<string, string | undefined> = process.env): IpTrust {
   const header = env.TRUST_PROXY_HEADER?.trim().toLowerCase();
   const p = env.TRUSTED_PLATFORM?.trim().toLowerCase();
   const platform = p && p in PLATFORM_HEADER ? (p as Platform) : env.VERCEL ? 'vercel' : 'none';
-  return { header: header && header !== 'auto' ? header : undefined, platform };
+  const hops = Number(env.TRUSTED_PROXY_HOPS ?? 1);
+  return { header: header && header !== 'auto' ? header : undefined, platform, hops: Number.isInteger(hops) && hops >= 1 ? hops : 1 };
 }
 
 export function getClientIp(headers: Headers, trust: IpTrust = ipTrustFromEnv()): string {
@@ -48,11 +56,10 @@ export function getClientIp(headers: Headers, trust: IpTrust = ipTrustFromEnv())
     const ip = cleanIp(headers.get(PLATFORM_HEADER[trust.platform])?.split(',')[0]);
     if (ip) return ip;
   }
-  const real = cleanIp(headers.get('x-real-ip'));
-  if (real) return real;
   const xff = headers.get('x-forwarded-for');
   if (xff) {
-    const ip = cleanIp(xff.split(',').at(-1));
+    const parts = xff.split(',').map((x) => x.trim()).filter(Boolean);
+    const ip = cleanIp(parts[parts.length - (trust.hops ?? 1)]);
     if (ip) return ip;
   }
   return 'unknown';
@@ -76,51 +83,62 @@ export interface RateLimitResult {
   resetAt: number;
 }
 
+export interface RateLimitHit {
+  count: number;
+  resetAt: number;
+  /** The in-memory table was full of live windows and this key could not be tracked. */
+  saturated?: boolean;
+}
+
 export interface RateLimitStore {
-  hit(key: string, windowMs: number): Promise<{ count: number; resetAt: number }>;
+  hit(key: string, windowMs: number): Promise<RateLimitHit>;
 }
 
 export class MemoryRateLimitStore implements RateLimitStore {
   private readonly buckets = new Map<string, { count: number; resetAt: number }>();
   constructor(private readonly maxKeys = 50_000) {}
-  async hit(key: string, windowMs: number) {
+  async hit(key: string, windowMs: number): Promise<RateLimitHit> {
     const now = Date.now();
     let b = this.buckets.get(key);
-    if (!b || b.resetAt <= now) b = { count: 0, resetAt: now + windowMs };
-    b.count++;
-    this.buckets.delete(key);
-    this.buckets.set(key, b);
-    if (this.buckets.size > this.maxKeys) {
-      for (const [k, v] of this.buckets) {
-        if (this.buckets.size <= this.maxKeys) break;
-        if (v.resetAt <= now || this.buckets.size > this.maxKeys) this.buckets.delete(k);
+    if (!b || b.resetAt <= now) {
+      if (!b && this.buckets.size >= this.maxKeys) {
+        // Only expired windows are evicted: rotating keys must never reset other clients' counters.
+        for (const [k, v] of this.buckets) if (v.resetAt <= now) this.buckets.delete(k);
+        if (this.buckets.size >= this.maxKeys) return { count: 1, resetAt: now + windowMs, saturated: true };
       }
+      b = { count: 0, resetAt: now + windowMs };
+      this.buckets.set(key, b);
     }
+    b.count++;
     return { count: b.count, resetAt: b.resetAt };
   }
 }
 
-interface RedisCounter {
-  set(key: string, value: string, ...args: (string | number)[]): Promise<unknown>;
-  incr(key: string): Promise<number>;
-  pttl(key: string): Promise<number>;
+export interface RedisCounter {
+  eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>;
 }
+
+/** INCR, and give the key its window TTL whenever it has none (new key, or recreated after expiry). */
+const FIXED_WINDOW = "local c = redis.call('INCR', KEYS[1]); local t = redis.call('PTTL', KEYS[1]); if t < 0 then redis.call('PEXPIRE', KEYS[1], ARGV[1]); t = tonumber(ARGV[1]) end; return {c, t}";
 
 export class RedisRateLimitStore implements RateLimitStore {
   private client: Promise<RedisCounter> | null = null;
   constructor(private readonly url: string) {}
   private redis() {
-    this.client ??= import('ioredis').then(({ Redis }) => new Redis(this.url, { maxRetriesPerRequest: 1 }) as unknown as RedisCounter);
+    if (!this.client) {
+      const p = import('ioredis').then(({ Redis }) => new Redis(this.url, { maxRetriesPerRequest: 1 }) as unknown as RedisCounter);
+      // A failed connect is retried on the next hit instead of being cached forever.
+      p.catch(() => {
+        if (this.client === p) this.client = null;
+      });
+      this.client = p;
+    }
     return this.client;
   }
-  async hit(key: string, windowMs: number) {
+  async hit(key: string, windowMs: number): Promise<RateLimitHit> {
     const r = await this.redis();
-    const k = `godseye:rl:${key}`;
-    // Create the window with its expiry atomically, then count; a crash can never leave a key without TTL.
-    await r.set(k, '0', 'PX', windowMs, 'NX');
-    const count = await r.incr(k);
-    const ttl = await r.pttl(k);
-    return { count, resetAt: Date.now() + (ttl > 0 ? ttl : windowMs) };
+    const [count, ttl] = (await r.eval(FIXED_WINDOW, 1, `godseye:rl:${key}`, Math.max(1, Math.round(windowMs)))) as [number, number];
+    return { count: Number(count), resetAt: Date.now() + (Number(ttl) > 0 ? Number(ttl) : windowMs) };
   }
 }
 
@@ -146,12 +164,13 @@ export interface RateLimitOptions {
 }
 
 export async function checkRateLimit(bucket: string, ip: string, limit: number, windowS: number, failClosed = false): Promise<RateLimitResult> {
-  let hit: { count: number; resetAt: number };
+  let hit: RateLimitHit;
   try {
     hit = await store().hit(`${bucket}:${ipBucketKey(ip)}`, windowS * 1000);
   } catch {
     return { allowed: !failClosed, limit, remaining: failClosed ? 0 : limit, resetAt: Date.now() + windowS * 1000 };
   }
+  if (hit.saturated && failClosed) return { allowed: false, limit, remaining: 0, resetAt: hit.resetAt };
   return { allowed: hit.count <= limit, limit, remaining: Math.max(0, limit - hit.count), resetAt: hit.resetAt };
 }
 
@@ -176,8 +195,8 @@ export class TokenBucket {
   private last = Date.now();
   private chain: Promise<void> = Promise.resolve();
   constructor(
-    private readonly ratePerSec: number,
-    private readonly burst = 1,
+    readonly ratePerSec: number,
+    readonly burst = 1,
   ) {
     this.tokens = burst;
   }
@@ -214,6 +233,9 @@ export function providerBucket(name: string, ratePerSec: number, burst = 1): Tok
   if (!b) {
     b = new TokenBucket(ratePerSec, burst);
     map.set(name, b);
+  } else if (b.ratePerSec !== ratePerSec || b.burst !== burst) {
+    // Two call sites disagreeing about an upstream's limit is a bug, not something to paper over.
+    throw new Error(`providerBucket('${name}') already exists with rate ${b.ratePerSec}/s burst ${b.burst}`);
   }
   return b;
 }

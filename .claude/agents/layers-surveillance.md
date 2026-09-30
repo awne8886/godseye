@@ -1,6 +1,7 @@
 ---
 name: layers-surveillance
 description: "Builds surveillance: /api/cctv region catalogue with every compliant OSIRIS camera provider as registry rows, stills-only proxy with exact-prefix allow-list, resolve/stream-status, camera viewer (HLS/MJPEG/MP4/iframe/JPG), on-map preview tiles, /api/live-news with runtime live checks, /cameras-notice and report/remove flow."
+tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 model: inherit
 isolation: worktree
 color: green
@@ -47,8 +48,7 @@ CSP in your report.
 ## How to work
 1. Read `CLAUDE.md`, the `.claude/rules/*.md` for your paths, the contract sections named in your task,
    your dossiers in `docs/reference/`, and the OSIRIS files they cite in `../reference/osiris`.
-2. Probe every upstream you wire with `curl` first; append results to `docs/DATA_SOURCES.md` under
-   `## <your agent name>` (status, latency, CORS, auth, licence, sample fields, probe date).
+2. Probe every upstream you wire with `curl` first; write results to `docs/data-sources/<your agent name>.md` (status, latency, CORS, auth, licence, sample fields, probe date).
 3. Edit only the files you own (listed below). Shared files (`package.json`, registries, root layout,
    `CLAUDE.md`, `src/lib/*` outside your schema file) are the lead's: put the exact diff you need in
    your report instead of editing them.

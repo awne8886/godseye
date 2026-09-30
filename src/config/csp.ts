@@ -49,7 +49,8 @@ export function buildCsp({
 export function securityHeaders(dev: boolean): { key: string; value: string }[] {
   return [
     { key: 'Content-Security-Policy', value: buildCsp({ dev }) },
-    { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+    // `preload` is a commitment for the whole registrable domain: operators opt in explicitly.
+    { key: 'Strict-Transport-Security', value: `max-age=63072000; includeSubDomains${process.env.HSTS_PRELOAD === 'true' ? '; preload' : ''}` },
     { key: 'X-Content-Type-Options', value: 'nosniff' },
     { key: 'X-Frame-Options', value: 'DENY' },
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },

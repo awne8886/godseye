@@ -314,11 +314,17 @@ export function layersInGroup(group: LayerGroupId): LayerDef[] {
 
 export const DEFAULT_ACTIVE_LAYERS: readonly LayerId[] = LAYERS.filter((l) => l.defaultOn).map((l) => l.id);
 
-/** Parse `?layers=a,b,c`, dropping unknown ids and duplicates, preserving registry order. */
+/**
+ * Parse `?layers=a,b,c`, dropping unknown ids and duplicates, preserving registry order. An explicit
+ * empty value means "all off"; a value with no known id at all (typo, retired OSIRIS id) is ignored
+ * (null) rather than blanking the map.
+ */
 export function parseLayersParam(value: string | null | undefined): LayerId[] | null {
   if (value == null) return null;
-  const wanted = new Set(value.split(',').map((s) => s.trim()).filter(Boolean));
-  return LAYER_IDS.filter((id) => wanted.has(id));
+  const parts = value.split(',').map((s) => s.trim()).filter(Boolean);
+  const wanted = new Set(parts);
+  const out = LAYER_IDS.filter((id) => wanted.has(id));
+  return out.length || parts.length === 0 ? out : null;
 }
 
 export function serializeLayersParam(active: Iterable<string>): string {
@@ -326,7 +332,6 @@ export function serializeLayersParam(active: Iterable<string>): string {
   return LAYER_IDS.filter((id) => set.has(id)).join(',');
 }
 
-/** Layers the visitor can actually toggle given server capabilities (from /api/health). */
 /** Choose the entity to open when several layers report a hit under the cursor. */
 export function choosePick<T extends { layer: string }>(hits: readonly T[]): T | null {
   let best: T | null = null;
@@ -341,6 +346,65 @@ export function choosePick<T extends { layer: string }>(hits: readonly T[]): T |
   return best;
 }
 
+/** Layers the visitor can actually toggle given server capabilities (from /api/health). */
 export function visibleLayers(capabilities: Partial<Record<CapabilityId, { enabled: boolean }>>): LayerDef[] {
   return LAYERS.filter((l) => l.capability === null || capabilities[l.capability]?.enabled === true);
 }
+
+/**
+ * Default-on layers the deployment can serve. The shell applies this once /api/health has loaded
+ * (before the first URL write), so a licence-gated default (e.g. sdk_sea without nc_sources) never
+ * lands in a share link or calls a gated route.
+ */
+export function defaultLayersFor(capabilities: Partial<Record<CapabilityId, { enabled: boolean }>>): LayerId[] {
+  const ok = new Set(visibleLayers(capabilities).map((l) => l.id));
+  return DEFAULT_ACTIVE_LAYERS.filter((id) => ok.has(id));
+}
+
+/**
+ * How often a sensor re-observes an entity of this layer (ms), for entity-card freshness via
+ * `entityFreshness()` in src/lib/freshness.ts. `null` = event or reference layer: an event is not
+ * re-observed, so its card inherits the feed state and shows the event's age as text. This is NOT
+ * the client poll interval (`refreshMs`): a real two-hour-old quake from a feed polled a minute ago
+ * is not STALE.
+ */
+export const OBSERVATION_CADENCE_MS = {
+  sdk_sea: 60_000,
+  flights: 60_000,
+  private: 60_000,
+  jets: 60_000,
+  military: 60_000,
+  gps_jam: null,
+  maritime: 10 * 60_000,
+  satellites: null,
+  sat_comms: null,
+  sat_military: null,
+  sat_navigation: null,
+  sat_earth: null,
+  sat_science: null,
+  cctv: null,
+  cctv_previews: null,
+  live_news: null,
+  earthquakes: null,
+  fires: null,
+  weather: null,
+  air_quality: null,
+  weather_radar: null,
+  infrastructure: null,
+  global_incidents: null,
+  alert_pins: null,
+  gdelt_events: null,
+  conflict_zones: null,
+  frontlines: null,
+  country_risk: null,
+  malware: null,
+  cyber_attacks: null,
+  threatfox: null,
+  cf_outages: null,
+  cf_attacks: null,
+  day_night: null,
+  terrain_3d: null,
+  terrain_elevation: null,
+  gibs_truecolor: null,
+  sentinel: null,
+} as const satisfies Record<LayerId, number | null>;

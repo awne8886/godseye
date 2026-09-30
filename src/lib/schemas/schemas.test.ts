@@ -48,7 +48,7 @@ describe('shared schemas', () => {
 
   it('enforces the columnar field order and row width', () => {
     const row = FLIGHT_FIELDS.map(() => null);
-    const ok = { meta, providers: {}, fields: [...FLIGHT_FIELDS], rows: [row], counts: { commercial: 1, private: 0, jet: 0, military: 0, total: 1, noPosition: 0 } };
+    const ok = { meta, providers: {}, fields: [...FLIGHT_FIELDS], rows: [row], sources: ['adsblol'], counts: { commercial: 1, private: 0, jet: 0, military: 0, total: 1, noPosition: 0 } };
     expect(FlightsResponse.safeParse(ok).success).toBe(true);
     expect(FlightsResponse.safeParse({ ...ok, fields: [...FLIGHT_FIELDS].reverse() }).success).toBe(false);
     expect(FlightsResponse.safeParse({ ...ok, rows: [row.slice(1)] }).success).toBe(false);

@@ -221,6 +221,8 @@ export interface AllowRule {
   /** Required path prefix, matched on a `/` boundary, e.g. `/jamcams.tfl.gov.uk/`. */
   pathPrefix: string;
   protocols?: readonly ('https:' | 'http:')[];
+  /** Exact non-default port, when the operator serves on one (default: scheme port only). */
+  port?: string;
 }
 
 /**
@@ -228,17 +230,44 @@ export interface AllowRule {
  * credentials and non-default ports so a prefix cannot be escaped.
  */
 export function matchesAllowList(url: URL, rules: readonly AllowRule[]): boolean {
-  if (url.username || url.password || url.port) return false;
+  if (url.username || url.password) return false;
   const rawPath = url.pathname;
   if (/%2f|%5c|%2e/i.test(rawPath) || rawPath.split('/').some((seg) => seg === '..' || seg === '.')) return false;
   const host = url.hostname.toLowerCase();
   return rules.some((r) => {
     const protocols = r.protocols ?? ['https:'];
     if (!protocols.includes(url.protocol as 'https:' | 'http:')) return false;
+    if (url.port !== (r.port ?? '')) return false;
     const hostOk = r.host.startsWith('*.') ? host.endsWith(r.host.slice(1)) && host.length > r.host.length - 1 : host === r.host.toLowerCase();
     // A prefix is a directory boundary: `/arcgis` matches `/arcgis` and `/arcgis/…`, never `/arcgis-evil/`.
     const prefix = r.pathPrefix;
     const pathOk = prefix.endsWith('/') ? rawPath.startsWith(prefix) : rawPath === prefix || rawPath.startsWith(`${prefix}/`);
     return hostOk && pathOk;
+  });
+}
+
+/**
+ * The only fetch proxy routes may use (camera stills, ArcGIS, any future tile/image proxy): every
+ * hop — the first URL and each redirect — must match `rules` AND pass the SSRF guard, with the
+ * guarded socket lookup. Never call httpRequest() after a one-off matchesAllowList() check: that
+ * follows redirects off the allow-list.
+ */
+export function allowListedFetch(
+  url: string | URL,
+  rules: readonly AllowRule[],
+  { resolve = defaultResolver, isBlocked = isReservedIp, ports = ALLOWED_PORTS, ...opts }: SafeFetchOptions = {},
+): Promise<HttpResult> {
+  return httpRequest(url, {
+    maxRedirects: 2,
+    retries: 0,
+    timeoutMs: 8000,
+    deadlineMs: 15_000,
+    maxBytes: 5 * 1024 * 1024,
+    ...opts,
+    validateUrl: async (u) => {
+      if (!matchesAllowList(u, rules)) throw new HttpError('URL is not on this route\'s allow-list', 'blocked', u.toString());
+      await assertPublicUrl(u, resolve, isBlocked, ports);
+    },
+    lookup: makeGuardedLookup(resolve, isBlocked),
   });
 }

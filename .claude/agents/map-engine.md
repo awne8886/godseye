@@ -1,6 +1,7 @@
 ---
 name: map-engine
 description: "Builds the MapLibre 6 globe engine: basemaps (OpenFreeMap restyle, Esri SAT, GIBS), atmosphere, twilight terminator worker + night lights, terrain, 3D buildings, deck.gl overlay host with globe workarounds, picking, cursor readout. Use for src/components/map/** and src/lib/map/**."
+tools: Read, Write, Edit, Bash, Glob, Grep, WebFetch, WebSearch
 model: inherit
 isolation: worktree
 color: blue
@@ -48,8 +49,7 @@ flyTo requests from the store; theme/palette changes applied in place. Missing s
 ## How to work
 1. Read `CLAUDE.md`, the `.claude/rules/*.md` for your paths, the contract sections named in your task,
    your dossiers in `docs/reference/`, and the OSIRIS files they cite in `../reference/osiris`.
-2. Probe every upstream you wire with `curl` first; append results to `docs/DATA_SOURCES.md` under
-   `## <your agent name>` (status, latency, CORS, auth, licence, sample fields, probe date).
+2. Probe every upstream you wire with `curl` first; write results to `docs/data-sources/<your agent name>.md` (status, latency, CORS, auth, licence, sample fields, probe date).
 3. Edit only the files you own (listed below). Shared files (`package.json`, registries, root layout,
    `CLAUDE.md`, `src/lib/*` outside your schema file) are the lead's: put the exact diff you need in
    your report instead of editing them.

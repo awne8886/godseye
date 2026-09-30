@@ -75,12 +75,13 @@ describe('response helpers', () => {
   });
 
   it('withRoute hides internal errors behind a uniform 500', async () => {
-    const h = withRoute('/api/test-boom', () => {
+    expect(() => withRoute('/api/not-catalogued', () => new Response())).toThrow(/not in API_CATALOG/);
+    const h = withRoute('/api/stats', () => {
       throw new Error('secret stack');
     });
     const orig = console.error;
     console.error = () => undefined;
-    const r = await h(new Request('http://x/', { headers: { 'x-real-ip': '4.4.4.4' } }), undefined);
+    const r = await h(new Request('http://x/', { headers: { 'x-forwarded-for': '4.4.4.4' } }), undefined);
     console.error = orig;
     expect(r.status).toBe(500);
     expect(JSON.stringify(await r.json())).not.toContain('secret');
@@ -96,10 +97,19 @@ describe('withRoute takes limits from the API catalogue', () => {
     const statuses: number[] = [];
     for (let i = 0; i < 6; i++) {
       const route = routes[i % 3]!;
-      const res = await withRoute(route, ok)(new Request(`http://x${route}`, { method: 'POST', headers: { 'x-real-ip': '4.3.2.1' } }), undefined);
+      const res = await withRoute(route, ok)(new Request(`http://x${route}`, { method: 'POST', headers: { 'x-forwarded-for': '4.3.2.1' } }), undefined);
       statuses.push(res.status);
     }
     expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
     setRateLimitStore(undefined);
+  });
+});
+
+describe('acceptedEncodings', () => {
+  it('honours q=0 and parameters', async () => {
+    const { acceptedEncodings } = await import('./respond');
+    expect([...acceptedEncodings('br;q=0, gzip;q=0.8, identity')]).toEqual(['gzip', 'identity']);
+    expect(acceptedEncodings(null).size).toBe(0);
+    expect(acceptedEncodings('gzip, br').has('br')).toBe(true);
   });
 });

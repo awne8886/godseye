@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -152,8 +152,15 @@ describe('snapshot stores', () => {
       expect(await s.get('feed:y')).toBeNull();
       await s.delete('feed:x');
       expect(await s.get('feed:x')).toBeNull();
-      expect(await s.acquire('k', 1000)).toBe(true);
-      expect(await s.acquire('k', 1000)).toBe(false);
+      const t = await s.acquire('k', 1000);
+      expect(t).toBeTruthy();
+      expect(await s.acquire('k', 1000)).toBeNull();
+      await s.release('k', t!);
+      expect(await s.acquire('k', 1000)).toBeTruthy();
+      // Expired entries are deleted from disk on read.
+      await s.set('feed:old', snap, -1);
+      expect(await s.get('feed:old')).toBeNull();
+      expect(readdirSync(dir).filter((f) => f.endsWith('.json'))).toHaveLength(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -171,14 +178,22 @@ describe('snapshot stores', () => {
         return 'OK';
       },
       del: async (k: string) => kv.delete(k),
+      eval: async (_script: string, _n: number, k: string | number, token: string | number) => {
+        if (kv.get(String(k)) !== token) return 0;
+        kv.delete(String(k));
+        return 1;
+      },
     };
     const s = new RedisStore(async () => fake);
     await s.set('a', snap, 5000);
     expect(await s.get('a')).toEqual(snap);
     expect(calls[0]).toEqual(['godseye:snap:a', 'PX', 5000]);
-    expect(await s.acquire('a', 30_000)).toBe(true);
-    expect(await s.acquire('a', 30_000)).toBe(false);
-    await s.release('a');
-    expect(await s.acquire('a', 30_000)).toBe(true);
+    const token = await s.acquire('a', 30_000);
+    expect(token).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await s.acquire('a', 30_000)).toBeNull();
+    await s.release('a', 'someone-else');
+    expect(await s.acquire('a', 30_000)).toBeNull();
+    await s.release('a', token!);
+    expect(await s.acquire('a', 30_000)).toBeTruthy();
   });
 });

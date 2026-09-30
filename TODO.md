@@ -40,6 +40,53 @@ Kept current by the lead after every phase. The build is done when this file is 
 - [x] CSP hosts path-scoped (S3 bucket, Esri World_Imagery, GIBS wmts, RainViewer); creodias + Telegram
       image hosts; official HLS/mp4 media hosts (TfL, NV, LA, IN, Telegram)
 
+## Phase 1 (2 contract reviewers) — 2 blocking + 14 major fixed by the lead, regression tests in `src/lib/regression/`
+- [x] B1 poller honours the error back-off (`dueForRefresh`, `refresh({force})`); B2 `allowListedFetch` re-checks
+      allow-list + SSRF guard on every hop (next/image `maximumRedirects: 0`)
+- [x] SSE: idempotent per-IP release on every exit path, slow-consumer drop (2 MB), encode-once broadcast,
+      bare-CR line breaks, default max duration on Vercel
+- [x] Cache: owner-token locks with compare-and-delete, fetch deadline + AbortSignal below the lock TTL, feed
+      snapshots pinned (never evicted by per-query caches), 304-without-data recorded, provider age refreshed
+      on 304, FileStore deletes expired files, L1 on globalThis
+- [x] Rate limits: `x-real-ip` only via `TRUST_PROXY_HEADER`, `TRUSTED_PROXY_HOPS`, Redis Lua fixed window,
+      expired-first eviction (saturation denies fail-closed buckets), `providerBucket` rate mismatch throws
+- [x] `runProvider(..., {allowEmpty})`; `FeedDef.maxObservationAgeMs`, `deadlineMs`, `ctx.signal`
+- [x] http: stricter UA (browser tokens refused), more forbidden headers incl. Host/Via, POST→GET on 301/302/303,
+      stacked/unknown encodings rejected, deadline covers DNS checks and limiter waits
+- [x] respond: 503 SOURCE OFFLINE is `no-store`, ETag variant defaults to the query, `q=0` honoured,
+      `withRoute` refuses paths missing from the catalogue (dev/test)
+- [x] geocoder: clamped cache keys, single-flight + cache re-check inside the Nominatim queue, Photon bucket;
+      RSS links http(s) only; `GODSEYE_CONTACT` validated; HSTS `preload` opt-in (`HSTS_PRELOAD`)
+- [x] Freshness: REFERENCE without observedAt, future stamps never LIVE, `entityFreshness()` +
+      `OBSERVATION_CADENCE_MS` (events inherit the feed state), `normalizeUtc()`
+- [x] Schemas: compact FLIGHT_FIELDS (seenAt s, src index + `sources`, int bucket, 0/1 flags; 24k rows < 4 MB),
+      FIRE_FIELDS columnar (≤ 30k rows), caps on vessels/GDELT/gpsjam/orbits, `LocalTime` for airport-local times
+      + `etaTz`, trimmed callsign regex, `posSource`/`emergencyStatus`, `CAMERA_FIELDS` + source, date types,
+      `AttackOrigin.targetCountryCode` (arcs only when both ends are reported)
+- [x] Client state: longitudes wrapped in `?c=`/`?dossier=`, empty components rejected, dossier ⇔ panel
+      invariant, pinned ≤ 6 and never the open panel, `~hex` watchable, 3–8 char route idents + `~` for
+      hyphenated idents, junk `?layers=` ignored, Intel Feed dedupe per layer + time sort, `defaultLayersFor()`
+- [x] Orchestration: CLAUDE.md lists every lead-owned file; builders own `e2e/<agent>/**` and
+      `docs/data-sources/<agent>.md`; rules globs cover panel server code; auditors run in worktrees;
+      builders have explicit `tools:`; route names match the catalogue (aliases noted)
+
+## Phase 1 follow-ups for Phase 2 builders
+- [ ] design-system-hud: apply `defaultLayersFor(capabilities)` once /api/health loads, before the first URL write
+- [ ] map-engine: build the worker URL from `maplibregl.getVersion()`; store `normalizeLng` camera
+- [ ] layers-aviation: trim/upper-case callsigns; emit the compact FLIGHT_FIELDS row + `sources`
+- [ ] layers-hazards: fires as FIRE_FIELDS columnar; Sentinel quicklooks by final (zipper) URL, no redirects
+- [ ] layers-threats-network: GDACS `geteventlist/SEARCH?eventlist=…` (MAP returns 400); lower-case alert
+      levels, `url.report`; GDELT zip URLs upgraded to https; Cloudflare origins as points unless a target exists
+- [ ] layers-surveillance: TfL mp4 via plain `<video src>` (no CORS); cameras carry `source`
+- [ ] feature-flight-paths: `LocalTime` with offsets (`etaTz`), never offset-less local strings
+- [ ] pages-docs-privacy-ops: compile `docs/DATA_SOURCES.md` from `docs/data-sources/*.md`; Dockerfile runs
+      `pnpm build` (prebuild vendors the worker) and copies `public/` into the standalone image; compose Caddy
+      overwrites XFF (`header_up X-Forwarded-For {remote_host}`); ARCHITECTURE.md records the accepted
+      trade-offs (CSP `'unsafe-inline'` for Next inline scripts, `worker-src blob:` for MapLibre's module
+      shim, `x-real-ip` opt-in, muted token #848178)
+- [ ] lead (Phase 3): scope the §11 branding grep to shipped UI/docs (the HORUS preset is required by §5;
+      the MIT NOTICE must credit OSIRIS; internal `osiris` catalogue flags are not branding)
+
 ## Phase 0 build items per builder (Phase 2 owners)
 ### map-engine
 - [ ] `setMissingStyleImageResolver` for `circle-11` (gold SDF dot); drop `fill-pattern` on `landcover_wood`
@@ -66,7 +113,7 @@ Kept current by the lead after every phase. The build is done when this file is 
 ### layers-aviation
 - [ ] adsb.lol tiles (alt_baro "ground", space-padded flight, emergency "none"), mil/ladd/pia merge (no-position
       rows counted, not drawn), columnar < 4 MB; drop airplanes.live; hexdb route path fix + stale label
-- [ ] adsbdb identity + thumbnail (never stored), Flight Watch (`watchedFlights` ≤ 6), trails, GPS jam (bad > 0 cells)
+- [ ] adsbdb identity + thumbnail (never stored), Flight Watch (`watchedFlights` ≤ 6), trails for watched aircraft
 ### layers-space
 - [ ] CelesTrak OMM with error counter + last-good; SatNOGS TLE fallback labelled; 6-digit NORAD ids
 - [ ] SWPC: append `Z` to Kp/RTSW times; RTSW active filter; Bt/Bz from rtsw_mag_1m; X-ray class 0.1–0.8 nm;
@@ -74,10 +121,11 @@ Kept current by the lead after every phase. The build is done when this file is 
 ### layers-hazards
 - [ ] USGS, FIRMS (VIIRS confidence words, MODIS 0–100, columnar), EONET, NWS (zone geometry lookup cached 30 d),
       GDACS geteventlist, NHC cones (mapservices.weather.noaa.gov), GVP RSS (ISO-8859-1), Open-Meteo AQ
-      (`openmeteo` capability), RainViewer
+      (`openmeteo` capability), RainViewer, GPS jam (gpsjam daily H3, bad > 0 cells, columnar), Sentinel (CDSE STAC)
 ### layers-surveillance
 - [ ] CCTV keyless providers (Caltrans paged, WSDOT KML, TxDOT new shape, HK TD, LTA, Digitraffic gzip, DriveBC/RWS
       new URLs, NZTA, Trafikverket, …); keyed TfL/511/Seoul/Windy behind capabilities; excluded list honoured
+- [ ] `/cameras-notice` page + "Report / remove this camera" on every feed + region link-out-only mode (§0.7)
 - [ ] Stills-only `/api/cctv/proxy` with exact prefixes; `/api/cctv` lat/lng region select + ETag; live news `/live`
       resolved server-side; report any new media host for `src/config/hosts.ts`
 ### layers-threats-network

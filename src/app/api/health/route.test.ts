@@ -5,7 +5,7 @@ import { HealthResponse, StatsResponse } from '@/lib/schemas';
 import { GET as health } from './route';
 import { GET as stats } from '../stats/route';
 
-const req = (path: string) => new Request(`http://localhost${path}`, { headers: { 'x-real-ip': '10.9.8.7' } });
+const req = (path: string) => new Request(`http://localhost${path}`, { headers: { 'x-forwarded-for': '10.9.8.7' } });
 
 beforeEach(() => {
   clearL1();

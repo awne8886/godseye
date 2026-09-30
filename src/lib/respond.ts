@@ -61,12 +61,17 @@ function notModified(req: Request, etag: string, headers: Record<string, string>
  * Respond with a feed snapshot. `body` gets `meta` and `providers` merged in. A feed with no data
  * returns 503 with SOURCE OFFLINE semantics (never an empty array pretending to be truth).
  */
-export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T) => Record<string, unknown>, variant = ''): Response {
+/**
+ * `variant` distinguishes filtered views of one feed in the ETag; it defaults to the request's
+ * query string so two filters never share an ETag.
+ */
+export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T) => Record<string, unknown>, variant = new URL(req.url).search): Response {
   const ttl = result.meta.ttlSeconds;
   if (result.data === null) {
+    // Never CDN-cached: an outage must not be pinned at the edge (Retry-After paces clients).
     return json(
       { error: 'source_offline', detail: `No data from ${result.meta.feed} upstreams yet.`, meta: result.meta, providers: result.providers },
-      { status: 503, ttl: 10, headers: { 'Retry-After': '30' } },
+      { status: 503, ttl: 0, headers: { 'Retry-After': '30' } },
     );
   }
   // Stale/failed snapshots get a short edge TTL so a CDN never pins an outage.
@@ -114,6 +119,17 @@ function compress(key: string, version: string, build: () => unknown): Compresse
  * Serve a large JSON payload serialised and compressed once per `version` (e.g. the feed's
  * fetchedAt). Negotiates br > gzip > identity and answers If-None-Match with 304.
  */
+/** Encodings the client accepts with q > 0 (`br;q=0` means "not brotli"). */
+export function acceptedEncodings(header: string | null): Set<string> {
+  const out = new Set<string>();
+  for (const part of (header ?? '').split(',')) {
+    const [name = '', ...params] = part.trim().toLowerCase().split(';');
+    const q = params.map((p) => p.trim()).find((p) => p.startsWith('q='));
+    if (name && (q === undefined || Number(q.slice(2)) > 0)) out.add(name.trim());
+  }
+  return out;
+}
+
 export function compressedJson(req: Request, key: string, version: string, build: () => unknown, ttl: number): Response {
   const c = compress(key, version, build);
   if (c.raw.length > MAX_RESPONSE_BYTES) {
@@ -122,8 +138,8 @@ export function compressedJson(req: Request, key: string, version: string, build
   const base = { 'Cache-Control': cacheControl(ttl), ETag: c.etag, Vary: 'Accept-Encoding' };
   const nm = notModified(req, c.etag, base);
   if (nm) return nm;
-  const accept = req.headers.get('accept-encoding') ?? '';
-  const [body, enc] = /\bbr\b/.test(accept) ? [c.br, 'br'] : /\bgzip\b/.test(accept) ? [c.gzip, 'gzip'] : [c.raw, null];
+  const accepted = acceptedEncodings(req.headers.get('accept-encoding'));
+  const [body, enc] = accepted.has('br') ? [c.br, 'br'] : accepted.has('gzip') ? [c.gzip, 'gzip'] : [c.raw, null];
   return new Response(new Uint8Array(body), {
     status: 200,
     headers: { ...base, 'Content-Type': 'application/json; charset=utf-8', ...(enc ? { 'Content-Encoding': enc } : {}) },
@@ -147,6 +163,10 @@ type Handler<C> = (req: Request, ctx: C) => Promise<Response> | Response;
  * shared bucket and fail-closed flag come from its catalogue entry unless `limit` overrides them.
  */
 export function withRoute<C = unknown>(route: string, handler: Handler<C>, limit?: RateLimitOptions): Handler<C> {
+  // A route missing from the catalogue would silently get the default limit and no docs entry.
+  if (process.env.NODE_ENV !== 'production' && !limit && !catalogEntry(route, 'GET') && !catalogEntry(route, 'POST')) {
+    throw new Error(`withRoute('${route}'): not in API_CATALOG (src/lib/api-catalog.ts); ask the lead to add it`);
+  }
   return async (req, ctx) => {
     const { rateLimit, DEFAULT_LIMIT } = await import('./ratelimit');
     const entry = catalogEntry(route, req.method === 'POST' ? 'POST' : 'GET');
