@@ -1,0 +1,65 @@
+{
+ "_captured": "2026-09-30T20:02Z from the live upstream with the GODSEYE UA (feature-flight-paths probe)",
+ "_url": "https://photon.komoot.io/api/?q=heathrow&osm_tag=aeroway:aerodrome&limit=2",
+ "body": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "properties": {
+     "osm_type": "R",
+     "osm_id": 14001268,
+     "osm_key": "aeroway",
+     "osm_value": "aerodrome",
+     "type": "house",
+     "name": "London Heathrow Airport",
+     "street": "Western Perimeter Road Roundabout",
+     "district": "London Borough of Hillingdon",
+     "city": "London",
+     "state": "England",
+     "country": "United Kingdom",
+     "postcode": "TW19 7NR",
+     "countrycode": "GB",
+     "extent": [
+      -0.4943776,
+      51.4794056,
+      -0.4151697,
+      51.4560987
+     ]
+    },
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -0.4587801,
+      51.467739
+     ]
+    }
+   },
+   {
+    "type": "Feature",
+    "properties": {
+     "osm_type": "N",
+     "osm_id": 369122388,
+     "osm_key": "aeroway",
+     "osm_value": "aerodrome",
+     "type": "house",
+     "name": "Heathrow Airport",
+     "street": "West Moonlight Drive",
+     "city": "Robinson",
+     "county": "McLennan",
+     "state": "TX",
+     "country": "United States",
+     "postcode": "76643",
+     "countrycode": "US"
+    },
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -97.1468857,
+      31.4393026
+     ]
+    }
+   }
+  ]
+ }
+}

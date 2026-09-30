@@ -112,6 +112,9 @@ export const DiversionAirport = z.object({
   runwayM: z.number().positive(),
   distanceFromPathKm: z.number().nonnegative(),
   alongPathKm: z.number().nonnegative(),
+  /** Airport position (for the map layer). */
+  lat: Lat.optional(),
+  lng: Lng.optional(),
 });
 
 export const RouteEndpoint = Airport.pick({ ident: true, icao: true, iata: true, name: true, lat: true, lng: true, tz: true, municipality: true, isoCountry: true });
@@ -143,6 +146,8 @@ export const RoutePlanResponse = z.object({
     offsetHours: z.number().nullable(),
   }),
   daylight: z.array(Daylight).length(10),
+  /** How the daylight samples were timed (departure now, widebody cruise). */
+  daylightMethod: z.string().optional(),
   knownServices: z.array(KnownService),
   historicalRoutes: z.array(
     z.object({ airline: z.string(), codeshare: z.boolean(), stops: z.number().int().nonnegative(), equipment: z.array(z.string()) }),
@@ -165,6 +170,8 @@ export const RoutePlanResponse = z.object({
     windsAloft: z.array(z.object({ fraction: z.number(), lat: Lat, lng: Lng, speedKt: z.number().nullable(), dirDeg: z.number().nullable(), level: z.literal('250hPa') })),
   }),
   diversionAirports: z.array(DiversionAirport),
+  /** Selection rule for diversionAirports (runway length, distance from path, spacing). */
+  diversionMethod: z.string().optional(),
   /** Which path types are present: FILED / TYPICAL / GREAT-CIRCLE ESTIMATE. */
   pathLabels: z.array(z.enum(['FILED', 'TYPICAL', 'GREAT-CIRCLE ESTIMATE'])),
   providers: Providers,
@@ -223,6 +230,12 @@ export const FlightDetailResponse = z.object({
     .nullable(),
   progress: z.number().min(0).max(1).nullable(),
   eta: IsoTime.nullable(),
+  /** ETA as destination-local wall-clock time with its UTC offset. */
+  etaLocal: LocalTime.nullable().optional(),
+  /** IANA zone of the destination. */
+  etaTz: z.string().nullable().optional(),
+  /** Where the origin/destination came from; hexdb records are years old and flagged stale. */
+  routeSource: z.object({ name: z.string().nullable(), stale: z.boolean(), updatedAt: IsoTime.nullable() }).nullable().optional(),
   identity: AircraftIdentity.nullable(),
   weather: z.object({ origin: AirportWeather.nullable(), destination: AirportWeather.nullable() }),
   links: z.array(FlightLink),
