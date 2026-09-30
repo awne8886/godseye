@@ -9,6 +9,7 @@
  * refuses non-embeddable videos, so embedding is allowed. The channel `/live` page could not be read
  * from the build sandbox (Google bot wall), so the panel always offers the YouTube link-out too.
  */
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Crosshair, ExternalLink, Radio, X } from 'lucide-react';
 import type { PanelProps } from '@/lib/feature-module';
@@ -64,7 +65,7 @@ export function SpacePanel({ onClose }: PanelProps) {
   const d = iss.data;
   const offline = iss.error instanceof FeedOfflineError ? iss.error : null;
   const state = d ? entityFreshness({ kind: 'live', at: d.meta.observedAt ? Date.parse(d.meta.observedAt) : null, observationCadenceMs: 60_000, feedState: d.meta.state, now }) : 'offline';
-  const issRecord = recordFromResponse(sats.data, ISS_NORAD_ID);
+  const issRecord = useMemo(() => recordFromResponse(sats.data, ISS_NORAD_ID), [sats.data]);
 
   const embed = `https://www.youtube-nocookie.com/embed/${NASA_ISS_VIDEO_ID}?${new URLSearchParams({ autoplay: autoplay ? '1' : '0', mute: '1', playsinline: '1', rel: '0' })}`;
 

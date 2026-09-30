@@ -37,6 +37,7 @@ const REFRESH_MS = 120 * 60_000;
 const TICK_MS = 1000;
 const TICK_MS_REDUCED = 2000;
 const DECK_Z = 90;
+const ORBIT_REANCHOR_MS = 10 * 60_000;
 
 interface Frame {
   version: string;
@@ -155,10 +156,14 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
   }, [reduced, query.data]);
 
   // Orbit for the selected satellite, anchored on the frame its marker was drawn for.
+  // The Earth turns under a fixed track, so after 10 minutes the track is re-anchored on a
+  // 10-minute boundary (one request per satellite per 10 min, shared by every viewer via the CDN).
   const selData = selection?.kind === 'satellite' ? (selection.data as SatelliteSelectionData) : null;
+  const frameAt = frame?.at ?? null;
+  const anchor = selData ? (frameAt !== null && frameAt - selData.anchorAt > ORBIT_REANCHOR_MS ? Math.floor(frameAt / ORBIT_REANCHOR_MS) * ORBIT_REANCHOR_MS : selData.anchorAt) : 0;
   const orbit = useQuery({
-    queryKey: selData ? orbitQueryKey(selData.noradId, selData.anchorAt) : ['space', 'orbit', 'none'],
-    queryFn: () => fetchOrbit(selData!.noradId, selData!.anchorAt),
+    queryKey: selData ? orbitQueryKey(selData.noradId, anchor) : ['space', 'orbit', 'none'],
+    queryFn: () => fetchOrbit(selData!.noradId, anchor),
     enabled: !!selData,
     staleTime: 10 * 60_000,
     retry: 1,
@@ -189,7 +194,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
           length: frame.count,
           attributes: {
             getPosition: { value: frame.positions, size: 3 },
-            getFillColor: { value: frame.colors, size: 4, normalized: true },
+            getFillColor: { value: frame.colors, size: 4 },
             getRadius: { value: frame.radii, size: 1 },
           },
         },
