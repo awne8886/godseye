@@ -1,7 +1,7 @@
 /**
  * Test-only helpers: recorded upstream payloads captured 2026-09-30 from live probes (see
  * docs/data-sources/panels-alerts-markets-dossier-graph.md; large payloads trimmed: Telegram pages
- * to their last 6–8 posts, DefiLlama to the latest 40 hacks, NVD to 6 CVEs, Wikidata Q95 to the
+ * to their last 6–8 posts except the `-full` page, DefiLlama to the latest 40 hacks, NVD to 6 CVEs, Wikidata Q95 to the
  * followed claims) and a URL router for vi.mock('@/lib/http').
  */
 import { readFileSync } from 'node:fs';
@@ -17,6 +17,8 @@ export const FX = {
   tgOsint: 'tg-Osintdefender.2026-09-30.html',
   tgRybar: 'tg-rybar_in_english.2026-09-30.html',
   tgKyiv: 'tg-KyivIndependent_official.2026-09-30.html',
+  /** Untrimmed page (20 posts), captured 2026-09-30 22:47 UTC. */
+  tgOsintFull: 'tg-Osintdefender-full.2026-09-30.html',
   bbc: 'bbc-world.2026-09-30.xml',
   yahooGspc: 'yahoo-gspc-1d-5m.2026-09-30.json',
   yahooGc: 'yahoo-gcf-1mo-1d.2026-09-30.json',

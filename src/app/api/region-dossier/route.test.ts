@@ -47,7 +47,10 @@ describe('GET /api/region-dossier', () => {
     expect(typeof body.nearby.counts.earthquakes.count).toBe('number');
     // Layers whose feeds are not registered here are SOURCE OFFLINE with count null — never 0.
     expect(body.nearby.counts.flights).toEqual({ count: null, state: 'offline' });
-    expect(body.nearby.counts.maritime).toEqual({ count: null, state: 'offline' });
+    expect(body.nearby.counts.ports).toEqual({ count: null, state: 'offline' });
+    expect(body.nearby.counts.cameras).toEqual({ count: null, state: 'offline' });
+    expect(body.nearby.counts.vessels).toMatchObject({ count: null, reason: 'not-configured' });
+    expect(body.providers['layer:vessels']).toMatchObject({ ok: false, skipped: 'not-configured' });
     expect(body.providers.photon).toMatchObject({ ok: true });
     expect(body.providers['layer:flights']).toMatchObject({ ok: false });
     // Open-Meteo did not answer (network): weather is null, not invented.

@@ -20,7 +20,7 @@ export interface SymbolDef {
 const s = (symbol: string, name: string, group: Quote['group']): SymbolDef => ({ symbol, name, group });
 
 export const SYMBOLS: readonly SymbolDef[] = [
-  s('^GSPC', 'S&P 500', 'indices'), s('^IXIC', 'Nasdaq Composite', 'indices'), s('^DJI', 'Dow Jones', 'indices'), s('^FTSE', 'FTSE 100', 'indices'),
+  s('^GSPC', 'S&P 500', 'indices'), s('^IXIC', 'Nasdaq Comp', 'indices'), s('^DJI', 'Dow Jones', 'indices'), s('^FTSE', 'FTSE 100', 'indices'),
   s('^GDAXI', 'DAX', 'indices'), s('^N225', 'Nikkei 225', 'indices'), s('^HSI', 'Hang Seng', 'indices'), s('^VIX', 'VIX', 'indices'),
   s('LMT', 'Lockheed Martin', 'defense'), s('RTX', 'RTX', 'defense'), s('NOC', 'Northrop Grumman', 'defense'), s('GD', 'General Dynamics', 'defense'),
   s('BA.L', 'BAE Systems', 'defense'), s('RHM.DE', 'Rheinmetall', 'defense'),

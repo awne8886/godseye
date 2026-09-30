@@ -151,9 +151,9 @@ export function GraphPanel(_: PanelProps) {
       >
         <label className="flex flex-col gap-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
           Type
-          <select value={type} onChange={(e) => setType(e.target.value as Expandable)} className="min-h-11 md:min-h-9 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]">
+          <select value={type} onChange={(e) => setType(e.target.value as Expandable)} className="min-h-11 md:min-h-9 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]">
             {EXPANDABLE.map((t) => (
-              <option key={t} value={t}>
+              <option key={t} value={t} className="uppercase">
                 {t}
               </option>
             ))}

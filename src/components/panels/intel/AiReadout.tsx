@@ -3,8 +3,11 @@
  * READ-OUT block shared by ALERTS / MARKETS / DOSSIER: asks an /api/ai/* route and always shows who
  * answered (model + provider, or the ANALYST heuristic with the reason no model answered). The
  * optional visitor key lives in this component's state only and is sent once per request in the
- * `x-ai-key` header — never persisted. Text is rendered as text. Owner:
- * panels-alerts-markets-dossier-graph.
+ * `x-ai-key` header — never persisted. Text is rendered as text.
+ * Deliberate deviation from contract §5/§6 ("key via Settings", R3-m5): Settings choices persist in
+ * localStorage, where a provider key would outlive the tab and be readable by any script on the
+ * origin. The key is therefore typed per read-out and dropped when the panel closes; Settings only
+ * chooses the provider. Owner: panels-alerts-markets-dossier-graph.
  */
 import { useMutation } from '@tanstack/react-query';
 import { KeyRound, Sparkles } from 'lucide-react';
@@ -51,7 +54,7 @@ export function AiReadout({ path, body, label = 'Read-out', onThread }: Props) {
       </div>
       {showKey && (
         <label id={keyId} className="flex flex-col gap-1 font-sans text-[12px] text-[var(--text-secondary)]">
-          Your Anthropic or Gemini key — sent once per request in a header, never stored or logged.
+          Your Anthropic or Gemini key — sent once per request in a header, never stored or logged. It is asked here rather than in Settings on purpose: Settings are saved in this browser, a key should not be; it is forgotten when this panel closes.
           <input
             type="password"
             autoComplete="off"

@@ -77,10 +77,31 @@ export function perspectivePhrase(t: Pick<AlertThread, 'perspective' | 'blocs'>)
   return 'mixed sourcing';
 }
 
+/** The theatre (among `ids`) whose keywords appear earliest in `text`. */
+export function primaryTheatre(text: string, ids: readonly string[]): string | null {
+  let best: string | null = null;
+  let at = Infinity;
+  for (const id of ids) {
+    const re = THEATRES.find((t) => t.id === id)?.re;
+    if (!re) continue;
+    const m = new RegExp(re.source, re.flags.replace('g', '')).exec(text);
+    if (m && m.index < at) {
+      at = m.index;
+      best = id;
+    }
+  }
+  return best;
+}
+
 export function buildThreads(reports: readonly AlertItem[], limit = 6): AlertThread[] {
   const byTheatre = new Map<string, { reports: AlertItem[]; topics: Map<string, number> }>();
+  /** Each report's first theatre (earliest match in title, then summary): what it is primarily about. */
+  const primary = new Map<string, string>();
   for (const r of reports) {
-    const { theatres, topics } = classify(`${r.title}\n${(r.summary ?? '').slice(0, 800)}`);
+    const text = `${r.title}\n${(r.summary ?? '').slice(0, 800)}`;
+    const { theatres, topics } = classify(text);
+    const first = primaryTheatre(text, theatres);
+    if (first) primary.set(r.id, first);
     for (const th of theatres) {
       const e: { reports: AlertItem[]; topics: Map<string, number> } = byTheatre.get(th) ?? { reports: [], topics: new Map() };
       e.reports.push(r);
@@ -98,7 +119,6 @@ export function buildThreads(reports: readonly AlertItem[], limit = 6): AlertThr
       for (const a of r.alsoReportedBy) blocs[a.bloc] = (blocs[a.bloc] ?? 0) + 1;
     }
     const perspective: AlertThread['perspective'] = blocs.western && blocs.russian ? 'cross' : e.reports.length >= 2 && Object.keys(blocs).length === 1 ? 'single' : 'mixed';
-    const lead = [...e.reports].sort((a, b) => b.alsoReportedBy.length - a.alsoReportedBy.length || Date.parse(b.publishedAt) - Date.parse(a.publishedAt))[0] ?? null;
     const latest = e.reports.reduce<number | null>((m, r) => Math.max(m ?? 0, Date.parse(r.publishedAt)), null);
     threads.push({
       id,
@@ -114,12 +134,27 @@ export function buildThreads(reports: readonly AlertItem[], limit = 6): AlertThr
         .map(([tp]) => TOPICS.find((t) => t.id === tp)!.label),
       breaking: e.reports.filter((r) => r.breaking).length,
       latest: latest ? new Date(latest).toISOString() : null,
-      lead: lead ? { id: lead.id, title: lead.title, source: lead.sourceName, link: lead.link, publishedAt: lead.publishedAt } : null,
+      lead: null,
     });
   }
-  return threads
-    .sort((a, b) => b.count - a.count || b.sources.length - a.sources.length || Date.parse(b.latest ?? '0') - Date.parse(a.latest ?? '0'))
-    .slice(0, limit);
+  const ranked = threads.sort((a, b) => b.count - a.count || b.sources.length - a.sources.length || Date.parse(b.latest ?? '0') - Date.parse(a.latest ?? '0')).slice(0, limit);
+  // Leads in rank order: never reuse a report that already leads another theatre, and prefer
+  // reports whose first theatre is this one (a Lebanon post that also mentions the U.S. must not
+  // lead "U.S. policy"). No unused report → no lead, rather than a misleading one.
+  const used = new Set<string>();
+  const byId = new Map(reports.map((r) => [r.id, r]));
+  for (const t of ranked) {
+    const lead =
+      t.itemIds
+        .map((id) => byId.get(id)!)
+        .filter((r) => !used.has(r.id))
+        .sort((a, b) => Number(primary.get(b.id) === t.id) - Number(primary.get(a.id) === t.id) || b.alsoReportedBy.length - a.alsoReportedBy.length || Date.parse(b.publishedAt) - Date.parse(a.publishedAt))[0] ?? null;
+    if (lead) {
+      used.add(lead.id);
+      t.lead = { id: lead.id, title: lead.title, source: lead.sourceName, link: lead.link, publishedAt: lead.publishedAt };
+    }
+  }
+  return ranked;
 }
 
 export function buildAlertBrief(input: { news?: readonly AlertItem[]; quakes?: readonly DigestQuake[]; quakeMinMagnitude?: number }, now = Date.now()): AlertBrief {

@@ -14,6 +14,7 @@ import { formatAge } from '@/lib/freshness';
 import type { ChainBriefResponse, MarketsResponse, Quote, ScmSuppliersResponse, SpaceWeatherResponse } from '@/lib/types';
 import { AiReadout } from '../intel/AiReadout';
 import { FeedOfflineError, fmtNum, fmtPct, getJson, useNow } from '../intel/client';
+import { marketsChip } from './markets-chip';
 
 const MarketChart = dynamic(() => import('./MarketChart'), { ssr: false, loading: () => <p className="font-sans text-[12px] text-[var(--text-muted)]">Loading chart…</p> });
 
@@ -58,7 +59,8 @@ export function MarketsPanel(_: PanelProps) {
   const scm = useQuery({ queryKey: ['intel', 'scm'], queryFn: ({ signal }) => getJson<ScmSuppliersResponse>('/api/scm-suppliers', signal), refetchInterval: 900_000, staleTime: 600_000 });
   const chain = useQuery({ queryKey: ['intel', 'chain', 30], queryFn: ({ signal }) => getJson<ChainBriefResponse>('/api/chain/daily?days=30', signal), staleTime: 1_800_000 });
   const [chart, setChart] = useState<{ symbol: string; name: string } | null>(null);
-  usePanelChip(m.data ? (m.data.meta.state === 'live' ? 'LIVE' : m.data.meta.state.toUpperCase()) : m.isPending ? 'PLOTTING' : 'SOURCE OFFLINE', m.data ? (m.data.meta.state === 'live' ? 'live' : 'warn') : m.isPending ? 'busy' : 'error');
+  const chip = m.data ? marketsChip(m.data) : null;
+  usePanelChip(chip ? chip.text : m.isPending ? 'PLOTTING' : 'SOURCE OFFLINE', chip ? chip.tone : m.isPending ? 'busy' : 'error');
 
   const d = m.data;
   return (
@@ -67,13 +69,19 @@ export function MarketsPanel(_: PanelProps) {
       {!d && <p className="font-sans text-[12px] text-[var(--text-secondary)]">{m.isPending ? 'Acquiring quotes…' : offlineText(m.error, 'no quote provider answered')}</p>}
       {d && (
         <>
-          <Section title="Exchange sessions" note="Regular hours in each exchange's time zone; holidays not modelled.">
-            <ul className="grid grid-cols-3 gap-1" aria-label="Exchange sessions">
+          <Section
+            title="Exchange sessions"
+            note={`Regular hours in each exchange's time zone. Holiday closures modelled for ${d.sessions.filter((s) => s.holidaysModelled).map((s) => s.exchange).join(', ') || 'none'}; * = holidays not modelled; half days never.`}
+          >
+            <ul className="grid grid-cols-2 gap-x-3 gap-y-1" aria-label="Exchange sessions">
               {d.sessions.map((s) => (
-                <li key={s.exchange} title={`${s.name} (${s.tz})${s.nextChangeAt ? ` — ${s.open ? 'closes' : 'opens'} ${s.nextChangeAt.slice(0, 16).replace('T', ' ')} UTC` : ''}`} className="flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.16em]">
-                  <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: s.open ? 'var(--alert-green)' : 'var(--text-muted)' }} />
-                  <span className="text-[var(--text-primary)]">{s.exchange}</span>
-                  <span className={s.open ? 'text-[var(--alert-green)]' : 'text-[var(--text-muted)]'}>{s.open ? 'Open' : 'Closed'}</span>
+                <li key={s.exchange} title={`${s.name} (${s.tz})${s.nextChangeAt ? ` — ${s.open ? 'closes' : 'opens'} ${s.nextChangeAt.slice(0, 16).replace('T', ' ')} UTC` : ''}`} className="flex min-w-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.16em]">
+                  <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: s.open ? 'var(--alert-green)' : 'var(--text-muted)' }} />
+                  <span className="min-w-0 truncate text-[var(--text-primary)]">
+                    {s.exchange}
+                    {s.holidaysModelled ? '' : '*'}
+                  </span>
+                  <span className={`ml-auto shrink-0 whitespace-nowrap ${s.open ? 'text-[var(--alert-green)]' : 'text-[var(--text-muted)]'}`}>{s.open ? 'Open' : 'Closed'}</span>
                 </li>
               ))}
             </ul>
