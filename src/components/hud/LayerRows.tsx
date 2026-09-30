@@ -79,6 +79,8 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
   const status = useLayerStatus(id);
   const attribution = statusAttribution(status);
   const providers = status.providers ? Object.keys(status.providers) : [];
+  // Providers the server skipped for want of a key (e.g. TfL cameras on a keyless instance).
+  const needsKey = status.providers ? Object.entries(status.providers).filter(([, p]) => p.skipped === 'not-configured').map(([name]) => name) : [];
   const offline = status.state === 'offline';
   const descId = useId();
   return (
@@ -109,6 +111,16 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
           {on && <FreshnessLed layer={layer} status={status} />}
         </p>
         {on && offline && <p className="hud-micro text-[var(--alert-red)]">SOURCE OFFLINE · LAST GOOD {hhmm(status.lastGoodAt)}</p>}
+        {on && typeof status.staleCount === 'number' && status.staleCount > 0 && (
+          <p className="hud-micro text-[var(--text-muted)] tabular-nums" data-testid={`stale-${layer.id}`}>
+            {status.staleCount.toLocaleString('en-US')} OLDER THAN 60 S
+          </p>
+        )}
+        {on && needsKey.length > 0 && (
+          <p className="hud-micro text-[var(--text-muted)]" data-testid={`needs-key-${layer.id}`}>
+            NEEDS KEY · {needsKey.join(', ').toUpperCase()}
+          </p>
+        )}
         {on && attribution.length > 0 && (
           <p className="font-sans text-[12px] text-[var(--text-muted)]" data-testid={`attribution-${layer.id}`}>
             {attribution.map((a, i) => (
