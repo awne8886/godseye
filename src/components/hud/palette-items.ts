@@ -25,35 +25,107 @@ const CONTEXT_PANELS = new Set<PanelId>(['dossier', 'graph', 'flight-watch', 'ca
 
 const keyFor = (action: KeyAction) => KEY_BINDINGS.find((b) => b.action === action)?.display;
 
+/** A typed route: airport codes, or place names resolved through /api/airports/search on run. */
+export type RouteQuery = { kind: 'codes'; from: string; to: string } | { kind: 'names'; from: string; to: string };
+
+/** IATA/ICAO-shaped (3–4 alphanumerics) or a longer OurAirports ident that contains a digit. */
+const looksLikeCode = (s: string) => /^[A-Z0-9]{3,4}$/.test(s) || (/\d/.test(s) && /^[A-Z0-9]{3,8}$/.test(s));
+
 /**
- * Items derived from what the visitor typed: "LHR JFK" / "EGLL-KJFK" plans a route, a callsign,
+ * "LHR JFK", "EGLL→KJFK", "LHR-JFK", "LHR to JFK" → codes; "London to New York", "Paris → Tokyo"
+ * → names. Anything else (a single word, "satellites") → null.
+ */
+export function parseRouteQuery(query: string): RouteQuery | null {
+  const q = query.trim();
+  if (!q) return null;
+  const words = q.match(/^(.+?)\s+(?:to|→|->|>)\s+(.+)$/i) ?? q.match(/^(.+?)\s*(?:→|->)\s*(.+)$/);
+  if (words) {
+    const from = words[1]!.trim();
+    const to = words[2]!.trim();
+    if (from.toLowerCase() === to.toLowerCase()) return null;
+    const F = from.toUpperCase();
+    const T = to.toUpperCase();
+    if (looksLikeCode(F) && looksLikeCode(T)) return { kind: 'codes', from: F, to: T };
+    if (from.length < 2 || to.length < 2 || from.length > 60 || to.length > 60) return null;
+    return { kind: 'names', from, to };
+  }
+  const r = parseRouteParam(q);
+  return r && looksLikeCode(r.from) && looksLikeCode(r.to) ? { kind: 'codes', ...r } : null;
+}
+
+/** Hyphenated civil registrations (G-XWBA, VH-OQA, D-AIMA) and 24-bit ICAO hex (4CA2B3). */
+const REGISTRATION_RE = /^[A-Z]{1,2}-[A-Z0-9]{2,5}$/;
+const HEX_RE = /^[0-9A-F]{6}$/;
+
+/** A typed flight ident: needs a digit (callsign, flight number, N-number), a registration or a hex. */
+export function parseFlightQuery(query: string): string | null {
+  const v = query.trim().toUpperCase();
+  if (!(/\d/.test(v) || REGISTRATION_RE.test(v) || HEX_RE.test(v))) return null;
+  return parseFlightParam(v);
+}
+
+/** One airport code for a place name: the metro group's first airport, else the best match. */
+export async function resolveAirport(name: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  try {
+    const r = await fetchImpl(`/api/airports/search?q=${encodeURIComponent(name)}&submit=1`);
+    if (!r.ok) return null;
+    const body = (await r.json()) as { results?: { iata: string | null; icao: string | null; ident: string }[]; metro?: { codes: string[] } | null };
+    const metro = body.metro?.codes?.[0];
+    if (metro) return metro;
+    const a = body.results?.[0];
+    return a ? (a.iata ?? a.icao ?? a.ident) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Items derived from what the visitor typed: a route (codes or place names) plans it; a callsign,
  * flight number, registration or hex tracks a flight. Both open the PATHS panel.
  */
-export function queryItems(query: string, available: (id: PanelId) => boolean): PaletteItem[] {
+export function queryItems(query: string, available: (id: PanelId) => boolean, fetchImpl?: typeof fetch): PaletteItem[] {
   if (!available('paths')) return [];
   const ui = () => useUiStore.getState();
   const q = query.trim();
   const out: PaletteItem[] = [];
-  const route = parseRouteParam(q);
-  if (route) {
+  const route = parseRouteQuery(q);
+  if (route?.kind === 'codes') {
     out.push({
       id: `route:${route.from}-${route.to}`,
       group: 'ACTIONS',
       label: `Plan route ${route.from} → ${route.to}`,
       keywords: [q, 'route', 'plan', 'flight path'],
       run: () => {
-        ui().setPlannedRoute(route);
+        ui().setFlightIdent(null);
+        ui().setPlannedRoute({ from: route.from, to: route.to });
         ui().setOpenPanel('paths');
       },
     });
+  } else if (route?.kind === 'names') {
+    out.push({
+      id: `route-names:${route.from}|${route.to}`,
+      group: 'ACTIONS',
+      label: `Plan route ${route.from.toUpperCase()} → ${route.to.toUpperCase()}`,
+      hint: 'Main airport of each city; switch airports in PATHS',
+      keywords: [q, 'route', 'plan', 'flight path'],
+      run: () => {
+        ui().setOpenPanel('paths');
+        void Promise.all([resolveAirport(route.from, fetchImpl), resolveAirport(route.to, fetchImpl)]).then(([from, to]) => {
+          if (from && to && from !== to) {
+            ui().setFlightIdent(null);
+            ui().setPlannedRoute({ from, to });
+          }
+        });
+      },
+    });
   }
-  const flight = !route && /\d/.test(q) ? parseFlightParam(q) : null;
+  const flight = route ? null : parseFlightQuery(q);
   if (flight) {
     out.push({
       id: `flight:${flight}`,
       group: 'ACTIONS',
       label: `Track flight ${flight}`,
-      keywords: [q, 'flight', 'track', 'callsign'],
+      keywords: [q, 'flight', 'track', 'callsign', 'registration'],
       run: () => {
         ui().setFlightIdent(flight);
         ui().setOpenPanel('paths');
@@ -61,6 +133,23 @@ export function queryItems(query: string, available: (id: PanelId) => boolean): 
     });
   }
   return out;
+}
+
+/**
+ * cmdk ranking over its fuzzy score: typed route/flight commands first, then exact label matches
+ * ("LAYERS" opens the LAYERS panel, not a tool whose tooltip mentions layers), then label prefixes,
+ * then everything else by fuzzy score. 0 hides the item.
+ */
+export function rankItem(item: Pick<PaletteItem, 'id' | 'label'>, search: string, fuzzy: number): number {
+  const s = search.trim().toLowerCase();
+  if (!s) return 1;
+  if (item.id.startsWith('route') || item.id.startsWith('flight:')) return 1;
+  const label = item.label.toLowerCase();
+  if (label === s) return 0.999;
+  if (fuzzy <= 0) return 0;
+  const f = Math.min(fuzzy, 1);
+  if (label.startsWith(s)) return 0.9 + f * 0.09;
+  return f * 0.89;
 }
 
 export function paletteItems(ctx: { available: (id: PanelId) => boolean; layers: LayerDef[]; active: ReadonlySet<string> }): PaletteItem[] {

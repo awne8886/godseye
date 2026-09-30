@@ -7,7 +7,7 @@
  */
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useState } from 'react';
-import { APP_NAME } from '@/lib/config';
+import { APP_NAME, APP_SUBTITLE } from '@/lib/config';
 import { useLayerStatusStore, useMapInstanceStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import GodseyeMark from './GodseyeMark';
@@ -81,7 +81,7 @@ export default function Splash() {
                 </span>
               ))}
             </p>
-            <p className="hud-micro mt-3 tracking-[0.5em] text-[var(--gold-light)]">GLOBAL INTELLIGENCE PLATFORM</p>
+            <p className="hud-micro mt-3 tracking-[0.5em] text-[var(--gold-light)]">{APP_SUBTITLE}</p>
             <div className="mt-6 h-0.5 w-64 overflow-hidden bg-[rgba(var(--gold-rgb),0.1)]">
               <motion.div
                 className="h-full bg-gradient-to-r from-[var(--gold-primary)] via-[var(--cyan-primary)] to-[var(--gold-primary)]"

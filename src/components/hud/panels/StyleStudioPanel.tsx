@@ -194,7 +194,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
       onClose={onClose}
       overlay={false}
       hideTitle
-      className="bottom-10 left-3 right-3 top-20 md:left-[58px] md:right-auto md:top-auto md:max-h-[min(80vh,760px)] md:w-[360px]"
+      className="bottom-10 left-3 right-3 top-20 md:bottom-[150px] md:left-[58px] md:right-auto md:top-auto md:max-h-[min(calc(100dvh-230px),760px)] md:w-[360px]"
     >
       <div className="flex items-center gap-1 px-4 pb-2 pt-3">
         <span className="instrument-accent mr-1" aria-hidden />

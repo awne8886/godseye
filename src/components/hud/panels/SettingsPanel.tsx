@@ -1,12 +1,15 @@
 'use client';
 /**
- * Settings (persisted per browser as `godseye:settings`, never sent to the server): units, motion,
+ * Settings: view actions (palette, reset, fullscreen, shortcuts) and sensor modes for touch screens,
+ * then preferences (persisted per browser as `godseye:settings`, never sent to the server): units, motion,
  * location consent, preview autoplay and preferred AI provider (only providers the server has
  * enabled, from /api/health). Owner: design-system-hud.
  */
 import type { ReactNode } from 'react';
 import type { PanelProps } from '@/lib/feature-module';
-import { useUiStore, type Settings } from '@/lib/store';
+import type { KeyAction } from '@/lib/keyboard';
+import { useUiStore, type SensorMode, type Settings } from '@/lib/store';
+import { runKeyAction } from '../actions';
 import { useHealth } from '../hooks';
 import { Toggle } from '../LayerRows';
 
@@ -30,7 +33,7 @@ function Choice<T extends string>({ label, value, options, onChange }: { label: 
           role="radio"
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`hud-micro hud-control min-h-[32px] border px-2.5 ${value === o.value ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+          className={`hud-micro hud-control min-h-[44px] border px-2.5 md:min-h-[32px] ${value === o.value ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
         >
           {o.text}
         </button>
@@ -46,7 +49,24 @@ const AI: { value: Settings['aiProvider']; text: string; cap: string | null }[] 
   { value: 'ollama', text: 'OLLAMA', cap: 'ollama' },
 ];
 
+const VIEW_ACTIONS: { action: KeyAction; text: string }[] = [
+  { action: 'open-palette', text: 'COMMANDS' },
+  { action: 'reset-view', text: 'RESET VIEW' },
+  { action: 'toggle-fullscreen', text: 'FULLSCREEN' },
+  { action: 'open-help', text: 'SHORTCUTS' },
+];
+
+const SENSOR_OPTIONS: { value: SensorMode; text: string }[] = [
+  { value: 'none', text: 'OFF' },
+  { value: 'crt', text: 'CRT' },
+  { value: 'nvg', text: 'NVG' },
+  { value: 'flir', text: 'FLIR' },
+  { value: 'noir', text: 'NOIR' },
+];
+
 export default function SettingsPanel(_: PanelProps) {
+  const sensor = useUiStore((s) => s.sensor);
+  const setSensor = useUiStore((s) => s.setSensor);
   const settings = useUiStore((s) => s.settings);
   const update = useUiStore((s) => s.updateSettings);
   const caps = useHealth().data?.capabilities ?? {};
@@ -54,6 +74,23 @@ export default function SettingsPanel(_: PanelProps) {
 
   return (
     <div className="space-y-3">
+      <Row label="VIEW" hint="The same actions as the keyboard shortcuts, for touch screens.">
+        <div className="flex flex-wrap gap-1">
+          {VIEW_ACTIONS.map((a) => (
+            <button
+              key={a.action}
+              type="button"
+              onClick={() => runKeyAction(a.action)}
+              className="hud-micro hud-control min-h-[44px] border border-[var(--border-secondary)] px-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] md:min-h-[32px]"
+            >
+              {a.text}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="SENSOR MODE" hint="Post-processing over the map (keys 1–4, 0 clears).">
+        <Choice label="Sensor mode" value={sensor} onChange={(m) => setSensor(m)} options={SENSOR_OPTIONS} />
+      </Row>
       <Row label="UNITS" hint="Aviation: altitude in feet, speed in knots, distance in nautical miles.">
         <Choice
           label="Units"
@@ -95,7 +132,7 @@ export default function SettingsPanel(_: PanelProps) {
           type="button"
           aria-pressed={settings.previewAutoplay}
           onClick={() => update({ previewAutoplay: !settings.previewAutoplay })}
-          className="hud-micro hud-control flex min-h-[32px] items-center gap-2 text-[var(--text-primary)]"
+          className="hud-micro hud-control flex min-h-[44px] items-center gap-2 text-[var(--text-primary)] md:min-h-[32px]"
         >
           <Toggle on={settings.previewAutoplay} /> AUTOPLAY PREVIEWS
         </button>

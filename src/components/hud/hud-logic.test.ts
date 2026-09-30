@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LAYERS, visibleLayers } from '@/lib/layer-registry';
 import { REGION_PRESETS } from '@/lib/presets';
 import { DEFAULT_SETTINGS, useUiStore } from '@/lib/store';
@@ -167,5 +167,58 @@ describe('palette query items (Flight Path Planner shortcuts)', () => {
     expect(queryItems('satellites', all)).toEqual([]);
     expect(queryItems('LHR JFK', (id) => id !== 'paths')).toEqual([]);
     useUiStore.getState().setOpenPanel(null);
+  });
+
+  it('parses code routes in every accepted form', async () => {
+    const { parseRouteQuery } = await import('./palette-items');
+    for (const q of ['LHR JFK', 'lhr-jfk', 'LHR-JFK', 'LHR to JFK', 'lhr → jfk', 'LHR->JFK', 'EGLL→KJFK'])
+      expect(parseRouteQuery(q), q).toMatchObject({ kind: 'codes' });
+    expect(parseRouteQuery('EGLL→KJFK')).toEqual({ kind: 'codes', from: 'EGLL', to: 'KJFK' });
+    expect(parseRouteQuery('LHR to JFK')).toEqual({ kind: 'codes', from: 'LHR', to: 'JFK' });
+  });
+
+  it('turns "London to New York" into a route command that resolves each city', async () => {
+    const { parseRouteQuery, queryItems } = await import('./palette-items');
+    const { useUiStore } = await import('@/lib/store');
+    expect(parseRouteQuery('London to New York')).toEqual({ kind: 'names', from: 'London', to: 'New York' });
+    expect(parseRouteQuery('Paris → Tokyo')).toEqual({ kind: 'names', from: 'Paris', to: 'Tokyo' });
+    expect(parseRouteQuery('London to London')).toBeNull();
+    // Recorded /api/airports/search answers (2026-09-30): London → metro LHR…, New York → metro JFK….
+    const fetchImpl = (async (url: string) => {
+      const q = new URL(url, 'http://x').searchParams.get('q');
+      const metro = q === 'London' ? { name: 'London', codes: ['LHR', 'LGW', 'STN', 'LTN', 'LCY', 'SEN'] } : q === 'New York' ? { name: 'New York', codes: ['JFK', 'EWR', 'LGA'] } : null;
+      return new Response(JSON.stringify({ query: q, results: [], metro }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const [item] = queryItems('London to New York', () => true, fetchImpl);
+    expect(item!.label).toBe('Plan route LONDON → NEW YORK');
+    useUiStore.setState({ plannedRoute: null, openPanel: null });
+    item!.run();
+    expect(useUiStore.getState().openPanel).toBe('paths');
+    await vi.waitFor(() => expect(useUiStore.getState().plannedRoute).toEqual({ from: 'LHR', to: 'JFK' }));
+    useUiStore.setState({ plannedRoute: null, openPanel: null, flightIdent: null });
+  });
+
+  it('tracks registrations and hex without a digit gate, but never plain words', async () => {
+    const { parseFlightQuery, queryItems } = await import('./palette-items');
+    expect(parseFlightQuery('G-XWBA')).toBe('G-XWBA');
+    expect(parseFlightQuery('vh-oqa')).toBe('VH-OQA');
+    expect(parseFlightQuery('4ca2b3')).toBe('4CA2B3');
+    expect(parseFlightQuery('BAW117')).toBe('BAW117');
+    expect(parseFlightQuery('N12345')).toBe('N12345');
+    for (const w of ['LAYERS', 'NOIR', 'NEWS', 'satellites', 'ghost']) expect(parseFlightQuery(w), w).toBeNull();
+    const [track] = queryItems('G-XWBA', () => true);
+    expect(track!.label).toBe('Track flight G-XWBA');
+  });
+
+  it('ranks typed commands, then exact labels, then prefixes, then fuzzy matches', async () => {
+    const { rankItem } = await import('./palette-items');
+    const layers = rankItem({ id: 'tool:layers', label: 'LAYERS' }, 'LAYERS', 0.5);
+    const arcgis = rankItem({ id: 'tool:arcgis', label: 'ARCGIS' }, 'LAYERS', 0.99);
+    const show = rankItem({ id: 'layer:flights', label: 'Show Commercial' }, 'LAYERS', 0.3);
+    expect(layers).toBeGreaterThan(arcgis);
+    expect(layers).toBeGreaterThan(show);
+    expect(rankItem({ id: 'route:LHR-JFK', label: 'Plan route LHR → JFK' }, 'lhr jfk', 0)).toBe(1);
+    expect(rankItem({ id: 'tool:share', label: 'SHARE' }, 'sh', 0.8)).toBeGreaterThan(rankItem({ id: 'action:ghost', label: 'Toggle Ghost Protocol' }, 'sh', 0.8));
+    expect(rankItem({ id: 'tool:share', label: 'SHARE' }, 'zzz', 0)).toBe(0);
   });
 });
