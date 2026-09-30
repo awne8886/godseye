@@ -246,7 +246,7 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/geo/reverse', group: 'geo', summary: 'Reverse geocode (Photon, then queued Nominatim; cached 30 days)', params: [q('lat', 'number', true, 'latitude', '51.5'), q('lng', 'number', true, 'longitude', '-0.12')], ttlSeconds: 600, responseSchema: 'GeoResponse', upstreams: ['photon.komoot.io', 'nominatim.openstreetmap.org'], forwardsUserInput: true, example: '?lat=51.5&lng=-0.12', osiris: true, owner: 'panels-recon' },
   { method: 'GET', path: '/api/geosearch', group: 'geo', summary: 'Place search: Photon type-ahead; Nominatim only on explicit submit', params: [q('q', 'string', true, 'query', 'Kyiv'), q('submit', 'boolean', false, '1 = explicit submit (allows Nominatim promotion)'), q('lat', 'number', false, 'bias latitude'), q('lng', 'number', false, 'bias longitude')], ttlSeconds: 600, responseSchema: 'GeoResponse', upstreams: ['photon.komoot.io', 'nominatim.openstreetmap.org'], forwardsUserInput: true, example: '?q=Kyiv', osiris: true, owner: 'panels-recon' },
   {
-    method: 'GET', path: '/api/directions', group: 'geo', summary: 'Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile',
+    method: 'GET', path: '/api/directions', group: 'geo', summary: 'Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile; 422 no_route when a point is > 5 km from the road network',
     params: [
       q('from', 'string', true, 'lat,lng (latitude first)', '51.5072,-0.1276'),
       q('to', 'string', true, 'lat,lng', '51.5081,-0.0877'),
@@ -258,8 +258,8 @@ export const API_CATALOG = [
   },
   {
     method: 'GET', path: '/api/arcgis', group: 'geo', summary: 'ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/services/…/(Feature|Map)Server/<n>/query, SSRF-guarded)',
-    params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, 'any public …/rest/services/…/(Feature|Map)Server[/n] URL'), q('bbox', 'string', false, 'west,south,east,north')],
-    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', '(user-supplied public ArcGIS server)'], forwardsUserInput: true, osiris: true, rateLimit: { limit: 20, windowS: 60 }, owner: 'panels-recon',
+    params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, '…/rest/services/…/(Feature|Map)Server[/n] on *.arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS'), q('bbox', 'string', false, 'west,south,east,north')],
+    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', '*.arcgis.com', '*.arcgisonline.com'], forwardsUserInput: true, osiris: true, rateLimit: { limit: 20, windowS: 60 }, owner: 'panels-recon',
   },
 
   // ── flight paths ───────────────────────────────────────────────────────────────
