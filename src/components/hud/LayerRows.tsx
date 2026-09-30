@@ -11,7 +11,7 @@ import type { LayerDef, LayerId } from '@/lib/layer-registry';
 import { useLayerStatus, type LayerStatus } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import type { Attribution } from '@/lib/types';
-import { refreshLabel } from './status-logic';
+import { refreshLabel, zoomGateLabel } from './status-logic';
 
 export function Toggle({ on }: { on: boolean }) {
   return (
@@ -34,6 +34,8 @@ export function statusAttribution(st: LayerStatus): Attribution[] {
 const hhmm = (iso: string | null) => (iso ? `${new Date(iso).toISOString().slice(11, 16)}Z` : '—');
 
 export function FreshnessLed({ layer, status }: { layer: LayerDef; status: LayerStatus }) {
+  const gate = zoomGateLabel(status);
+  if (gate) return <span className="hud-micro text-[var(--text-secondary)]">{gate}</span>;
   if (status.state === 'idle') return null;
   if (status.state === 'loading')
     return (

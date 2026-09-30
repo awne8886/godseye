@@ -6,6 +6,7 @@ import { useLayerStatusStore } from '@/lib/layer-host';
 import { SOURCES } from '@/lib/sources';
 import AttributionPanel, { layerCadenceLabel, layerKindLabel } from './AttributionPanel';
 import { getLayer } from '@/lib/layer-registry';
+import { FreshnessLed } from '../LayerRows';
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } });
@@ -33,6 +34,14 @@ describe('SOURCES & LICENCES', () => {
     expect(text).not.toContain('Computed in the browser');
     expect(text).not.toContain('switch the layer on');
     expect(text).toContain(`${SOURCES.length} SOURCES IN THE REGISTER`);
+  });
+
+  it('FreshnessLed shows ZOOM ≥ N for an idle zoom-gated layer (Sentinel below z6)', () => {
+    render(<FreshnessLed layer={getLayer('sentinel')!} status={{ state: 'idle', error: 'zoom_min_6', count: null, fetchedAt: null, observedAt: null, lastGoodAt: null }} />);
+    expect(screen.getByText('ZOOM ≥ 6')).toBeTruthy();
+    cleanup();
+    const { container } = render(<FreshnessLed layer={getLayer('sentinel')!} status={{ state: 'idle', count: null, fetchedAt: null, observedAt: null, lastGoodAt: null }} />);
+    expect(container.textContent).toBe('');
   });
 
   it('never labels an unobserved feed LIVE and names tile layers as tiles', () => {

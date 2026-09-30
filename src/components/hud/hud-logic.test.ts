@@ -44,10 +44,23 @@ describe('entity card freshness badge', () => {
     expect(cardBadge({ layer: 'flights', observedAt: ago(5 * 60_000), feed: { state: 'live' }, now: NOW })).toMatchObject({ state: 'recent', label: '5m' });
     expect(cardBadge({ layer: 'flights', observedAt: ago(20 * 60_000), feed: { state: 'live' }, now: NOW })).toMatchObject({ state: 'stale', label: 'STALE' });
   });
-  it('an event inherits the feed state (a 2 h old quake on a live feed is LIVE-feed, age shown)', () => {
+  it('an event inherits the feed state only within one refresh interval; older events are RECENT with their age', () => {
+    const fresh = cardBadge({ layer: 'earthquakes', observedAt: ago(30_000), feed: { state: 'live' }, now: NOW });
+    expect(fresh.state).toBe('live');
     const b = cardBadge({ layer: 'earthquakes', observedAt: ago(2 * 3600_000), feed: { state: 'live' }, now: NOW });
-    expect(b.state).toBe('live');
+    expect(b.state).toBe('recent');
     expect(b.age).toBe('2h ago');
+    const quake16h = cardBadge({ layer: 'earthquakes', observedAt: ago(16 * 3600_000), feed: { state: 'live' }, now: NOW });
+    expect(quake16h.state).not.toBe('live');
+    expect(quake16h.label).not.toBe('LIVE');
+  });
+  it('an idle zoom-gated layer reads ZOOM ≥ N, nothing else does', async () => {
+    const { zoomGateLabel } = await import('./status-logic');
+    expect(zoomGateLabel({ state: 'idle', error: 'zoom_min_6' })).toBe('ZOOM ≥ 6');
+    expect(zoomGateLabel({ state: 'idle', error: 'http_503' })).toBeNull();
+    expect(zoomGateLabel({ state: 'offline', error: 'zoom_min_6' })).toBeNull();
+    expect(zoomGateLabel({ state: 'idle' })).toBeNull();
+    expect(zoomGateLabel(undefined)).toBeNull();
   });
   it('offline feed → OFFLINE; reference layer → REFERENCE', () => {
     expect(cardBadge({ layer: 'earthquakes', observedAt: ago(1000), feed: { state: 'offline' }, now: NOW }).label).toBe('OFFLINE');
