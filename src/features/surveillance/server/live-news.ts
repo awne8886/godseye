@@ -5,7 +5,8 @@
  * `embed_allowed` split); the rest open on YouTube. Whether a channel is live right now comes
  * from a server-side check of its `/live` page (hourly): `true` when the page is a live watch page
  * (`"isLive":true`), `false` when YouTube serves the channel page instead, `null` when the page
- * could not be read or parsed (consent wall, bot check) — never guessed.
+ * could not be read or parsed (consent wall, bot check) — never guessed. Each channel's `observedAt`
+ * is the time its check answered (null when it did not); `meta.observedAt` is the latest of them.
  * RT is excluded (no official YouTube presence; Rumble only).
  * Owner: layers-surveillance. Server-only.
  */
@@ -45,11 +46,12 @@ export function parseLivePage(html: string): boolean | null {
   return null;
 }
 
-export function toChannel(s: Seed, live: boolean | null): NewsChannel {
+export function toChannel(s: Seed, live: boolean | null, checkedAt: string | null = null): NewsChannel {
   return {
     ...s,
     source: 'youtube',
-    observedAt: null,
+    // The live flag is an observation only when the check produced one.
+    observedAt: live === null ? null : checkedAt,
     embedUrl: s.embedAllowed ? embedUrlFor(s.youtubeChannelId) : null,
     externalUrl: liveUrlFor(s.youtubeChannelId),
     live,
@@ -73,16 +75,26 @@ export const liveNewsFeed = defineFeed<NewsChannel[]>({
   // The list itself is static and always served; the check result is per channel.
   isEmpty: () => false,
   run: async (ctx) => {
-    let checks: (boolean | null)[] = CHANNELS.map(() => null);
+    let checks: { live: boolean | null; at: number | null }[] = CHANNELS.map(() => ({ live: null, at: null }));
     // count = channels whose live state could be determined; 0 → the check failed (flags stay null).
     const run: { run: ProviderRun } = await runProvider(
       async () => {
-        checks = await Promise.all(CHANNELS.map((c) => checkLive(c.youtubeChannelId, ctx.signal).catch(() => null)));
-        return checks.filter((v) => v !== null).length;
+        checks = await Promise.all(
+          CHANNELS.map(async (c) => {
+            const live = await checkLive(c.youtubeChannelId, ctx.signal).catch(() => null);
+            return { live, at: live === null ? null : Date.now() };
+          }),
+        );
+        return checks.filter((v) => v.live !== null).length;
       },
       (n) => n,
     );
-    return { data: CHANNELS.map((s, i) => toChannel(s, checks[i] ?? null)), providers: { 'youtube-live-check': run.run } };
+    const latest = checks.reduce((m, c) => (c.at !== null && c.at > m ? c.at : m), 0);
+    return {
+      data: CHANNELS.map((s, i) => toChannel(s, checks[i]?.live ?? null, checks[i]?.at ? new Date(checks[i]!.at!).toISOString() : null)),
+      providers: { 'youtube-live-check': run.run },
+      observedAt: latest || null,
+    };
   },
   count: (d) => d.length,
 });

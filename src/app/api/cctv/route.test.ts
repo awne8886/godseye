@@ -5,7 +5,7 @@ import { CCTV_REGIONS } from '@/features/surveillance/shared';
 import { MAX_RESPONSE_BYTES } from '@/lib/respond';
 import { CAMERA_FIELDS, CctvResponse } from '@/lib/schemas/surveillance';
 
-const state = vi.hoisted(() => ({ fail: new Set<string>() }));
+const state = vi.hoisted(() => ({ fail: new Set<string>(), spy: null as null | ((id: string) => void) }));
 vi.mock('@/features/surveillance/server/loaders', async () => {
   const { fixtureLoaders: fx } = await import('@/features/surveillance/server/__fixtures__/loaders');
   const base = fx();
@@ -13,6 +13,7 @@ vi.mock('@/features/surveillance/server/loaders', async () => {
     Object.entries(base).map(([id, fn]) => [
       id,
       async (s: AbortSignal) => {
+        state.spy?.(id);
         if (state.fail.has(id) || state.fail.has('*')) throw Object.assign(new Error('HTTP 503'), { name: 'HttpError', code: 'http', status: 503 });
         return fn(s);
       },
@@ -78,6 +79,44 @@ describe('GET /api/cctv', () => {
     expect(b.providers.trafikverket).toMatchObject({ ok: false, skipped: 'not-configured' });
     expect(b.regions).toEqual(['nordics']);
     expect(b.rows.every((r: unknown[]) => r[CAMERA_FIELDS.indexOf('providerId')] !== 'tfl')).toBe(true);
+  });
+
+  it('R2-M3: a keyless instance answers a key-only region 200 "not configured" (no 5xx, nothing fetched)', async () => {
+    const calls = vi.fn();
+    state.fail.clear();
+    state.spy = calls;
+    const res = await GET(req('/api/cctv?region=uk'), undefined);
+    expect(res.status).toBe(200);
+    const b = await res.json();
+    expect(CctvResponse.safeParse(b).success).toBe(true);
+    expect(b.rows).toEqual([]);
+    expect(b.regions).toEqual([]);
+    expect(b.disabledRegions).toEqual(['uk']);
+    expect(b.providers.tfl).toMatchObject({ ok: false, count: 0, skipped: 'not-configured' });
+    expect(b.meta.note).toMatch(/Not configured on this instance/);
+    expect(calls).not.toHaveBeenCalledWith('tfl');
+    state.spy = null;
+  });
+
+  it('with TFL_APP_KEY the uk region is fetched and served', async () => {
+    vi.stubEnv('TFL_APP_KEY', 'test-key');
+    const res = await GET(req('/api/cctv?region=uk'), undefined);
+    expect(res.status).toBe(200);
+    const { json: b } = await body(res);
+    expect(b.regions).toEqual(['uk']);
+    expect(b.disabledRegions).toEqual([]);
+    expect(b.providers.tfl).toMatchObject({ ok: true });
+    expect(b.rows.length).toBeGreaterThan(0);
+    vi.unstubAllEnvs();
+  });
+
+  it('503 stays reserved for configured providers that failed', async () => {
+    vi.stubEnv('TFL_APP_KEY', 'test-key');
+    state.fail.add('tfl');
+    const res = await GET(req('/api/cctv?region=uk'), undefined);
+    expect(res.status).toBe(503);
+    expect((await res.json()).providers.tfl).toMatchObject({ ok: false });
+    vi.unstubAllEnvs();
   });
 
   it('selects regions by lat/lng', async () => {

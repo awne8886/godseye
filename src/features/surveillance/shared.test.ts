@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraTag, CCTV_REGIONS, isRegion, providerIdOf, regionsForPoint, stillPath } from './shared';
+import { cameraTag, CCTV_REGIONS, CCTV_ZOOM_BANDS, isRegion, providerIdOf, regionsForPoint, removalContact, removalHref, stillPath, zoomBand } from './shared';
 
 describe('surveillance shared helpers', () => {
   it('selects regions by point, falling back to the nearest box', () => {
@@ -10,6 +10,30 @@ describe('surveillance shared helpers', () => {
     expect(regionsForPoint(-33.9, 18.4)).toHaveLength(1); // Cape Town: nearest box only
     expect(CCTV_REGIONS.every(isRegion)).toBe(true);
     expect(isRegion('mars')).toBe(false);
+  });
+
+  it('M9: camera points are small and unstroked at globe zooms, growing monotonically with zoom', () => {
+    expect(zoomBand(1.8)).toBe(0);
+    expect(zoomBand(4)).toBe(1);
+    expect(zoomBand(13)).toBe(CCTV_ZOOM_BANDS.length - 1);
+    const landing = CCTV_ZOOM_BANDS[zoomBand(2)]!;
+    expect(landing.maxPx).toBeLessThanOrEqual(1.5);
+    expect(landing.stroked).toBe(false);
+    expect(landing.opacity).toBeLessThan(0.6);
+    for (let i = 1; i < CCTV_ZOOM_BANDS.length; i++) {
+      expect(CCTV_ZOOM_BANDS[i]!.maxPx).toBeGreaterThan(CCTV_ZOOM_BANDS[i - 1]!.maxPx);
+      expect(CCTV_ZOOM_BANDS[i]!.scale).toBeGreaterThan(CCTV_ZOOM_BANDS[i - 1]!.scale);
+    }
+  });
+
+  it('removal contact: GODSEYE_CONTACT (email/https) when set, else the project tracker', () => {
+    expect(removalContact({})).toEqual({ kind: 'tracker', href: 'https://github.com/awne8886/godseye/issues' });
+    expect(removalContact({ GODSEYE_CONTACT: 'ops@example.org' })).toEqual({ kind: 'email', href: 'mailto:ops@example.org' });
+    expect(removalContact({ GODSEYE_CONTACT: 'mailto:ops@example.org' })).toEqual({ kind: 'email', href: 'mailto:ops@example.org' });
+    expect(removalContact({ GODSEYE_CONTACT: 'https://ops.example.org/abuse' })).toEqual({ kind: 'url', href: 'https://ops.example.org/abuse' });
+    expect(removalContact({ GODSEYE_CONTACT: 'javascript:alert(1)' }).kind).toBe('tracker');
+    expect(removalContact({ GODSEYE_CONTACT: 'a\r\nb' }).kind).toBe('tracker');
+    expect(removalHref({ kind: 'email', href: 'mailto:o@x.org' }, 'T', 'a b')).toBe('mailto:o@x.org?subject=T&body=a%20b');
   });
 
   it('ids, tags and still paths', () => {

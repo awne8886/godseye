@@ -5,7 +5,7 @@
  */
 import { regionFeed } from '@/features/surveillance/server/catalog';
 import { PROVIDERS, providerRow } from '@/features/surveillance/server/registry';
-import { CCTV_REGIONS } from '@/features/surveillance/shared';
+import { CCTV_REGIONS, removalContact } from '@/features/surveillance/shared';
 import { json, withRoute } from '@/lib/respond';
 import type { FeedMeta, Providers } from '@/lib/types';
 
@@ -27,5 +27,5 @@ export const GET = withRoute('/api/cctv/providers', () => {
     attribution: items.map((p) => ({ text: p.attribution_string, url: p.terms_url, licence: p.licence })),
     note: 'Registry of official camera operators. Provider status reflects the last inventory refresh of each region.',
   };
-  return json({ items, meta, providers }, { ttl: 300 });
+  return json({ items, meta, providers, removal: removalContact(process.env) }, { ttl: 300 });
 });

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CameraProvider } from '@/lib/schemas/surveillance';
 import { matchesAllowList } from '@/lib/ssrf';
-import { CCTV_REGIONS } from '../shared';
-import { EXCLUDED_SOURCES, isRemoved, linkOutSet, PROVIDERS, providerRow, providersIn } from './registry';
+import { CCTV_REGIONS, KEYED_REGIONS, requestableRegions } from '../shared';
+import { EXCLUDED_SOURCES, hasFrameRules, isRemoved, linkOutSet, PROVIDERS, providerRow, providersIn, regionDisabled, rulesFor } from './registry';
+
+const def = (id: string) => PROVIDERS.find((p) => p.row.id === id)!;
+const allowed = (id: string, url: string) => matchesAllowList(new URL(url), rulesFor(def(id), url));
 
 describe('camera provider registry (§5)', () => {
   it('every row is complete: licence, attribution, terms, poll interval, stream type', () => {
@@ -16,7 +19,7 @@ describe('camera provider registry (§5)', () => {
       expect(row.max_poll_interval, p.row.id).toBeGreaterThanOrEqual(30);
       expect(row.list_endpoint, p.row.id).toMatch(/^https:\/\//);
       // A provider that serves frames must have an exact allow-list; link-out ones need none.
-      if (row.proxy_allowed) expect(p.rules.length, p.row.id).toBeGreaterThan(0);
+      if (row.proxy_allowed) expect(hasFrameRules(p), p.row.id).toBe(true);
       for (const r of p.rules) expect(r.host.startsWith('*.') || !r.host.includes('*'), p.row.id).toBe(true);
     }
     expect(new Set(PROVIDERS.map((p) => p.row.id)).size).toBe(PROVIDERS.length);
@@ -65,9 +68,58 @@ describe('camera provider registry (§5)', () => {
     const txdot = PROVIDERS.find((p) => p.row.id === 'txdot')!.rules;
     expect(matchesAllowList(new URL('https://its.txdot.gov/its/DistrictIts/GetCctvSnapshotByIcdId?districtCode=AUS&icdId=X'), txdot)).toBe(true);
     expect(matchesAllowList(new URL('https://its.txdot.gov/its/DistrictIts/GetCctvStatusListByDistrict?districtCode=AUS'), txdot)).toBe(false);
-    const thb = PROVIDERS.find((p) => p.row.id === 'thb')!.rules;
-    expect(matchesAllowList(new URL('https://cctv-ss03.thb.gov.tw:443/T1-123K+850/snapshot'), thb)).toBe(true);
-    expect(matchesAllowList(new URL('https://cctvc.freeway.gov.tw/abs2jpg/bmjpg?camera=1'), thb)).toBe(false);
+    expect(allowed('thb', 'https://cctv-ss03.thb.gov.tw:443/T1-123K+850/snapshot')).toBe(true);
+    expect(allowed('thb', 'https://cctvc.freeway.gov.tw/abs2jpg/bmjpg?camera=1')).toBe(false);
+    expect(allowed('thb', 'https://cctv-ss03.thb.gov.tw/admin/config')).toBe(false);
+    expect(allowed('thb', 'https://cctv-ss09.thb.gov.tw/T1-123K+850/snapshot')).toBe(false);
+  });
+
+  it('SEC-m5: no rule is a host-root prefix; every image directory was probed (2026-09-30)', () => {
+    for (const p of PROVIDERS) for (const r of p.rules) expect(r.pathPrefix.length > 1 && r.pathPrefix !== '/', `${p.row.id} ${r.host}${r.pathPrefix}`).toBe(true);
+    // Real still/playlist URLs from the probes pass …
+    for (const [id, url] of [
+      ['caltrans', 'https://wzmedia.dot.ca.gov/D7/CCTV-196.stream/playlist.m3u8'],
+      ['wsdot', 'https://images.wsdot.wa.gov/nw/525vc00694.jpg'],
+      ['wsdot', 'https://images.wsdot.wa.gov/ORFlow/005vc12750.jpg'],
+      ['wsdot', 'https://images.wsdot.wa.gov/wsf/Keystone/terminal/keystone.jpg'],
+      ['mdot', 'https://micamerasimages.net/thumbs/semtoc_cam_253.flv.jpg?item=1'],
+      ['mdot', 'https://micamerasimages.net/image-000705102-00-04.jpg?bucket=ftp'],
+      ['digitraffic', 'https://weathercam.digitraffic.fi/C0150200.jpg'],
+      ['hktd', 'https://tdcctv.data.one.gov.hk/AID01101.JPG'],
+    ] as const) expect(allowed(id, url), url).toBe(true);
+    // … paths outside the image directories are refused.
+    for (const [id, url] of [
+      ['caltrans', 'https://wzmedia.dot.ca.gov/admin/index.html'],
+      ['caltrans', 'https://wzmedia.dot.ca.gov/D13/x.stream/playlist.m3u8'],
+      ['wsdot', 'https://images.wsdot.wa.gov/traffic/camera.gif'],
+      ['wsdot', 'https://images.wsdot.wa.gov/private/x.jpg'],
+      ['mdot', 'https://micamerasimages.net/admin.php'],
+      ['mdot', 'https://micamerasimages.net/thumbs/../secret.jpg'],
+      ['digitraffic', 'https://weathercam.digitraffic.fi/api/v1/secret'],
+      ['digitraffic', 'https://weathercam.digitraffic.fi/C0150200.jpg/../x'],
+      ['hktd', 'https://tdcctv.data.one.gov.hk/index.html'],
+    ] as const) expect(allowed(id, url), url).toBe(false);
+  });
+
+  it('MDOT: a thumbnail allows exactly its own full-frame redirect target, nothing else at the root', () => {
+    const thumb = 'https://micamerasimages.net/thumbs/semtoc_cam_253.flv.jpg?item=1';
+    const rules = rulesFor(def('mdot'), thumb);
+    expect(matchesAllowList(new URL('https://micamerasimages.net/semtoc_cam_253.jpg?item=1'), rules)).toBe(true);
+    expect(matchesAllowList(new URL('https://micamerasimages.net/semtoc_cam_254.jpg'), rules)).toBe(false);
+    expect(matchesAllowList(new URL('https://micamerasimages.net/index.html'), rules)).toBe(false);
+    // A catalogue URL that does not look like a camera file earns no root rule.
+    expect(rulesFor(def('mdot'), 'https://micamerasimages.net/thumbs/../../etc.jpg')).toEqual(def('mdot').rules);
+    expect(rulesFor(def('digitraffic'), 'https://weathercam.digitraffic.fi/robots.txt')).toEqual([]);
+  });
+
+  it('keyed-only regions match the client list (KEYED_REGIONS) and are disabled without keys', () => {
+    const keyless = () => false;
+    const disabled = CCTV_REGIONS.filter((r) => regionDisabled(r, keyless));
+    expect(disabled).toEqual(Object.keys(KEYED_REGIONS));
+    for (const r of disabled) expect(KEYED_REGIONS[r]!.map((k) => k.capability).sort()).toEqual([...new Set(providersIn(r).map((p) => p.capability))].sort());
+    expect(CCTV_REGIONS.filter((r) => regionDisabled(r, () => true))).toEqual([]);
+    expect(requestableRegions(undefined)).toEqual({ active: CCTV_REGIONS.filter((r) => r !== 'uk'), needsKey: ['uk'] });
+    expect(requestableRegions({ tfl: { enabled: true } }).needsKey).toEqual([]);
   });
 
   it('link-out-only mode by region or country disables frames', () => {

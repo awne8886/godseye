@@ -1,8 +1,8 @@
 /**
  * Stills-only frame relay, TxDOT snapshot decoding, stream-status probes and playback resolution.
  *
- *  - Frames are fetched ONLY with allowListedFetch(url, provider.rules): exact host + directory
- *    prefix and the SSRF guard on every redirect hop, TLS verification on, honest User-Agent, no
+ *  - Frames are fetched ONLY with allowListedFetch(url, rulesFor(provider, url)): exact host + directory
+ *    prefix (or one exact file for operators that publish frames at the host root) and the SSRF guard on every redirect hop, TLS verification on, honest User-Agent, no
  *    Referer/IP forging. The URL always comes from the catalogue (the route takes a camera id).
  *  - Only image/* bodies (or octet-stream whose magic bytes are JPEG/PNG/WebP/GIF) ≤ 3 MB pass.
  *  - Nothing is stored: bytes stream straight back with `Cache-Control` = the operator's minimum
@@ -18,7 +18,7 @@ import { allowListedFetch, type AllowRule, type SafeFetchOptions } from '@/lib/s
 import type { Camera, CameraProvider, StreamStatusResponse } from '@/lib/types';
 import { stillPath } from '../shared';
 import { parseLta, parseTxdotId } from './adapters';
-import { providerRow, type ProviderDef } from './registry';
+import { providerRow, rulesFor, type ProviderDef } from './registry';
 
 export const MAX_FRAME_BYTES = 3 * 1024 * 1024;
 
@@ -108,7 +108,7 @@ export async function fetchFrame(camera: Camera, def: ProviderDef, deps: FrameDe
   if (!target) return { ok: false, status: 404, error: 'no_still' };
   let res;
   try {
-    res = await allowListedFetch(target.url, def.rules, { maxBytes: MAX_FRAME_BYTES, headers: { accept: 'image/*' }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
+    res = await allowListedFetch(target.url, rulesFor(def, target.url), { maxBytes: MAX_FRAME_BYTES, headers: { accept: 'image/*' }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
   } catch (e) {
     const code = (e as { code?: string }).code;
     return { ok: false, status: code === 'blocked' ? 403 : 502, error: code ?? 'network' };
@@ -125,7 +125,7 @@ export async function fetchTxdotSnapshot(camera: Camera, def: ProviderDef, deps:
   if (!parts || !camera.stillUrl) return { ok: false, status: 404, error: 'no_still' };
   let res;
   try {
-    res = await allowListedFetch(camera.stillUrl, def.rules, { maxBytes: 8 * MAX_FRAME_BYTES / 3, headers: { accept: 'application/json' }, limiter: frameLimiter('txdot'), ...deps.fetchOpts });
+    res = await allowListedFetch(camera.stillUrl, rulesFor(def, camera.stillUrl), { maxBytes: 8 * MAX_FRAME_BYTES / 3, headers: { accept: 'application/json' }, limiter: frameLimiter('txdot'), ...deps.fetchOpts });
   } catch (e) {
     const code = (e as { code?: string }).code;
     return { ok: false, status: code === 'blocked' ? 403 : 502, error: code ?? 'network' };
@@ -211,7 +211,7 @@ export async function probeCamera(camera: Camera, def: ProviderDef, deps: FrameD
   if (row.link_out_only || (!hls && !camera.stillUrl)) return { status: 'unknown', checkedAt, httpStatus: null };
   if (hls) {
     try {
-      const res = await allowListedFetch(hls, def.rules, { maxBytes: 256 * 1024, headers: { accept: 'application/vnd.apple.mpegurl, */*' }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
+      const res = await allowListedFetch(hls, rulesFor(def, hls), { maxBytes: 256 * 1024, headers: { accept: 'application/vnd.apple.mpegurl, */*' }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
       const online = res.ok && res.body.subarray(0, 7).toString('latin1') === '#EXTM3U';
       return { status: online ? 'online' : 'offline', checkedAt, httpStatus: res.status };
     } catch (e) {

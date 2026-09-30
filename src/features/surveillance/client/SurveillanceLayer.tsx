@@ -2,21 +2,24 @@
 /**
  * Surveillance map layers: official camera points (deck ScatterplotLayer over columnar rows),
  * on-map preview tiles at zoom ≥ 13 (DOM, `cctv_previews`), and live-news channel dots (native
- * MapLibre circles). Clicks go through the map-engine pick router (registerDeckPick /
+ * MapLibre circles). Camera points shrink with zoom (a band per ~2 zoom levels, no stroke and lower
+ * opacity when zoomed out) so thousands of cameras never merge into solid blobs; positions are
+ * never moved or aggregated. Clicks go through the map-engine pick router (registerDeckPick /
  * registerNativePick) — never a private map click handler. Colours come from `--map-cctv` /
  * `--map-news` and are re-read when the theme changes. Owner: layers-surveillance.
  */
 import { ScatterplotLayer } from '@deck.gl/layers';
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Cell } from '@/lib/columnar';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { LAYERS } from '@/lib/layer-registry';
-import { useDeckLayers, useLayerStatusStore, useMapInstance } from '@/lib/layer-host';
+import { useDeckLayers, useLayerStatusStore, useMapInstance, useMapInstanceStore } from '@/lib/layer-host';
 import { registerDeckPick, registerNativePick } from '@/lib/map/picking';
 import { useUiStore } from '@/lib/store';
 import { readCssColor } from '@/lib/tokens';
 import type { NewsChannel } from '@/lib/types';
+import { CCTV_ZOOM_BANDS, zoomBand } from '../shared';
 import CctvPreviews from './CctvPreviews';
 import { IDX, rowToCamera } from './rows';
 import { useCctv } from './useCctv';
@@ -29,14 +32,32 @@ const NEWS_LAYER = 'surveillance-live-news-dots';
 
 const rgba = ([r, g, b, a]: [number, number, number, number]) => `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
 
+/** Re-renders only when the zoom crosses a band edge (not on every frame). */
+function useZoomBand(): number {
+  const map = useMapInstanceStore((s) => s.map);
+  const [band, setBand] = useState(() => zoomBand(map?.getZoom() ?? 2));
+  useEffect(() => {
+    if (!map) return;
+    const onZoom = () => setBand(zoomBand(map.getZoom()));
+    onZoom();
+    map.on('zoom', onZoom);
+    return () => {
+      map.off('zoom', onZoom);
+    };
+  }, [map]);
+  return band;
+}
+
 function useCameraPoints(fetchOn: boolean, active: boolean) {
   const data = useCctv(fetchOn);
   const theme = useUiStore((s) => s.theme);
+  const band = useZoomBand();
   const layers = useMemo(() => {
     if (!active || !data) return null;
     const live = readCssColor('--map-cctv', 0.95);
     const still = readCssColor('--map-cctv', 0.75);
     const link = readCssColor('--map-cctv', 0.3);
+    const style = CCTV_ZOOM_BANDS[band]!;
     return [
       new ScatterplotLayer<Cell[]>({
         id: DECK_ID,
@@ -44,9 +65,12 @@ function useCameraPoints(fetchOn: boolean, active: boolean) {
         getPosition: (r) => [r[IDX.lng] as number, r[IDX.lat] as number],
         getRadius: (r) => (r[IDX.streamType] === 'hls' || r[IDX.streamType] === 'mp4' ? 4 : 3),
         radiusUnits: 'pixels',
-        radiusMinPixels: 2,
+        radiusScale: style.scale,
+        radiusMinPixels: 0.75,
+        radiusMaxPixels: style.maxPx,
+        opacity: style.opacity,
         getFillColor: (r) => (r[IDX.streamType] === 'link' ? link : r[IDX.streamType] === 'hls' || r[IDX.streamType] === 'mp4' ? live : still),
-        stroked: true,
+        stroked: style.stroked,
         getLineColor: (r) => (r[IDX.streamType] === 'link' ? still : live),
         lineWidthUnits: 'pixels',
         getLineWidth: 0.75,
@@ -55,7 +79,7 @@ function useCameraPoints(fetchOn: boolean, active: boolean) {
         updateTriggers: { getFillColor: theme, getLineColor: theme },
       }),
     ];
-  }, [active, data, theme]);
+  }, [active, data, theme, band]);
   useDeckLayers('surveillance:cctv', layers, Z);
   useEffect(
     () =>

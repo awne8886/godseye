@@ -8,7 +8,8 @@
  *  - hls  → hls.js (lazy) or native HLS, 20 s start timeout, then falls back to the still.
  *  - mp4  → plain <video src> (TfL sends no CORS headers, so no crossOrigin), badged LATEST CLIP.
  *  - link → link-out card (link-out-only providers and regions).
- * The header carries operator, licence, attribution, terms, and "Report / remove this camera".
+ * The header carries the camera tag, name and the provider's registry row (operator, licence,
+ * attribution, terms); "Report / remove this camera" sits under the frame.
  * Owner: layers-surveillance.
  */
 import { useQuery } from '@tanstack/react-query';
@@ -178,7 +179,7 @@ export function CameraViewerBody({ camera }: { camera: Camera }) {
   const shownAt = frameAt ?? cam.observedAt;
   const chip =
     resolved.isPending || (view === 'loading' && mode !== 'link')
-      ? { text: 'DECRYPTING FEED…', tone: 'busy' as ChipTone }
+      ? { text: 'LOADING FRAME…', tone: 'busy' as ChipTone }
       : resolved.isError
         ? { text: 'FEED UNAVAILABLE', tone: 'error' as ChipTone }
         : mode === 'link'
@@ -203,6 +204,8 @@ export function CameraViewerBody({ camera }: { camera: Camera }) {
         <p className="font-sans text-[13px] text-[var(--text-heading)]" data-testid="camera-name">
           {cam.name}
         </p>
+        {/* §5: the provider's registry row (operator · licence · attribution · terms) in the header. */}
+        <ProviderBlock provider={provider} />
       </header>
 
       <div className="relative aspect-video w-full overflow-hidden rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)]" aria-live="polite">
@@ -219,7 +222,7 @@ export function CameraViewerBody({ camera }: { camera: Camera }) {
           </div>
         )}
         {(resolved.isPending || (view === 'loading' && mode !== 'link')) && (
-          <p className="absolute inset-0 flex items-center justify-center font-mono text-[11px] uppercase tracking-[.08em] text-[var(--cyan-primary)]">{resolved.isPending ? 'ACQUIRING UPLINK' : 'DECRYPTING FEED…'}</p>
+          <p className="absolute inset-0 flex items-center justify-center font-mono text-[11px] uppercase tracking-[.08em] text-[var(--cyan-primary)]">{resolved.isPending ? 'ACQUIRING UPLINK' : 'LOADING FRAME…'}</p>
         )}
         {(view === 'error' || resolved.isError) && mode !== 'link' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[var(--bg-void)]/90">
@@ -248,7 +251,6 @@ export function CameraViewerBody({ camera }: { camera: Camera }) {
         {status.data && <Row label="Checked">{isoShort(status.data.checkedAt)}</Row>}
       </dl>
 
-      <ProviderBlock provider={provider} />
       <div className="flex flex-wrap items-center gap-3">
         {cam.externalUrl && mode !== 'link' && <OutLink href={cam.externalUrl}>Operator page</OutLink>}
         <OutLink href={`https://www.openstreetmap.org/?mlat=${cam.lat}&mlon=${cam.lng}#map=17/${cam.lat}/${cam.lng}`}>Map target</OutLink>

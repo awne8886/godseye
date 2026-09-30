@@ -42,6 +42,11 @@ describe('GET /api/live-news', () => {
     expect(byId.aljazeera).toMatchObject({ live: true, embedAllowed: true, embedUrl: 'https://www.youtube-nocookie.com/embed/live_stream?channel=UCNye-wNBqNL5ZzHSJj3l8Bg' });
     expect(byId.cspan).toMatchObject({ live: false, embedAllowed: false, embedUrl: null, externalUrl: 'https://www.youtube.com/channel/UCb--64Gl51jIEVE-GLDAVTg/live' });
     expect(byId.cbc.live).toBeNull();
+    // observedAt = the time each channel's check answered; unknown → no observation time.
+    const t0 = Date.now() - 60_000;
+    for (const id of ['aljazeera', 'cspan']) expect(Date.parse(byId[id].observedAt), id).toBeGreaterThan(t0);
+    expect(byId.cbc.observedAt).toBeNull();
+    expect(Date.parse(b.meta.observedAt)).toBeGreaterThanOrEqual(Date.parse(byId.aljazeera.observedAt));
     expect(b.items.some((c: { id: string }) => c.id === 'rt')).toBe(false);
   });
 
@@ -49,7 +54,8 @@ describe('GET /api/live-news', () => {
     state.fail = true;
     const b = await (await GET(req('/api/live-news'), undefined)).json();
     expect(LiveNewsResponse.safeParse(b).success).toBe(true);
-    expect(b.items.every((c: { live: unknown }) => c.live === null)).toBe(true);
+    expect(b.items.every((c: { live: unknown; observedAt: unknown }) => c.live === null && c.observedAt === null)).toBe(true);
+    expect(b.meta.observedAt).toBeNull();
     expect(b.providers['youtube-live-check']).toMatchObject({ ok: false, count: 0 });
   });
 });
