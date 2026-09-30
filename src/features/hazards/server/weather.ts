@@ -74,7 +74,7 @@ export const weatherFeed = defineFeed<WeatherData>({
       runProvider(
         async () => {
           const fc = (await httpJson<NwsCollection>(NWS_ALERTS_URL, { signal, timeoutMs: 20_000, headers: { accept: 'application/geo+json' } })).data ?? {};
-          const { zones } = await resolveZones(zonesNeeded(fc), { signal, budget: 60 });
+          const { zones } = await resolveZones(zonesNeeded(fc), { signal, budget: 120, concurrency: 8 });
           const r = normalizeNws(fc, zones);
           unplaced = r.unplaced;
           return r.items;

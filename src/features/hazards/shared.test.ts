@@ -29,8 +29,8 @@ describe('hazards visual scales', () => {
     expect(magnitudeRingKm(9.5)).toBe(1200);
     expect(quakeRadiusPx(1)).toBe(2.5);
     expect(quakeRadiusPx(9)).toBe(14);
-    expect(fireRadiusPx(null)).toBe(1.5);
-    expect(fireRadiusPx(3600)).toBe(7);
+    expect(fireRadiusPx(null)).toBe(1.2);
+    expect(fireRadiusPx(3600)).toBe(5);
   });
   it('only uses defined map tokens', () => {
     const tokens = [quakeToken(3), quakeToken(5), quakeToken(7), ...[null, 20, 80, 120, 180, 250, 400].map((v) => aqiCategory(v).token), ...[0.01, 0.05, 0.5].map((r) => jamLevel({ badRatio: r }).token), ...(['volcano', 'wildfire', 'flood', 'other'] as const).map((t) => weatherToken({ type: t }))];

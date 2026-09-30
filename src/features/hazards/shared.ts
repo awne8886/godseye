@@ -24,10 +24,10 @@ export function quakeToken(magnitude: number): MapToken {
   return magnitude >= 6 ? '--map-seismic-high' : magnitude >= 4 ? '--map-seismic' : '--map-seismic-low';
 }
 
-/** Fire point radius in pixels from FRP (MW): square-root scale, 1.5–7 px. */
+/** Fire point radius in pixels from FRP (MW): square-root scale, 1.2–5 px. */
 export function fireRadiusPx(frpMw: number | null): number {
-  if (frpMw === null || !(frpMw > 0)) return 1.5;
-  return Math.min(7, 1.5 + Math.sqrt(frpMw) / 6);
+  if (frpMw === null || !(frpMw > 0)) return 1.2;
+  return Math.min(5, 1.2 + Math.sqrt(frpMw) / 8);
 }
 
 export const FIRE_CONFIDENCE_ALPHA = { low: 0.35, nominal: 0.7, high: 0.95 } as const;

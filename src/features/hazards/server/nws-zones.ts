@@ -2,8 +2,8 @@
  * NWS zone geometry cache. Most active alerts carry `geometry: null` and only list
  * `affectedZones` (probed 2026-09-30: 112 of 152 alerts, 252 distinct zones). Zone outlines
  * change only at NWS boundary updates, so each is cached for 30 days (in-process, persisted to the
- * SnapshotStore so a restart or another instance reuses it). Lookups are budgeted per refresh and
- * paced with a provider bucket; alerts whose zones are still pending are reported as unplaced.
+ * SnapshotStore so a restart or another instance reuses it). Lookups are budgeted per refresh
+ * (120, ~15 s at 8 req/s) and paced with a provider bucket; alerts whose zones are still pending are reported as unplaced.
  * Owner: layers-hazards. Server-only.
  */
 import 'server-only';
@@ -27,7 +27,7 @@ const G = globalThis as unknown as { __godseyeNwsZones?: { map: Map<string, Entr
 const state = (G.__godseyeNwsZones ??= { map: new Map(), loaded: false });
 
 const defaultFetcher: Fetcher = async (url, signal) =>
-  (await httpJson(url, { signal, timeoutMs: 10_000, retries: 1, limiter: providerBucket('api.weather.gov', 5, 5), headers: { accept: 'application/geo+json' } })).data;
+  (await httpJson(url, { signal, timeoutMs: 10_000, retries: 1, limiter: providerBucket('api.weather.gov', 8, 8), headers: { accept: 'application/geo+json' } })).data;
 
 async function loadPersisted(): Promise<void> {
   if (state.loaded) return;
@@ -73,7 +73,7 @@ export async function resolveZones(
       if (e.zone) zones.set(u, e.zone);
     } else missing.push(u);
   }
-  const todo = missing.slice(0, opts.budget ?? 60);
+  const todo = missing.slice(0, opts.budget ?? 120);
   let fetched = 0;
   let failed = 0;
   let i = 0;
