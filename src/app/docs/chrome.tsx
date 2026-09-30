@@ -22,7 +22,7 @@ const NAV: { key: PageKey | 'map' | 'cameras' | 'source'; href: string; label: s
 
 export function PageShell({ current, children }: { current: PageKey; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 overflow-y-auto bg-primary-bg text-fg [scroll-padding-top:1rem]">
+    <div data-scroll-root className="fixed inset-0 overflow-y-auto bg-primary-bg text-fg [scroll-padding-top:1rem]">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-secondary-bg focus:px-4 focus:py-3 focus:text-[13px] focus:text-gold-light"

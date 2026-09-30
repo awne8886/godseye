@@ -156,7 +156,142 @@ export function userInputDisclosures(catalog: readonly ApiEndpoint[], hosts: rea
   return hosts.map((host) => ({
     host,
     uses: catalog
-      .filter((e) => e.forwardsUserInput && e.upstreams.includes(host))
+      .filter((e) => e.forwardsUserInput && (e.inputReceivers ?? e.upstreams).includes(host))
       .map((e) => ({ method: e.method, path: e.path, summary: e.summary, sent: describeSent(e) })),
   }));
+}
+
+/**
+ * True when the endpoint answers with real data only after the operator sets a key or opts in to a
+ * licence gate (its capability is off by default). Keyless gates that are on by default
+ * (`nc_sources`, `openmeteo`) do not count.
+ */
+export function requiresOperatorConfig(e: Pick<ApiEndpoint, 'capability'>, caps: Readonly<Record<string, CapabilitySpec>>): boolean {
+  if (!e.capability) return false;
+  const spec = caps[e.capability];
+  return Boolean(spec && (spec.env.length > 0 || spec.flag));
+}
+
+/** Page-intro sentence: how many endpoints exist and how many need operator configuration. */
+export function keylessSummary(catalog: readonly Pick<ApiEndpoint, 'capability'>[], caps: Readonly<Record<string, CapabilitySpec>>): string {
+  const gated = catalog.filter((e) => requiresOperatorConfig(e, caps)).length;
+  if (!gated) return `${catalog.length} endpoints on this origin, all usable without an API key.`;
+  return `${catalog.length} endpoints on this origin; all but ${gated} work without an API key. Those ${gated} name the capability (an operator key or licence opt-in) that turns them on.`;
+}
+
+// ── "Send request" try-it (client island in ./interactive.tsx) ──────────────────────────────────
+
+export interface TryParam {
+  name: string;
+  in: 'query' | 'path';
+  type: ApiParam['type'];
+  required: boolean;
+  description: string;
+  example?: string;
+  enum?: readonly string[];
+}
+
+/** Serialisable subset of a GET catalogue entry for the try-it console and the ⌘K palette. */
+export interface TryEndpoint {
+  id: string;
+  path: string;
+  groupTitle: string;
+  summary: string;
+  sse: boolean;
+  params: TryParam[];
+  /** Pre-filled values: the catalogue example (the same one the Example link uses). */
+  initial: Record<string, string>;
+}
+
+/** Palette/try-it data for a GET endpoint; null for POST (the console only sends GET). */
+export function tryEndpoint(e: ApiEndpoint): TryEndpoint | null {
+  if (e.method !== 'GET') return null;
+  const params: TryParam[] = [];
+  for (const p of e.params) {
+    if (p.in !== 'query' && p.in !== 'path') continue;
+    const tp: TryParam = { name: p.name, in: p.in, type: p.type, required: p.required, description: p.description };
+    if (p.example) tp.example = p.example;
+    if (p.enum) tp.enum = p.enum;
+    params.push(tp);
+  }
+  const initial: Record<string, string> = {};
+  const pathParams = params.filter((p) => p.in === 'path');
+  for (const p of pathParams) {
+    const v = pathParams.length === 1 ? (e.example ?? p.example) : p.example;
+    if (v) initial[p.name] = v;
+  }
+  if (e.example?.startsWith('?')) {
+    for (const [k, v] of new URLSearchParams(e.example.slice(1))) if (params.some((p) => p.name === k)) initial[k] = v;
+  } else {
+    for (const p of params) if (p.in === 'query' && p.required && p.example) initial[p.name] = p.example;
+  }
+  return { id: anchorId(e), path: e.path, groupTitle: GROUP_META[e.group].title, summary: e.summary, sse: e.stream === 'sse', params, initial };
+}
+
+export class TryInputError extends Error {}
+
+const SAME_ORIGIN_ONLY = 'Only this server’s /api/ endpoints can be called.';
+
+/**
+ * Request URL for the try-it console. Same-origin only: the path comes from the catalogue,
+ * values are percent-encoded into a path segment or the query string, and the result must stay
+ * on `origin` under /api/; anything else throws before a request is made.
+ */
+export function buildTryUrl(ep: Pick<TryEndpoint, 'path' | 'params'>, values: Readonly<Record<string, string>>, origin: string): URL {
+  if (!ep.path.startsWith('/api/')) throw new TryInputError(SAME_ORIGIN_ONLY);
+  let pathname = ep.path;
+  const query = new URLSearchParams();
+  for (const p of ep.params) {
+    const v = (values[p.name] ?? '').trim();
+    if (!v) {
+      if (p.required) throw new TryInputError(`${p.name} is required.`);
+      continue;
+    }
+    if (p.in === 'path') {
+      if (v === '.' || v === '..') throw new TryInputError(`${p.name} cannot be "${v}".`);
+      pathname = pathname.replace(`{${p.name}}`, encodeURIComponent(v));
+    } else {
+      query.set(p.name, v);
+    }
+  }
+  const base = new URL(origin);
+  const url = new URL(pathname, base.origin);
+  const qs = query.toString();
+  if (qs) url.search = qs;
+  if (url.origin !== base.origin || !url.pathname.startsWith('/api/')) throw new TryInputError(SAME_ORIGIN_ONLY);
+  return url;
+}
+
+/** Parse Server-Sent Events text into complete events (blank-line separated); the incomplete tail is returned as `rest`. */
+export function parseSseChunk(buffer: string): { events: { event: string; data: string }[]; rest: string } {
+  const events: { event: string; data: string }[] = [];
+  const blocks = buffer.replace(/\r\n/g, '\n').split('\n\n');
+  const rest = blocks.pop() ?? '';
+  for (const block of blocks) {
+    let event = 'message';
+    const data: string[] = [];
+    for (const line of block.split('\n')) {
+      if (!line || line.startsWith(':')) continue;
+      const i = line.indexOf(':');
+      const field = i === -1 ? line : line.slice(0, i);
+      const value = i === -1 ? '' : line.slice(i + 1).replace(/^ /, '');
+      if (field === 'event') event = value;
+      else if (field === 'data') data.push(value);
+    }
+    if (data.length) events.push({ event, data: data.join('\n') });
+  }
+  return { events, rest };
+}
+
+/** Body text for display: pretty JSON when it parses (bodies under 400 kB), cut to `max` characters. */
+export function formatBody(text: string, contentType: string | null, max = 20_000): { text: string; truncated: boolean } {
+  let out = text;
+  if (contentType?.includes('json') && text.length < 400_000) {
+    try {
+      out = JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      out = text;
+    }
+  }
+  return out.length > max ? { text: out.slice(0, max), truncated: true } : { text: out, truncated: false };
 }

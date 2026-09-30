@@ -53,12 +53,16 @@ GODSEYE_DOMAIN=monitor.example.org docker compose up -d   # automatic HTTPS for 
 docker compose --profile redis up -d                  # add Redis (set REDIS_URL=redis://redis:6379 in .env)
 ```
 
-The image (`Dockerfile`) is a multi-stage `node:22-alpine` build: `pnpm install --frozen-lockfile`,
-`pnpm build`, then the standalone server with `.next/static` and `public/`, running as a non-root user
-with a `HEALTHCHECK` on `/api/health`. No secrets are baked in: put keys in `.env` (read at run time by
-compose) or pass them as environment variables. The app container is never published directly; Caddy
-(`Caddyfile`) terminates TLS, overwrites `X-Forwarded-For` / `X-Real-IP`, streams Server-Sent Events
-unbuffered and keeps no access log. Feed snapshots persist in the `snapshots` volume.
+The image (`Dockerfile`) is a multi-stage `node:22-alpine` build (base pinned by digest):
+`pnpm install --frozen-lockfile`, `pnpm build`, then the standalone server with `.next/static` and
+`public/`, running as uid 1001 without a login shell or package managers, with a `HEALTHCHECK` on
+`/api/health`. No secrets are baked in: put keys in `.env` (read at run time by compose) or pass them as
+environment variables. Compose runs every container with a read-only root filesystem,
+`no-new-privileges` and all Linux capabilities dropped (Caddy keeps only `NET_BIND_SERVICE`; Redis runs
+as its own user); the app writes only to the `snapshots` volume (feed snapshots survive restarts) and
+two small tmpfs mounts. The app container is never published directly; Caddy (`Caddyfile`) terminates
+TLS, overwrites `X-Forwarded-For` / `X-Real-IP`, compresses JSON and HTML with zstd/gzip, streams
+Server-Sent Events unbuffered and keeps no access log.
 
 ## Configuration
 
@@ -132,7 +136,9 @@ off when `COMMERCIAL_DEPLOYMENT=true`.
   route and per client IP; if clients can supply their own `X-Forwarded-For`, they choose their own
   bucket. Caddy: `header_up X-Forwarded-For {remote_host}` (as in `Caddyfile`); nginx:
   `proxy_set_header X-Forwarded-For $remote_addr;`. Never expose `next start` or `node server.js`
-  directly. Behind Cloudflare, Vercel or Akamai set `TRUSTED_PLATFORM` instead.
+  directly: without a proxy that overwrites the header, every forged `X-Forwarded-For` value gets a
+  fresh bucket, which in effect disables rate limiting (the server logs a warning at start-up when no
+  trusted proxy is configured). Behind Cloudflare, Vercel or Akamai set `TRUSTED_PLATFORM` instead.
 - **Streaming:** disable proxy buffering for `text/event-stream` (the app also sends
   `X-Accel-Buffering: no`) and keep read timeouts above the 15 s heartbeat.
 - **Several instances:** set `REDIS_URL` so they share snapshots, the single-writer locks and the rate

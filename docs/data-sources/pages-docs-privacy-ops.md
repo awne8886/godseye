@@ -82,3 +82,33 @@ repository is not enabled for this session"); tags were resolved with `git ls-re
 | `pnpm/action-setup` | v6.1.0 | `ea17c68df8912ef543352723c149a84f56e3d413` |
 | `actions/upload-artifact` | v7.0.1 | `043fb46d1a93c77aae656e7c1c64a875d1fc6a0a` |
 | `GoogleChrome/lighthouse-ci` | (not used as an action; `@lhci/cli` runs from devDependencies) | HEAD `ebee453dad3f` |
+
+## Licence links added to the licence summary (probed 2026-09-30 22:42–22:56 UTC)
+
+Same honest User-Agent; `curl -I -L` (HEAD), falling back to GET where HEAD is refused. CORS not relevant.
+
+| URL | Status | Latency | What the page says (verified text) |
+|---|---|---|---|
+| `https://db.satnogs.org/about/` | 200 | 0.99 s | names a Creative Commons licence for the DB; CC BY-SA 4.0 per the layers-space probe log |
+| `https://creativecommons.org/licenses/by-sa/4.0/` | 200 | 0.25 s | licence text |
+| `https://en.wikipedia.org/wiki/Wikipedia:Copyrights` | 200 | 0.17 s | text under "Creative Commons Attribution-ShareAlike 4.0 International License" |
+| `https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use` | 200 | 0.22 s | Wikimedia terms of use |
+| `https://www.earthdata.nasa.gov/data/tools/firms` | 200 | 0.80 s | "We acknowledge the use of data and/or imagery from NASA's Fire Information for Resource Management System (FIRMS) …" |
+| `https://firms.modaps.eosdis.nasa.gov/` | 200 | 0.38 s | FIRMS home |
+| `https://www.earthdata.nasa.gov/engage/open-data-services-software/data-use-guidance` | 404 | 1.03 s | dead; not linked |
+| `https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice` | 200 | 0.54 s | PDF; text not extracted |
+| `https://dataspace.copernicus.eu/terms-and-conditions` | 200 | 1.14 s | CDSE terms |
+| `https://www.gdacs.org/About/termofuse.aspx` | 200 | 0.53 s | "this information is purely indicative and should not be used for any decision making without alternate sources of information" |
+| `https://drmkc.jrc.ec.europa.eu/inform-index` | 200 | 1.09 s | INFORM home; CC BY 4.0 per the layers-threats-network probe log |
+| `https://datacatalog.worldbank.org/public-licenses` | HEAD 404, GET 200 | 0.41 s | "Creative Commons Attribution 4.0 International license (CC-BY 4.0)" is the default for its datasets |
+| `https://www.worldbank.org/en/about/legal/terms-of-use-for-datasets` | 200 (redirects to `/ext/en/legal/terms-conditions`) | 0.45 s | general terms |
+| `https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html` | 200 | 0.38 s | "You may not in connection with the Services engage in commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" |
+| `https://libre.space/licenses/` | 200 (redirects to `www.libre.space/`) | 1.04 s | home page, no licence text; not linked |
+
+## Container images pinned in the Dockerfile and CI (resolved 2026-09-30)
+
+| Image | Digest | How resolved |
+|---|---|---|
+| `node:22-alpine` | `sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402` | `registry-1.docker.io` manifest HEAD (multi-arch index), 22:53 UTC |
+| `mcr.microsoft.com/playwright:v1.63.0-noble` | `sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27` | `mcr.microsoft.com` manifest HEAD, 22:56 UTC |
+| `caddy:2-alpine`, `redis:8-alpine` | not pinned | Docker Hub answered 429 (anonymous pull-rate limit) from the sandbox; compose comments say how to pin |

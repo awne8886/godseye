@@ -1,6 +1,7 @@
-# GODSEYE CI: every push and pull request must pass lint, typecheck, unit tests with the 80 %
-# line-coverage gate, a production build, Playwright e2e, Lighthouse CI and a production
-# dependency audit. Actions are pinned to full commit SHAs (tag in the trailing comment).
+# GODSEYE CI: every push and pull request must pass a placeholder check, lint, typecheck, unit
+# tests with the 80 % line-coverage gate, a production build, Playwright e2e (in the official
+# Playwright image, SwiftShader WebGL), Lighthouse CI and a production dependency audit.
+# Actions are pinned to full commit SHAs (tag in the trailing comment), images to digests.
 name: CI
 
 on:
@@ -35,6 +36,15 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Shipped docs never carry placeholders (the contract and the research pack are exempt;
+      # "TODO.md" as a file name is allowed). tools/ops-config.test.ts runs the same check.
+      - name: No placeholders in LICENSE, README or docs
+        run: |
+          if grep -rnP '(?i:none yet)|\bTODO\b(?!\.md)|\bFIXME\b|\bTBD\b|(?i:lorem ipsum)' LICENSE README.md docs \
+              --exclude-dir=reference --exclude=OPUS_5_5_BUILD_PROMPT.md; then
+            echo "::error::placeholder text found (see lines above)"
+            exit 1
+          fi
       - run: pnpm lint
       - run: pnpm typecheck
       # Includes the docs/API.md and docs/DATA_SOURCES.md freshness checks (tools/*.test.ts).
@@ -62,10 +72,17 @@ jobs:
           node-version-file: .nvmrc
       - run: pnpm audit --prod --audit-level high
 
-  build-e2e-lighthouse:
-    name: Build, e2e, Lighthouse
+  e2e:
+    name: Build + Playwright e2e (official Playwright image)
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
+    # Same image the screenshot baselines are generated in; Chromium renders WebGL through
+    # SwiftShader (flags in playwright.config.ts). Tag must match @playwright/test in package.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --ipc=host
+    env:
+      HOME: /root
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -78,10 +95,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # `pnpm build` runs the prebuild hook that vendors the MapLibre worker.
       - run: pnpm build
-      - name: Install Chromium for Playwright
-        run: pnpm exec playwright install --with-deps chromium
       # playwright.config.ts starts `pnpm start` itself (webServer) and never reuses a server in CI.
-      - run: pnpm e2e
+      # The map specs wait up to 90 s for the first WebGL canvas under SwiftShader (e2e/map-engine/helpers.ts);
+      # the per-test budget is raised so those waits can run to completion (assertions unchanged).
+      - run: pnpm e2e --timeout=150000
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -92,8 +109,25 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  lighthouse:
+    name: Build + Lighthouse CI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       # Thresholds live in lighthouserc.json (perf >= 0.85, a11y = 1, LCP <= 2.5 s, CLS <= 0.1, TBT <= 300 ms).
-      # Reports stay in the workflow artifacts; nothing is uploaded to public storage.
+      # Uses the runner's preinstalled Google Chrome. Reports stay in the workflow artifacts; nothing is
+      # uploaded to public storage.
       - name: Lighthouse CI
         run: pnpm lhci
       - name: Upload Lighthouse reports

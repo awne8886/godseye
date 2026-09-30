@@ -2,17 +2,20 @@
  * /docs — API reference generated at build time from the typed endpoint catalogue
  * (src/lib/api-catalog.ts), the capability table (src/lib/capabilities.ts) and the default
  * per-route rate limit. docs/API.md is generated from the same sources by tools/gen-api-docs.ts.
- * Static server component: no client JavaScript of its own.
+ * Static server component. Endpoint details sit in closed <details> (and `content-visibility: auto`
+ * cards) so the ~90-card page stays cheap to lay out; the only client JavaScript is the island in
+ * ./interactive.tsx (reading progress, scroll-spy, ⌘K palette, same-origin "Send request").
  * Owner: pages-docs-privacy-ops.
  */
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { API_CATALOG, EXCLUDED_OSIRIS_ROUTES, type ApiEndpoint } from '@/lib/api-catalog';
+import { API_CATALOG, EXCLUDED_OSIRIS_ROUTES as EXCLUDED_ROUTES, type ApiEndpoint } from '@/lib/api-catalog';
 import { CAPABILITIES, type CapabilityId, type CapabilitySpec } from '@/lib/capabilities';
 import { APP_NAME } from '@/lib/config';
 import { DEFAULT_LIMIT } from '@/lib/ratelimit';
 import { PageShell, SectionTitle, TextLink } from './chrome';
 import s from './docs.module.css';
+import { DocsInteractive, type PaletteEntry } from './interactive';
 import {
   GROUP_META,
   anchorId,
@@ -23,6 +26,10 @@ import {
   formatRateLimit,
   formatStream,
   groupEndpoints,
+  keylessSummary,
+  requiresOperatorConfig,
+  tryEndpoint,
+  type TryEndpoint,
 } from './format';
 
 export const dynamic = 'force-static';
@@ -32,15 +39,15 @@ const CAPS = CAPABILITIES as Record<CapabilityId, CapabilitySpec>;
 
 export const metadata: Metadata = {
   title: `API reference — ${APP_NAME}`,
-  description: `Every ${APP_NAME} endpoint (${CATALOG.length}), generated from the typed catalogue: parameters, cache TTLs, rate limits, capability gates and the upstreams each one calls. No API key required.`,
+  description: `Every ${APP_NAME} endpoint (${CATALOG.length}), generated from the typed catalogue: parameters, cache TTLs, rate limits, capability gates and the upstreams each one calls. ${keylessSummary(CATALOG, CAPS)}`,
 };
 
 function Meta({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div>
+    <>
       <dt>{label}</dt>
       <dd>{children}</dd>
-    </div>
+    </>
   );
 }
 
@@ -54,89 +61,93 @@ function Endpoint({ e }: { e: ApiEndpoint }) {
   const href = exampleHref(e);
   const stream = formatStream(e);
   const spec = e.capability ? CAPS[e.capability] : undefined;
+  const gated = requiresOperatorConfig(e, CAPS);
   return (
-    <article id={id} aria-labelledby={`${id}-title`} className="glass-panel scroll-mt-4 p-4 sm:p-5">
+    <article id={id} tabIndex={-1} aria-labelledby={`${id}-title`} className={s.endpoint}>
       <h3 id={`${id}-title`} className="flex min-w-0 flex-wrap items-center gap-2">
         <MethodBadge method={e.method} />
         <code className="font-mono text-[13px] text-fg-heading [overflow-wrap:anywhere]">{e.path}</code>
+        {gated && e.capability && <span className="hud-micro text-gold-light">Needs {e.capability}</span>}
       </h3>
       <p className="mt-2 text-[13px] leading-relaxed text-fg">{e.summary}</p>
-      <dl className={s.meta}>
-        <Meta label="Cache">{formatCache(e)}</Meta>
-        <Meta label="Rate limit">{formatRateLimit(e, DEFAULT_LIMIT)}</Meta>
-        {stream && <Meta label="Stream">{stream}</Meta>}
-        <Meta label="Response">
-          <code className="font-mono">{e.responseSchema}</code>
-        </Meta>
-        {e.capability && spec && (
-          <Meta label="Capability">
-            <code className="font-mono text-gold-light">{e.capability}</code> — {capabilityCondition(e.capability, spec)}. {spec.note}.
+      {e.method === 'GET' && (
+        <button type="button" data-try={id} aria-haspopup="dialog" className={s.tryButton}>
+          Send request
+        </button>
+      )}
+      <details className={s.details}>
+        <summary>Parameters, cache, limits, upstreams</summary>
+        <dl className={s.meta}>
+          <Meta label="Cache">{formatCache(e)}</Meta>
+          <Meta label="Rate limit">{formatRateLimit(e, DEFAULT_LIMIT)}</Meta>
+          {stream && <Meta label="Stream">{stream}</Meta>}
+          <Meta label="Response">
+            <code className="font-mono">{e.responseSchema}</code>
           </Meta>
-        )}
-        <Meta label="Upstreams">{e.upstreams.length ? e.upstreams.join(', ') : 'None: served from this server only'}</Meta>
-        <Meta label="Forwards your input upstream">
-          {e.forwardsUserInput ? (
-            <>
-              Yes — see <TextLink href="/privacy#upstreams">Privacy</TextLink>
-            </>
-          ) : (
-            'No'
+          {e.capability && spec && (
+            <Meta label="Capability">
+              <code className="font-mono text-gold-light">{e.capability}</code> — {capabilityCondition(e.capability, spec)}. {spec.note}.
+            </Meta>
           )}
-        </Meta>
-        {'aliases' in e && e.aliases?.length ? <Meta label="Aliases">{e.aliases.join(', ')}</Meta> : null}
-        {e.osiris && <Meta label="Compatibility">Same path as the OSIRIS endpoint</Meta>}
-      </dl>
-      {e.params.length > 0 ? (
-        <table className={`${s.table} mt-4`}>
-          <caption className="sr-only">Parameters for {e.method} {e.path}</caption>
-          <colgroup>
-            <col className="w-[31%] sm:w-[27%]" />
-            <col className="w-[31%] sm:w-[28%]" />
-            <col />
-          </colgroup>
-          <thead>
-            <tr>
-              <th scope="col">Parameter</th>
-              <th scope="col">Type</th>
-              <th scope="col">Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            {e.params.map((p) => (
-              <tr key={`${p.in}:${p.name}`}>
-                <th scope="row">
-                  <code className="font-mono text-fg-heading">{p.name}</code>
-                  <span className={s.sub}>
-                    {p.in} · {p.required ? 'required' : 'optional'}
-                  </span>
-                </th>
-                <td className="font-mono text-fg-secondary">{formatParamType(p)}</td>
-                <td>
-                  {p.description}
-                  {p.example && (
-                    <span className={s.sub}>
-                      e.g. <code className="font-mono">{p.example}</code>
-                    </span>
-                  )}
-                </td>
+          <Meta label="Upstreams">{e.upstreams.length ? e.upstreams.join(', ') : 'None: served from this server only'}</Meta>
+          <Meta label="Forwards your input upstream">
+            {e.forwardsUserInput ? (
+              <>
+                Yes — see <TextLink href="/privacy#upstreams">Privacy</TextLink>
+              </>
+            ) : (
+              'No'
+            )}
+          </Meta>
+          {'aliases' in e && e.aliases?.length ? <Meta label="Aliases">{e.aliases.join(', ')}</Meta> : null}
+        </dl>
+        {e.params.length > 0 ? (
+          <table className={`${s.table} ${s.params} mt-4`}>
+            <caption className="sr-only">Parameters for {e.method} {e.path}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Parameter</th>
+                <th scope="col">Type</th>
+                <th scope="col">Description</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p className="mt-4 text-[12px] text-fg-secondary">No parameters.</p>
-      )}
-      {href && (
-        <p className="mt-4 text-[12px]">
-          <span className="hud-micro mr-2 text-fg-muted">Example</span>
-          <a
-            href={href}
-            className="font-mono text-cyan underline decoration-[var(--cyan-dim)] underline-offset-4 [overflow-wrap:anywhere] hover:decoration-[var(--cyan-primary)]"
-          >
-            GET {href}
-          </a>
-        </p>
-      )}
+            </thead>
+            <tbody>
+              {e.params.map((p) => (
+                <tr key={`${p.in}:${p.name}`}>
+                  <th scope="row">
+                    <code className="font-mono text-fg-heading">{p.name}</code>
+                    <span className={s.sub}>
+                      {p.in} · {p.required ? 'required' : 'optional'}
+                    </span>
+                  </th>
+                  <td className="font-mono text-fg-secondary">{formatParamType(p)}</td>
+                  <td>
+                    {p.description}
+                    {p.example && (
+                      <span className={s.sub}>
+                        e.g. <code className="font-mono">{p.example}</code>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="mt-4 text-[12px] text-fg-secondary">No parameters.</p>
+        )}
+        {href && (
+          <p className="mt-4 text-[12px]">
+            <span className="hud-micro mr-2 text-fg-muted">Example</span>
+            <a
+              href={href}
+              className="font-mono text-cyan underline decoration-[var(--cyan-dim)] underline-offset-4 [overflow-wrap:anywhere] hover:decoration-[var(--cyan-primary)]"
+            >
+              GET {href}
+            </a>
+          </p>
+        )}
+      </details>
     </article>
   );
 }
@@ -144,32 +155,38 @@ function Endpoint({ e }: { e: ApiEndpoint }) {
 export default function DocsPage() {
   const groups = groupEndpoints(CATALOG);
   const capIds = Object.keys(CAPS) as CapabilityId[];
+  const tryable = CATALOG.map(tryEndpoint).filter((x): x is TryEndpoint => x !== null);
+  const palette: PaletteEntry[] = CATALOG.map((e) => ({ id: anchorId(e), method: e.method, path: e.path, summary: e.summary, groupTitle: GROUP_META[e.group].title }));
   return (
     <PageShell current="docs">
       <div className="mx-auto max-w-6xl px-5 py-10 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-10">
         <nav aria-label="API sections" className="mb-8 lg:sticky lg:top-6 lg:mb-0 lg:self-start">
-          <p className="hud-title">Contents</p>
+          <button type="button" data-palette-open aria-haspopup="dialog" aria-keyshortcuts="Meta+K Control+K /" className={s.paletteButton}>
+            <span>Search endpoints</span>
+            <kbd className="font-mono text-[11px] text-fg-muted">⌘K</kbd>
+          </button>
+          <p className="hud-title mt-4">Contents</p>
           <ul className="mt-3 grid grid-cols-2 gap-x-4 text-[13px] sm:grid-cols-3 lg:grid-cols-1">
             <li>
-              <a className="flex min-h-11 items-center text-fg-secondary hover:text-gold-light lg:min-h-8" href="#conventions">
+              <a className={s.navLink} href="#conventions">
                 Conventions
               </a>
             </li>
             {groups.map(([g, list]) => (
               <li key={g}>
-                <a className="flex min-h-11 items-center justify-between gap-2 text-fg-secondary hover:text-gold-light lg:min-h-8" href={`#group-${g}`}>
+                <a className={`${s.navLink} justify-between gap-2`} href={`#group-${g}`}>
                   <span>{GROUP_META[g].title}</span>
                   <span className="font-mono text-[11px] text-fg-muted">{list.length}</span>
                 </a>
               </li>
             ))}
             <li>
-              <a className="flex min-h-11 items-center text-fg-secondary hover:text-gold-light lg:min-h-8" href="#capabilities">
+              <a className={s.navLink} href="#capabilities">
                 Capabilities
               </a>
             </li>
             <li>
-              <a className="flex min-h-11 items-center text-fg-secondary hover:text-gold-light lg:min-h-8" href="#excluded">
+              <a className={s.navLink} href="#excluded">
                 Not replicated
               </a>
             </li>
@@ -180,13 +197,15 @@ export default function DocsPage() {
           <p className="hud-micro text-cyan">Generated from the endpoint catalogue at build time</p>
           <h1 className="mt-2 font-display text-[28px] font-bold leading-tight text-fg-heading sm:text-[40px]">API reference</h1>
           <p className="mt-4 max-w-3xl text-[13px] leading-relaxed text-fg">
-            {CATALOG.length} endpoints, all on this origin and all usable without an API key. Keys configured by the operator only
-            unlock upgrades, listed below as capabilities and reported live at{' '}
+            {keylessSummary(CATALOG, CAPS)} Keys configured by the operator only unlock upgrades, listed below as capabilities and
+            reported live at{' '}
             <a className="font-mono text-cyan underline decoration-[var(--cyan-dim)] underline-offset-4" href="/api/health">
               /api/health
             </a>
             . The same catalogue drives the route tests, the rate limits and the <TextLink href="/privacy">Privacy</TextLink> page, so
-            this reference cannot silently drift from the code.
+            this reference cannot silently drift from the code. Every GET endpoint has a <strong className="font-semibold">Send request</strong>{' '}
+            button that calls this server from your browser; press <kbd className="font-mono">⌘K</kbd>, <kbd className="font-mono">Ctrl K</kbd> or{' '}
+            <kbd className="font-mono">/</kbd> to search endpoints.
           </p>
 
           <section aria-labelledby="conventions" className="mt-10">
@@ -244,13 +263,8 @@ export default function DocsPage() {
               interface hides whatever is off. Current values: <code className="font-mono">/api/health</code> →{' '}
               <code className="font-mono">capabilities</code>.
             </p>
-            <table className={`${s.table} mt-5`}>
+            <table className={`${s.table} ${s.caps} mt-5`}>
               <caption className="sr-only">Capabilities and the environment that enables them</caption>
-              <colgroup>
-                <col className="w-[24%]" />
-                <col className="w-[38%]" />
-                <col />
-              </colgroup>
               <thead>
                 <tr>
                   <th scope="col">Capability</th>
@@ -275,14 +289,10 @@ export default function DocsPage() {
           <section aria-labelledby="excluded" className="mt-12">
             <SectionTitle id="excluded">Not replicated</SectionTitle>
             <p className="mt-2 max-w-3xl text-[13px] leading-relaxed text-fg-secondary">
-              OSIRIS endpoints that {APP_NAME} deliberately does not provide, and why.
+              Endpoints of the reference project that {APP_NAME} deliberately does not provide, and why.
             </p>
-            <table className={`${s.table} mt-5`}>
-              <caption className="sr-only">Excluded OSIRIS routes and reasons</caption>
-              <colgroup>
-                <col className="w-[34%]" />
-                <col />
-              </colgroup>
+            <table className={`${s.table} ${s.excluded} mt-5`}>
+              <caption className="sr-only">Endpoints not provided, with reasons</caption>
               <thead>
                 <tr>
                   <th scope="col">Path</th>
@@ -290,7 +300,7 @@ export default function DocsPage() {
                 </tr>
               </thead>
               <tbody>
-                {EXCLUDED_OSIRIS_ROUTES.map((r) => (
+                {EXCLUDED_ROUTES.map((r) => (
                   <tr key={r.path}>
                     <th scope="row">
                       <code className="font-mono text-fg-heading">{r.path}</code>
@@ -303,6 +313,7 @@ export default function DocsPage() {
           </section>
         </main>
       </div>
+      <DocsInteractive tryable={tryable} palette={palette} />
     </PageShell>
   );
 }

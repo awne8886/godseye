@@ -9,6 +9,25 @@
 	# The app ships its own CSP/HSTS/X-Frame-Options/nosniff (src/config/csp.ts); just hide the banner.
 	header -Server
 
+	# Compress JSON and pages on the wire (feed JSON is 5-10x smaller gzipped). An explicit list, so
+	# Server-Sent Events (text/event-stream) are never buffered by an encoder; responses the app
+	# already precompressed (bulk layers, Content-Encoding set) are passed through untouched.
+	encode zstd gzip {
+		minimum_length 1024
+		match {
+			header Content-Type application/json*
+			header Content-Type application/geo+json*
+			header Content-Type application/javascript*
+			header Content-Type application/manifest+json*
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/plain*
+			header Content-Type text/javascript*
+			header Content-Type text/x-component*
+			header Content-Type image/svg+xml*
+		}
+	}
+
 	reverse_proxy app:3000 {
 		# OVERWRITE the client-IP headers with the address Caddy actually saw. The app keys its
 		# per-route rate limits on the rightmost X-Forwarded-For entry (TRUSTED_PROXY_HOPS=1), or on
