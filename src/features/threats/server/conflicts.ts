@@ -105,8 +105,9 @@ export const conflictsFeed = defineFeed<ConflictsData>({
   ttlMs: 15 * 60_000,
   pollMs: 5 * 60_000,
   // Backstop for snapshot readers (/api/health): newest in-zone event older than an hour → STALE.
-  // The route applies the tighter bound (boundByGdelt: GDELT's own state at its 15-min cadence).
   maxObservationAgeMs: 60 * 60_000,
+  // Never fresher than GDELT itself (also in /api/health); the route restates providers.gdelt.
+  stateCap: (now) => gdeltCap(gdeltFeed.peek(), now),
   kind: 'mixed',
   attribution: [
     { text: 'Zone polygons: Natural Earth (public domain); zone list curated (REFERENCE)', url: 'https://www.naturalearthdata.com/' },
@@ -151,6 +152,13 @@ const RANK: Record<Exclude<FreshnessState, 'reference'>, number> = { live: 0, re
  * `providers.gdelt` is restated from the GDELT feed as it is now. A conflicts snapshot with no live
  * part (REFERENCE, GDELT never answered) is left as it is. Pure; exported for tests.
  */
+/** The freshest state conflicts may claim given GDELT's own state (null = no cap). */
+export function gdeltCap(g: FeedResult<GdeltData>, now = Date.now()): FreshnessState | null {
+  const lastPull = Date.parse(g.meta.lastGoodAt ?? '');
+  if (g.meta.state === 'live' || !Number.isFinite(lastPull)) return null;
+  return Math.max(0, now - lastPull) <= 6 * GDELT_CADENCE_MS ? 'recent' : 'stale';
+}
+
 export function boundByGdelt(c: FeedResult<ConflictsData>, g: FeedResult<GdeltData>, now = Date.now()): FeedResult<ConflictsData> {
   if (c.data === null || c.meta.state === 'reference' || c.meta.state === 'offline') return c;
   const lastPull = Date.parse(g.meta.lastGoodAt ?? '');

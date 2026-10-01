@@ -228,7 +228,7 @@ export const LAYERS = [
     owner: 'layers-threats-network', added: true,
   },
   {
-    id: 'country_risk', group: 'threats', label: 'Country Risk', description: 'INFORM / WGI choropleth (method shown)',
+    id: 'country_risk', group: 'threats', label: 'Country Risk', description: 'INFORM risk per country; small states as points; WGI-only rows not shaded',
     icon: 'Earth', colorToken: '--map-risk', route: '/api/country-risk', transport: 'poll', refreshMs: 24 * 60 * MIN,
     renderer: 'maplibre', card: 'country_risk', feedEvents: false, capability: null, defaultOn: false, kind: 'reference', z: 2, pickPriority: 5,
     owner: 'layers-threats-network', added: true,

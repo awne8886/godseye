@@ -60,6 +60,29 @@ describe('feeds', () => {
     expect((await feed.get()).meta.state).toBe('reference');
   });
 
+  it('caps a derived feed at its stateCap, on every read and in health, but never freshens it', async () => {
+    let cap: 'recent' | 'stale' | 'live' | null = 'stale';
+    const feed = defineFeed<number[]>({
+      key: 'test-capped',
+      ttlMs: 60_000,
+      kind: 'live',
+      attribution: [{ text: 'Test data' }],
+      count: (d) => d.length,
+      stateCap: () => cap,
+      async run() {
+        return { data: [1], providers: {}, observedAt: Date.now() };
+      },
+    });
+    expect((await feed.get()).meta.state).toBe('stale');
+    expect(feed.health().state).toBe('stale');
+    cap = 'recent';
+    expect(feed.peek().meta.state).toBe('recent');
+    cap = null;
+    expect(feed.peek().meta.state).toBe('live');
+    cap = 'live';
+    expect(feed.peek().meta.state).toBe('live');
+  });
+
   it('registers one writer per key', () => {
     const def = { key: 'dup', ttlMs: 1000, kind: 'live' as const, attribution: [], count: () => 1, run: async () => ({ data: 1, providers: {} }) };
     const a = defineFeed(def);

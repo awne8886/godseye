@@ -12,7 +12,10 @@
 import { errorReason } from './http';
 import { sourceCache, type SourceCache } from './cache';
 import { freshnessState, toIso } from './freshness';
-import type { Attribution, DataKind, FeedMeta, ProviderStatus, Providers } from './types';
+import type { Attribution, DataKind, FeedMeta, FreshnessState, ProviderStatus, Providers } from './types';
+
+/** Staleness order for `stateCap` (a cap only ever makes a state older). */
+const CAP_RANK: Record<Exclude<FreshnessState, 'reference'>, number> = { live: 0, recent: 1, stale: 2, offline: 3 };
 
 export interface ProviderRun {
   status: ProviderStatus;
@@ -61,6 +64,11 @@ export interface FeedDef<T> {
    * (FeedData.observedAt) is older than this, the feed state is capped at `stale`.
    */
   maxObservationAgeMs?: number;
+  /**
+   * A derived feed is never fresher than its inputs: evaluated on every read (and so in /api/health),
+   * the returned state caps this feed's (e.g. conflicts while GDELT is down). null = no cap.
+   */
+  stateCap?: (now: number) => FreshnessState | null;
 }
 
 export interface FeedResult<T> {
@@ -167,6 +175,8 @@ export function defineFeed<T>(def: FeedDef<T>): Feed<T> {
     // A mixed feed (reference rows + optional live rows) that observed nothing live this time is
     // reference data: it must not light LIVE (e.g. maritime ports/chokepoints without an AIS key).
     if (def.kind === 'mixed' && observedAt === null && (state === 'live' || state === 'recent')) state = 'reference';
+    const cap = def.stateCap?.(now) ?? null;
+    if (cap && cap !== 'reference' && state !== 'reference' && state !== 'offline' && CAP_RANK[cap] > CAP_RANK[state]) state = cap;
     const meta: FeedMeta = {
       feed: def.key,
       kind: def.kind,
