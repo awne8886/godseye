@@ -45,7 +45,11 @@ const exactFile = (host: string, pattern: RegExp, to: (path: string, m: RegExpMa
   return m ? [r(host, to(still.pathname, m))] : [];
 };
 
-/** WSDOT image directories seen in the camera KML (2026-09-30); `/traffic/` holds map icons only. */
+/**
+ * WSDOT image directories seen in the camera KML (re-derived 2026-10-01 from all 1 631 stills).
+ * `/traffic/` also holds map icons, so only the two airport stills catalogued there
+ * (`/traffic/FeltsField.jpg`, `/traffic/HarveyAirfield.jpg`) get exact-file rules.
+ */
 const WSDOT_DIRS = ['nw', 'sw', 'nc', 'sc', 'SC', 'orflow', 'ORFlow', 'rweather', 'spokane', 'airports', 'wsf'];
 const THB_HOSTS = Array.from({ length: 8 }, (_, i) => `cctv-ss0${i + 1}.thb.gov.tw`);
 
@@ -75,6 +79,7 @@ export const PROVIDERS: readonly ProviderDef[] = [
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
     rules: WSDOT_DIRS.map((d) => r('images.wsdot.wa.gov', `/${d}/`)),
+    fileRules: exactFile('images.wsdot.wa.gov', /^\/traffic\/[A-Za-z]{1,40}\.jpg$/),
   },
   {
     region: 'us-west',
@@ -116,6 +121,18 @@ export const PROVIDERS: readonly ProviderDef[] = [
       ...exactFile('micamerasimages.net', /^\/thumbs\/([a-z]+_cam_\d{1,6})\.flv\.jpg$/, (_p, m) => `/${m[1]}.jpg`)(u),
       ...exactFile('micamerasimages.net', /^\/image-\d{1,12}-\d{2}-\d{2}\.jpg$/)(u),
     ],
+  },
+  {
+    region: 'us-midwest',
+    row: {
+      id: 'indot', operator: 'Indiana Department of Transportation (INDOT 511)', region: 'Indiana', country: 'US',
+      list_endpoint: 'https://511in.org/api/graphql', frame_url_template: 'https://public.carsprogram.org/cameras/IN/INDOT_{n}_{token}.flv.png',
+      stream_type: 'jpg', licence: 'INDOT 511 public traveler information (operator terms; not separately licensed)',
+      attribution_string: 'Traffic cameras: Indiana Department of Transportation (511in.org)', terms_url: 'https://511in.org/',
+      key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
+    },
+    // Poster frames (JPEG despite the .png name) of the INDOT cameras only.
+    rules: [r('public.carsprogram.org', '/cameras/IN/')],
   },
   {
     region: 'canada',
@@ -234,6 +251,18 @@ export const PROVIDERS: readonly ProviderDef[] = [
     rules: [r('api.trafikinfo.trafikverket.se', '/v2/Images/data/road.infrastructure.camera/')],
   },
   {
+    region: 'nordics',
+    row: {
+      id: 'vialietuva', operator: 'Via Lietuva (Lithuanian road administration, eismoinfo.lt)', region: 'Lithuania', country: 'LT',
+      list_endpoint: 'https://eismoinfo.lt/eismoinfo-backend/camera-info-table', frame_url_template: 'https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id={id}',
+      stream_type: 'jpg', licence: 'Via Lietuva traffic information system (operator terms; reuse terms not verified from a primary source; source named)',
+      attribution_string: 'Road cameras: Via Lietuva (eismoinfo.lt)', terms_url: 'https://eismoinfo.lt/',
+      key_required: false, max_poll_interval: 120, proxy_allowed: true, link_out_only: false,
+    },
+    // The operator's "last frame" endpoint; the camera id is the only query parameter.
+    rules: [r('eismoinfo.lt', '/eismoinfo-backend/image-provider/camera/last')],
+  },
+  {
     region: 'asia',
     row: {
       id: 'hktd', operator: 'Transport Department, HKSAR Government', region: 'Hong Kong', country: 'HK',
@@ -242,9 +271,10 @@ export const PROVIDERS: readonly ProviderDef[] = [
       attribution_string: 'Traffic snapshots: Transport Department, HKSAR Government, via DATA.GOV.HK', terms_url: 'https://data.gov.hk/en/terms-and-conditions',
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    // Frames are root files named by camera key (/AID01101.JPG).
+    // Frames are root files named by camera key (/AID01101.JPG … /TDSCPRHSK10001.JPG: keys are
+    // 4–14 characters in the 2026-10-01 list of 1 013 cameras).
     rules: [],
-    fileRules: exactFile('tdcctv.data.one.gov.hk', /^\/[A-Z0-9]{3,12}\.JPG$/),
+    fileRules: exactFile('tdcctv.data.one.gov.hk', /^\/[A-Z0-9]{3,16}\.JPG$/),
   },
   {
     region: 'asia',
@@ -267,8 +297,9 @@ export const PROVIDERS: readonly ProviderDef[] = [
       terms_url: 'https://data.gov.tw/license', key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
     // Each encoder serves `/<stake>/snapshot`; only that path of a catalogued camera is allowed.
+    // Stakes use letters, digits, `-`, `+` and a bracketed direction (`/T9-109K+286(N)/`).
     rules: [],
-    fileRules: (u) => (THB_HOSTS.includes(u.hostname) ? exactFile(u.hostname, /^\/[A-Za-z0-9+.-]{1,48}\/snapshot$/)(u) : []),
+    fileRules: (u) => (THB_HOSTS.includes(u.hostname) ? exactFile(u.hostname, /^\/[A-Za-z0-9+()-]{1,48}\/snapshot$/)(u) : []),
   },
   {
     region: 'oceania',
@@ -290,7 +321,8 @@ export const PROVIDERS: readonly ProviderDef[] = [
       attribution_string: 'Traffic cameras: Transport for NSW (Live Traffic NSW)', terms_url: 'https://www.livetraffic.com/',
       key_required: false, max_poll_interval: 60, proxy_allowed: true, link_out_only: false,
     },
-    rules: [r('webcams.transport.nsw.gov.au', '/livetraffic-webcams/cameras/')],
+    // One camera (Victoria Pass) publishes on the Live Traffic data host (probed 2026-10-01: 200 image/jpeg).
+    rules: [r('webcams.transport.nsw.gov.au', '/livetraffic-webcams/cameras/'), r('data.livetraffic.com', '/cameras/')],
   },
 ];
 
@@ -310,6 +342,40 @@ export const EXCLUDED_SOURCES: readonly { host: string; reason: string }[] = [
   { host: 'camstreamer.com', reason: 'Player scraping' },
   { host: 'twipcam.com', reason: 'Bot-check protected; scraping not allowed' },
   { host: 'bekijkhet.nu', reason: 'Discovery index only (no feeds, no licence)' },
+];
+
+/**
+ * Sources OSIRIS uses that this registry does not wire (yet), each with the reason found in the
+ * 2026-10-01 probes. Shown on /cameras-notice and in /api/cctv/providers so they are neither
+ * silently missing nor advertised.
+ */
+export const NOT_WIRED_SOURCES: readonly { id: string; operator: string; region: string; country: string; reason: string; probedAt: string }[] = [
+  {
+    id: 'ibi511',
+    operator: 'IBI Group 511 state sites (FDOT, GDOT, UDOT, NCDOT, NDOT, ADOT, LADOTD)',
+    region: 'Southern and western US states',
+    country: 'US',
+    reason:
+      'The official developer API needs a per-site key ("Invalid Key" without one; 511GA: ten calls per 60 s). The keyless /List/GetData/Cameras path is the sites\' internal endpoint, not a published API, so it is not used. Not wired until the keyed developer API is implemented.',
+    probedAt: '2026-10-01',
+  },
+  {
+    id: 'edmonton',
+    operator: 'City of Edmonton traffic cameras',
+    region: 'Alberta',
+    country: 'CA',
+    reason:
+      'City conditions of use allow personal, educational or non-commercial use only, and the list is an ASP.NET page method (POST Default.aspx/GetCameras) rather than an open-data API. Not wired: needs a non-commercial deployment gate.',
+    probedAt: '2026-10-01',
+  },
+  {
+    id: 'mlit',
+    operator: 'Ministry of Land, Infrastructure, Transport and Tourism (MLIT) river cameras',
+    region: 'Japan',
+    country: 'JP',
+    reason: 'No machine-readable camera catalogue (cam.river.go.jp publishes images only; OSIRIS hard-codes 51 entries). Hand-copied camera lists are not shipped.',
+    probedAt: '2026-10-01',
+  },
 ];
 
 /**

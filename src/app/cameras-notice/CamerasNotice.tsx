@@ -9,7 +9,7 @@
  */
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { PROVIDERS } from '@/features/surveillance/server/registry';
+import { NOT_WIRED_SOURCES, PROVIDERS } from '@/features/surveillance/server/registry';
 import { removalContact, removalHref } from '@/features/surveillance/shared';
 import { hasCapability } from '@/lib/capabilities';
 import { APP_NAME } from '@/lib/config';
@@ -104,6 +104,20 @@ export default function CamerasNotice({ env }: { env: Record<string, string | un
             </tbody>
           </table>
         </div>
+
+        <H2 id="not-wired">Sources not included</H2>
+        <p className={prose}>These camera sources are used by similar tools but are not wired here, for the reason shown (checked on the date given). None of their cameras appear on the map.</p>
+        <ul className={`${prose} list-disc pl-5`}>
+          {NOT_WIRED_SOURCES.map((s) => (
+            <li key={s.id} className="mt-1">
+              <strong className="font-normal text-[var(--text-heading)]">{s.operator}</strong>{' '}
+              <span className="text-[var(--text-muted)]">
+                ({s.region}, {s.country})
+              </span>
+              : <span className="text-[var(--text-secondary)]">{s.reason}</span> <span className="font-mono text-[10px] text-[var(--text-muted)]">CHECKED {s.probedAt}</span>
+            </li>
+          ))}
+        </ul>
 
         <H2 id="link-out">Link-out-only mode</H2>
         <p className={prose}>

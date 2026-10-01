@@ -16,5 +16,9 @@ describe('GET /api/cctv/providers', () => {
     expect(b.providers).toEqual({});
     expect(b.items.find((p: { id: string }) => p.id === 'tfl').attribution_string).toMatch(/Powered by TfL Open Data/);
     expect(b.meta.attribution.length).toBe(b.items.length);
+    // MAJOR-D: OSIRIS sources not wired are listed with a reason, never silently missing or advertised.
+    expect(b.notWired.map((s: { id: string }) => s.id).sort()).toEqual(['edmonton', 'ibi511', 'mlit']);
+    for (const s of b.notWired as { id: string }[]) expect(b.items.some((p: { id: string }) => p.id === s.id), s.id).toBe(false);
+    expect(b.items.map((p: { id: string }) => p.id)).toEqual(expect.arrayContaining(['indot', 'vialietuva']));
   });
 });

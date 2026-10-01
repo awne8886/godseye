@@ -20,11 +20,11 @@ export type CctvRegion = (typeof CCTV_REGIONS)[number];
 export const REGION_BOUNDS: Record<CctvRegion, [number, number, number, number]> = {
   'us-west': [-125, 32, -114, 49.5],
   texas: [-107, 25.5, -93.5, 36.6],
-  'us-midwest': [-90.5, 41, -82, 48.5],
+  'us-midwest': [-90.5, 37.7, -82, 48.5],
   canada: [-141, 41.5, -52, 70],
   uk: [-8.7, 49.8, 1.8, 60.9],
   europe: [-10, 35.5, 8, 54],
-  nordics: [-25, 54.5, 32, 71.5],
+  nordics: [-25, 53.8, 32, 71.5],
   asia: [100, 0.5, 125, 27],
   oceania: [140, -48, 179.9, -9],
 };

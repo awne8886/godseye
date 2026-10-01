@@ -106,7 +106,10 @@ export const LiveNewsResponse = Envelope.extend({ items: z.array(NewsChannel) })
 export const RemovalContact = z.object({ kind: z.enum(['tracker', 'email', 'url']), href: z.string() });
 
 /** GET /api/cctv/providers */
-export const CameraProvidersResponse = Envelope.extend({ items: z.array(CameraProvider), removal: RemovalContact.optional() });
+/** A source OSIRIS uses that this registry deliberately does not wire, with the probe-backed reason. */
+export const CameraSourceNotWired = z.object({ id: z.string(), operator: z.string(), region: z.string(), country: z.string(), reason: z.string(), probedAt: z.string() });
+
+export const CameraProvidersResponse = Envelope.extend({ items: z.array(CameraProvider), removal: RemovalContact.optional(), notWired: z.array(CameraSourceNotWired).optional() });
 
 /** GET /api/cctv/resolve */
 export const CameraResolveResponse = z.object({

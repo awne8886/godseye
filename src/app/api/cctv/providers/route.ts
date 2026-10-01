@@ -1,10 +1,10 @@
 /**
  * GET /api/cctv/providers — the camera provider registry (CameraProvidersResponse): operator,
  * licence, attribution, terms, key requirement, poll interval, proxy/link-out flags per source, with
- * each provider's last status from the region feeds. Owner: layers-surveillance.
+ * each provider's last status from the region feeds, plus the OSIRIS sources deliberately not wired (`notWired`). Owner: layers-surveillance.
  */
 import { regionFeed } from '@/features/surveillance/server/catalog';
-import { PROVIDERS, providerRow } from '@/features/surveillance/server/registry';
+import { NOT_WIRED_SOURCES, PROVIDERS, providerRow } from '@/features/surveillance/server/registry';
 import { CCTV_REGIONS, removalContact } from '@/features/surveillance/shared';
 import { json, withRoute } from '@/lib/respond';
 import type { FeedMeta, Providers } from '@/lib/types';
@@ -27,5 +27,5 @@ export const GET = withRoute('/api/cctv/providers', () => {
     attribution: items.map((p) => ({ text: p.attribution_string, url: p.terms_url, licence: p.licence })),
     note: 'Registry of official camera operators. Provider status reflects the last inventory refresh of each region.',
   };
-  return json({ items, meta, providers, removal: removalContact(process.env) }, { ttl: 300 });
+  return json({ items, meta, providers, removal: removalContact(process.env), notWired: NOT_WIRED_SOURCES }, { ttl: 300 });
 });
