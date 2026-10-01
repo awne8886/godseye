@@ -3,6 +3,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sourceDisplayName } from '@/components/cards/source-name';
 import { HINT_MIN_ROW_PX, READOUT_ATTRIB_GAP_PX, READOUT_BASE_RIGHT_PX, readoutRightInset } from './map-readout';
+import { InstrumentFrame, StateChip, usePanelChip } from './PanelChrome';
 import { isModalPanel } from './PanelHost';
 import StyleStudioPanel from './panels/StyleStudioPanel';
 import { entitiesLabel } from './status-logic';
@@ -90,5 +91,34 @@ describe('R3-m1 / R3-m2: Style Studio placement', () => {
     expect(screen.queryByRole('button', { name: 'Close Style Studio' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Copy theme JSON' }).className).toContain('h-11');
     expect(screen.getByRole('radiogroup', { name: 'Theme preset' })).toBeTruthy();
+  });
+});
+
+function ChipUser({ title }: { title?: string }) {
+  usePanelChip('1 MATCHED', 'live', title);
+  return null;
+}
+
+describe('panel chip title (flight-paths request)', () => {
+  it('StateChip uses the full wording as its tooltip and falls back to the text', () => {
+    const { rerender } = render(<StateChip text="1 MATCHED" tone="live" title="1 MATCHED · 0 INFERRED" />);
+    expect(screen.getByText('1 MATCHED').getAttribute('title')).toBe('1 MATCHED · 0 INFERRED');
+    rerender(<StateChip text="STANDBY" tone="idle" />);
+    expect(screen.getByText('STANDBY').getAttribute('title')).toBe('STANDBY');
+  });
+
+  it('usePanelChip passes the title through to the frame chip and updates it', () => {
+    const { rerender } = render(
+      <InstrumentFrame title="PATHS" onClose={() => {}}>
+        <ChipUser title="1 MATCHED · 2 INFERRED" />
+      </InstrumentFrame>,
+    );
+    expect(screen.getByText('1 MATCHED').getAttribute('title')).toBe('1 MATCHED · 2 INFERRED');
+    rerender(
+      <InstrumentFrame title="PATHS" onClose={() => {}}>
+        <ChipUser />
+      </InstrumentFrame>,
+    );
+    expect(screen.getByText('1 MATCHED').getAttribute('title')).toBe('1 MATCHED');
   });
 });

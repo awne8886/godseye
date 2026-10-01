@@ -320,7 +320,8 @@ export default function ViewControls() {
 
   return (
     <>
-      <div className="glass-panel fixed left-3 top-[64px] z-[var(--z-hud)] flex items-center gap-1 p-1 md:bottom-[100px] md:left-[120px] md:top-auto">
+      {/* data-map-inset: map framing (flight paths) keeps route endpoints out from under this bar. */}
+      <div data-map-inset="view-controls" data-testid="view-controls" className="glass-panel fixed left-3 top-[64px] z-[var(--z-hud)] flex items-center gap-1 p-1 md:bottom-[100px] md:left-[120px] md:top-auto">
         <Segmented
           label="Projection"
           group="proj"

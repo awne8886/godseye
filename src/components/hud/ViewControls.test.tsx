@@ -30,6 +30,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('map insets and the attribution (R3-M1, flight-paths framing)', () => {
+  it('marks the view-controls bar with data-map-inset (contains the Projection toggle)', () => {
+    render(<ViewControls />);
+    const bars = document.querySelectorAll('[data-map-inset]');
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.querySelector('[role="group"][aria-label="Projection"]')).not.toBeNull();
+  });
+
+  it('pulls the readout row in to clear a wide attribution box and hides the hint when narrow', () => {
+    const attrib = document.createElement('div');
+    attrib.className = 'maplibregl-ctrl-attrib';
+    attrib.getBoundingClientRect = () => ({ left: 743, right: 1594, top: 953, bottom: 968, width: 851, height: 15, x: 743, y: 953, toJSON: () => ({}) }) as DOMRect;
+    document.body.append(attrib);
+    vi.stubGlobal('innerWidth', 1600);
+    try {
+      render(<ViewControls />);
+      const row = screen.getByTestId('readout-row');
+      expect(row.style.right).toBe(`${1600 - 743 + 16}px`);
+      // jsdom reports left 0, so the row is 727 px: room for the hint.
+      expect(row.hasAttribute('data-narrow')).toBe(false);
+      // 1280 px with the credits wrapped to start at x 500: 796 px inset leaves 484 px, hint hidden.
+      vi.stubGlobal('innerWidth', 1280);
+      attrib.getBoundingClientRect = () => ({ left: 500, right: 1274, top: 940, bottom: 968, width: 774, height: 28, x: 500, y: 940, toJSON: () => ({}) }) as DOMRect;
+      act(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+      expect(row.style.right).toBe(`${1280 - 500 + 16}px`);
+      expect(row.hasAttribute('data-narrow')).toBe(true);
+    } finally {
+      attrib.remove();
+    }
+  });
+});
+
 describe('MAP | SAT and 3D | 2D', () => {
   it('switches the basemap and projection through the store', () => {
     render(<ViewControls />);
