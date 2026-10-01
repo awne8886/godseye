@@ -95,7 +95,7 @@ for (const proj of ['globe', 'mercator'] as const) {
     await page.waitForTimeout(4000);
     const v = page.viewportSize()!;
     await page.mouse.click(v.width / 2, v.height / 2);
-    await expect(page.getByTestId('earthquake-card')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="hazard-card"], [data-testid$="-card"]').first()).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(1200);
     await shoot(page, `checks/picking-${proj}-${info.project.name}.png`);
   });

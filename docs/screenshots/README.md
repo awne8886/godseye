@@ -1,6 +1,6 @@
 # GODSEYE screenshots
 
-Captured from the production build of `claude/godseye-build-orchestration-zz8kt7` @ `78d08fd` with Playwright + SwiftShader at **1600×1000** (desktop) and **390×844** (phone), `prefers-reduced-motion: reduce`, animations disabled. Clocks, the ticker and relative ages are masked. Data is whatever the live keyless feeds returned at capture time (2026-10-01, about 01:45–02:30 UTC); nothing is staged. Images are WebP (quality 72), 2.7 MB in total.
+Captured from the production build of `claude/godseye-build-orchestration-zz8kt7` @ `78d08fd` with Playwright + SwiftShader at **1600×1000** (desktop) and **390×844** (phone), `prefers-reduced-motion: reduce`, animations disabled. Clocks, the ticker and relative ages are masked. Data is whatever the live keyless feeds returned at capture time (2026-10-01, about 01:45–02:30 UTC); nothing is staged. Images are WebP (quality 72), 3.2 MB in total.
 
 > **Capture environment.** Shared sandbox, software WebGL (SwiftShader), egress proxy, Playwright serialised behind a lock shared with other agents. Some shots show no basemap tiles or few entities because they had not arrived within the wait (the BASEMAP OFFLINE chip in a shot is the app reporting exactly that). Files ending in `-MISSING` record a palette query that opened a different panel than the one typed. Re-capture on a GPU machine before publishing.
 
@@ -45,40 +45,40 @@ python3 docs/screenshots/convert-webp.py /tmp/godseye-png 72   # needs Pillow
 
 | View | Desktop 1600×1000 | Phone 390×844 |
 |---|---|---|
-| alerts | [desktop](panels/alerts-desktop.webp) | — |
-| arcgis | [desktop](panels/arcgis-desktop.webp) | — |
-| draw | [desktop](panels/draw-desktop.webp) | — |
-| intel | [desktop](panels/intel-desktop.webp) | — |
+| alerts | [desktop](panels/alerts-desktop.webp) | [phone](panels/alerts-mobile.webp) |
+| arcgis | [desktop](panels/arcgis-desktop.webp) | [phone](panels/arcgis-mobile.webp) |
+| draw | [desktop](panels/draw-desktop.webp) | [phone](panels/draw-mobile.webp) |
+| intel | [desktop](panels/intel-desktop.webp) | [phone](panels/intel-mobile.webp) |
 | layers-MISSING | [desktop](panels/layers-MISSING-desktop.webp) | [phone](panels/layers-MISSING-mobile.webp) |
-| markets | [desktop](panels/markets-desktop.webp) | — |
-| palette | [desktop](panels/palette-desktop.webp) | — |
-| paths | [desktop](panels/paths-desktop.webp) | — |
+| markets | [desktop](panels/markets-desktop.webp) | [phone](panels/markets-mobile.webp) |
+| palette | [desktop](panels/palette-desktop.webp) | [phone](panels/palette-mobile.webp) |
+| paths | [desktop](panels/paths-desktop.webp) | [phone](panels/paths-mobile.webp) |
 | presets | [desktop](panels/presets-desktop.webp) | [phone](panels/presets-mobile.webp) |
-| recon | [desktop](panels/recon-desktop.webp) | — |
-| route | [desktop](panels/route-desktop.webp) | — |
-| search | [desktop](panels/search-desktop.webp) | — |
+| recon | [desktop](panels/recon-desktop.webp) | [phone](panels/recon-mobile.webp) |
+| route | [desktop](panels/route-desktop.webp) | [phone](panels/route-mobile.webp) |
+| search | [desktop](panels/search-desktop.webp) | [phone](panels/search-mobile.webp) |
 | settings-MISSING | [desktop](panels/settings-MISSING-desktop.webp) | [phone](panels/settings-MISSING-mobile.webp) |
-| share-MISSING | [desktop](panels/share-MISSING-desktop.webp) | — |
-| shortcuts | [desktop](panels/shortcuts-desktop.webp) | — |
-| sources-licences | [desktop](panels/sources-licences-desktop.webp) | — |
-| space | [desktop](panels/space-desktop.webp) | — |
+| share-MISSING | [desktop](panels/share-MISSING-desktop.webp) | [phone](panels/share-MISSING-mobile.webp) |
+| shortcuts | [desktop](panels/shortcuts-desktop.webp) | [phone](panels/shortcuts-mobile.webp) |
+| sources-licences | [desktop](panels/sources-licences-desktop.webp) | [phone](panels/sources-licences-mobile.webp) |
+| space | [desktop](panels/space-desktop.webp) | [phone](panels/space-mobile.webp) |
 | style-studio-MISSING | [desktop](panels/style-studio-MISSING-desktop.webp) | [phone](panels/style-studio-MISSING-mobile.webp) |
 
 ## cards
 
 | View | Desktop 1600×1000 | Phone 390×844 |
 |---|---|---|
-| earthquake | [desktop](cards/earthquake-desktop.webp) | — |
+| earthquake | [desktop](cards/earthquake-desktop.webp) | [phone](cards/earthquake-mobile.webp) |
 
 ## flight-paths
 
 | View | Desktop 1600×1000 | Phone 390×844 |
 |---|---|---|
-| flight-tracking | [desktop](flight-paths/flight-tracking-desktop.webp) | — |
+| flight-tracking | [desktop](flight-paths/flight-tracking-desktop.webp) | [phone](flight-paths/flight-tracking-mobile.webp) |
 | lhr-jfk-live-globe | [desktop](flight-paths/lhr-jfk-live-globe-desktop.webp) | [phone](flight-paths/lhr-jfk-live-globe-mobile.webp) |
 | lhr-jfk-route-globe | [desktop](flight-paths/lhr-jfk-route-globe-desktop.webp) | [phone](flight-paths/lhr-jfk-route-globe-mobile.webp) |
 | lhr-jfk-route-mercator | [desktop](flight-paths/lhr-jfk-route-mercator-desktop.webp) | — |
-| svo-lax-live-globe | [desktop](flight-paths/svo-lax-live-globe-desktop.webp) | — |
+| svo-lax-live-globe | [desktop](flight-paths/svo-lax-live-globe-desktop.webp) | [phone](flight-paths/svo-lax-live-globe-mobile.webp) |
 | svo-lax-route-globe | [desktop](flight-paths/svo-lax-route-globe-desktop.webp) | [phone](flight-paths/svo-lax-route-globe-mobile.webp) |
 | svo-lax-route-mercator | [desktop](flight-paths/svo-lax-route-mercator-desktop.webp) | — |
 | syd-scl-live-globe | [desktop](flight-paths/syd-scl-live-globe-desktop.webp) | [phone](flight-paths/syd-scl-live-globe-mobile.webp) |
@@ -90,11 +90,12 @@ python3 docs/screenshots/convert-webp.py /tmp/godseye-png 72   # needs Pillow
 | View | Desktop 1600×1000 | Phone 390×844 |
 |---|---|---|
 | far-side-atlantic | [desktop](checks/far-side-atlantic-desktop.webp) | — |
-| toggle-1-mercator | [desktop](checks/toggle-1-mercator-desktop.webp) | — |
-| toggle-2-globe | [desktop](checks/toggle-2-globe-desktop.webp) | — |
+| far-side-pacific | [desktop](checks/far-side-pacific-desktop.webp) | — |
+| toggle-1-mercator | [desktop](checks/toggle-1-mercator-desktop.webp) | [phone](checks/toggle-1-mercator-mobile.webp) |
+| toggle-2-globe | [desktop](checks/toggle-2-globe-desktop.webp) | [phone](checks/toggle-2-globe-mobile.webp) |
 
 ## audit
 
 | View | Desktop 1600×1000 | Phone 390×844 |
 |---|---|---|
-| dom | [desktop](audit/dom-desktop.webp) | — |
+| dom | [desktop](audit/dom-desktop.webp) | [phone](audit/dom-mobile.webp) |
