@@ -82,8 +82,9 @@ test('REGION DOSSIER compiles for ?dossier=lat,lng with per-layer states', async
     const body = await api.json();
     expect(body.nearby.radiusKm).toBe(150);
     await expect(panel.getByText(/Live layers within 150 km/)).toBeVisible({ timeout: 45_000 });
-    // Each layer shows a count or SOURCE OFFLINE — never a bare 0 for a dead feed.
-    for (const [, c] of Object.entries(body.nearby.counts as Record<string, { count: number | null }>)) if (c.count === null) await expect(panel.getByText('Source offline').first()).toBeVisible();
+    // Each layer shows a count or the honest reason there is none (layerValue) — never a bare 0 for a dead feed.
+    const counts = Object.values(body.nearby.counts as Record<string, { count: number | null }>);
+    if (counts.some((c) => c.count === null)) await expect(panel.getByText(/^(Loading|Unreadable|No key|Licence off|Offline)$/).first()).toBeVisible();
   } else {
     await expect(panel.getByText(/SOURCE OFFLINE/)).toBeVisible({ timeout: 45_000 });
   }
