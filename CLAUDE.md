@@ -81,6 +81,9 @@ secondary #9B978E / muted #848178 (≥ 4.5:1 on glass panels and tertiary; repla
 never hard-code). HUD text: JetBrains Mono uppercase, tracking .08em (≥ 11 px) / .16em (≤ 10 px),
 tabular-nums; prose Inter 12–13 px. Type scale 10/11/13/17 px + display 28/40 (9 px only for decorative
 labels and the mobile nav). Glass panels radius 12, blur 24. Motion honours reduced motion.
+Phone layout = the `phone:` Tailwind variant (src/styles/base.css; exactly PHONE_LAYOUT_QUERY / useIsMobile()).
+Classes are desktop-first (`min-h-8 phone:min-h-11`). Never show chrome or size targets on `md:`/`max-md:`: a
+landscape phone (844x390) is wider than 768 px but uses the phone layout.
 
 ## File ownership (Phase 2 builders — edit only what you own)
 - map-engine: `src/components/map/**`, `src/lib/map/**`, `src/workers/geometry.ts`, `public/maplibre/**`

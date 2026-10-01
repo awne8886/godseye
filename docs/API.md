@@ -527,7 +527,7 @@ GDELT 2.0 15-minute export events (geocoded, CAMEO QuadClass)
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `limit` | query | number | no | max events (≤ 2000) (e.g. `600`) |
+| `limit` | query | number | no | max events (≤ 5000, default 1000; total/truncated say what was left out) (e.g. `1000`) |
 | `quad` | query | string | no | Comma list of QuadClass 1–4 (e.g. `3,4`) |
 
 ### `GET /api/conflicts`

@@ -44,7 +44,9 @@ export interface FeatureModule {
    * (react-query, polling per registry refreshMs, paused when hidden), publishes deck layers via
    * useDeckLayers(), manages native MapLibre layers via useMapInstance(), and reports status via
    * useLayerStatus(). Renders null or DOM overlays (preview tiles).
-   * Mounted after the basemap has loaded and the browser is idle (first paint never waits for it).
+   * Mounted as soon as the map style is parsed, so its fetches overlap the GL start-up. Its GPU work
+   * (deck device and classes, first draw of new native layer types) waits in the admission queue for
+   * the basemap's first painted frame and is counted as pending meanwhile (RECEIVED + DRAWING).
    * Clickable entities never listen to `click` themselves: they register with the map's single
    * router in src/lib/map/picking.ts — a `toSelection(info)` prop on deck layers (or
    * `registerDeckPick(deckLayerId, fn)`), `registerNativePick(styleLayerId, fn)` for native layers,

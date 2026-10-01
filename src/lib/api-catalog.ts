@@ -167,7 +167,7 @@ export const API_CATALOG = [
   { method: 'GET', path: '/api/gdacs', group: 'threats', summary: 'GDACS disaster alerts (Global Incidents layer)', params: [], ttlSeconds: 600, responseSchema: 'GdacsResponse', upstreams: ['www.gdacs.org'], forwardsUserInput: false, aliases: ['/api/gdelt'], osiris: true, owner: 'layers-threats-network' },
   {
     method: 'GET', path: '/api/gdelt-events', group: 'threats', summary: 'GDELT 2.0 15-minute export events (geocoded, CAMEO QuadClass)',
-    params: [q('limit', 'number', false, 'max events (≤ 2000)', '600'), q('quad', 'string', false, 'Comma list of QuadClass 1–4', '3,4')], ttlSeconds: 900, responseSchema: 'GdeltEventsResponse',
+    params: [q('limit', 'number', false, 'max events (≤ 5000, default 1000; total/truncated say what was left out)', '1000'), q('quad', 'string', false, 'Comma list of QuadClass 1–4', '3,4')], ttlSeconds: 900, responseSchema: 'GdeltEventsResponse',
     upstreams: ['data.gdeltproject.org'], forwardsUserInput: false, example: '?limit=200&quad=4', osiris: true, owner: 'layers-threats-network',
   },
   { method: 'GET', path: '/api/conflicts', group: 'threats', summary: 'Conflict zones (REFERENCE polygons) with live event counts from GDELT/alerts', params: [], ttlSeconds: 900, responseSchema: 'ConflictsResponse', upstreams: ['data.gdeltproject.org'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
