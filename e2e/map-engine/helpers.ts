@@ -13,8 +13,9 @@
  *    precise map position);
  *  - data-map-loads (map constructions this page), data-camera (lat,lng,zoom,pitch,bearing at the
  *    last moveend), data-far-side (camera ground point + altitude on the globe, else "none"),
- *    data-basemap-state (ok/offline/incomplete/stalled), data-admission-pending (start-up units
- *    queued), data-admission-log (the last admitted units, `id@ms` since navigation start),
+ *    data-basemap-state (loading until the first painted basemap frame, then ok/offline/incomplete/
+ *    stalled), data-admission-pending (start-up GPU units queued, including those waiting for the
+ *    painted basemap), data-admission-log (the last admitted units, `id@ms` since navigation start),
  *    data-deck-layers / data-deck-undrawn (deck layers handed over / groups not in the style),
  *    data-deck-classes (deck layer classes admitted so far, in order).
  * The wrapper `[data-testid=map-root]` carries data-projection (effective) and data-basemap.
@@ -68,6 +69,33 @@ export async function waitForCameraIdle(page: Page, timeout = 60_000): Promise<v
 /** Wait until the map exists and its style is parsed (tiles may still be loading). */
 export async function waitForMapStyle(page: Page, timeout = 60_000): Promise<void> {
   await expect(page.locator(MAP)).toHaveAttribute('data-style-ready', 'true', { timeout });
+}
+
+/**
+ * Wait until the map's start-up GPU work has drained: the deck overlay is up with every layer group
+ * in the style, nothing is queued (`data-admission-pending="0"`), and that held for `stableMs`.
+ * Specs that time pointer input (the double right-click pair) wait for this first: an admission
+ * slot links a shader program in one long task (1.7–7.5 s on SwiftShader), and one landing between
+ * two `page.mouse.click`s stretches the pair (CI saw 7.5 s on b43c0b5; R1r5-m3).
+ */
+export async function waitForAdmissionDrained(page: Page, o: { timeout?: number; stableMs?: number; requireDeck?: boolean } = {}): Promise<void> {
+  const requireDeck = o.requireDeck ?? true;
+  const stableMs = o.stableMs ?? 1500;
+  const settled = () =>
+    page.locator(MAP).evaluate((el, deck) => {
+      const d = (el as HTMLElement).dataset;
+      return d.admissionPending === '0' && (!deck || (Number(d.deckLayers ?? 0) > 0 && d.deckUndrawn === '0'));
+    }, requireDeck);
+  await expect
+    .poll(
+      async () => {
+        if (!(await settled())) return false;
+        await page.waitForTimeout(stableMs);
+        return settled();
+      },
+      { timeout: o.timeout ?? 150_000, intervals: [500] },
+    )
+    .toBe(true);
 }
 
 /** Camera recorded at the last moveend, or null before the first move. */

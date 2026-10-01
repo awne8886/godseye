@@ -9,8 +9,9 @@
  *  - the deck device is created as soon as a focus layer exists and the globe has drawn its first
  *    frame (ambient data layers still wait for the first painted basemap frame);
  *  - the first class of the focus layers in drawing order (a route's arc: PathLayer) is admitted
- *    before the data modules mount; further focus classes go after that mount but ahead of ambient
- *    classes and native layer types.
+ *    first; further focus classes go ahead of ambient classes and native layer types.
+ * (The data modules are not queued since perf m-l: they mount at style parse and fetch at once;
+ * only their GPU work is queued, behind the basemap's first painted frame.)
  * Measured on SwiftShader before this ordering: the arc's PathLayer came fourth (deck device,
  * feature mount, ScatterplotLayer first because the ambient earthquake layer was seen first), one
  * 2 s deadline each — first draw 16–23 s after style parse.
@@ -33,11 +34,9 @@ type Entries = Readonly<Record<string, EntryLike>>;
 export const ADMISSION_PRIORITY = {
   /** The deck device while focus layers exist, and the first focus class. */
   focusFirst: -2,
-  /** The deck device while only Background layers exist and the data modules have not mounted. */
+  /** The deck device otherwise (every deck class needs it first). */
   deckDevice: -1,
-  /** Mounting the data modules (their fetch, parse and publish). */
-  features: 0,
-  /** Further focus classes; the deck device once the data modules have mounted. */
+  /** Further focus classes. */
   focus: 1,
   /** Ambient deck layer classes and native layer types. */
   ambient: 2,
@@ -86,4 +85,14 @@ export function deckClassPriority(next: string | undefined, focus: readonly stri
 /** Longest wait for a quiet slot for the class next in line: short for focus classes, else the default. */
 export function deckClassMaxWait(next: string | undefined, focus: readonly string[]): number | undefined {
   return next && focus.includes(next) ? FOCUS_MAX_WAIT_MS : undefined;
+}
+
+/**
+ * Whether the deck class next in line may be admitted now: focus classes (what the user asked for)
+ * at once, ambient data classes only once the basemap has painted (`gpuOpen`, capped) — with a
+ * route or flight deep link the other layers' classes must not link programs before it
+ * (round-5 perf m-l follow-up).
+ */
+export function deckClassReady(next: string | undefined, focus: readonly string[], gpuOpen: boolean): boolean {
+  return gpuOpen || (!!next && focus.includes(next));
 }

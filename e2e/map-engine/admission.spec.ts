@@ -28,7 +28,7 @@ test.describe('map start-up admission', () => {
     await expect.poll(async () => (await draws()).draws, { timeout: 60_000 }).toBeGreaterThan(0);
     // Entity layers are actually drawn (not only counted)…
     await expect.poll(async () => (await draws()).instanced, { timeout: 120_000 }).toBeGreaterThan(0);
-    // …and the queue (feature mount, deck device, layer classes, native layer types) drains.
+    // …and the queue (deck device, layer classes, native layer types) drains.
     await expect(page.locator(MAP)).toHaveAttribute('data-admission-pending', '0', { timeout: 60_000 });
   });
 });

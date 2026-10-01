@@ -8,8 +8,9 @@
  *
  * Also owned here: the WebGL context fallback ladder (constructor rejection and unrecovered
  * context loss), flyTo requests, the camera → store/URL feed (longitudes wrapped), the zero-render
- * cursor/view/far-side feeds, click/hover pick routing (deck + native via choosePick), and the
- * Region Dossier gestures (double right-click, touch long-press). Owner: map-engine.
+ * cursor/view/far-side feeds, click/hover pick routing (deck + native via choosePick), the
+ * Region Dossier gestures (double right-click, touch long-press), and the honest tile-state chips
+ * (BASEMAP LOADING from the first frame, basemap and imagery holes/offline). Owner: map-engine.
  */
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as maplibregl from 'maplibre-gl';
@@ -22,12 +23,13 @@ import { useDeckLayerStore, useLayerStatusStore, useMapInstanceStore, useSelecti
 import { publishCursor, publishView } from '@/lib/map/cursor';
 import { cameraFromMap, isFacing, setFarSideCamera } from '@/lib/map/far-side';
 import { createDoubleRightClick, createLongPress } from '@/lib/map/gestures';
-import { BLACK_MARBLE_LABEL, ESRI_LABEL, gibsTrueColorLabel } from '@/lib/map/imagery';
+import { BLACK_MARBLE_LABEL, ESRI_LABEL, ESRI_SOURCE_ID, GIBS_TRUECOLOR_SOURCE_ID, gibsTrueColorLabel } from '@/lib/map/imagery';
 import { geometryClient } from '@/lib/map/geometry-client';
-import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
+import { installNightProtocol, NIGHT_SOURCE_ID, nightLightsSupported } from '@/lib/map/night-lights';
 import { collectCandidates, routePick, setHoverPointer, type PickMap } from '@/lib/map/picking';
-import { BASEMAP_STALL_MS, basemapChipText, createBasemapHealth, heldTileKeys, retryTargets, type BasemapHealth } from '@/lib/map/basemap-health';
-import { fetchBasemapStyle, loadBasemapWithRetry } from '@/lib/map/basemap-fetch';
+import { basemapChipText, type BasemapHealth, imageryChipText, tilesDegraded } from '@/lib/map/basemap-health';
+import { type TileWatch, type TileWatchMap, type WatchedSource, watchTileSources } from '@/lib/map/tile-watch';
+import { createBasemapStyleLoader, loadBasemapWithRetry } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
 import { onceBasemapPainted, onceFirstFrame, onceStyleParsed, type PaintMap, styleParsed } from '@/lib/map/ready';
@@ -61,19 +63,21 @@ import {
   projectionPitchEase,
 } from '@/lib/map/view';
 import { useUiStore } from '@/lib/store';
+import BasemapPending from './BasemapPending';
 import BuildingsLayer from './BuildingsLayer';
 import ImageryChips, { type ImageryChip } from './ImageryChips';
 import ImageryLayers, { useGibsDate } from './ImageryLayers';
 import TerminatorLayer from './TerminatorLayer';
 import WebGLFallback from './WebGLFallback';
 
-// deck.gl/luma and every feature module are split out of the map chunk and only load once the
-// basemap has loaded and the browser is idle (§11 TBT budget); the globe paints first.
+// deck.gl/luma and every feature module are split out of the map chunk (§11 TBT budget) and load
+// once the style is parsed: the globe paints first. The data modules mount then too, so their
+// fetches overlap the GL start-up; their GPU work waits in the admission queue (perf m-l).
 const DeckOverlay = dynamic(() => import('./DeckOverlay'), { ssr: false });
 const FeatureLayers = dynamic(() => import('./FeatureLayers'), { ssr: false });
 // Module Backgrounds (route planner, DRAW/ROUTE overlays) are the user's own tools: they mount as
-// soon as the map is usable, not behind the data layers' start-up queue, so a click on the map
-// right after picking "Line" is never lost (R1r4: DRAW e2e).
+// soon as the map is usable, so a click on the map right after picking "Line" is never lost
+// (R1r4: DRAW e2e).
 const FeatureBackgrounds = dynamic(() => import('./FeatureLayers').then((m) => m.FeatureBackgrounds), { ssr: false });
 
 maplibregl.setWorkerUrl(`/maplibre/${maplibregl.getVersion()}/maplibre-gl-worker.mjs`);
@@ -96,6 +100,19 @@ const ADMISSION_LOG_MAX = 24;
 const DEFAULT_MAX_PITCH = 85;
 
 /**
+ * Tile sources whose state is reported on the map: the basemap (LOADING until its first painted
+ * frame, stalls, holes, offline) and the imagery overlays (holes and offline, visual-qa m10).
+ */
+const WATCHED_TILE_SOURCES: readonly WatchedSource[] = [
+  { id: BASEMAP_SOURCE_ID, stall: true, firstPaint: true, retry: true },
+  { id: ESRI_SOURCE_ID, retry: false },
+  { id: GIBS_TRUECOLOR_SOURCE_ID, retry: false },
+  { id: NIGHT_SOURCE_ID, retry: false },
+];
+/** The basemap before its first painted frame (and before the map even exists). */
+const LOADING: BasemapHealth = { state: 'loading', lastGoodAt: null, retryInMs: null, missing: 0 };
+
+/**
  * API presence only. Creating a throw-away WebGL2 context to probe costs a synchronous GPU
  * round-trip (seconds under SwiftShader, the Lighthouse/CI renderer); a browser that has the API
  * but cannot give MapLibre a context is caught by the constructor and the context ladder below.
@@ -106,11 +123,17 @@ function hasWebGL2(): boolean {
 
 const cssVar = (name: string) => (typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name));
 
-async function loadBasemap(signal: AbortSignal): Promise<StyleSpecification> {
-  // Style and vector TileJSON (inlined, so its failure is retried with the style: no blank globe).
-  const raw = await fetchBasemapStyle(signal);
-  rawBasemap = raw;
-  return transformStyle(raw, themedBasemap(cssVar));
+/**
+ * Style and vector TileJSON (inlined, so a TileJSON failure is retried like the style: no blank
+ * globe). One loader per retry loop: a document that already arrived is not fetched again (R1r5-m2).
+ */
+function basemapLoader(): (signal: AbortSignal) => Promise<StyleSpecification> {
+  const load = createBasemapStyleLoader();
+  return async (signal) => {
+    const raw = await load(signal);
+    rawBasemap = raw;
+    return transformStyle(raw, themedBasemap(cssVar));
+  };
 }
 
 /** The upstream style as fetched, for recolouring in place on theme changes. */
@@ -154,7 +177,7 @@ export default function MapView() {
   // UNAVAILABLE and is retried after 2, 4, 8, 16, then every 30 s (R1r4-m1).
   useEffect(() => {
     if (!webglOk) return;
-    return loadBasemapWithRetry(loadBasemap, {
+    return loadBasemapWithRetry(basemapLoader(), {
       onLoaded: (s) => {
         setStyle(s);
         setFailure(null);
@@ -227,7 +250,8 @@ export default function MapView() {
 
   // Phones can zoom further out so long polar routes (SIN–JFK, HEL–ANC) fit above the sheet. Follows
   // the HUD's phone-layout query (landscape phones included) and updates on resize/rotation.
-  const minZoom = minZoomFor(useSyncExternalStore(phoneLayout.subscribe, phoneLayout.get, () => false));
+  const phone = useSyncExternalStore(phoneLayout.subscribe, phoneLayout.get, () => false);
+  const minZoom = minZoomFor(phone);
   const labelAnchor = useMemo(() => (style ? firstLabelLayerId(style) : undefined), [style]);
   const imageryAnchor = useMemo(() => (style?.layers.some((l) => l.id === IMAGERY_BEFORE_ID) ? IMAGERY_BEFORE_ID : labelAnchor), [style, labelAnchor]);
   const hasStyle = style !== null;
@@ -267,6 +291,8 @@ export default function MapView() {
     if (!map || !el || el.dataset.mapLoads) return;
     mapLoads++;
     el.dataset.mapLoads = String(mapLoads);
+    // Nothing painted yet: the tile watcher (from style parse on) takes it from here.
+    el.dataset.basemapState = 'loading';
     installMissingImageResolver(map);
     // Host features that only need the parsed style (terrain, gestures, flyTo) do not wait for every
     // tile: `style.load` fires first; `load` covers a style that finished before we subscribed.
@@ -451,15 +477,17 @@ export default function MapView() {
     [setMap],
   );
 
-  // Feature modules (and their first fetches) start once the style is parsed (the globe's first
-  // paint) in a quiet slot (idle main thread, drained GPU), so the first paint never waits for them
-  // and a slow tile host (which delays `load`) never delays the data layers. The deck overlay
-  // (whose device set-up queries the GPU synchronously) gets its own quiet slot once a layer exists.
-  // All of that start-up work goes through one admission queue (one unit per quiet slot, at least
-  // one unit every ADMISSION_MAX_WAIT_MS however busy the thread/GPU): feature mount, deck device,
-  // each new deck layer class and the first draw of each native layer type features add. The
-  // user's own focus layers (route, flight, drawing) are served first with a short wait (focus.ts).
+  // Start-up GPU work goes through one admission queue (one unit per quiet slot — idle main thread,
+  // drained GPU — and at least one unit every ADMISSION_MAX_WAIT_MS however busy the thread/GPU):
+  // the deck device, each new deck layer class and the first draw of each native layer type the
+  // features add. The data modules themselves are NOT queued (perf m-l): they mount as soon as the
+  // style is parsed and this queue exists, so their /api requests overlap the GL start-up; what they
+  // publish waits here (`ready`) for the basemap's first painted frame (visual-qa R2-M6) and is
+  // counted as pending meanwhile, so the header says RECEIVED + DRAWING, never drawn. The user's own
+  // focus layers (route, flight, drawing) are served first with a short wait (focus.ts).
   const getGl = useCallback(() => canvasGl(mapRef.current?.getMap().getCanvas()), []);
+  /** GPU start-up of the data layers may begin (the basemap's first painted frame, capped). */
+  const gpuOpen = useRef(false);
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !loaded) return;
@@ -490,6 +518,8 @@ export default function MapView() {
       id: 'native-types',
       priority: ADMISSION_PRIORITY.ambient,
       pending: () => native.pendingTypes().length,
+      // Held hidden (and counted) until the basemap has painted: a program link must not delay it.
+      ready: () => gpuOpen.current,
       admitOne: () => void native.admitNext(),
     });
     store.setScheduler(scheduler);
@@ -500,15 +530,22 @@ export default function MapView() {
       if (useAdmissionStore.getState().scheduler === scheduler) store.setScheduler(null);
     };
   }, [loaded, getGl]);
-  // Features start after the basemap's first painted frame (capped): their fetch/parse/GPU set-up
-  // must not starve the globe's first frame (visual-qa R2-M6).
+  // The data layers' GPU set-up starts after the basemap's first painted frame (capped): it must
+  // not starve the globe's first frame (visual-qa R2-M6). Their fetches do not wait for it.
   const [basemapPainted, setBasemapPainted] = useState(false);
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !loaded) return;
     return onceBasemapPainted(map as unknown as PaintMap, BASEMAP_SOURCE_ID, () => setBasemapPainted(true), BASEMAP_PAINT_CAP_MS);
   }, [loaded]);
-  const deferred = useAdmission(loaded && basemapPainted, 'features', ADMISSION_PRIORITY.features);
+  useEffect(() => {
+    gpuOpen.current = basemapPainted;
+    if (basemapPainted) useAdmissionStore.getState().scheduler?.kick();
+  }, [basemapPainted]);
+  // Data modules mount once the queue that holds their GPU work exists (so every native layer they
+  // add goes through it), i.e. right after the style is parsed.
+  const scheduler = useAdmissionStore((s) => s.scheduler);
+  const featuresMounted = loaded && scheduler !== null;
   // The globe's first frame (no tiles needed): the earliest point for the user's own focus work.
   const [firstFrame, setFirstFrame] = useState(false);
   useEffect(() => {
@@ -518,112 +555,80 @@ export default function MapView() {
   }, [loaded]);
   // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
   const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
-  // Focus layers (module Backgrounds: a `?route=` deep link or a `?flight=` tracked flight's
-  // planned arc, drawn shapes — what the user asked for) get the deck device first, once the globe has drawn its first
-  // frame, without waiting for basemap tiles or a quiet GPU (focus.ts). Ambient data layers keep
-  // waiting for the first painted basemap frame (visual-qa R2-M6); deck layers published before the
-  // data modules mount can only come from Backgrounds, so the device then still goes first (R4-M1).
+  // Focus layers (module Backgrounds: a `?route=` deep link or a `?flight=` tracked flight's planned
+  // arc, drawn shapes — what the user asked for) get the deck device first, once the globe has drawn
+  // its first frame, without waiting for basemap tiles or a quiet GPU (focus.ts). Ambient data
+  // layers wait for the first painted basemap frame (visual-qa R2-M6): the device is wanted (and
+  // counted pending) as soon as a deck layer exists, and admitted once that frame is in.
   const focusDeck = useDeckLayerStore((s) => hasFocusLayers(s.entries));
-  const deckWanted = loaded && hasDeckLayers && (basemapPainted || (focusDeck && firstFrame));
-  const deckPriority = focusDeck ? ADMISSION_PRIORITY.focusFirst : deferred ? ADMISSION_PRIORITY.focus : ADMISSION_PRIORITY.deckDevice;
-  const deckSlot = useAdmission(deckWanted, 'deck-device', deckPriority, focusDeck ? FOCUS_MAX_WAIT_MS : undefined);
+  const deckReady = basemapPainted || (focusDeck && firstFrame);
+  const deckPriority = focusDeck ? ADMISSION_PRIORITY.focusFirst : ADMISSION_PRIORITY.deckDevice;
+  const deckSlot = useAdmission(loaded && hasDeckLayers, 'deck-device', deckPriority, focusDeck ? FOCUS_MAX_WAIT_MS : undefined, deckReady);
+  // Between the device's admission and DeckOverlay's mount (lazy chunk + first commit) nothing is
+  // drawn yet and 'deck-device' no longer counts as pending: keep the header on DRAWING until the
+  // overlay has mounted and handed its layers over (round-5 perf m-l follow-up).
+  const [deckMounted, setDeckMounted] = useState(false);
+  const deckMountPending = loaded && hasDeckLayers && !deckMounted;
+  useEffect(() => {
+    useAdmissionStore.getState().setUndrawn('deck-mount', deckMountPending ? 1 : 0);
+  }, [deckMountPending]);
+  useEffect(() => () => useAdmissionStore.getState().setUndrawn('deck-mount', 0), []);
 
-  // Honest basemap state: repeated tile failures → BASEMAP OFFLINE (last observed tile) + backoff retry.
-  const [basemapHealth, setBasemapHealth] = useState<BasemapHealth | null>(null);
+  // Honest tile state (basemap + imagery overlays): BASEMAP LOADING until the first painted frame,
+  // repeated failures → OFFLINE with the last observed tile, holes → N TILES MISSING, each retried
+  // by tile id with backoff (tile-watch.ts).
+  const [tileHealth, setTileHealth] = useState<Readonly<Record<string, BasemapHealth>>>({});
+  const tileWatch = useRef<TileWatch | null>(null);
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !loaded) return;
     const el = map.getContainer();
-    const health = createBasemapHealth();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let shown = 'ok|0';
-    el.dataset.basemapState = 'ok';
-    const publish = (h: BasemapHealth) => {
-      const key = `${h.state}|${h.missing}`;
-      if (key === shown) return;
-      shown = key;
-      el.dataset.basemapState = h.state;
-      setBasemapHealth(h.state === 'ok' ? null : h);
-    };
-    // Ask again for the failed tiles only (R1r4-m2): a whole-viewport reload re-downloads and
-    // re-parses every tile in view from a donation-funded host.
-    const retry = (h: BasemapHealth) => {
-      if (h.retryInMs === null || timer) return;
-      timer = setTimeout(() => {
-        timer = undefined;
-        const targets = retryTargets(health.get(), health.failedTiles());
-        health.retried();
-        if (!targets || !map.getSource(BASEMAP_SOURCE_ID)) return;
-        if (targets === 'source') map.refreshTiles(BASEMAP_SOURCE_ID);
-        else map.refreshTiles(BASEMAP_SOURCE_ID, targets);
-      }, h.retryInMs);
-    };
-    const tileKey = (e: unknown): string | undefined => {
-      const c = (e as { tile?: { tileID?: { canonical?: { z: number; x: number; y: number } } } }).tile?.tileID?.canonical;
-      return c ? `${c.z}/${c.x}/${c.y}` : undefined;
-    };
-    const onError = (e: maplibregl.ErrorEvent) => {
-      if ((e as { sourceId?: string }).sourceId !== BASEMAP_SOURCE_ID) return;
-      const h = health.tileError(tileKey(e));
-      publish(h);
-      retry(h);
-    };
-    const onData = (e: maplibregl.MapSourceDataEvent) => {
-      if (e.sourceId !== BASEMAP_SOURCE_ID || !e.tile) return;
-      const h = health.tileLoaded(Date.now(), tileKey(e));
-      if (h.retryInMs === null) {
-        clearTimeout(timer);
-        timer = undefined;
-      }
-      publish(h);
-    };
-    // Tiles that failed out of view no longer matter (MapLibre requests the new view itself);
-    // failed tiles still in view stay reported and are retried by id on the next tick.
-    const onMoveEnd = () => {
-      if (health.get().missing === 0) return;
-      const held = heldTileKeys(map, BASEMAP_SOURCE_ID);
-      const h = held ? health.keepInView(held) : health.forgetMissing();
-      publish(h);
-      retry(h);
-    };
-    // Tiles in view still loading after BASEMAP_STALL_MS (a hung host, nothing failed): LOADING chip.
-    let loadingSince: number | null = null;
-    const stallCheck = setInterval(() => {
-      let busy = false;
-      try {
-        busy = !!map.getSource(BASEMAP_SOURCE_ID) && !map.isSourceLoaded(BASEMAP_SOURCE_ID);
-      } catch {
-        busy = false;
-      }
-      const now = Date.now();
-      loadingSince = busy ? (loadingSince ?? now) : null;
-      publish(health.setStalled(loadingSince !== null && now - loadingSince >= BASEMAP_STALL_MS));
-    }, 1000);
-    map.on('error', onError);
-    map.on('sourcedata', onData);
-    map.on('moveend', onMoveEnd);
+    const watch = watchTileSources(map as unknown as TileWatchMap, WATCHED_TILE_SOURCES, (id, h) => {
+      if (id === BASEMAP_SOURCE_ID) el.dataset.basemapState = h.state;
+      setTileHealth((prev) => ({ ...prev, [id]: h }));
+    });
+    tileWatch.current = watch;
     return () => {
-      clearTimeout(timer);
-      clearInterval(stallCheck);
-      map.off('error', onError);
-      map.off('sourcedata', onData);
-      map.off('moveend', onMoveEnd);
+      watch.dispose();
+      if (tileWatch.current === watch) tileWatch.current = null;
     };
   }, [loaded]);
+  // An overlay switched off shows none of its holes: forget them (a fresh count when it returns).
+  useEffect(() => {
+    if (!satellite) tileWatch.current?.reset(ESRI_SOURCE_ID);
+  }, [satellite]);
+  useEffect(() => {
+    if (!trueColor) tileWatch.current?.reset(GIBS_TRUECOLOR_SOURCE_ID);
+  }, [trueColor]);
+  useEffect(() => {
+    if (!dayNight) tileWatch.current?.reset(NIGHT_SOURCE_ID);
+  }, [dayNight]);
 
   const chips = useMemo(() => {
     const out: ImageryChip[] = [];
-    const basemapText = basemapHealth ? basemapChipText(basemapHealth) : null;
-    if (basemapText) out.push({ id: 'basemap', text: basemapText });
-    if (dayNight && nightLightsSupported()) out.push({ id: 'night', text: BLACK_MARBLE_LABEL });
-    if (trueColor) out.push({ id: 'gibs', text: gibsTrueColorLabel(gibsDate) });
-    if (satellite) out.push({ id: 'esri', text: ESRI_LABEL });
+    const base = tileHealth[BASEMAP_SOURCE_ID];
+    // Until the style is parsed <BasemapPending/> shows BASEMAP LOADING over the map (one chip, no
+    // gap while MapLibre is constructed); after it, the watcher's state until the first painted frame.
+    if (loaded && (!base || base.state === 'loading')) out.push({ id: 'basemap-loading', text: basemapChipText(LOADING)!, tone: 'reference' });
+    else if (loaded && base) {
+      const basemapText = basemapChipText(base);
+      if (basemapText) out.push({ id: 'basemap', text: basemapText });
+    }
+    const imagery = (id: string, sourceId: string, label: string) => {
+      const h = tileHealth[sourceId];
+      out.push({ id, text: imageryChipText(label, h), tone: tilesDegraded(h) ? 'offline' : undefined });
+    };
+    if (dayNight && nightLightsSupported()) imagery('night', NIGHT_SOURCE_ID, BLACK_MARBLE_LABEL);
+    if (trueColor) imagery('gibs', GIBS_TRUECOLOR_SOURCE_ID, gibsTrueColorLabel(gibsDate));
+    if (satellite) imagery('esri', ESRI_SOURCE_ID, ESRI_LABEL);
     if (terrainOn) out.push({ id: 'terrain', text: TERRAIN_STATUS_TEXT[terrainStatus] });
     return out;
-  }, [basemapHealth, dayNight, trueColor, satellite, terrainOn, terrainStatus, gibsDate]);
+  }, [loaded, tileHealth, dayNight, trueColor, satellite, terrainOn, terrainStatus, gibsDate]);
 
   if (failure === 'webgl') return <WebGLFallback reason="webgl" />;
-  if (!style) return failure === 'style' ? <WebGLFallback reason="style" /> : null;
+  if (failure === 'style' && !style) return <WebGLFallback reason="style" />;
+  // The map container is up but the style is still on its way: say so from the first frame.
+  if (!style) return <BasemapPending phone={phone} />;
 
   return (
     <div className="absolute inset-0" data-testid="map-root" data-projection={effective} data-basemap={basemap}>
@@ -659,11 +664,14 @@ export default function MapView() {
             under the deck layers inserted later at the same label anchor. */}
         <BuildingsLayer beforeId={labelAnchor} visible={buildings} />
         <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
-        {deckSlot && <DeckOverlay beforeId={labelAnchor} />}
+        {deckSlot && <DeckOverlay beforeId={labelAnchor} gpuOpen={basemapPainted} onMounted={setDeckMounted} />}
         {loaded && <FeatureBackgrounds />}
-        {deferred && <FeatureLayers />}
+        {featuresMounted && <FeatureLayers />}
         <ImageryChips chips={chips} />
       </Map>
+      {/* Same chip, same place, from the style's arrival until the map's own stack takes over at
+          load (visual-qa round-5 m3: no chip-less gap while MapLibre is constructed). */}
+      {!loaded && <BasemapPending phone={phone} />}
       {contextLost && (
         <div role="status" className="hud-micro pointer-events-none absolute inset-x-0 top-1/2 text-center text-[var(--alert-orange)]">
           GPU CONTEXT LOST · RESTORING

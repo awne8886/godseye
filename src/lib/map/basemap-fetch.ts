@@ -8,8 +8,9 @@
  * Every request has its own deadline (`BASEMAP_FETCH_TIMEOUT_MS`, body included): a request that
  * never answers is aborted and rejects, so `loadBasemapWithRetry` can show BASEMAP UNAVAILABLE and
  * try again with backoff (2, 4, 8, 16, 30, 30 s…) instead of leaving a blank page (R1r4-m1).
- * A failure of either document rejects — never a blank globe pretending to be a map.
- * The URLs are constants so the app shell can `preconnect`/`preload` them (they match these
+ * A failure of either document rejects — never a blank globe pretending to be a map. Across
+ * attempts (`createBasemapStyleLoader`) a document that already arrived is kept, so a retry only
+ * asks again for the one that failed (R1r5-m2). The URLs are constants so the app shell can `preconnect`/`preload` them (they match these
  * requests: CORS, credentials `same-origin`, which sends nothing cross-origin). Owner: map-engine.
  */
 import type { StyleSpecification } from 'maplibre-gl';
@@ -72,16 +73,50 @@ async function getJson(fetchFn: FetchLike, url: string, signal: AbortSignal, wha
   }
 }
 
-/** The upstream style with its vector TileJSON inlined (unthemed). */
-export async function fetchBasemapStyle(signal: AbortSignal, fetchFn: FetchLike = fetch, opts: FetchOptions = {}): Promise<StyleSpecification> {
+/** A parsed style document MapLibre can take (validated before it is kept for a retry). */
+function asStyle(raw: unknown): StyleSpecification {
+  const s = raw as Partial<StyleSpecification> | null;
+  if (!s || typeof s !== 'object' || s.version !== 8 || !s.sources || typeof s.sources !== 'object' || !Array.isArray(s.layers)) {
+    throw new Error('basemap style is not a MapLibre v8 style');
+  }
+  return s as StyleSpecification;
+}
+
+/**
+ * A style loader for `loadBasemapWithRetry` (R1r5-m2). Each document (the style, its TileJSON) is
+ * memoised by URL once it has arrived and validated, and a request still in flight is shared, so a
+ * retry asks again only for the document that failed: before, attempt 1 got the style but not the
+ * TileJSON and attempt 4 the TileJSON but not the style, and no globe for over 90 s. A failed,
+ * timed-out or invalid document is forgotten (never kept as truth) and fetched again next attempt.
+ */
+export function createBasemapStyleLoader(fetchFn: FetchLike = fetch, opts: FetchOptions = {}): (signal: AbortSignal) => Promise<StyleSpecification> {
   const o = { timers: opts.timers ?? realTimers, timeoutMs: opts.timeoutMs ?? BASEMAP_FETCH_TIMEOUT_MS };
-  const early = getJson(fetchFn, BASEMAP_TILEJSON_URL, signal, 'basemap TileJSON', o);
-  early.catch(() => undefined); // observed below when used; an unused early failure is not an error
-  const raw = (await getJson(fetchFn, BASEMAP_STYLE_URL, signal, 'basemap style', o)) as StyleSpecification;
-  const tj = tileJsonUrl(raw);
-  if (!tj) return raw;
-  const body = tj === BASEMAP_TILEJSON_URL ? await early : await getJson(fetchFn, tj, signal, 'basemap TileJSON', o);
-  return inlineTileJson(raw, parseTileJson(body, tj));
+  const docs = new Map<string, Promise<unknown>>();
+  const memo = <T>(url: string, signal: AbortSignal, what: string, validate: (raw: unknown) => T): Promise<T> => {
+    const known = docs.get(url) as Promise<T> | undefined;
+    if (known) return known;
+    const p = getJson(fetchFn, url, signal, what, o).then(validate);
+    docs.set(url, p);
+    p.catch(() => {
+      if (docs.get(url) === p) docs.delete(url);
+    });
+    return p;
+  };
+  return async (signal) => {
+    // The TileJSON we expect is requested alongside the style (one round trip, not two).
+    const early = memo(BASEMAP_TILEJSON_URL, signal, 'basemap TileJSON', (raw) => parseTileJson(raw, BASEMAP_TILEJSON_URL));
+    early.catch(() => undefined); // observed below when used; an unused early failure is not an error
+    const raw = await memo(BASEMAP_STYLE_URL, signal, 'basemap style', asStyle);
+    const tj = tileJsonUrl(raw);
+    if (!tj) return raw;
+    const parsed = tj === BASEMAP_TILEJSON_URL ? await early : await memo(tj, signal, 'basemap TileJSON', (body) => parseTileJson(body, tj));
+    return inlineTileJson(raw, parsed);
+  };
+}
+
+/** The upstream style with its vector TileJSON inlined (unthemed). One attempt, nothing kept. */
+export async function fetchBasemapStyle(signal: AbortSignal, fetchFn: FetchLike = fetch, opts: FetchOptions = {}): Promise<StyleSpecification> {
+  return createBasemapStyleLoader(fetchFn, opts)(signal);
 }
 
 export interface RetryHooks<T> {

@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { isFacing } from '../../src/lib/map/far-side';
 import { gibsTrueColorDate } from '../../src/lib/map/imagery';
-import { collectErrors, gotoMap, MAP, mapLoads, mapProjection, nudgeMap, readCamera, readFarSideCamera, waitForMapIdle, waitForMapStyle } from './helpers';
+import { collectErrors, gotoMap, MAP, mapLoads, mapProjection, nudgeMap, readCamera, readFarSideCamera, waitForAdmissionDrained, waitForMapIdle, waitForMapStyle } from './helpers';
+
+/** An imagery chip's dated label, possibly followed by the holes it has (R1r5 m10: announced). */
+const chipText = (label: string) => new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( · \\d+ TILES? MISSING| · SOURCE OFFLINE.*)?$`);
 
 test.describe('map engine', () => {
   // Tiles come straight from the upstream hosts; allow for slow egress in sandboxes.
@@ -12,7 +15,7 @@ test.describe('map engine', () => {
     await waitForMapIdle(page);
     await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('OpenStreetMap');
     // Day/night is on by default: its dated REFERENCE chip is shown with the night lights.
-    await expect(page.getByTestId('imagery-chip-night')).toHaveText('BLACK MARBLE 2016 · REFERENCE');
+    await expect(page.getByTestId('imagery-chip-night')).toHaveText(chipText('BLACK MARBLE 2016 · REFERENCE'));
     await page.waitForTimeout(1500); // late tile/sprite/worker errors
     expect(errors).toEqual([]);
   });
@@ -94,17 +97,18 @@ test.describe('map engine', () => {
 
   test('GIBS true colour shows the previous UTC day, badged REFERENCE', async ({ page }) => {
     await gotoMap(page, { camera: { lat: 10, lng: 20, zoom: 2 }, params: { layers: 'gibs_truecolor' } });
-    await expect(page.getByTestId('imagery-chip-gibs')).toHaveText(`VIIRS TRUE COLOUR ${gibsTrueColorDate(Date.now())} · REFERENCE`, { timeout: 60_000 });
+    await expect(page.getByTestId('imagery-chip-gibs')).toHaveText(chipText(`VIIRS TRUE COLOUR ${gibsTrueColorDate(Date.now())} · REFERENCE`), { timeout: 60_000 });
     await expect(page.getByTestId('imagery-chip-night')).toHaveCount(0); // day_night not in ?layers=
   });
 
   test('double right-click opens the Region Dossier at the pointer; a slow pair does not', async ({ page, isMobile }) => {
     test.skip(isMobile, 'right-click is a desktop gesture (touch uses long-press)');
     await gotoMap(page, { camera: { lat: 48.85, lng: 2.35, zoom: 6 } });
-    // Input timestamps are taken when the browser receives the event: let the style/shader
-    // compilation long tasks pass so the pair is not stretched past 500 ms by a busy main thread.
+    // Input timestamps are taken when the browser receives the event: let the start-up shader
+    // links (admission slots, 1.7–7.5 s each on SwiftShader) drain first so a pair is not stretched
+    // past 500 ms by a busy main thread (R1r5-m3).
     await waitForMapStyle(page);
-    await page.waitForTimeout(3000);
+    await waitForAdmissionDrained(page);
     const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
@@ -113,7 +117,9 @@ test.describe('map engine', () => {
     await page.mouse.click(x + 3, y + 3, { button: 'right' });
     await page.waitForTimeout(1500);
     expect(page.url()).not.toContain('dossier=');
-    await page.waitForTimeout(700);
+    // The pointer arrives first (its hover pick runs now, not inside the pair).
+    await page.mouse.move(x, y);
+    await page.waitForTimeout(1000);
     await page.mouse.click(x, y, { button: 'right' });
     await page.mouse.click(x + 4, y + 2, { button: 'right' });
     await expect(page).toHaveURL(/dossier=4[6-9]\.\d+(%2C|,)[0-4]\.\d+/, { timeout: 10_000 });

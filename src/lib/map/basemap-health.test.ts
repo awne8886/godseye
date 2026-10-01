@@ -95,6 +95,22 @@ describe('basemap health: holes and stalls are reported (R3-M2, R3-m8)', () => {
     expect(h.forgetMissing().state).toBe('ok');
   });
 
+  it('R1r5 m3: a basemap not painted yet reads LOADING (no invented tile time), failures and stalls outrank it', () => {
+    const h = createBasemapHealth({ painted: false });
+    expect(h.get().state).toBe('loading');
+    expect(h.get().retryInMs).toBeNull();
+    expect(basemapChipText(h.get())).toBe('BASEMAP LOADING');
+    expect(h.setStalled(true).state).toBe('stalled');
+    expect(h.setStalled(false).state).toBe('loading');
+    h.tileError('2/0/0');
+    expect(h.get().state).toBe('incomplete');
+    h.tileLoaded(1, '2/0/0');
+    expect(h.get().state).toBe('loading'); // a tile arrived, but no frame with it yet
+    expect(h.isPainted()).toBe(false);
+    expect(h.markPainted().state).toBe('ok');
+    expect(createBasemapHealth().get().state).toBe('ok'); // imagery overlays start painted
+  });
+
   it('tiles still loading after the stall window read LOADING, with the last observed tile time only', () => {
     const h = createBasemapHealth();
     expect(basemapChipText(h.setStalled(true))).toBe('BASEMAP LOADING');

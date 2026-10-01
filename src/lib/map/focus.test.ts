@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FOCUS_MAX_WAIT_MS } from './admission-scheduler';
 import { admitLayers, createAdmissionState, flattenLayers, focusFirst } from './deck-admission';
 import { FEATURE_MODULES } from '@/features/registry';
-import { ADMISSION_PRIORITY, deckClassMaxWait, deckClassPriority, focusClassOrder, focusKeysOf, hasFocusLayers, registerFocusKeys } from './focus';
+import { ADMISSION_PRIORITY, deckClassMaxWait, deckClassPriority, deckClassReady, focusClassOrder, focusKeysOf, hasFocusLayers, registerFocusKeys } from './focus';
 
 const layerClass = (layerName: string) =>
   class {
@@ -63,8 +63,7 @@ describe('focus layers (the user’s route/flight/drawing) go first', () => {
     expect(deckClassPriority('IconLayer', focus)).toBe(ADMISSION_PRIORITY.ambient);
     expect(deckClassPriority(undefined, focus)).toBe(ADMISSION_PRIORITY.ambient);
     expect(ADMISSION_PRIORITY.focusFirst).toBeLessThan(ADMISSION_PRIORITY.deckDevice);
-    expect(ADMISSION_PRIORITY.deckDevice).toBeLessThan(ADMISSION_PRIORITY.features);
-    expect(ADMISSION_PRIORITY.features).toBeLessThan(ADMISSION_PRIORITY.focus);
+    expect(ADMISSION_PRIORITY.deckDevice).toBeLessThan(ADMISSION_PRIORITY.focus);
     expect(ADMISSION_PRIORITY.focus).toBeLessThan(ADMISSION_PRIORITY.ambient);
   });
 
@@ -89,5 +88,15 @@ describe('focus layers (the user’s route/flight/drawing) go first', () => {
     registerFocusKeys(['test-background']);
     expect(hasFocusLayers(entries)).toBe(true);
     expect(focusClassOrder(entries)).toEqual(['TextLayer']);
+  });
+});
+
+describe('round-5 perf m-l follow-up: ambient deck classes wait for the painted basemap', () => {
+  it('a focus class is ready at once; an ambient class only once the GPU start-up is open', () => {
+    const focus = ['ArcLayer'];
+    expect(deckClassReady('ArcLayer', focus, false)).toBe(true);
+    expect(deckClassReady('ScatterplotLayer', focus, false)).toBe(false);
+    expect(deckClassReady('ScatterplotLayer', focus, true)).toBe(true);
+    expect(deckClassReady(undefined, focus, false)).toBe(false);
   });
 });

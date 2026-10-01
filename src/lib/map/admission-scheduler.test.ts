@@ -252,6 +252,44 @@ describe('focus work waits only its own short maxWait (CI globe first draw: soft
   });
 });
 
+describe('perf m-l: GPU work waits for the basemap (ready) while its data is already counted as received', () => {
+  it('a unit that is not ready counts as pending but gets no slot and no deadline (no spinning)', () => {
+    const h = harness(2000);
+    let painted = false;
+    const native = queue('native-types', 2, 2);
+    native.r.ready = () => painted;
+    h.s.register(native.r);
+    expect(h.s.pending()).toBe(2); // the header keeps saying RECEIVED + DRAWING
+    expect(h.pendingLog.at(-1)).toBe(2);
+    expect(h.slots).toHaveLength(0);
+    expect(h.timers.size).toBe(0);
+    h.advance(30_000);
+    expect(native.admitted).toEqual([]);
+    // The basemap painted: the owner flips ready and kicks.
+    painted = true;
+    h.s.kick();
+    h.grantSlot();
+    expect(native.admitted).toEqual([0]);
+    h.advance(2000);
+    expect(native.admitted).toEqual([0, 1]);
+    expect(h.pendingLog.at(-1)).toBe(0);
+  });
+
+  it('ready work is served while other work waits for its gate (the user’s route is not held back)', () => {
+    const h = harness(2000);
+    const device = queue('deck-device', 1, -1);
+    device.r.ready = () => false;
+    const focus = queue('deck-classes', 1, -2, 250);
+    h.s.register(device.r);
+    h.s.register(focus.r);
+    h.advance(250);
+    expect(h.admits).toEqual(['deck-classes@250']);
+    expect(h.s.pending()).toBe(1);
+    h.advance(10_000);
+    expect(h.admits).toEqual(['deck-classes@250']);
+  });
+});
+
 describe('no synchronous React commits in the map engine (perf B2: one 6,049 ms task)', () => {
   const roots = ['src/lib/map', 'src/components/map'];
   const files: string[] = [];

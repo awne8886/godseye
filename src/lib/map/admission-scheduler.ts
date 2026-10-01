@@ -1,9 +1,11 @@
 /**
  * One queue for every unit of GPU-blocking start-up work on the map (perf B2, visual-qa R2-M6):
- * mounting the feature modules, creating the deck device, the first instance of each deck layer
- * class and the first draw of each MapLibre layer type added by a feature. Each unit runs alone in
- * a quiet slot (idle main thread, then a drained GPU queue) so one program link never waits behind
- * queued map frames, and never several links in one task.
+ * creating the deck device, the first instance of each deck layer class and the first draw of each
+ * MapLibre layer type added by a feature. Each unit runs alone in a quiet slot (idle main thread,
+ * then a drained GPU queue) so one program link never waits behind queued map frames, and never
+ * several links in one task. The feature modules themselves (their fetches) are not queued: they
+ * mount once the style is parsed, so data downloads overlap the GL start-up (perf m-l); only their
+ * GPU work waits here, behind the basemap's first painted frame (`ready`).
  *
  * Progress guarantee: a slot that has not come within `maxWaitMs` (a main thread or software GPU
  * that is never idle) admits the next unit anyway, so admission always advances by at least one
@@ -35,6 +37,13 @@ export interface AdmissionRequester {
   maxWaitMs?: number;
   /** Units of work waiting (0 = nothing to admit). */
   pending(): number;
+  /**
+   * Whether the waiting units may be admitted yet (default: always). A requester that is not ready
+   * still counts in `pending` (the HUD keeps saying RECEIVED + DRAWING) but gets no slot; call
+   * `kick()` when it becomes ready. GPU work waits for the basemap's first painted frame this way
+   * while the data behind it is already being fetched (perf m-l).
+   */
+  ready?(): boolean;
   /** Admit exactly one unit. */
   admitOne(): void;
 }
@@ -95,7 +104,7 @@ export function createAdmissionScheduler(o: SchedulerOptions): AdmissionSchedule
   const pick = (): AdmissionRequester | null => {
     let best: AdmissionRequester | null = null;
     for (const r of requesters) {
-      if (r.pending() <= 0) continue;
+      if (r.pending() <= 0 || (r.ready && !r.ready())) continue;
       if (!best || r.priority < best.priority || (r.priority === best.priority && (lastServed.get(r.id) ?? 0) < (lastServed.get(best.id) ?? 0))) best = r;
     }
     return best;
@@ -180,7 +189,7 @@ export function createAdmissionScheduler(o: SchedulerOptions): AdmissionSchedule
 
 interface AdmissionStoreState {
   scheduler: AdmissionScheduler | null;
-  /** Start-up units still waiting for a slot (features, deck device, layer classes/types). */
+  /** Start-up units still waiting for a slot (deck device, layer classes/types), ready or not. */
   pending: number;
   /**
    * Admitted entity layers the map has not drawn yet (visual-qa R3-M2): deck layers whose MapLibre
