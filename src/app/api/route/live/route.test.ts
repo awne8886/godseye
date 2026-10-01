@@ -127,6 +127,23 @@ describe('GET /api/route/live', () => {
     expect(full.coverage?.complete).toBe(true);
   });
 
+  it('never LIVE while the tile sweep is failing (429) or the snapshot is past its TTL (round 4 #8)', async () => {
+    const fresh = await (await call('?from=LHR&to=JFK')).json();
+    expect(fresh.meta).toMatchObject({ state: 'live', stale: false });
+    // Live 2026-10-01 05:31Z: adsblol_tiles {ok:false, error:"http_429", age_s:177} while meta said live.
+    const r429 = feed({ records } as unknown as FlightsSnapshot);
+    r429.providers.adsblol_tiles = { ok: false, count: 0, ms: 3, age_s: 177, error: 'http_429' };
+    state.result = r429;
+    const body = await (await call('?from=LHR&to=JFK')).json();
+    expect(FeedMeta.safeParse(body.meta).success).toBe(true);
+    expect(body.meta).toMatchObject({ state: 'stale', stale: true });
+    expect(body.aircraft.length).toBeGreaterThan(0); // last-good rows, each with its own observedAt
+    const pastTtl = feed({ records } as unknown as FlightsSnapshot);
+    pastTtl.meta = { ...pastTtl.meta, stale: true };
+    state.result = pastTtl;
+    expect((await (await call('?from=LHR&to=JFK')).json()).meta.state).toBe('recent');
+  });
+
   it('503 SOURCE OFFLINE when the flights feed has no snapshot', async () => {
     state.result = feed(null);
     const res = await call('?from=LHR&to=JFK');

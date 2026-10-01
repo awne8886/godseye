@@ -199,7 +199,8 @@ export interface LiveState {
   vrFpm: number | null;
 }
 
-const angleDiff = (x: number, y: number) => Math.abs(((x - y + 540) % 360) - 180);
+/** Smallest angle between two bearings (0–180°). */
+export const angleDiff = (x: number, y: number) => Math.abs(((x - y + 540) % 360) - 180);
 
 /** OSIRIS corridor test: detour via the aircraft ≤ direct × 1.15 + 150 km. */
 export function onCorridor(p: LngLatTuple, a: LngLatTuple, b: LngLatTuple): boolean {
@@ -248,21 +249,26 @@ export function corridorReject(s: LiveState, a: LngLatTuple, b: LngLatTuple): Co
   return onCorridor(p, a, b) ? null : 'detour';
 }
 
-/** Direction test thresholds (R4 round 3, B1/M1). */
+/** Direction test thresholds (R4 round 3, B1/M1; round 4 M1). */
 export const DIRECTION = {
   /** Track within this of the local great-circle bearing toward b (airways and oceanic tracks are not great circles). */
   maxTrackDiffDeg: 60,
-  /** Within this of an endpoint the heading says nothing (SIDs, holds, downwind legs): the vertical rate decides. */
+  /** Within this of an endpoint the path bearing says little (SIDs, holds, downwind legs): the vertical rate and the bearing to the endpoint decide. */
   terminalKm: 150,
   /** Climbing faster than this near b is a departure from b; descending faster than this near a is an arrival at a. */
   vrFpm: 500,
+  /** Near b, a level aircraft tracking more than this away from b is not arriving; near a, a level one tracking less than this toward a is not departing. */
+  endpointDeg: 90,
 } as const;
 
 /**
  * Is an airborne aircraft flying a→b (true), not (false), or is that unknown from what was observed
- * (null: no track; near an endpoint without a vertical rate)? En route: the observed track within
- * ±60° of the local great-circle bearing toward b. Near b: not climbing out of it. Near a: not
- * descending into it. Says nothing about the corridor (see `onCorridor`).
+ * (null: no track; near an endpoint without a vertical rate and nothing contradicting)? En route:
+ * the observed track within ±60° of the local great-circle bearing toward b. Within 150 km of an
+ * endpoint (round 4 M1: a level aircraft there was "on course" whatever its track):
+ *  - near b: not climbing out of it, and — unless descending — tracking within 90° of b;
+ *  - near a: not descending into it, and — unless climbing — tracking more than 90° from a.
+ * Says nothing about the corridor (see `onCorridor`).
  */
 export function headingAlong(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean | null {
   if (s.trackDeg === null) return null;
@@ -271,10 +277,13 @@ export function headingAlong(s: LiveState, a: LngLatTuple, b: LngLatTuple): bool
   const nearB = distanceKm(p, b) <= DIRECTION.terminalKm;
   const nearA = distanceKm(p, a) <= DIRECTION.terminalKm;
   if (nearB || nearA) {
-    if (s.vrFpm === null) return null;
-    if (nearB && s.vrFpm > DIRECTION.vrFpm) return false;
-    if (nearA && !nearB && s.vrFpm < -DIRECTION.vrFpm) return false;
-    return true;
+    const climbing = s.vrFpm !== null && s.vrFpm > DIRECTION.vrFpm;
+    const descending = s.vrFpm !== null && s.vrFpm < -DIRECTION.vrFpm;
+    if (nearB && climbing) return false;
+    if (nearA && !nearB && descending) return false;
+    if (nearB && !descending && angleDiff(s.trackDeg, initialBearing(p, b)) > DIRECTION.endpointDeg) return false;
+    if (nearA && !climbing && angleDiff(s.trackDeg, initialBearing(p, a)) < DIRECTION.endpointDeg) return false;
+    return s.vrFpm === null ? null : true;
   }
   const f = total > 0 ? alongTrackKm(p, a, b) / total : 0;
   // Abeam the path: its local bearing; before a or past b: straight toward b.
@@ -294,13 +303,14 @@ export function corridorMatch(s: LiveState, a: LngLatTuple, b: LngLatTuple): boo
 /**
  * ETA (ms epoch): remaining / ground speed, blended halfway toward 480 kt cruise when the aircraft
  * is slow (< 200 kt) or climbing/descending (|vr| > 1000 fpm), plus 10 min for the approach.
- * Null without a usable ground speed.
+ * `from` is the OBSERVATION time of the position (round 4 m1: not the request time — a position
+ * seen 2 min ago is 2 min further along). Null without a usable ground speed.
  */
-export function etaMs(remainingKm: number, s: Pick<LiveState, 'gsKt' | 'vrFpm'>, now: number): number | null {
+export function etaMs(remainingKm: number, s: Pick<LiveState, 'gsKt' | 'vrFpm'>, from: number): number | null {
   if (s.gsKt === null || s.gsKt <= 50) return null;
   const transitional = s.gsKt < 200 || (s.vrFpm !== null && Math.abs(s.vrFpm) > 1000);
   const kts = transitional ? (s.gsKt + CRUISE_BLEND_KTS) / 2 : s.gsKt;
-  return Math.round(now + (remainingKm / (kts * 1.852)) * 3_600_000 + APPROACH_MIN * 60_000);
+  return Math.round(from + (remainingKm / (kts * 1.852)) * 3_600_000 + APPROACH_MIN * 60_000);
 }
 
 // ── One longitude frame for everything drawn for a route/flight (antimeridian) ─────

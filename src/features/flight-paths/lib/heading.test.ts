@@ -27,7 +27,10 @@ describe('headingAlong / flyingRoute (round 3 B1/M1)', () => {
     const nearJfk = interpolate(LHR, JFK, 0.98);
     expect(headingAlong(at(nearJfk, 10, -1500), LHR, JFK)).toBe(true);
     expect(headingAlong(at(nearJfk, 60, 2500), LHR, JFK)).toBe(false);
-    expect(headingAlong(at(nearJfk, 60, null), LHR, JFK)).toBeNull();
+    // Tracking away from b with no vertical rate: not arriving (round 4 M1), not "unknown".
+    expect(headingAlong(at(nearJfk, 60, null), LHR, JFK)).toBe(false);
+    // Tracking at b with no vertical rate: unknown (could be a missed approach or a hold).
+    expect(headingAlong(at(nearJfk, initialBearing(nearJfk, JFK), null), LHR, JFK)).toBeNull();
   });
 
   it('off the corridor is never flying the route', () => {

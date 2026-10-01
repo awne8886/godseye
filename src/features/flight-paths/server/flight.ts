@@ -14,14 +14,14 @@ import { getFeed, runProvider, type ProviderRun } from '@/lib/feeds';
 import { distanceKm, greatCirclePoints, type LngLatTuple } from '@/lib/geo';
 import { httpJson, HttpError } from '@/lib/http';
 import type { FlightDetailResponse, FlightLink } from '@/lib/schemas/flight-paths';
-import type { Providers } from '@/lib/types';
+import type { FreshnessState, Providers } from '@/lib/types';
 import type { FlightRecord } from '@/features/aviation/adsb';
 import type { TrackPoint } from '@/features/aviation/trace';
 import { aircraftDetail, adsbdbBucket } from '@/features/aviation/server/aircraft';
 import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
-import { etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progressOn } from '../lib/geometry';
+import { angleDiff, etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progressOn } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { findAirport, openFlights, vrsIndex, type AirportRecord } from './data';
@@ -41,7 +41,8 @@ export interface Resolved {
 }
 
 export interface FlightDeps {
-  records: () => Promise<{ records: FlightRecord[] | null; run: ProviderRun }>;
+  /** The flights snapshot; `state` is its feed `meta.state` (absent in older callers: then not LIVE). */
+  records: () => Promise<{ records: FlightRecord[] | null; run: ProviderRun; state?: FreshnessState }>;
   adsblol: (kind: 'callsign' | 'hex', value: string) => Promise<FlightRecord[]>;
   adsbdbRegistration: (reg: string) => Promise<string | null>;
   route: (cs: string, pos: { lat: number; lng: number; speedKt: number | null } | null) => Promise<FlightRoute | null>;
@@ -49,14 +50,14 @@ export interface FlightDeps {
   weather: typeof stationWeather;
 }
 
-async function snapshotRecords(): Promise<{ records: FlightRecord[] | null; run: ProviderRun }> {
+async function snapshotRecords(): Promise<{ records: FlightRecord[] | null; run: ProviderRun; state?: FreshnessState }> {
   const feed = getFeed('flights');
   if (!feed) return { records: null, run: { status: { ok: false, count: 0, ms: 0, age_s: null, error: 'no_flights_feed' }, okAt: null } };
   const snap = feed.peek();
   const records = (snap.data as { records?: FlightRecord[] } | null)?.records ?? null;
   const at = snap.meta.fetchedAt ? Date.parse(snap.meta.fetchedAt) : null;
   return records
-    ? { records, run: { status: { ok: true, count: records.length, ms: 0, age_s: 0 }, okAt: at } }
+    ? { records, run: { status: { ok: true, count: records.length, ms: 0, age_s: 0 }, okAt: at }, state: snap.meta.state }
     : { records: null, run: { status: { ok: false, count: 0, ms: 0, age_s: null, error: 'no_flights_snapshot' }, okAt: null } };
 }
 
@@ -156,36 +157,67 @@ function providersAt(runs: Record<string, ProviderRun>, now: number): Providers 
 const DEPARTURE_KM = 60;
 /** An aircraft (or a track point) within this distance of an airport is at it. */
 const AT_AIRPORT_KM = 25;
-/** A first track point below this is the take-off (else the departure was not observed). */
+/** A track point below this height ABOVE the nearer endpoint is low: a take-off or landing (else the departure was not observed). */
 const DEPARTURE_ALT_FT = 3_000;
+/** A coverage gap at least this long followed by a reversal of course separates two legs (round 4 B1). */
+const LEG_GAP_MS = 10 * 60_000;
+/** A change of track larger than this across such a gap is a turnaround, not a gap en route. */
+const TURNAROUND_DEG = 120;
+
+/** The two ends of a route with their elevations (ft AMSL, null when OurAirports has none). */
+export interface RouteEnds {
+  O: LngLatTuple;
+  D: LngLatTuple;
+  elevO?: number | null;
+  elevD?: number | null;
+}
 
 export interface LegOfTrack {
   /** Where the track's observed departure is relative to the route. */
   departure: 'origin' | 'elsewhere' | 'unobserved' | 'none';
   /** The track for this leg (trimmed to the last take-off from the origin when earlier legs preceded it). */
   track: TrackPoint[];
+  /** True only when an EARLIER LEG was cut: an airborne point before the take-off lies away from the origin (round 4 m2). */
   trimmed: boolean;
 }
 
-const isLow = (p: TrackPoint) => p.onGround || (p.altFt !== null && p.altFt < DEPARTURE_ALT_FT);
+/**
+ * On the ground, or below 3,000 ft above the nearer endpoint (round 4 B1: the MSL test made a
+ * landing or take-off at Durango, 6,685 ft, or Mexico City, 7,316 ft, never "low").
+ */
+export function lowness(ends: RouteEnds): (p: TrackPoint) => boolean {
+  const eO = ends.elevO ?? 0;
+  const eD = ends.elevD ?? 0;
+  return (p) => {
+    if (p.onGround) return true;
+    if (p.altFt === null) return false;
+    const here: LngLatTuple = [p.lng, p.lat];
+    const ground = distanceKm(here, ends.O) <= distanceKm(here, ends.D) ? eO : eD;
+    return p.altFt - ground < DEPARTURE_ALT_FT;
+  };
+}
 
 /**
  * Is this trace the O→D leg? The trace is searched for the LAST take-off from the origin (a low
  * point within 60 km of O followed by flight away from it): when there is one, the leg starts
- * there and earlier legs are trimmed (round 3 m1: also when the trace begins in cruise on the
- * previous leg). Otherwise a first point on the ground or low near O is a departure not yet
- * flown; a first point low elsewhere (or near D) is a departure elsewhere; else it is unobserved.
+ * there; earlier legs are trimmed (and said to be) only when an airborne point before it lies away
+ * from O. Otherwise a first point on the ground or low near O is a departure not yet flown; a first
+ * point low elsewhere (or near D) is a departure elsewhere; else it is unobserved.
  */
-export function legOfTrack(track: readonly TrackPoint[], O: LngLatTuple, D: LngLatTuple): LegOfTrack {
+export function legOfTrack(track: readonly TrackPoint[], O: LngLatTuple, D: LngLatTuple, elev: { elevO?: number | null; elevD?: number | null } = {}): LegOfTrack {
   const first = track[0];
   if (!first) return { departure: 'none', track: [], trimmed: false };
+  const isLow = lowness({ O, D, ...elev });
   const near = (p: TrackPoint, at: LngLatTuple, km: number) => distanceKm([p.lng, p.lat], at) <= km;
   const farApart = distanceKm(O, D) > 2 * DEPARTURE_KM;
   // Walk back to the last take-off from O: the latest low point at O with flight away from O after it.
   let awayAfter = false;
   for (let i = track.length - 1; i >= 0; i--) {
     const p = track[i]!;
-    if (awayAfter && isLow(p) && near(p, O, DEPARTURE_KM)) return { departure: 'origin', track: track.slice(i), trimmed: i > 0 };
+    if (awayAfter && isLow(p) && near(p, O, DEPARTURE_KM)) {
+      const trimmed = track.slice(0, i).some((q) => !q.onGround && !near(q, O, DEPARTURE_KM));
+      return { departure: 'origin', track: track.slice(i), trimmed };
+    }
     if (!p.onGround && !near(p, O, DEPARTURE_KM)) awayAfter = true;
   }
   if (isLow(first) && near(first, O, DEPARTURE_KM)) return { departure: 'origin', track: [...track], trimmed: false };
@@ -194,9 +226,36 @@ export function legOfTrack(track: readonly TrackPoint[], O: LngLatTuple, D: LngL
 }
 
 /** The trace from its last low point (the latest observed take-off) on; the whole trace when it never was low. */
-export function sinceLastTakeoff(track: readonly TrackPoint[]): TrackPoint[] {
+export function sinceLastTakeoff(track: readonly TrackPoint[], ends?: RouteEnds): TrackPoint[] {
+  const isLow = ends ? lowness(ends) : (p: TrackPoint) => p.onGround || (p.altFt !== null && p.altFt < DEPARTURE_ALT_FT);
   for (let i = track.length - 1; i >= 0; i--) if (isLow(track[i]!)) return track.slice(i);
   return [...track];
+}
+
+/** The nearest observed track (deg) at index i, looking up to 10 points in direction `step`. */
+function trackAt(track: readonly TrackPoint[], i: number, step: 1 | -1): number | null {
+  for (let k = 0, j = i; k < 10 && j >= 0 && j < track.length; k++, j += step) {
+    const t = track[j]!.trackDeg;
+    if (t !== null) return t;
+  }
+  return null;
+}
+
+/**
+ * The trace after its LAST coverage gap of >= 10 min across which the observed track turned by more
+ * than 120° (round 4 B1: SKW541T flew DEN→DRO, vanished for 37 min while it landed and turned
+ * around below coverage, and reappeared heading back to DEN; the DEN→DRO part is the previous leg).
+ * `gapMin` is the length of that gap; the whole trace and null when there is none.
+ */
+export function sinceTurnaroundGap(track: readonly TrackPoint[]): { track: TrackPoint[]; gapMin: number | null } {
+  for (let i = track.length - 1; i > 0; i--) {
+    const gap = Date.parse(track[i]!.t) - Date.parse(track[i - 1]!.t);
+    if (!(gap >= LEG_GAP_MS)) continue;
+    const before = trackAt(track, i - 1, -1);
+    const after = trackAt(track, i, 1);
+    if (before !== null && after !== null && angleDiff(before, after) > TURNAROUND_DEG) return { track: track.slice(i), gapMin: Math.round(gap / 60_000) };
+  }
+  return { track: [...track], gapMin: null };
 }
 
 const toRun = (p: Providers[string]): ProviderRun => ({ status: p, okAt: p.ok && p.age_s !== null ? Date.now() - p.age_s * 1000 : null });
@@ -212,6 +271,8 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
 
   // Live position: snapshot first, else one adsb.lol lookup through aviation's shared bucket.
   let live = resolved.live;
+  // The snapshot's feed state; a direct lookup that answered now is a live fetch (its record keeps its own seenAt).
+  let feedState: FreshnessState | null = live ? (snap.state ?? 'recent') : null;
   if (!live && (resolved.callsign || resolved.hex)) {
     const kind = resolved.hex ? 'hex' : 'callsign';
     const value = resolved.hex ?? resolved.callsign!;
@@ -219,6 +280,7 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     runs[`adsblol_${kind}`] = r.run;
     live = r.result?.[0] ?? null;
     if (live) {
+      feedState = 'live';
       resolved.hex ??= live.id;
       resolved.callsign ??= live.callsign;
       resolved.registration ??= live.registration;
@@ -239,7 +301,9 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     const when = route.sourceUpdatedAt ? ` (record updated ${route.sourceUpdatedAt.slice(0, 10)})` : '';
     sources.push({ name: `route: ${route.source}`, ok: true, detail: route.stale ? `stale${when} — hexdb records can be years old` : `standing data${when}` });
   } else {
-    sources.push({ name: 'route', ok: false, detail: route ? 'no route on record for this callsign' : 'no route source answered' });
+    // Round 4 m3: a registration/hex with no callsign cannot be looked up at all — not a source failure.
+    const why = !resolved.callsign ? 'no callsign: route lookup not possible' : route ? 'no route on record for this callsign' : 'no route source answered';
+    sources.push({ name: 'route', ok: false, detail: why });
   }
 
   const airborne = live !== null && !live.onGround && (live.gsKt ?? 0) > 50;
@@ -258,7 +322,15 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     const O: LngLatTuple = [origin.lng, origin.lat];
     const D: LngLatTuple = [destination.lng, destination.lat];
     groundAtOrigin = live !== null && !airborne && distanceKm([live.lng, live.lat], O) <= AT_AIRPORT_KM;
-    const leg = legOfTrack(flownTrack, O, D);
+    const ends: RouteEnds = { O, D, elevO: origin.elevationFt, elevD: destination.elevationFt };
+    const isLow = lowness(ends);
+    const leg = legOfTrack(flownTrack, O, D, ends);
+    // Drop the part of the trace before a coverage gap + turnaround (a previous leg), and say so.
+    const cutTurnaround = (t: TrackPoint[]) => {
+      const cut = sinceTurnaroundGap(t);
+      if (cut.gapMin !== null) sources.push({ name: 'flown track', ok: true, detail: `shown from ${cut.track[0]!.t.slice(11, 16)}Z: the trace before a ${cut.gapMin}-min coverage gap and a reversal of course is an earlier leg` });
+      return cut.track;
+    };
     const withhold = (detail: string) => {
       sources.push({ name: 'corroboration', ok: false, detail });
       routeCheck = detail;
@@ -287,13 +359,18 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
         flownTrack = [];
         sources.push({ name: 'flown track', ok: false, detail: 'the trace ends with a landing before this leg — earlier leg not shown; this leg was not observed yet' });
       }
-      const back = legOfTrack(flownTrack, D, O);
+      const back = legOfTrack(flownTrack, D, O, { elevO: destination.elevationFt, elevD: origin.elevationFt });
       const departedO = !traceEnded && leg.departure === 'origin';
       const departedD = !traceEnded && back.departure === 'origin';
       // Both take-offs in the trace: the later one (shorter remainder) is this leg.
       const latest = departedO && departedD ? (leg.track.length <= back.track.length ? 'O' : 'D') : departedO ? 'O' : departedD ? 'D' : null;
       const offKm = Math.round(positionOnPath([live.lng, live.lat], O, D).offKm);
-      if (latest === 'O') {
+      if (latest === 'O' && !fwd && rev) {
+        // Round 4 B1: took off from O earlier but now flies back toward O — the landing at D and
+        // the turnaround were not observed (a coverage gap), so neither direction is confirmed.
+        flownTrack = cutTurnaround(leg.track);
+        withhold(`departed ${codeO} earlier, now on course back toward ${codeO} — return leg or turnaround not observed; route not confirmed`);
+      } else if (latest === 'O') {
         flownTrack = leg.track;
         sources.push({ name: 'corroboration', ok: true, detail: `observed departure matches the route origin ${codeO}${leg.trimmed ? ' (earlier legs trimmed from the trace)' : ''}` });
         if (fwd) onRoute = true;
@@ -320,14 +397,17 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
         flownTrack = back.track;
         withhold(`observed departure ${codeD} contradicts standing data ${sched}, and the aircraft is not on course for ${codeO} — route not confirmed`);
       } else if (!traceEnded && leg.departure === 'elsewhere') {
-        flownTrack = sinceLastTakeoff(flownTrack);
+        flownTrack = sinceLastTakeoff(flownTrack, ends);
         withhold(`observed departure is not ${codeO} — contradicts standing data ${sched}; route not confirmed`);
       } else if (fwd) {
+        flownTrack = cutTurnaround(flownTrack);
         onRoute = true;
         sources.push({ name: 'corroboration', ok: true, detail: `airborne inside the ${sched} corridor on course for ${codeD} (departure not observed)` });
       } else if (rev) {
+        flownTrack = cutTurnaround(flownTrack);
         withhold(`airborne inside the corridor but heading toward ${codeO}, opposite to standing data ${sched}; departure not observed — route not confirmed`);
       } else {
+        flownTrack = cutTurnaround(flownTrack);
         const why = onCorridor([live.lng, live.lat], O, D) ? (live.trackDeg === null ? 'no observed track' : `not on course for ${codeD}`) : `${offKm} km off the great circle`;
         withhold(`aircraft is not on standing-data route ${sched} (${why}) — route not confirmed`);
       }
@@ -335,7 +415,7 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
       withhold(`observed departure is not ${codeO}; route withheld`);
     } else if (leg.departure === 'origin') {
       flownTrack = leg.track;
-      sources.push({ name: 'corroboration', ok: true, detail: `observed departure matches the route origin${leg.trimmed ? ' (earlier legs trimmed from the trace)' : ''}` });
+      sources.push({ name: 'corroboration', ok: true, detail: `observed departure matches the route origin ${codeO}${leg.trimmed ? ' (earlier legs trimmed from the trace)' : ''}` });
     }
   }
 
@@ -349,13 +429,15 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     const here: LngLatTuple = [live.lng, live.lat];
     const pr = progressOn(here, O, D);
     progress = pr.progress;
-    eta = etaMs(pr.remainingKm, live, now);
+    // From the observation time, not the request (round 4 m1).
+    eta = etaMs(pr.remainingKm, live, live.seenAt * 1000);
     // Same longitude frame as the planned arc (which is unwrapped from the origin and may run past
     // ±180): otherwise a trans-Pacific remaining leg lands in another world copy (R4-B1).
     remainingLeg = pathIntoFrame(greatCirclePoints(here, D, 64), plannedArc);
   }
   const last = flownTrack[flownTrack.length - 1];
-  const landed = !airborne && destination !== null && last !== undefined && distanceKm([last.lng, last.lat], [destination.lng, destination.lat]) <= 25 && (last.onGround || (last.altFt ?? 0) < 1500);
+  const landed =
+    !airborne && destination !== null && last !== undefined && distanceKm([last.lng, last.lat], [destination.lng, destination.lat]) <= 25 && (last.onGround || (last.altFt ?? 0) - (destination.elevationFt ?? 0) < 1500);
   const status: FlightDetail['status'] = airborne ? 'airborne' : landed ? 'landed' : groundAtOrigin ? 'scheduled' : 'unknown';
 
   const wx = await deps.weather([origin ? stationFor(origin) : null, destination ? stationFor(destination) : null]);
@@ -373,6 +455,7 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     position: live
       ? { lat: live.lat, lng: live.lng, altFt: live.altFt, gsKt: live.gsKt, trackDeg: live.trackDeg, observedAt: new Date(live.seenAt * 1000).toISOString() }
       : null,
+    feedState: live ? feedState : null,
     progress,
     eta: eta !== null ? new Date(eta).toISOString() : null,
     etaLocal: eta !== null && destination ? localTimeIso(destination.tz, eta) : null,

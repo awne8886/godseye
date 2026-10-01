@@ -82,3 +82,17 @@ Honest UA (`GODSEYE/0.1 (open-source monitor; probe)`).
 Recorded flight/trace JSON from this server at 03:11–03:13Z (adsb.lol trace via `/api/aircraft`) is
 the fixture set `src/features/flight-paths/__fixtures__/r3/` (AAL606, UAL374, AAL869, UAL1673; plans for
 the globe-framing tests at 03:15Z). Licence: adsb.lol ODbL 1.0; VRS standing data CC0.
+
+### Re-probe 2026-10-01 05:40 UTC (Phase 3 round 4, B1 unobserved turnaround / M1 terminal direction)
+
+Honest UA (`GODSEYE/0.1 (open-source monitor; feature-flight-paths round-4 probe)`), `Origin: https://example.org`, 3 s between requests.
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/callsign/SKW541T` | 200 | 0.60 s | none (server-side only) | 1 row: hex `a08f6b` N135SY E75L, `alt_baro "ground"`, gs 11.2 kt at 39.857,-104.669 — back on the ground at **DEN**, confirming the reviewer's 05:17Z observation that this VRS KDEN-KDRO service was flying DRO→DEN after a 37-min coverage gap (landing + turnaround at DRO, 6,685 ft, never seen) |
+| `https://api.adsb.lol/v2/point/37.15/-107.75/100` (Durango) | 200 | 0.63 s | none | readsb jv2 rows (`hex, flight, r, t, alt_baro, alt_geom, gs, track, baro_rate, lat, lon, dst, dir`); no ground coverage at DRO itself — why the turnaround is a gap in the trace |
+| `https://adsb.lol/data/traces/6b/trace_recent_a08f6b.json` | 200 | 0.59 s | none | gzip-encoded readsb trace (`timestamp`, `trace[]` rows `[dt, lat, lon, alt|"ground", gs, track, flags, vr, …]`) — read only through layers-aviation's `/api/aircraft` |
+
+Fixtures from the reviewer's live capture at 05:15–05:21Z (same server, adsb.lol trace via `/api/aircraft`,
+`/api/airports/search?submit=1`) are `src/features/flight-paths/__fixtures__/r4/` (SKW541T and JAL908 traces;
+Atlantis / London / qwerty searches), each with a `_captured` note. Licence: adsb.lol ODbL 1.0.
