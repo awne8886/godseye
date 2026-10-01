@@ -6,6 +6,7 @@
  * (0 at 0°, fully shown at −12°, nautical dusk) and from the pixel's own brightness, so only the
  * recorded lights show over the dark basemap. The map refreshes `t` every 5 minutes.
  * The imagery is a 2016 composite: it is REFERENCE, never "live" lights.
+ * Fetch queue + LRU design adapted from OSIRIS terrain-tiles.ts (MIT; see LICENSE NOTICE).
  * Owner: map-engine. Pure core (unit-tested) + browser codec at the bottom.
  */
 import { subsolarPoint } from '@/lib/solar';

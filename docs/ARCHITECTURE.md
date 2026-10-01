@@ -50,8 +50,9 @@ response carries that `providers` map. A provider whose capability or licence ga
   geocoding), so visitor traffic cannot erase last-good data;
 - an in-memory L1 with an LRU cap in front of the store.
 
-Backends: `MemoryStore` (default), `FileStore` (`SNAPSHOT_DIR`, survives restarts, expired files are
-deleted on read) and `RedisStore` (`REDIS_URL`; shares snapshots, locks and rate limits across instances).
+Backends: `MemoryStore` (default), `FileStore` (`SNAPSHOT_DIR`, survives restarts; pinned feed
+snapshots and per-query entries live apart, expired and excess per-query files are swept, bounded by
+`SNAPSHOT_MAX_FILES`; `MemoryStore` bounds per-query entries by `SNAPSHOT_MEMORY_MAX_BYTES`) and `RedisStore` (`REDIS_URL`; shares snapshots, locks and rate limits across instances).
 `SNAPSHOT_STORE=memory|filesystem|redis` forces one. Snapshots are kept for 24 h or 20 × TTL by default, so
 a failing source is shown as stale with its last-good time rather than as empty.
 
@@ -84,7 +85,8 @@ Push feeds (malware detections, flight deltas, SDK entities) use one server-side
 `globalThis` (`getHub()` in `src/lib/sse.ts`) and fan out to clients with `sseResponse()`: `snapshot` on
 connect, batched `detections` / `update` events, `status` with retired ids, and a `heartbeat` every 15 s.
 Frames are encoded once per broadcast. A client is limited to 4 concurrent streams per IP; a slow consumer
-with more than 2 MB buffered is dropped; the per-IP slot is released on every exit path. Responses carry
+with more than 2 MB buffered is dropped, and past a process-wide budget (`SSE_MAX_BUFFERED_BYTES`,
+256 MB) the clients furthest behind are dropped first; the per-IP slot is released on every exit path. Responses carry
 `X-Accel-Buffering: no` for proxies. On hosts with a duration cap the stream closes itself before the
 limit (`SSE_MAX_DURATION_MS`, default 280 s on Vercel, unlimited elsewhere) and the browser reconnects.
 

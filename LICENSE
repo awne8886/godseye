@@ -57,6 +57,10 @@ a header comment naming the OSIRIS source file:
   src/lib/map/view.ts                       map-projection.ts, OsirisMap.tsx
                                             (projection ease, context attempts)
 
+Other bundled data with a notice requirement:
+  public/data/airports*.json                time zones from mwgg/Airports
+                                            (© mwgg, MIT License)
+
 GODSEYE does not use the OSIRIS name, logo, links or promotions. World Monitor
 and Orodruin (AGPL) were studied for ideas only; no code was copied from them.
 Third-party data sources and their licences are listed in docs/DATA_SOURCES.md

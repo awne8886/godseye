@@ -39,6 +39,7 @@ export const LICENCE_SUMMARY: readonly LicenceRow[] = [
   { source: 'adsb.fi open data', usedFor: 'Aircraft (optional)', terms: 'Personal, non-commercial use only; 1 request/s', gate: 'ADSBFI_PERSONAL_USE=true', url: 'https://github.com/adsbfi/opendata' },
   { source: 'VRS standing data (adsb.lol mirror)', usedFor: 'Callsign → route', terms: 'CC0', gate: 'Always on', url: 'https://github.com/vradarserver/standing-data' },
   { source: 'OurAirports', usedFor: 'Airport database', terms: 'Public domain', gate: 'Always on (build-time snapshot)', url: 'https://ourairports.com/data/' },
+  { source: 'mwgg/Airports', usedFor: 'Airport IANA time zones', terms: 'MIT (© mwgg; keep the notice)', gate: 'Always on (build-time snapshot)', url: 'https://github.com/mwgg/Airports' },
   { source: 'OpenFlights', usedFor: 'Historical airline routes', terms: 'ODbL; route data frozen in June 2014, labelled "historical (2014)"', gate: 'Always on, labelled historical', url: 'https://openflights.org/data.php' },
   { source: 'CelesTrak', usedFor: 'Satellite catalogue (OMM)', terms: 'Usage policy: download once per update (GP data every 2 h), stop on non-200', gate: 'Single writer, ≥ 2 h cache', url: 'https://celestrak.org/usage-policy.php' },
   { source: 'Open-Meteo', usedFor: 'Air quality, winds aloft, dossier weather', terms: 'Free tier non-commercial; data CC BY 4.0', gate: 'openmeteo capability: off when COMMERCIAL_DEPLOYMENT=true', url: 'https://open-meteo.com/en/terms' },

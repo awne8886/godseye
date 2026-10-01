@@ -10,6 +10,7 @@
  * Owner: design-system-hud.
  */
 import type { ReactNode } from 'react';
+import { REPO_URL } from '@/lib/config';
 import type { PanelProps } from '@/lib/feature-module';
 import { LAYER_GROUPS, type LayerDef, type LayerId } from '@/lib/layer-registry';
 import { useLayerStatusStore } from '@/lib/layer-host';
@@ -151,7 +152,7 @@ export default function AttributionPanel(_: PanelProps) {
 
       <p className="font-sans text-[var(--text-secondary)]">
         This list is the full source register. Probe logs with status, latency and rate limits for each upstream are in{' '}
-        <Ext href="https://github.com/awne8886/godseye/blob/main/docs/DATA_SOURCES.md">docs/DATA_SOURCES.md</Ext>.
+        <Ext href={`${REPO_URL}/blob/main/docs/DATA_SOURCES.md`}>docs/DATA_SOURCES.md</Ext>.
       </p>
     </div>
   );

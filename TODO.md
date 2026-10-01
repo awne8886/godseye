@@ -26,7 +26,7 @@ Kept current by the lead after every phase. The build is done when this file is 
       routes[] with toll/highway/ferry + ascent/descent; RegionDossier nearby counts {count,state};
       AiOverviewResponse fallbackReason/keySource; AirportWeather altimHpa/gustKt/clouds; GpsJam bad/suspect;
       SpaceWeather solarWind.source; Market sessions; AlertItem views/forwardedFrom/replyTo; Port volume/fleet
-- [x] Capabilities: wsdot, trafikverket, ibi511, cloudflare (not with COMMERCIAL_DEPLOYMENT), ai_user_keys,
+- [x] Capabilities: trafikverket (wsdot and ibi511 were added, then removed in Phase 3 as unwired), cloudflare (not with COMMERCIAL_DEPLOYMENT), ai_user_keys,
       scanner_active, openmeteo; `nc_sources` gate on malware/cyber_attacks/threatfox
 - [x] Registries: pickPriority + `choosePick`; day_night and gibs_truecolor are REFERENCE; PANELS `live-news`,
       `presets` + launcher; MOBILE_SHEETS keep every tool reachable; key `0` = sensor off, repeat/IME ignored;
@@ -72,7 +72,7 @@ Kept current by the lead after every phase. The build is done when this file is 
 
 ## Phase 1 follow-ups for Phase 2 builders
 - [x] design-system-hud: apply `defaultLayersFor(capabilities)` once /api/health loads, before the first URL write
-- [ ] map-engine: build the worker URL from `maplibregl.getVersion()`; store `normalizeLng` camera
+- [x] map-engine: build the worker URL from `maplibregl.getVersion()`; store `normalizeLng` camera
 - [x] layers-aviation: trim/upper-case callsigns; emit the compact FLIGHT_FIELDS row + `sources`
 - [x] layers-hazards: fires as FIRE_FIELDS columnar; Sentinel quicklooks by final (zipper) URL, no redirects
 - [x] layers-threats-network: GDACS `geteventlist/SEARCH?eventlist=…` (MAP returns 400); lower-case alert
@@ -93,9 +93,9 @@ Kept current by the lead after every phase. The build is done when this file is 
       Playwright, Turbopack alias for satellite.js multi-thread WASM, docs scripts, js-yaml, image-size 2.0.4 override)
 - [x] map-engine (integration round): ONE click router (deck + native + CPU hit-testers → `choosePick`), aviation and
       hazards migrated off their own `map.on('click')`; `ready` after load; tokens re-read on `godseye:style`
-- [ ] map-engine (integration round): startup performance — CI Lighthouse on `/` is 0.61 / TBT 1710 ms (need ≥ 0.85 / ≤ 300 ms)
-- [ ] map-engine: merged-main e2e regressions (terrain → mercator at z ≥ 10, double-right-click dossier, OSM
-      attribution on mobile); worker URL from `maplibregl.getVersion()`; label density z 3–5; imagery chips vs mobile nav
+- [ ] map-engine (integration round): startup performance — tracked in Phase 3 (Lighthouse `/` under software GL)
+- [x] map-engine: merged-main e2e regressions (terrain → mercator, double-right-click dossier, attribution on mobile,
+      worker URL, imagery chips) — fixed in Phase 3 round 1; label density z 3–5 still open (Phase 3 list)
 - [x] design-system-hud (integration round): MAP|SAT control, scale bar + cursor readout from `src/lib/map/cursor.ts`,
       terrain status, `LayerStatus.attribution` in flyouts/sources panel, real cards/panels end-to-end, label-in-name,
       space e2e locators

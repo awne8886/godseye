@@ -26,6 +26,7 @@ off; licence-gated sources stay off until the operator opts in (see `.env.exampl
 | adsb.fi open data | Aircraft (optional) | Personal, non-commercial use only; 1 request/s | ADSBFI_PERSONAL_USE=true | <https://github.com/adsbfi/opendata> |
 | VRS standing data (adsb.lol mirror) | Callsign → route | CC0 | Always on | <https://github.com/vradarserver/standing-data> |
 | OurAirports | Airport database | Public domain | Always on (build-time snapshot) | <https://ourairports.com/data/> |
+| mwgg/Airports | Airport IANA time zones | MIT (© mwgg; keep the notice) | Always on (build-time snapshot) | <https://github.com/mwgg/Airports> |
 | OpenFlights | Historical airline routes | ODbL; route data frozen in June 2014, labelled "historical (2014)" | Always on, labelled historical | <https://openflights.org/data.php> |
 | CelesTrak | Satellite catalogue (OMM) | Usage policy: download once per update (GP data every 2 h), stop on non-200 | Single writer, ≥ 2 h cache | <https://celestrak.org/usage-policy.php> |
 | Open-Meteo | Air quality, winds aloft, dossier weather | Free tier non-commercial; data CC BY 4.0 | openmeteo capability: off when COMMERCIAL_DEPLOYMENT=true | <https://open-meteo.com/en/terms> |

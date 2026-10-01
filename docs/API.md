@@ -482,7 +482,7 @@ Nuclear facilities (Wikidata + curated), with seismic/conflict context flags
 
 | | |
 |---|---|
-| Cache | s-maxage 1 d, stale-while-revalidate 2 d |
+| Cache | s-maxage 30 min, stale-while-revalidate 1 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `InfrastructureResponse` |
 | Upstreams | `query.wikidata.org`, `earthquake.usgs.gov` |
@@ -1057,7 +1057,7 @@ IP intel: geolocation, ASN, hosting/proxy flags, OFAC cross-check
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `ip` | query | string | yes | public IPv4/IPv6 (e.g. `8.8.8.8`) |
+| `ip` | query | string | yes | public IPv4/IPv6 (the ip-api.com fallback is plain HTTP: its free tier has no HTTPS) (e.g. `8.8.8.8`) |
 
 ### `GET /api/osint/bgp`
 
@@ -1323,7 +1323,7 @@ ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `ArcgisResponse` |
-| Upstreams | `www.arcgis.com`, `*.arcgis.com`, `*.arcgisonline.com` |
+| Upstreams | `www.arcgis.com`, `*.arcgis.com`, `*.arcgisonline.com`, `(ARCGIS_ALLOWED_HOSTS)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/arcgis` |
 
@@ -1365,7 +1365,7 @@ Airport record + runways + METAR/TAF + local time
 | Cache | s-maxage 5 min, stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `AirportDetailResponse` |
-| Upstreams | `aviationweather.gov`, `api.adsb.lol` |
+| Upstreams | `aviationweather.gov` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/airports/EGLL` |
 
@@ -1400,7 +1400,7 @@ Live aircraft on an airport pair (matched + corridor-inferred)
 | Cache | s-maxage 15 s, stale-while-revalidate 30 s |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RouteLiveResponse` |
-| Upstreams | `api.adsb.lol` |
+| Upstreams | None: served from this server only |
 | Forwards user input upstream | No |
 | Example | `GET /api/route/live?from=EGLL&to=KJFK&reverse=1` |
 
