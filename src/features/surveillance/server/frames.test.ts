@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Camera } from '@/lib/types';
 import { FX, json } from './__fixtures__';
 import { jpeg } from './__fixtures__/helpers';
-import { acceptImage, fetchFrame, fetchTxdotSnapshot, frameResponse, MAX_FRAME_BYTES, mediaRules, playableFor, probeCamera, publicCamera, sniffImage, zonedToUtc, type FrameDeps } from './frames';
+import { acceptImage, FRAME_ACCEPT, fetchFrame, fetchTxdotSnapshot, frameResponse, MAX_FRAME_BYTES, mediaRules, playableFor, probeCamera, publicCamera, sniffImage, zonedToUtc, type FrameDeps } from './frames';
 import { PROVIDERS, providerRow, type ProviderDef } from './registry';
 
 // A local camera operator: `cams.test` resolves to the loopback server (test-only resolver).
@@ -166,5 +166,12 @@ describe('playback resolution', () => {
       { host: '*.its.nv.gov', pathPrefix: '/' },
       { host: 's3-eu-west-1.amazonaws.com', pathPrefix: '/jamcams.tfl.gov.uk/' },
     ]);
+  });
+});
+
+describe('frame request headers', () => {
+  it('lists image types explicitly (eismoinfo.lt answers 406 to a bare image/*)', () => {
+    expect(FRAME_ACCEPT).not.toBe('image/*');
+    expect(FRAME_ACCEPT.split(',')[0]).toBe('image/jpeg');
   });
 });

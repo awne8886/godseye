@@ -44,6 +44,8 @@ export function acceptImage(declared: string | undefined, body: Buffer): string 
   return null;
 }
 
+// An explicit list, not `image/*`: some operators (eismoinfo.lt) answer 406 to a bare wildcard.
+export const FRAME_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif;q=0.9,*/*;q=0.5';
 const httpDate = (v: string | string[] | undefined): string | null => {
   const s = Array.isArray(v) ? v[0] : v;
   const t = s ? Date.parse(s) : NaN;
@@ -108,7 +110,7 @@ export async function fetchFrame(camera: Camera, def: ProviderDef, deps: FrameDe
   if (!target) return { ok: false, status: 404, error: 'no_still' };
   let res;
   try {
-    res = await allowListedFetch(target.url, rulesFor(def, target.url), { maxBytes: MAX_FRAME_BYTES, headers: { accept: 'image/*' }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
+    res = await allowListedFetch(target.url, rulesFor(def, target.url), { maxBytes: MAX_FRAME_BYTES, headers: { accept: FRAME_ACCEPT }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
   } catch (e) {
     const code = (e as { code?: string }).code;
     return { ok: false, status: code === 'blocked' ? 403 : 502, error: code ?? 'network' };
