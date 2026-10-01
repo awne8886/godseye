@@ -12,7 +12,12 @@ import { expect, test, type Page } from '@playwright/test';
 type Row = (string | number | null)[];
 
 async function nswCameras(page: Page): Promise<{ id: string; lat: number; lng: number }[] | null> {
-  const res = await page.request.get('/api/cctv?region=oceania', { timeout: 60_000 });
+  // A cold region answers 503 with `pendingRegions` after its 12 s budget: retry like the client does.
+  let res = await page.request.get('/api/cctv?region=oceania', { timeout: 60_000 });
+  for (let i = 0; i < 6 && res.status() === 503 && ((await res.json()) as { pendingRegions?: string[] }).pendingRegions?.includes('oceania'); i++) {
+    await page.waitForTimeout(10_000);
+    res = await page.request.get('/api/cctv?region=oceania', { timeout: 60_000 });
+  }
   if (res.status() === 503) return null;
   expect(res.ok()).toBe(true);
   const body = (await res.json()) as { fields: string[]; rows: Row[] };
