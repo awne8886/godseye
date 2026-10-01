@@ -104,6 +104,24 @@ describe('route section honesty (R2 round 4 BLOCKING-1, MINOR-6)', () => {
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
+  it('a leg that cannot be named (round trip without a position) says so, never "NO SCHEDULED ROUTE" or ATL→ATL', async () => {
+    await renderWith(route({ routeCheck: 'round trip ATL→BNA→ATL: the leg being flown is unknown without an observed position' }));
+    const box = await screen.findByTestId('route-unconfirmed', {}, { timeout: 5_000 });
+    expect(box.textContent).toContain('LEG NOT DETERMINED');
+    expect(box.textContent).toContain('round trip ATL→BNA→ATL');
+    expect(screen.getByTestId('aircraft-card').textContent).not.toContain('NO SCHEDULED ROUTE');
+    expect(screen.queryByTestId('route-leg')).toBeNull();
+  });
+
+  it('a leg corroborated by a take-off from its origin but flown away from its destination: named, no progress, reason shown', async () => {
+    await renderWith(route({ origin: EIDW, destination: EGPH, basis: 'observed', status: 'airborne', progress: null, distanceKm: 350, routeCheck: 'departed DUB but not observed on course for EDI (40 km off the great circle, track pointing away from EDI) — progress not shown' }));
+    expect((await screen.findByTestId('route-leg', {}, { timeout: 5_000 })).textContent).toMatch(/DUB.*EDI/);
+    const card = screen.getByTestId('aircraft-card').textContent!;
+    expect(card).toContain('OBSERVED DEPARTURE · NOT ON COURSE · NO PROGRESS');
+    expect(card).toContain('departed DUB but not observed on course for EDI');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
   it('labels a corroborated reverse leg as observed', async () => {
     await renderWith(route({ origin: EGPH, destination: EIDW, basis: 'observed', status: 'airborne', progress: 0.5, distanceKm: 350, reversed: true, routeCheck: 'observed departure EDI and course toward DUB' }));
     expect((await screen.findByTestId('route-leg', {}, { timeout: 5_000 })).textContent).toMatch(/EDI.*DUB/);
@@ -121,6 +139,36 @@ describe('route section honesty (R2 round 4 BLOCKING-1, MINOR-6)', () => {
     expect(cardProgress(r, { lat: 40, lng: 20, gsKt: 400, onGround: false })).toBeNull();
     expect(cardProgress(r, { lat: 54.2, lng: -5.2, gsKt: 0, onGround: true })).toBeNull();
     expect(cardProgress(route({ origin: EIDW, destination: EGPH, basis: 'schedule', progress: null }) as never, { lat: 54.2, lng: -5.2, gsKt: 400, onGround: false })).toBeNull();
+  });
+});
+
+describe('observed values are never truncated (visual QA round 5 m5)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 503 })));
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it('POS, SOURCE and POSITION take a full row; no value is cut with an ellipsis', async () => {
+    // The visual-QA aircraft: VOI380 at 29.091, -111.052 (Hermosillo), MLAT, area sweep.
+    const voi = { ...rec, id: '0d1258', callsign: 'VOI380', lat: 29.09147, lng: -111.05211, gsKt: 0, onGround: true, posSource: 'mlat' as const, emergency: null, squawk: '1312' };
+    await act(async () => {
+      render(wrap(createElement(AircraftCard, { selection: { kind: 'aircraft', id: voi.id, layer: 'flights', source: voi.source, observedAt: null, data: { ...voi }, lngLat: null } })));
+    });
+    const card = screen.getByTestId('aircraft-card');
+    const field = (label: string) => card.querySelector(`[data-field="${label}"]`)!;
+    expect(field('POS').querySelector('dd')!.textContent).toBe('29.091, -111.052');
+    expect(field('SOURCE').querySelector('dd')!.textContent).toBe('adsb.lol (area sweep)');
+    expect(field('POSITION').querySelector('dd')!.textContent).toBe('MLAT (multilateration, less precise)');
+    for (const label of ['POS', 'SOURCE', 'POSITION']) expect(field(label).className, label).toContain('col-span-full');
+    for (const el of card.querySelectorAll('dd, h2 span, [data-testid="route-leg"] span')) {
+      expect(el.className, el.textContent ?? '').not.toMatch(/\btruncate\b|text-ellipsis/);
+    }
   });
 });
 

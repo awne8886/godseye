@@ -478,6 +478,32 @@ leg). The tile provider stays `ok` while any tile was read since the last run an
 sweep period (165 s) through a 429 burst; `/api/flights` and the SSE stream never report LIVE while
 the positions provider is `ok: false` (RECENT ≤ 360 s of last-good age, else STALE).
 
+Re-probed 2026-10-01 16:06–16:16 UTC (Phase 3 round 5), same UA, `Origin: https://example.org`,
+requests ≥ 2 s apart (adsb.lol) / 1.2 s (VRS):
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/callsign/SWA1241` | 200 | 3.63 s | none (no ACAO) | abd254 now 37.98,-89.99, 19,850 ft descending, trk 336 (a later leg toward St Louis); no rate-limit headers |
+| `https://api.adsb.lol/v2/callsign/UAL1789` | 200 | 9.01 s | none | `total: 0` (landed) |
+| `https://api.adsb.lol/v2/callsign/SWA1332` | 200 | 0.76 s | none | ac1747 now 41.50,-81.70, 3,400 ft, trk 252 (landing at Cleveland — a later leg) |
+| `https://adsb.lol/data/traces/54/trace_full_abd254.json` | 200 | 2.84 s | none | 2,070 rows. SWA1241 took off **BWI** 12:43:36Z (51 km from DCA), landed **CLT** 13:42:09Z — not VRS's KSMF-KLAS-KDCA |
+| `https://adsb.lol/data/traces/cc/trace_full_a2bbcc.json` | 200 | 0.80 s | none | 4,009 rows. UAL1789 took off **IAD** 12:55:47Z, landed **San Antonio** 15:46:22Z — not VRS's KRDU-KIAD-KORF (the FLIGHT view had shown "flown IAD→RDU") |
+| `https://adsb.lol/data/traces/47/trace_full_ac1747.json` | 200 | 0.79 s | none | 3,750 rows. SWA1332 took off **Dallas Love** 11:20:21Z, landed **BWI** 13:52:18Z — not VRS's KMCO-KATL-KMDW |
+| `https://vrs-standing-data.adsb.lol/routes/{SW,UA,SW,DA}/{SWA1241,UAL1789,SWA1332,DAL3069}.json` | 200 ×4 | 0.22–0.39 s | `*` | `airport_codes` KSMF-KLAS-KDCA, KRDU-KIAD-KORF, KMCO-KATL-KMDW, KATL-KBNA-KATL; `Last-Modified: Sun, 20 Sep 2026 18:47–18:48 GMT` |
+
+Kept as `src/features/aviation/__fixtures__/route-r5-2026-10-01.json`: the trace row nearest the
+position R2 recorded at 13:2xZ (≤ 1.9 km away), the current leg up to it (`currentLeg`, ≤ 60 points),
+where that leg really ended, and the VRS airports (with `alt_feet`).
+
+Round 5 behaviour (no new upstream): when the observed track points away from the leg's destination
+(> 60 km from both ends, cos < −0.3) `/api/flight-route` reads the flown track and withholds the leg
+unless a take-off corroborates one (`src/features/aviation/corroborate.ts`, the FLIGHT view's rule
+plus a direct-bearing test for "toward"); all three cases above are withheld. A round trip asked
+without a position (DAL3069 KATL-KBNA-KATL) is withheld as "leg unknown", never ATL→ATL.
+adsb.lol's `now` ran up to ~1 s ahead of this server's clock (R2: `meta.observedAt` 23–1067 ms after
+`fetchedAt`): positions are now dated from `min(now, receipt)` rounded down, so no observation is
+reported after the fetch that carried it.
+
 ### layers-hazards
 
 Probed **2026-09-30 18:06–18:25 UTC** from the build sandbox with

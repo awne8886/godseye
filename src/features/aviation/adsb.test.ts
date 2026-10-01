@@ -22,13 +22,30 @@ describe('adsb.lol row normalisation', () => {
     expect(r.kind).toBe('ok');
     if (r.kind !== 'ok') return;
     expect(r.record).toMatchObject({ id: '4cafc4', callsign: 'RYR19WT', registration: 'EI-GXI', typeCode: 'B738', bucket: 'commercial', onGround: false, altFt: 19525, squawk: '1045', emergency: null, category: 'A3', posSource: 'adsb' });
-    expect(r.record.seenAt).toBe(Math.round((point as AdsbResponse).now! / 1000));
+    // seen_pos 0 at now = …610.751 s: the observation is second 1790791610, never rounded up to …611.
+    expect(r.record.seenAt).toBe(Math.floor((point as AdsbResponse).now! / 1000));
     expect(r.record.lat).toBe(52.83451);
   });
 
   it('maps alt_baro "ground" to onGround with a null altitude', () => {
     const r = normalizeAdsbRow({ hex: 'ABCDEF', alt_baro: 'ground', lat: 1, lon: 2, gs: 12, seen_pos: 3 }, NOW, 'x');
-    expect(r.kind === 'ok' && r.record).toMatchObject({ id: 'abcdef', onGround: true, altFt: null, gsKt: 12, seenAt: Math.round((NOW - 3000) / 1000) });
+    expect(r.kind === 'ok' && r.record).toMatchObject({ id: 'abcdef', onGround: true, altFt: null, gsKt: 12, seenAt: Math.floor((NOW - 3000) / 1000) });
+  });
+
+  it('never dates an observation after the fetch that carried it (R2 round 5 MINOR-2: upstream clock ahead)', () => {
+    // adsb.lol `now` was 23–1067 ms ahead of our clock; seen_pos 0.0–0.4 s on the freshest rows.
+    const received = NOW;
+    const body = { now: received + 1067, ac: [0, 0.2, 0.4, 1.5].map((seen, i) => ({ hex: `abcde${i}`, lat: 1, lon: 1, seen_pos: seen })) } as AdsbResponse;
+    const { records } = normalizeAdsbResponse(body, 'adsblol_tiles', received);
+    expect(records).toHaveLength(4);
+    for (const r of records) expect(r.seenAt * 1000).toBeLessThanOrEqual(received);
+    expect(records[0]!.seenAt).toBe(Math.floor(received / 1000));
+    // An upstream clock BEHIND ours is used as is (the older time is the honest one).
+    const behind = normalizeAdsbResponse({ now: received - 2500, ac: [{ hex: 'abcdef', lat: 1, lon: 1, seen_pos: 0 }] } as AdsbResponse, 'x', received);
+    expect(behind.records[0]!.seenAt).toBe(Math.floor((received - 2500) / 1000));
+    // A negative seen_pos (corrupt row) cannot push the time forward either.
+    const odd = normalizeAdsbResponse({ now: received, ac: [{ hex: 'abcdef', lat: 1, lon: 1, seen_pos: -30 }] } as AdsbResponse, 'x', received);
+    expect(odd.records[0]!.seenAt * 1000).toBeLessThanOrEqual(received);
   });
 
   it('flags only 7500/7600/7700 as emergencies; emergency "none" is not one', () => {

@@ -5,12 +5,13 @@
  */
 import 'server-only';
 import { evaluateCapability, hasCapability } from '@/lib/capabilities';
-import { defineFeed, type Feed } from '@/lib/feeds';
-import type { Attribution } from '@/lib/types';
+import { defineFeed, type Feed, type ProviderRun } from '@/lib/feeds';
+import type { Attribution, FreshnessState } from '@/lib/types';
 import { coverageTiles, sweepOrder } from './tiles';
 import { fetchAdsbfiMil, fetchGlobal, fetchOpenSky, fetchReapi, fetchTile } from './server/providers';
 import { runSweep, type FlightsSnapshot } from './server/sweep';
 import { TileSweeper, type TileResult } from './server/tile-sweeper';
+import { flightsState } from './server/view';
 
 const SWEEP_TILES = sweepOrder(coverageTiles());
 /** On a cold start, let the worker read a first handful of tiles (≤ 8 s) before the first snapshot. */
@@ -49,6 +50,26 @@ function attributions(env: Record<string, string | undefined> = process.env): At
   return out;
 }
 
+/** The positions provider (re-api when configured, else the keyless tile sweep) of the last run. */
+export function positionsRun(providers: Record<string, ProviderRun>): ProviderRun | null {
+  const reapi = providers.adsblol_reapi;
+  return reapi && !reapi.status.skipped ? reapi : (providers.adsblol_tiles ?? null);
+}
+
+/**
+ * The cap `flightsState()` puts on the feed state, as a `stateCap`: null while the positions
+ * provider is ok; RECENT/STALE (by its last-good age) while it fails. Applied on every read, so
+ * /api/health agrees with /api/flights (R2 round 5 MINOR-1: health said LIVE while flights capped).
+ */
+export function positionsCap(run: ProviderRun | null, now: number): FreshnessState | null {
+  if (!run || run.status.ok || run.status.skipped) return null;
+  const age_s = run.okAt ? Math.max(0, Math.round((now - run.okAt) / 1000)) : null;
+  // flightsState reads the positions provider under its own key; either key judges this run.
+  return flightsState('live', { adsblol_tiles: { ...run.status, age_s } });
+}
+
+let lastPositions: ProviderRun | null = null;
+
 /**
  * Live aircraft. A background worker reads adsb.lol tiles back to back (≤ 1 in flight, one start
  * per 1.2 s; dense tiles more often, every tile within 165 s); each run, one TTL after the last,
@@ -65,6 +86,7 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
   deadlineMs: 55_000,
   retryAfterErrorMs: 20_000,
   maxObservationAgeMs: 180_000,
+  stateCap: (now) => positionsCap(lastPositions, now),
   count: (d) => d.records.length,
   run: async (ctx) => {
     const opensky = evaluateCapability('opensky');
@@ -87,6 +109,7 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
       },
       ctx.signal,
     );
+    lastPositions = positionsRun(providers);
     return { data: snapshot, providers, observedAt };
   },
 });

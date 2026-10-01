@@ -103,6 +103,13 @@ export function cardProgress(route: FlightRoute | undefined, r: Pick<FlightRecor
   return routeProgress(route.origin, route.destination, { lat: r.lat, lng: r.lng, speedKt: r.gsKt }).progress;
 }
 
+/** The line under a named leg: how it was established. */
+export function routeBasisLabel(route: Pick<FlightRoute, 'basis' | 'reversed'>): string {
+  if (route.reversed) return 'OBSERVED DEPARTURE · REVERSE OF LISTED ROUTE';
+  if (route.basis === 'observed') return 'OBSERVED DEPARTURE · NOT ON COURSE · NO PROGRESS';
+  return route.basis === 'corridor' ? 'ON SCHEDULED CORRIDOR' : 'SCHEDULE (NOT CONFIRMED)';
+}
+
 function useNow(ms = 1000) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -114,12 +121,26 @@ function useNow(ms = 1000) {
 
 const hhmmss = (ms: number) => new Date(ms).toISOString().slice(11, 19) + 'Z';
 
-function Field({ label, value }: { label: string; value: string }) {
+/**
+ * One observed value. Never truncated (visual QA round 5: "POS 29.091, -11…", "ADSB.LOL (AREA
+ * SWE…"): long values get a full row (`span`) and anything still too wide wraps.
+ */
+function Field({ label, value, span }: { label: string; value: string; span?: 'row' }) {
   return (
-    <div className="min-w-0">
+    <div className={span === 'row' ? 'col-span-full min-w-0' : 'min-w-0'} data-field={label}>
       <dt className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">{label}</dt>
-      <dd className="truncate font-mono text-[11px] uppercase tabular-nums tracking-[0.08em] text-[var(--text-primary)]">{value}</dd>
+      <dd className="wrap-anywhere font-mono text-[11px] uppercase tabular-nums tracking-[0.08em] text-[var(--text-primary)]">{value}</dd>
     </div>
+  );
+}
+
+/** Airport code (never cut) + city (wraps) for the route line. */
+function RouteEnd({ a, align }: { a: NonNullable<FlightRoute['origin']>; align?: 'right' }) {
+  return (
+    <span className={`min-w-0 wrap-break-word ${align === 'right' ? 'text-right' : ''}`}>
+      <span className="whitespace-nowrap">{a.iata ?? a.icao ?? a.name}</span>
+      {a.city ? ` ${a.city}` : ''}
+    </span>
   );
 }
 
@@ -168,7 +189,7 @@ export default function AircraftCard({ selection }: CardProps) {
         <div className="min-w-0">
           <h2 className="flex items-center gap-2 font-mono text-[17px] uppercase tracking-[0.08em] text-[var(--text-heading)]">
             <Plane aria-hidden className="size-4 shrink-0 text-[var(--gold-primary)]" />
-            <span className="truncate">{r.callsign ?? r.registration ?? r.id.toUpperCase()}</span>
+            <span className="min-w-0 wrap-anywhere">{r.callsign ?? r.registration ?? r.id.toUpperCase()}</span>
           </h2>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
             ICAO {r.id.toUpperCase()} · {BUCKET_LABEL[r.bucket]}
@@ -194,7 +215,7 @@ export default function AircraftCard({ selection }: CardProps) {
         <Field label="TYPE" value={r.typeCode ?? id?.typeCode ?? '—'} />
         <Field label="REG" value={r.registration ?? id?.registration ?? '—'} />
         <Field label="CAT" value={r.category ?? '—'} />
-        <Field label="POS" value={`${reckoned.lat.toFixed(3)}, ${reckoned.lng.toFixed(3)}`} />
+        <Field label="POS" span="row" value={`${reckoned.lat.toFixed(3)}, ${reckoned.lng.toFixed(3)}`} />
       </dl>
 
       <section aria-label="Airframe" className="flex gap-3">
@@ -209,8 +230,8 @@ export default function AircraftCard({ selection }: CardProps) {
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">IDENTIFYING AIRFRAME…</p>
           ) : id ? (
             <>
-              <p className="truncate">{id.model ?? 'Unknown model'}</p>
-              <p className="truncate text-[var(--text-secondary)]">{[id.operator, id.country].filter(Boolean).join(' · ') || 'Operator not in registry'}</p>
+              <p className="wrap-break-word">{id.model ?? 'Unknown model'}</p>
+              <p className="wrap-break-word text-[var(--text-secondary)]">{[id.operator, id.country].filter(Boolean).join(' · ') || 'Operator not in registry'}</p>
               {id.photoCredit && <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">{id.photoCredit}</p>}
             </>
           ) : (
@@ -226,20 +247,21 @@ export default function AircraftCard({ selection }: CardProps) {
           <p className="text-[var(--text-muted)]">RESOLVING ROUTE…</p>
         ) : route.isError ? (
           <p className="text-[var(--text-muted)]">ROUTE UNAVAILABLE</p>
-        ) : route.data?.found && route.data.directionConflict ? (
-          // The observed course contradicts the listed direction and no observed departure
-          // corroborates the reverse: no leg, destination or progress is named (§0.1).
+        ) : route.data?.found && (!route.data.origin || !route.data.destination) ? (
+          // Withheld (§0.1): the observed course contradicts the leg and no take-off corroborates
+          // one, or the leg cannot be named (a round trip without a position). No leg,
+          // destination or progress is shown; the reason is.
           <div data-testid="route-unconfirmed">
-            <p className="text-[var(--alert-orange)]">ROUTE UNCONFIRMED — OBSERVED TRACK DISAGREES</p>
+            <p className="text-[var(--alert-orange)]">{route.data.directionConflict ? 'ROUTE UNCONFIRMED — OBSERVED TRACK DISAGREES' : 'LEG NOT DETERMINED'}</p>
             {route.data.routeCheck && <p className="mt-1 font-sans text-[12px] normal-case tracking-normal text-[var(--text-secondary)]">{route.data.routeCheck}</p>}
             <p className="mt-1 text-[10px] tracking-[0.16em] text-[var(--text-muted)]">STANDING DATA · {route.data.source?.toUpperCase()}</p>
           </div>
         ) : route.data?.found && route.data.origin && route.data.destination ? (
           <>
-            <p className="flex items-center justify-between gap-2" data-testid="route-leg">
-              <span className="truncate">{route.data.origin.iata ?? route.data.origin.icao} {route.data.origin.city ?? ''}</span>
+            <p className="flex items-start justify-between gap-2" data-testid="route-leg">
+              <RouteEnd a={route.data.origin} />
               <span aria-hidden className="text-[var(--text-muted)]">→</span>
-              <span className="truncate text-right">{route.data.destination.iata ?? route.data.destination.icao} {route.data.destination.city ?? ''}</span>
+              <RouteEnd a={route.data.destination} align="right" />
             </p>
             {shownProgress !== null && (
               <div className="mt-1 h-0.5 w-full rounded bg-[var(--text-muted)]/25" role="progressbar" aria-label="Route progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(shownProgress * 100)}>
@@ -247,10 +269,10 @@ export default function AircraftCard({ selection }: CardProps) {
               </div>
             )}
             <p className="mt-1 text-[10px] tracking-[0.16em] text-[var(--text-muted)]">
-              {route.data.reversed ? 'OBSERVED DEPARTURE · REVERSE OF LISTED ROUTE' : route.data.basis === 'corridor' ? 'ON SCHEDULED CORRIDOR' : 'SCHEDULE (NOT CONFIRMED)'} · {route.data.source?.toUpperCase()}
+              {routeBasisLabel(route.data)} · {route.data.source?.toUpperCase()}
               {route.data.stale && route.data.sourceUpdatedAt ? ` · STALE RECORD ${route.data.sourceUpdatedAt.slice(0, 10)}` : ''}
             </p>
-            {route.data.reversed && route.data.routeCheck && <p className="mt-1 font-sans text-[12px] normal-case tracking-normal text-[var(--text-secondary)]">{route.data.routeCheck}</p>}
+            {route.data.basis === 'observed' && route.data.routeCheck && <p className="mt-1 font-sans text-[12px] normal-case tracking-normal text-[var(--text-secondary)]">{route.data.routeCheck}</p>}
           </>
         ) : route.data?.implausible ? (
           <p className="text-[var(--text-muted)]">LISTED ROUTE DOES NOT MATCH POSITION</p>
@@ -260,8 +282,8 @@ export default function AircraftCard({ selection }: CardProps) {
       </section>
 
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1">
-        <Field label="SOURCE" value={PROVIDER_LABEL[r.source] ?? r.source} />
-        <Field label="POSITION" value={posSource ?? '—'} />
+        <Field label="SOURCE" span="row" value={PROVIDER_LABEL[r.source] ?? r.source} />
+        <Field label="POSITION" span="row" value={posSource ?? '—'} />
         <Field label="OBSERVED" value={`${hhmmss(observedMs)} · ${formatAge(now - observedMs)} AGO`} />
         <Field label="FEED FETCHED" value={flights?.meta.fetchedAt ? hhmmss(Date.parse(flights.meta.fetchedAt)) : '—'} />
       </dl>

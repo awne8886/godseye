@@ -80,6 +80,18 @@ test('clicking an aircraft opens its card with source, observed time and freshne
   await expect(card).toContainText(/\d{2}:\d{2}:\d{2}Z/);
   await expect(card.getByTestId('freshness-badge')).toHaveText(/LIVE|STALE|OFFLINE|\d+[smhd]/);
   await expect(card.getByRole('button', { name: /watch/i })).toBeVisible();
+  // Visual QA round 5 m5: observed values are never cut off ("POS 29.091, -11…", "ADSB.LOL (AREA
+  // SWE…"). Every value fits its box or wraps; the position shows both full coordinates.
+  await expect(card.locator('[data-field="POS"] dd')).toHaveText(/^-?\d{1,2}\.\d{3}, -?\d{1,3}\.\d{3}$/);
+  const cut = await card.locator('dd, h2 span').evaluateAll((els) =>
+    els
+      .filter((e) => {
+        const cs = getComputedStyle(e);
+        return e.scrollWidth > e.clientWidth + 1 || cs.textOverflow === 'ellipsis';
+      })
+      .map((e) => e.textContent),
+  );
+  expect(cut).toEqual([]);
 });
 
 /** Colour token per bucket index (AircraftBucket order: commercial, private, jet, military). */

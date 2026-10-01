@@ -141,7 +141,11 @@ export const FlightRouteResponse = z.object({
   found: z.boolean(),
   origin: RouteAirport.nullable(),
   destination: RouteAirport.nullable(),
-  /** `observed` = departure corroborated from the flown track; `schedule` = standing data only. */
+  /**
+   * `observed` = the leg is corroborated by a take-off in the flown track (the reverse of the
+   * listed leg when `reversed`; else the listed leg, flown away from its destination, so without
+   * progress); `corridor` = on the leg's great-circle corridor; `schedule` = standing data only.
+   */
   basis: z.enum(['observed', 'schedule', 'corridor']).nullable(),
   status: z.enum(['scheduled', 'airborne', 'landed', 'unknown']),
   /** 0..1 along the great circle, only when airborne and on-corridor. */
@@ -158,10 +162,12 @@ export const FlightRouteResponse = z.object({
    */
   implausible: z.boolean().optional(),
   /**
-   * True when the observed track heads toward the listed origin and away from the listed
-   * destination (on the corridor, > 60 km from both ends) and no observed departure from the
-   * listed destination corroborates the reverse leg: `origin`/`destination` are withheld (null)
-   * and `routeCheck` says why (R2 round 4 BLOCKING-1; same rule as the FLIGHT view).
+   * True when the observed track points away from the leg's destination (> 60 km from both ends,
+   * more than ~107° off its bearing) and no take-off in the flown track corroborates a leg:
+   * `origin`/`destination`/`progress` are withheld (null) and `routeCheck` says why (R2 round 4
+   * and round 5 BLOCKING-1; the FLIGHT view's rule, src/features/aviation/corroborate.ts).
+   * A leg that cannot be named for another reason (a round trip asked without a position) is
+   * withheld with `routeCheck` and no `directionConflict`.
    */
   directionConflict: z.boolean().optional(),
   /** True when the leg shown is the REVERSE of the listed one, corroborated by an observed departure from its origin. */

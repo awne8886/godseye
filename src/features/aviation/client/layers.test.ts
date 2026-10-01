@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { FlightRecord } from '../adsb';
-import { advanceFrame, aggregateH3, buildLayers, newFrame } from './layers';
+import { FROZEN_DIM, advanceFrame, aggregateH3, buildLayers, newFrame, syncColors } from './layers';
+import type { Rgba } from '@/lib/tokens';
 import { aircraftSelection, hitTestAircraft } from './select';
 import { EARTH_RADIUS_M, horizonAngleDeg, isFacing, type FarSideCamera } from '@/lib/map/far-side';
 
@@ -61,9 +62,8 @@ describe('aviation frame', () => {
     expect(f.visVersion).toBe(vis);
     expect(f.pos[0]).not.toBe(before); // positions still advance
     // Crossing the 60 s cap settles an aircraft once: frozen and never advanced again.
-    const fz = f.frozenVersion;
     advanceFrame(f, 1075_000, new Set(['commercial']), cam(0, 50));
-    expect(f.frozenVersion).toBeGreaterThan(fz);
+    expect(f.newlyFrozenCount).toBeGreaterThan(0);
     const settled = f.pos[0];
     advanceFrame(f, 1200_000, new Set(['commercial']), cam(0, 50));
     expect(f.pos[0]).toBe(settled);
@@ -72,6 +72,40 @@ describe('aviation frame', () => {
     // A camera move that changes the visible set swaps the data object.
     advanceFrame(f, 1200_000, new Set(['commercial']), cam(180, -50));
     expect(f.data).not.toBe(data);
+  });
+
+  it('colours are patched only for the aircraft that just crossed the 60 s cap (perf m-j)', () => {
+    // seenAt 1000…1089: ten aircraft cross the cap each 10 s of ticking.
+    const many = Array.from({ length: 900 }, (_, i) => rec(`f${String(i).padStart(5, '0')}`, (i % 30) - 15, 40 + (i % 15), { seenAt: 1000 + (i % 90) }));
+    const f = newFrame(many);
+    const colorOf = vi.fn((): Rgba => [200, 100, 50, 255]);
+    const want = new Set(['commercial'] as const);
+    advanceFrame(f, 1050_000, want, null);
+    expect(syncColors(f, 'k', colorOf)).toBe(900); // first build: every row
+    const data = f.data;
+    const attr = f.colorAttr!;
+    expect(data.attributes?.getColor).toBe(attr);
+    colorOf.mockClear();
+    advanceFrame(f, 1051_000, want, null); // nobody new past the cap (ages ≤ 51 s)
+    expect(syncColors(f, 'k', colorOf)).toBe(0);
+    expect(colorOf).not.toHaveBeenCalled();
+    expect(f.colorAttr).toBe(attr); // nothing to re-upload
+    advanceFrame(f, 1070_000, want, null); // seenAt 1000…1009 are now > 60 s old
+    const frozenNow = [...f.frozen].filter(Boolean).length;
+    expect(frozenNow).toBe(100);
+    expect(syncColors(f, 'k', colorOf)).toBe(100);
+    expect(colorOf).toHaveBeenCalledTimes(100); // the patched rows only, not 900
+    expect(f.data).toBe(data); // same deck data → no accessor re-runs
+    expect(f.colorAttr).not.toBe(attr); // a new descriptor → deck re-uploads the colour buffer only
+    expect(f.colorAttr!.value.buffer).toBe(attr.value.buffer);
+    for (let k = 0; k < f.count; k++) {
+      const i = f.visible[k]!;
+      const rgba = [...f.colorAttr!.value.subarray(k * 4, k * 4 + 4)];
+      expect(rgba).toEqual(f.frozen[i] ? [Math.round(200 * FROZEN_DIM), Math.round(100 * FROZEN_DIM), Math.round(50 * FROZEN_DIM), 255] : [200, 100, 50, 255]);
+    }
+    // A theme/colour-mode change (new key) rebuilds every row.
+    colorOf.mockClear();
+    expect(syncColors(f, 'k2', colorOf)).toBe(900);
   });
 
   it('hides aircraft beyond the camera horizon, not beyond 88° from the centre (R2 round 4 MAJOR-1)', () => {
