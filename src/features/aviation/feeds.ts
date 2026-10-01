@@ -5,8 +5,8 @@
  */
 import 'server-only';
 import { evaluateCapability, hasCapability } from '@/lib/capabilities';
-import { defineFeed, type Feed, type ProviderRun } from '@/lib/feeds';
-import type { Attribution, FreshnessState } from '@/lib/types';
+import { defineFeed, type Feed } from '@/lib/feeds';
+import type { Attribution, FreshnessState, Providers } from '@/lib/types';
 import { coverageTiles, sweepOrder } from './tiles';
 import { fetchAdsbfiMil, fetchGlobal, fetchOpenSky, fetchReapi, fetchTile } from './server/providers';
 import { runSweep, type FlightsSnapshot } from './server/sweep';
@@ -50,25 +50,35 @@ function attributions(env: Record<string, string | undefined> = process.env): At
   return out;
 }
 
-/** The positions provider (re-api when configured, else the keyless tile sweep) of the last run. */
-export function positionsRun(providers: Record<string, ProviderRun>): ProviderRun | null {
-  const reapi = providers.adsblol_reapi;
-  return reapi && !reapi.status.skipped ? reapi : (providers.adsblol_tiles ?? null);
-}
-
 /**
  * The cap `flightsState()` puts on the feed state, as a `stateCap`: null while the positions
- * provider is ok; RECENT/STALE (by its last-good age) while it fails. Applied on every read, so
- * /api/health agrees with /api/flights (R2 round 5 MINOR-1: health said LIVE while flights capped).
+ * provider (re-api when configured, else the tile sweep) is ok; RECENT/STALE by its last-good age
+ * while it fails. Applied on every read, so /api/health agrees with /api/flights (R2 round 5
+ * MINOR-1).
  */
-export function positionsCap(run: ProviderRun | null, now: number): FreshnessState | null {
-  if (!run || run.status.ok || run.status.skipped) return null;
-  const age_s = run.okAt ? Math.max(0, Math.round((now - run.okAt) / 1000)) : null;
-  // flightsState reads the positions provider under its own key; either key judges this run.
-  return flightsState('live', { adsblol_tiles: { ...run.status, age_s } });
+export function positionsCap(providers: Providers | null | undefined): FreshnessState | null {
+  if (!providers) return null;
+  const state = flightsState('live', providers);
+  return state === 'live' ? null : state;
 }
 
-let lastPositions: ProviderRun | null = null;
+let capping = false;
+
+/**
+ * The providers persisted with the current snapshot (`meta.providers` in the SnapshotStore), so the
+ * cap holds after a restart and on an instance that serves a snapshot another one wrote (round 5
+ * fix pass: an in-process "last run" was empty there). `peek()` evaluates this cap again; that
+ * inner read is uncapped (it only supplies the providers).
+ */
+function snapshotProviders(): Providers | null {
+  if (capping) return null;
+  capping = true;
+  try {
+    return flightsFeed.peek().providers;
+  } finally {
+    capping = false;
+  }
+}
 
 /**
  * Live aircraft. A background worker reads adsb.lol tiles back to back (≤ 1 in flight, one start
@@ -86,7 +96,7 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
   deadlineMs: 55_000,
   retryAfterErrorMs: 20_000,
   maxObservationAgeMs: 180_000,
-  stateCap: (now) => positionsCap(lastPositions, now),
+  stateCap: () => positionsCap(snapshotProviders()),
   count: (d) => d.records.length,
   run: async (ctx) => {
     const opensky = evaluateCapability('opensky');
@@ -109,7 +119,6 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
       },
       ctx.signal,
     );
-    lastPositions = positionsRun(providers);
     return { data: snapshot, providers, observedAt };
   },
 });

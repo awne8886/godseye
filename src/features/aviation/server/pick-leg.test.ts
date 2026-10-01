@@ -3,6 +3,7 @@ import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { FlightRouteResponse } from '@/lib/schemas';
 import fx from '../__fixtures__/route-legs-2026-10-01.json';
 import r5 from '../__fixtures__/route-r5-2026-10-01.json';
+import fp from '../__fixtures__/route-fixpass-2026-10-01.json';
 import type { FlightRecord } from '../adsb';
 import type { TrackPoint } from '../trace';
 import { flightRoute, pickLeg, type RouteCandidate, type RouteDeps } from './route-lookup';
@@ -210,11 +211,13 @@ describe('flightRoute: away from the destination needs a corroborating take-off 
     expect(r!.routeCheck).toMatch(/^departed KDEN but not observed on course for KCID/);
   });
 
-  it('an aircraft on course for its destination never reads the flown track', async () => {
+  it('an aircraft on course for its destination with no take-off in its flown track keeps the corridor answer', async () => {
+    // Round 5 fix pass BLOCKING-1: the track is read for every airborne aircraft with an address.
     const track = vi.fn(async () => null);
     const r = await flightRoute('UAL1118', { lat: 41.0, lng: -98.0, speedKt: 450, trackDeg: 80 }, deps([KDEN, KCID], { track }), { icao24: 'a12734' });
     expect(r).toMatchObject({ origin: { icao: 'KDEN' }, destination: { icao: 'KCID' }, basis: 'corridor', status: 'airborne' });
-    expect(track).not.toHaveBeenCalled();
+    expect(r!.routeCheck).toBeUndefined();
+    expect(track).toHaveBeenCalledWith('a12734');
   });
 });
 
@@ -246,5 +249,106 @@ describe('flightRoute: a round trip asked without a position (R2 round 5 MINOR-3
     const r = await flightRoute('N123AB', { lat: 33.7, lng: -84.4, speedKt: 120, trackDeg: 90 }, deps([ATL, { ...ATL }]));
     expect(r).toMatchObject({ found: true, origin: null, destination: null, progress: null });
     expect(r!.routeCheck).toBe('standing data lists ATL→ATL, from and back to ATL: no leg to show');
+  });
+});
+
+// Round 5 fix pass: the reviewer's live check, 2026-10-01 20:3xZ (fixture `_captured`).
+type FP = (typeof fp.cases)[number];
+const fpCase = (cs: string): FP => fp.cases.find((c) => c.cs === cs)!;
+const fpSnapshot = (c: FP, p: Partial<FlightRecord> = {}) =>
+  rec({ id: c.hex, callsign: c.cs, lat: c.observed.lat, lng: c.observed.lng, altFt: c.observed.altFt, gsKt: c.observed.gsKt, trackDeg: c.observed.trackDeg, vrFpm: c.observed.vrFpm, ...p });
+// The card's query: 0.5° / 50 kt / 45° (the server prefers the snapshot record).
+const fpQuery = (c: FP, trackDeg: number | null = (Math.round(c.observed.trackDeg / 45) * 45) % 360) => ({
+  lat: Math.round(c.observed.lat * 2) / 2,
+  lng: Math.round(c.observed.lng * 2) / 2,
+  speedKt: Math.round(c.observed.gsKt / 50) * 50,
+  trackDeg,
+});
+const fpDeps = (c: FP, extra: Partial<RouteDeps> = {}) => deps(c.airports as A[], { live: () => fpSnapshot(c), track: async () => c.track, ...extra });
+
+describe('flightRoute: the observed take-off decides for every airborne aircraft (round 5 fix pass BLOCKING-1)', () => {
+  beforeEach(() => {
+    clearL1();
+    setStore(new MemoryStore());
+  });
+
+  for (const [cs, sched] of [
+    ['SWA864', 'ONT→PHX'],
+    ['EJA761', 'TEB→PHX'],
+    ['MMD6300', 'FKB→SGD'],
+    ['VIV7066', 'NLU→ACA'],
+    ['SWA4968', 'DCA→ATL'],
+  ] as const) {
+    it(`${cs}: the card withholds the ${fpCase(cs).card2034.basis} leg it showed, like the FLIGHT view`, async () => {
+      const c = fpCase(cs);
+      const r = await flightRoute(cs, fpQuery(c), fpDeps(c), { icao24: c.hex });
+      expect(FlightRouteResponse.safeParse(r).success).toBe(true);
+      expect(r).toMatchObject({ found: true, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, directionConflict: true, positionSource: 'snapshot' });
+      expect(r!.routeCheck).toBe(`observed departure is not ${sched.split('→')[0]} — contradicts standing data ${sched}; route not confirmed`);
+    });
+  }
+
+  it('ASA418 departed MCI flying west: MCI→SEA with progress, the observed departure stated', async () => {
+    const c = fpCase('ASA418');
+    const r = await flightRoute('ASA418', fpQuery(c), fpDeps(c), { icao24: c.hex });
+    expect(FlightRouteResponse.safeParse(r).success).toBe(true);
+    expect(r).toMatchObject({ origin: { icao: 'KMCI' }, destination: { icao: 'KSEA' }, basis: 'corridor', status: 'airborne', routeCheck: 'observed departure matches the listed origin MCI' });
+    expect(r!.progress).toBeGreaterThan(0.4);
+    expect(r!.progress).toBeLessThan(0.6);
+  });
+
+  it('TVF8023: a take-off before a turnaround gap is the previous leg; DSS→LYS keeps its progress', async () => {
+    const c = fpCase('TVF8023');
+    const r = await flightRoute('TVF8023', fpQuery(c), fpDeps(c), { icao24: c.hex });
+    expect(r).toMatchObject({ origin: { icao: 'GOBD' }, destination: { icao: 'LFLL' }, basis: 'corridor', status: 'airborne' });
+    expect(r!.progress).toBeGreaterThan(0.7);
+    expect(r!.directionConflict).toBeUndefined();
+  });
+
+  it('UAL1363 departed ORD and is on course; ENY4242 departed FWA but flies 277 km off its leg (no progress)', async () => {
+    const a = fpCase('UAL1363');
+    const ua = await flightRoute('UAL1363', fpQuery(a), fpDeps(a), { icao24: a.hex });
+    expect(ua).toMatchObject({ origin: { icao: 'KORD' }, destination: { icao: 'KLAX' }, basis: 'corridor', status: 'airborne', routeCheck: 'observed departure matches the listed origin ORD' });
+    expect(ua!.progress).toBeGreaterThan(0.6);
+    const e = fpCase('ENY4242');
+    const en = await flightRoute('ENY4242', fpQuery(e), fpDeps(e), { icao24: e.hex });
+    expect(FlightRouteResponse.safeParse(en).success).toBe(true);
+    expect(en).toMatchObject({ origin: { icao: 'KFWA' }, destination: { icao: 'KDFW' }, basis: 'observed', status: 'airborne', progress: null });
+    expect(en!.routeCheck).toBe('departed FWA but not observed on course for DFW (277 km off the great circle) — progress not shown');
+  });
+});
+
+describe('flightRoute: a round trip without an observed track (round 5 fix pass MAJOR-3)', () => {
+  beforeEach(() => {
+    clearL1();
+    setStore(new MemoryStore());
+  });
+  const c = fpCase('ASA418');
+  const trackless = fpSnapshot(c, { trackDeg: null, gsKt: null });
+
+  it('a trackless snapshot record keeps the track (and speed) the query sent: MCI→SEA, not SEA→MCI', async () => {
+    const r = await flightRoute('ASA418', fpQuery(c), fpDeps(c, { live: () => trackless }), { icao24: c.hex, roundTripWithoutTrack: 'withhold' });
+    expect(r).toMatchObject({ origin: { icao: 'KMCI' }, destination: { icao: 'KSEA' }, basis: 'corridor', status: 'airborne', positionSource: 'snapshot' });
+    expect(r!.progress).not.toBeNull();
+  });
+
+  it('no track anywhere: the API withholds the leg and says why (the trace is not read)', async () => {
+    const track = vi.fn(async () => c.track);
+    const r = await flightRoute('ASA418', fpQuery(c, null), fpDeps(c, { live: () => trackless, track }), { icao24: c.hex, roundTripWithoutTrack: 'withhold' });
+    expect(FlightRouteResponse.safeParse(r).success).toBe(true);
+    expect(r).toMatchObject({ found: true, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: 'vrs' });
+    expect(r!.routeCheck).toBe('round trip SEA→MCI→SEA: leg unknown without an observed track');
+    expect(r!.directionConflict).toBeUndefined();
+    expect(track).not.toHaveBeenCalled();
+  });
+
+  it('an in-process caller that settles the direction itself (the FLIGHT view) still gets the listed pair', async () => {
+    const r = await flightRoute('ASA418', { lat: c.observed.lat, lng: c.observed.lng, speedKt: c.observed.gsKt }, deps(c.airports as A[]));
+    expect([r!.origin!.icao, r!.destination!.icao]).toEqual(['KSEA', 'KMCI']);
+  });
+
+  it('a 2-airport route or a multi-stop chain without a reverse pair is not affected', async () => {
+    const r = await flightRoute('UAL1118', { lat: 41.0, lng: -98.0, speedKt: 450, trackDeg: null }, deps([KDEN, KCID]), { roundTripWithoutTrack: 'withhold' });
+    expect(r).toMatchObject({ origin: { icao: 'KDEN' }, destination: { icao: 'KCID' }, basis: 'corridor' });
   });
 });

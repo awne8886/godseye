@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fx from './__fixtures__/route-legs-2026-10-01.json';
-import { legScore, onRouteCorridor, pickLeg, routeProgress, sameAirport } from './route-geometry';
+import { initialBearing } from '@/lib/geo';
+import { legScore, listsReverse, onRouteCorridor, pickLeg, routeProgress, sameAirport, trackAlong } from './route-geometry';
 
 // Live cases from R2's round-4 scans (positions/tracks observed 2026-10-01 05:15–05:21 UTC; VRS
 // airports probed 05:52 UTC; 2-airport coordinates from OurAirports). See `_captured`.
@@ -80,6 +81,13 @@ describe('a leg is never one airport to itself (R2 round 5 MINOR-3)', () => {
     expect(sameAirport(o, d)).toBe(true);
   });
 
+  it('listsReverse finds the other leg of a round trip (and only there)', () => {
+    expect(listsReverse([ATL, BNA, ATL], ATL, BNA)).toBe(true);
+    expect(listsReverse([ATL, BNA, ATL], BNA, ATL)).toBe(true);
+    expect(listsReverse([ATL, BNA], ATL, BNA)).toBe(false);
+    expect(listsReverse([{ icao: 'KMCO', lat: 28.43, lng: -81.31 }, ATL, BNA], ATL, BNA)).toBe(false);
+  });
+
   it('a repeated stop is skipped as a leg', () => {
     // Close to Atlanta, a zero-length ATL→ATL "leg" would score best; it is not a leg.
     expect(pickLeg([ATL, ATL, BNA], [-84.5, 33.7], 330).map((a) => a.iata)).toEqual(['ATL', 'BNA']);
@@ -94,5 +102,33 @@ describe('routeProgress', () => {
     const b = routeProgress(o, d, { lat: 53.26, lng: -29.76, speedKt: 480 });
     expect(a.basis).toBe('corridor');
     expect(a.progress).not.toBe(b.progress);
+  });
+});
+
+describe('routeProgress needs the track along the leg or unknown (round 5 fix pass MINOR-1)', () => {
+  const DEN = { lat: 39.8617, lng: -104.673 };
+  const ORD = { lat: 41.9786, lng: -87.9048 };
+  // Mid-route, on the great circle (the reviewer's scratch case).
+  const mid = { lat: 41.4, lng: -96.3, speedKt: 450, altFt: 36000, vrFpm: 0 };
+  const along = initialBearing([mid.lng, mid.lat], [ORD.lng, ORD.lat]);
+
+  it('a track 100° off the leg on the corridor is standing data only: no progress', () => {
+    expect(trackAlong({ ...mid, trackDeg: (along + 100) % 360 }, DEN, ORD)).toBe(false);
+    expect(routeProgress(DEN, ORD, { ...mid, trackDeg: (along + 100) % 360 })).toMatchObject({ basis: 'schedule', status: 'unknown', progress: null });
+  });
+
+  it('a track along the leg, or no track, keeps the corridor progress', () => {
+    const on = routeProgress(DEN, ORD, { ...mid, trackDeg: (along + 10) % 360 });
+    expect(on).toMatchObject({ basis: 'corridor', status: 'airborne' });
+    expect(on.progress).toBeGreaterThan(0.4);
+    expect(routeProgress(DEN, ORD, { ...mid, trackDeg: null }).progress).toBe(on.progress);
+  });
+
+  it('FDB931 (OMDB→UWUU) in the recorded scans: on the corridor but tracking 288°, no progress', () => {
+    const c = [...fx.two, ...fx.multi].find((x) => x.cs === 'FDB931')!;
+    const [o, d] = c.airports.map(ap) as [ReturnType<typeof ap>, ReturnType<typeof ap>];
+    expect(onRouteCorridor(o, d, [c.lng, c.lat])).toBe(true);
+    expect(routeProgress(o, d, { lat: c.lat, lng: c.lng, speedKt: c.gsKt, trackDeg: c.trackDeg }).progress).toBeNull();
+    expect(routeProgress(o, d, { lat: c.lat, lng: c.lng, speedKt: c.gsKt }).progress).not.toBeNull();
   });
 });

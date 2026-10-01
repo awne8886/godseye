@@ -6,7 +6,10 @@
  * Honesty (§0.1, R2 round 4 BLOCKING-1): the observed direction beats the schedule. A leg is
  * chosen by a weighted score (corridor excess + a track term), never by a yes/no cut-off that a
  * perpendicular departure turn passes. A leg is never one airport to itself (R2 round 5 MINOR-3).
+ * Progress needs the observed track to run along the leg, or no track at all (round 5 fix pass
+ * MINOR-1: the FLIGHT view's direction test, `headingAlong`).
  */
+import { headingAlong } from '@/features/flight-paths/lib/geometry';
 import { alongTrackKm, distanceKm, initialBearing, type LngLatTuple } from '@/lib/geo';
 
 export interface RoutePoint {
@@ -78,6 +81,15 @@ export function pickLeg<A extends AirportPoint>(airports: readonly A[], here: Ln
   return best;
 }
 
+/**
+ * True when the route also lists the reverse of o→d as a leg (a round trip, KSEA-KMCI-KSEA): both
+ * legs lie on one corridor and score alike, so only an observed track tells them apart.
+ */
+export function listsReverse(airports: readonly AirportPoint[], o: AirportPoint, d: AirportPoint): boolean {
+  for (let i = 0; i < airports.length - 1; i++) if (sameAirport(airports[i]!, d) && sameAirport(airports[i + 1]!, o)) return true;
+  return false;
+}
+
 /** OSIRIS onCorridor rule: within 15 % + 150 km of the great-circle length. */
 export function onRouteCorridor(o: RoutePoint, d: RoutePoint, here: LngLatTuple): boolean {
   const total = distanceKm(ll(o), ll(d));
@@ -101,7 +113,22 @@ export interface RouteProgress {
   distanceKm: number;
 }
 
-/** Progress along the great circle when the aircraft is on the corridor and moving (> 50 kt). */
+/**
+ * The observed track runs along o→d (`true`), across or against it (`false`), or that is unknown
+ * (`null`: no track; near an end without a vertical rate and nothing contradicting). The FLIGHT
+ * view's `headingAlong`: within 60° of the path's local bearing en route.
+ */
+export function trackAlong(pos: RoutePosition, o: RoutePoint, d: RoutePoint): boolean | null {
+  if (pos.trackDeg == null) return null;
+  return headingAlong({ lat: pos.lat, lng: pos.lng, altFt: pos.altFt ?? null, gsKt: pos.speedKt, trackDeg: pos.trackDeg, vrFpm: pos.vrFpm ?? null }, ll(o), ll(d));
+}
+
+/**
+ * Progress along the great circle when the aircraft is on the corridor, moving (> 50 kt) and not
+ * observed tracking across or against the leg. Round 5 fix pass MINOR-1: on the corridor with the
+ * track 60–107° off (DEN→ORD mid-route on a track 100° off), the leg is standing data only — the
+ * FLIGHT view's direction test rejects it, so no progress is claimed.
+ */
 export function routeProgress(o: RoutePoint, d: RoutePoint, pos: RoutePosition | null): RouteProgress {
   const A = ll(o);
   const B = ll(d);
@@ -109,7 +136,7 @@ export function routeProgress(o: RoutePoint, d: RoutePoint, pos: RoutePosition |
   const distance = Math.round(total);
   if (!pos) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
   const here: LngLatTuple = [pos.lng, pos.lat];
-  if (!onRouteCorridor(o, d, here) || total < 30) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
+  if (!onRouteCorridor(o, d, here) || total < 30 || trackAlong(pos, o, d) === false) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
   const along = Math.min(total, Math.max(0, alongTrackKm(here, A, B)));
   const moving = pos.speedKt !== null && pos.speedKt > 50;
   return { basis: 'corridor', status: moving ? 'airborne' : 'unknown', progress: moving ? Math.round((along / total) * 1000) / 1000 : null, distanceKm: distance };

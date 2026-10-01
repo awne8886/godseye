@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import legs from './__fixtures__/route-legs-2026-10-01.json';
 import r5 from './__fixtures__/route-r5-2026-10-01.json';
+import fp from './__fixtures__/route-fixpass-2026-10-01.json';
 import ual374 from '@/features/flight-paths/__fixtures__/r3/flight-UAL374.json';
 import traceA5d31d from '@/features/flight-paths/__fixtures__/r3/trace-a5d31d.json';
 import { flyingRoute } from '@/features/flight-paths/lib/geometry';
 import { distanceKm } from '@/lib/geo';
-import { alongCorridor, awayFromDestination, corroborateLeg, headingFor, lastTakeoff, onCourseFor, type LegEnd } from './corroborate';
+import { alongCorridor, awayFromDestination, corroborateLeg, headingFor, lastTakeoff, legTakeoff, onCourseFor, sinceTurnaround, type LegEnd } from './corroborate';
 import { onRouteCorridor, pickLeg, type RoutePosition } from './route-geometry';
 
 // R2 round 5 BLOCKING-1 cases: real adsb.lol traces (2026-10-01, fetched 16:07Z) and VRS standing
@@ -149,7 +150,7 @@ describe('corroborateLeg on the three R2 round 5 cases (agrees with the FLIGHT v
     for (const cs of ['SWA1241', 'UAL1789', 'SWA1332']) {
       const v = verdict(cs, false);
       expect(v.kind, cs).toBe('withhold');
-      expect(v.routeCheck, cs).toMatch(/departure not observed \(flown track lookup failed\) — route not confirmed$/);
+      expect('routeCheck' in v ? v.routeCheck : null, cs).toMatch(/departure not observed \(flown track lookup failed\) — route not confirmed$/);
     }
   });
 
@@ -166,6 +167,108 @@ describe('corroborateLeg on the three R2 round 5 cases (agrees with the FLIGHT v
     expect(awayFromDestination(den, cid, pos)).toBe(true);
     const v = corroborateLeg(den, cid, pos, track);
     expect(v.kind).toBe('listed');
-    expect(v.routeCheck).toMatch(/^departed DEN but not observed on course for CID \(\d+ km off the great circle, track pointing away from CID\) — progress not shown$/);
+    expect('routeCheck' in v ? v.routeCheck : null).toMatch(/^departed DEN but not observed on course for CID \(\d+ km off the great circle, track pointing away from CID\) — progress not shown$/);
+  });
+});
+
+// Round 5 fix pass BLOCKING-1: the reviewer's live check (2026-10-01 20:3xZ; fixture `_captured`).
+// The card showed these legs with a progress bar while the FLIGHT view withheld them.
+type FP = (typeof fp.cases)[number];
+const fpCase = (cs: string): FP => fp.cases.find((c) => c.cs === cs)!;
+const fpPos = (c: FP): RoutePosition => ({ lat: c.observed.lat, lng: c.observed.lng, speedKt: c.observed.gsKt, trackDeg: c.observed.trackDeg, altFt: c.observed.altFt, vrFpm: c.observed.vrFpm });
+const fpLeg = (c: FP): [LegEnd, LegEnd] => pickLeg(c.airports as LegEnd[], [c.observed.lng, c.observed.lat], c.observed.trackDeg);
+const DEN: LegEnd = { icao: 'KDEN', iata: 'DEN', lat: 39.8617, lng: -104.673, elevationFt: 5434 };
+const CID: LegEnd = { icao: 'KCID', iata: 'CID', lat: 41.8847, lng: -91.7108, elevationFt: 869 };
+const tp = (t: string, lat: number, lng: number, altFt: number | null, trackDeg: number | null, onGround = false) => ({ t, lat, lng, altFt, onGround, trackDeg });
+
+describe('legTakeoff: the take-off of the leg flown now (round 5 fix pass)', () => {
+  it('TVF8023 (VRS GOBD-LFLL): the LYS take-off before a 299-min gap and a reversal of course was the previous leg', () => {
+    const c = fpCase('TVF8023');
+    const [o, d] = fpLeg(c);
+    expect([o.icao, d.icao]).toEqual(['GOBD', 'LFLL']);
+    expect(lastTakeoff(c.track, o, d)?.end).toBe('d');
+    expect(sinceTurnaround(c.track).length).toBeLessThan(c.track.length);
+    expect(legTakeoff(c.track, o, d, fpPos(c))).toBeNull();
+    expect(corroborateLeg(o, d, fpPos(c), c.track)).toEqual({ kind: 'unobserved' });
+  });
+
+  it('DAL1957 (VRS MKJS-KJFK): the JFK take-off before a 193-min gap and a reversal of course likewise', () => {
+    const c = fpCase('DAL1957');
+    const [o, d] = fpLeg(c);
+    expect(lastTakeoff(c.track, o, d)?.end).toBe('d');
+    expect(legTakeoff(c.track, o, d, fpPos(c))).toBeNull();
+  });
+
+  it('a long gap without a reversal of course (coverage lost en route) keeps the take-off', () => {
+    const track = [tp('2026-10-01T02:00:00Z', 39.86, -104.67, null, null, true), tp('2026-10-01T02:04:00Z', 39.9, -104.5, 7400, 80), tp('2026-10-01T02:10:00Z', 40.1, -103.5, 20000, 78), tp('2026-10-01T03:00:00Z', 41.0, -98.0, 35000, 76)];
+    expect(legTakeoff(track, DEN, CID, { lat: 41.0, lng: -98.0 })?.end).toBe('o');
+  });
+
+  it('a trace that ends on the ground, or low more than 60 km from the aircraft, has no take-off for this leg', () => {
+    const climb = [tp('2026-10-01T02:00:00Z', 39.86, -104.67, null, null, true), tp('2026-10-01T02:04:00Z', 39.9, -104.5, 7400, 80), tp('2026-10-01T02:30:00Z', 40.5, -100, 34000, 80)];
+    const landedAtCid = [...climb, tp('2026-10-01T03:40:00Z', 41.88, -91.72, 1200, 90), tp('2026-10-01T03:42:00Z', 41.884, -91.711, null, null, true)];
+    expect(legTakeoff(landedAtCid, DEN, CID, { lat: 41.0, lng: -94.0 })).toBeNull();
+    const lowAtCid = landedAtCid.slice(0, -1);
+    // 200 km west of CID now: the trace's landing was an earlier leg.
+    expect(legTakeoff(lowAtCid, DEN, CID, { lat: 41.6, lng: -94.1 })).toBeNull();
+    // Still descending into CID: the take-off from DEN is this leg's.
+    expect(legTakeoff(lowAtCid, DEN, CID, { lat: 41.87, lng: -91.75 })?.end).toBe('o');
+  });
+});
+
+describe('corroborateLeg for every airborne aircraft (round 5 fix pass BLOCKING-1: agrees with the FLIGHT view)', () => {
+  const where: Record<string, [string, number, number]> = {
+    SWA864: ['LAS', 36.08, -115.152],
+    EJA761: ['Louisville', 38.228, -85.664],
+    MMD6300: ['GVA', 46.238, 6.109],
+    VIV7066: ['CUN', 21.036, -86.877],
+    SWA4968: ['BNA', 36.124, -86.678],
+  };
+  for (const [cs, sched] of [
+    ['SWA864', 'ONT→PHX'],
+    ['EJA761', 'TEB→PHX'],
+    ['MMD6300', 'FKB→SGD'],
+    ['VIV7066', 'NLU→ACA'],
+    ['SWA4968', 'DCA→ATL'],
+  ] as const) {
+    it(`${cs} (${fpCase(cs).route}, card ${fpCase(cs).card2034.basis} ${fpCase(cs).card2034.progress ?? ''}): took off at ${where[cs]![0]} → withheld`, () => {
+      const c = fpCase(cs);
+      const [o, d] = fpLeg(c);
+      const pos = fpPos(c);
+      // The old trigger: none of them flies away from its listed destination.
+      expect(awayFromDestination(o, d, pos)).toBe(false);
+      const t = legTakeoff(c.track, o, d, pos)!;
+      expect(t.end).toBeNull();
+      expect(distanceKm([t.lng, t.lat], [where[cs]![2], where[cs]![1]])).toBeLessThan(30);
+      expect(corroborateLeg(o, d, pos, c.track)).toEqual({ kind: 'withhold', routeCheck: `observed departure is not ${sched.split('→')[0]} — contradicts standing data ${sched}; route not confirmed` });
+    });
+  }
+
+  it('ASA418 (VRS KSEA-KMCI-KSEA) departed MCI flying west: the MCI→SEA leg, corroborated', () => {
+    const c = fpCase('ASA418');
+    const [o, d] = fpLeg(c);
+    expect([o.icao, d.icao]).toEqual(['KMCI', 'KSEA']);
+    expect(corroborateLeg(o, d, fpPos(c), c.track)).toEqual({ kind: 'departed', routeCheck: 'observed departure matches the listed origin MCI' });
+    // The leg a trackless pick falls back to (the earlier one) is the reverse of what was flown.
+    const [sea, mci] = pickLeg(c.airports as LegEnd[], [c.observed.lng, c.observed.lat], null);
+    expect(corroborateLeg(sea, mci, fpPos(c), c.track).kind).toBe('reverse');
+  });
+
+  it('UAL1363 departed ORD and is on course: the leg with progress', () => {
+    const c = fpCase('UAL1363');
+    const [o, d] = fpLeg(c);
+    expect(corroborateLeg(o, d, fpPos(c), c.track)).toEqual({ kind: 'departed', routeCheck: 'observed departure matches the listed origin ORD' });
+  });
+
+  it('ENY4242 departed FWA but flies 277 km off the FWA–DFW great circle: the listed leg without progress', () => {
+    const c = fpCase('ENY4242');
+    const [o, d] = fpLeg(c);
+    expect(corroborateLeg(o, d, fpPos(c), c.track)).toEqual({ kind: 'listed', routeCheck: 'departed FWA but not observed on course for DFW (277 km off the great circle) — progress not shown' });
+  });
+
+  it('no take-off observed and nothing contradicting: the standing data stands', () => {
+    const pos: RoutePosition = { lat: 41.0, lng: -98.0, speedKt: 450, trackDeg: 80, altFt: 35000, vrFpm: 0 };
+    expect(corroborateLeg(DEN, CID, pos, null, 'no flown track available for this aircraft')).toEqual({ kind: 'unobserved' });
+    expect(corroborateLeg(DEN, CID, pos, [tp('2026-10-01T02:30:00Z', 40.5, -100, 34000, 80)])).toEqual({ kind: 'unobserved' });
   });
 });

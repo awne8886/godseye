@@ -1,27 +1,34 @@
 /**
- * Flown-track corroboration of a standing-data leg (R2 round 5 BLOCKING-1). One rule for
- * GET /api/flight-route (so the aircraft card and Flight Watch) and the FLIGHT view
- * (src/features/flight-paths/server/flight.ts): the same `flyingRoute` decides what to WITHHOLD,
- * and the same `onCourseFor` is needed to SHOW a reversed leg, so the views give one answer.
- * Pure and isomorphic; no I/O.
+ * Flown-track corroboration of a standing-data leg. One rule for GET /api/flight-route (so the
+ * aircraft card and Flight Watch) and the FLIGHT view (src/features/flight-paths/server/flight.ts):
+ * the observed departure decides, the same `flyingRoute` decides what to WITHHOLD, and the same
+ * `onCourseFor` is needed to SHOW a reversed leg, so the views give one answer. Pure and
+ * isomorphic; no I/O.
  *
- * When it applies (`awayFromDestination`): the aircraft is more than 60 km from both ends of the
- * leg and its observed track points away from the listed destination (cos(track − bearing to D)
- * < −0.3, i.e. more than ~107° off). Being "toward the origin" is NOT required: SWA1241 (VRS
- * KSMF-KLAS-KDCA) flew 214° 380 km south-west of DCA, away from DCA and not toward LAS, and the
- * card said LAS→DCA 93 % while it was flying BWI→CLT. Then the flown track decides:
- *  - take-off observed at D, on course for O (`onCourseFor`) → the reverse leg, shown as flown;
- *  - take-off observed at D otherwise → withheld (it departed D for somewhere else);
- *  - take-off observed at O, flying back along the corridor toward O (`flyingRoute`) → withheld
+ * It applies to every airborne aircraft whose flown track can be read (round 5 fix pass
+ * BLOCKING-1: SWA864 took off from LAS and the card still showed ONT→PHX at 96 % while the FLIGHT
+ * view withheld it; 6 of 60 shown legs had a take-off away from the origin). The take-off of the
+ * CURRENT leg (`legTakeoff`) is the last one in the trace, after the last coverage gap across which
+ * the course reversed (an unobserved landing and turnaround: TVF8023's LYS take-off before a
+ * 299-min gap was the previous leg), and none when the trace ends on the ground or with a landing
+ * away from where the aircraft now is. Then:
+ *  - take-off at D, on course for O (`onCourseFor`) → the reverse leg, shown as flown;
+ *  - take-off at D otherwise → withheld (it departed D for somewhere else);
+ *  - take-off at O, flying back along the corridor toward O (`flyingRoute`) → withheld
  *    (turnaround not observed);
- *  - take-off observed at O otherwise → the listed leg without progress (`listed`, the FLIGHT
- *    view's "departed O but not observed on course for D");
- *  - take-off elsewhere, not observed, or no flown track → withheld, with the reason.
+ *  - take-off at O, on the corridor with a track along it or unknown → the leg with progress;
+ *  - take-off at O otherwise → the listed leg without progress (`listed`, the FLIGHT view's
+ *    "departed O but not observed on course for D");
+ *  - take-off elsewhere → withheld;
+ *  - no take-off observed (or no flown track) → the standing data stands, unless the track points
+ *    away from D (`awayFromDestination`: > 60 km from both ends, more than ~107° off the bearing
+ *    to D — SWA1241 flew 214° 380 km south-west of DCA, away from DCA and not toward LAS); then
+ *    withheld with the reason.
  * The lenient corridor test may only withhold; asserting a reversed leg needs the strict one.
  */
 import { distanceKm, initialBearing, type LngLatTuple } from '@/lib/geo';
 import { flyingRoute, positionOnPath } from '@/features/flight-paths/lib/geometry';
-import { angleDiff, CONFLICT_END_KM, LOW_AGL_FT, type AirportPoint, type RoutePoint, type RoutePosition, type TrackSample } from './route-geometry';
+import { angleDiff, CONFLICT_END_KM, LOW_AGL_FT, onRouteCorridor, trackAlong, type AirportPoint, type RoutePoint, type RoutePosition, type TrackSample } from './route-geometry';
 
 const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
@@ -87,6 +94,15 @@ export interface Takeoff {
   lng: number;
 }
 
+/** Low: on the ground, or < 3,000 ft above the elevation of the nearer leg end (AGL, not MSL). */
+function isLow(p: TrackSample, o: LegEnd, d: LegEnd): boolean {
+  if (p.onGround) return true;
+  if (p.altFt === null) return false;
+  const here: LngLatTuple = [p.lng, p.lat];
+  const ground = (distanceKm(here, ll(o)) <= distanceKm(here, ll(d)) ? o.elevationFt : d.elevationFt) ?? 0;
+  return p.altFt - ground < LOW_AGL_FT;
+}
+
 /**
  * The latest observed take-off in the flown track (oldest first): the last low point — on the
  * ground, or < 3,000 ft above the nearer end's elevation — that is followed by an airborne point
@@ -97,23 +113,72 @@ export function lastTakeoff(track: readonly TrackSample[], o: LegEnd, d: LegEnd)
   let airborneAfter = false;
   for (let i = track.length - 1; i >= 0; i--) {
     const p = track[i]!;
-    const here: LngLatTuple = [p.lng, p.lat];
-    const dO = distanceKm(here, ll(o));
-    const dD = distanceKm(here, ll(d));
-    const ground = (dO <= dD ? o.elevationFt : d.elevationFt) ?? 0;
-    const low = p.onGround || (p.altFt !== null && p.altFt - ground < LOW_AGL_FT);
-    if (!low) {
+    if (!isLow(p, o, d)) {
       airborneAfter = true;
       continue;
     }
     if (!airborneAfter) continue;
-    return { end: dO <= CONFLICT_END_KM ? 'o' : dD <= CONFLICT_END_KM ? 'd' : null, lat: p.lat, lng: p.lng };
+    const here: LngLatTuple = [p.lng, p.lat];
+    return { end: distanceKm(here, ll(o)) <= CONFLICT_END_KM ? 'o' : distanceKm(here, ll(d)) <= CONFLICT_END_KM ? 'd' : null, lat: p.lat, lng: p.lng };
   }
   return null;
 }
 
+/** A track sample with its time and observed track, when the trace has them. */
+export interface TimedSample extends TrackSample {
+  t?: string;
+  trackDeg?: number | null;
+}
+
+/** A coverage gap at least this long … */
+export const LEG_GAP_MS = 10 * 60_000;
+/** … across which the observed track turned by more than this separates two legs (the FLIGHT view's `sinceTurnaroundGap`). */
+export const TURNAROUND_DEG = 120;
+
+function trackNear(track: readonly TimedSample[], i: number, step: 1 | -1): number | null {
+  for (let k = 0, j = i; k < 10 && j >= 0 && j < track.length; k++, j += step) {
+    const t = track[j]!.trackDeg;
+    if (t != null) return t;
+  }
+  return null;
+}
+
+/**
+ * The track after its LAST coverage gap of >= 10 min across which the course reversed by more than
+ * 120° (the aircraft landed and turned around below coverage: what came before is an earlier leg);
+ * the whole track when there is none. Same thresholds as the FLIGHT view's `sinceTurnaroundGap`.
+ */
+export function sinceTurnaround<T extends TimedSample>(track: readonly T[]): readonly T[] {
+  for (let i = track.length - 1; i > 0; i--) {
+    const a = track[i - 1]!.t;
+    const b = track[i]!.t;
+    if (!a || !b || !(Date.parse(b) - Date.parse(a) >= LEG_GAP_MS)) continue;
+    const before = trackNear(track, i - 1, -1);
+    const after = trackNear(track, i, 1);
+    if (before !== null && after !== null && angleDiff(before, after) > TURNAROUND_DEG) return track.slice(i);
+  }
+  return track;
+}
+
+/**
+ * The observed take-off of the leg the aircraft at `pos` is flying now, or null when it was not
+ * observed: the trace ends on the ground (the aircraft had not taken off yet when it was read) or
+ * low more than 60 km from `pos` (it ends with a landing: an earlier leg, the FLIGHT view's
+ * `traceEnded`); else `lastTakeoff` after the last turnaround gap (`sinceTurnaround`).
+ */
+export function legTakeoff(track: readonly TimedSample[], o: LegEnd, d: LegEnd, pos: Pick<RoutePosition, 'lat' | 'lng'>): Takeoff | null {
+  const end = track[track.length - 1];
+  if (!end || end.onGround) return null;
+  if (isLow(end, o, d) && distanceKm([end.lng, end.lat], [pos.lng, pos.lat]) > CONFLICT_END_KM) return null;
+  return lastTakeoff(sinceTurnaround(track), o, d);
+}
+
 export type Corroboration =
-  /** Departed the listed origin: the listed leg stands, progress is not shown. */
+  /** No take-off observed for this leg and nothing contradicts it: the standing-data answer stands. */
+  | { kind: 'unobserved' }
+  /** Departed the listed origin and on its corridor, track along it or unknown: the leg with progress. */
+  | { kind: 'departed'; routeCheck: string }
+  /** Departed the listed origin but not observed on course: the listed leg stands, progress is not shown. */
   | { kind: 'listed'; routeCheck: string }
   /** Departed the listed destination and on course for the listed origin: shown as flown d→o. */
   | { kind: 'reverse'; routeCheck: string }
@@ -121,16 +186,16 @@ export type Corroboration =
   | { kind: 'withhold'; routeCheck: string };
 
 /**
- * Corroborate o→d for an aircraft that `awayFromDestination` flagged. `track` is its flown track
- * (current leg, oldest first) or null when none could be read; `missing` says why (shown in the
- * reason). The wording follows the FLIGHT view's.
+ * Corroborate o→d for an airborne aircraft at `pos`. `track` is its flown track (current leg,
+ * oldest first) or null when none could be read; `missing` says why (shown in the reason). The
+ * wording follows the FLIGHT view's.
  */
-export function corroborateLeg(o: LegEnd, d: LegEnd, pos: RoutePosition, track: readonly TrackSample[] | null, missing: string | null = null): Corroboration {
+export function corroborateLeg(o: LegEnd, d: LegEnd, pos: RoutePosition, track: readonly TimedSample[] | null, missing: string | null = null): Corroboration {
   const O = code(o);
   const D = code(d);
   const sched = `${O}→${D}`;
   const back = alongCorridor(pos, d, o);
-  const takeoff = track?.length ? lastTakeoff(track, o, d) : null;
+  const takeoff = track?.length ? legTakeoff(track, o, d, pos) : null;
   if (takeoff?.end === 'd') {
     return back && headingFor(pos, o)
       ? { kind: 'reverse', routeCheck: `observed departure ${D} and course toward ${O}: shown as flown ${D}→${O}; standing data lists ${sched}` }
@@ -138,10 +203,14 @@ export function corroborateLeg(o: LegEnd, d: LegEnd, pos: RoutePosition, track: 
   }
   if (takeoff?.end === 'o') {
     if (back) return { kind: 'withhold', routeCheck: `departed ${O} earlier, now on course back toward ${O} — return leg or turnaround not observed; route not confirmed` };
-    const offKm = Math.round(positionOnPath([pos.lng, pos.lat], ll(o), ll(d)).offKm);
-    return { kind: 'listed', routeCheck: `departed ${O} but not observed on course for ${D} (${offKm} km off the great circle, track pointing away from ${D}) — progress not shown` };
+    const here: LngLatTuple = [pos.lng, pos.lat];
+    if (onRouteCorridor(o, d, here) && trackAlong(pos, o, d) !== false) return { kind: 'departed', routeCheck: `observed departure matches the listed origin ${O}` };
+    const offKm = Math.round(positionOnPath(here, ll(o), ll(d)).offKm);
+    const away = awayFromDestination(o, d, pos) ? `, track pointing away from ${D}` : '';
+    return { kind: 'listed', routeCheck: `departed ${O} but not observed on course for ${D} (${offKm} km off the great circle${away}) — progress not shown` };
   }
   if (takeoff) return { kind: 'withhold', routeCheck: `observed departure is not ${O} — contradicts standing data ${sched}; route not confirmed` };
+  if (!awayFromDestination(o, d, pos)) return { kind: 'unobserved' };
   const unobserved = `departure not observed${missing ? ` (${missing})` : ''}`;
   return back
     ? { kind: 'withhold', routeCheck: `airborne inside the corridor but heading toward ${O}, opposite to standing data ${sched}; ${unobserved} — route not confirmed` }

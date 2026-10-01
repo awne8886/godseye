@@ -3,8 +3,9 @@
  * standing data (adsb.lol), then adsbdb, then hexdb `/route/icao/` (labelled stale with its update
  * time). With a position, progress along the great circle when the aircraft is on the corridor.
  * `icao24` makes the server judge the leg from that aircraft's exact snapshot position (the
- * client quantises its query) and corroborate a reversed leg from its flown track; a leg the
- * observed course contradicts is withheld (`directionConflict`, `routeCheck`).
+ * client quantises its query) and from its flown track: the observed take-off decides, and a leg
+ * the observed departure or course contradicts is withheld (`directionConflict`, `routeCheck`).
+ * A round trip asked with a position but no observed track names no leg (its legs share a corridor).
  * Owner: layers-aviation.
  */
 import { z } from 'zod';
@@ -36,7 +37,7 @@ export const GET = withRoute('/api/flight-route', async (req: Request) => {
   if (!q.ok) return q.response;
   const { callsign, icao24, lat, lng, speed, track } = q.data;
   const pos = lat !== undefined && lng !== undefined ? { lat, lng, speedKt: speed ?? null, trackDeg: track ?? null } : null;
-  const route = await flightRoute(callsign, pos, undefined, { icao24: icao24 ?? null });
+  const route = await flightRoute(callsign, pos, undefined, { icao24: icao24 ?? null, roundTripWithoutTrack: 'withhold' });
   if (!route) return apiError(503, 'source_offline', 'No route source answered (VRS standing data, adsbdb, hexdb).', { retryAfter: 60, headers: { 'Retry-After': '60' } });
   // A withheld (direction-conflict) answer is re-checked sooner: the next observation may settle it.
   return json(route, { ttl: route.found && !route.directionConflict ? 600 : 120 });

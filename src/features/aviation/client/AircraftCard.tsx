@@ -96,11 +96,15 @@ export function useFlightRoute(callsign: string | null, pos: { lat: number; lng:
  * Route progress for the bar, from the aircraft's exact OBSERVED position (R2 round 4 MINOR-6:
  * the route answer is cached per 0.5° cell, so its own `progress` lags). Only when the server
  * placed the aircraft on the leg's corridor (non-null progress); null when the latest observation
- * has left the corridor or the aircraft is on the ground.
+ * has left the corridor, tracks across or against the leg (round 5 fix pass MINOR-1), or the
+ * aircraft is on the ground.
  */
-export function cardProgress(route: FlightRoute | undefined, r: Pick<FlightRecord, 'lat' | 'lng' | 'gsKt' | 'onGround'>): number | null {
+export function cardProgress(
+  route: FlightRoute | undefined,
+  r: Pick<FlightRecord, 'lat' | 'lng' | 'gsKt' | 'onGround'> & Partial<Pick<FlightRecord, 'trackDeg' | 'altFt' | 'vrFpm'>>,
+): number | null {
   if (!route?.found || !route.origin || !route.destination || route.progress === null || r.onGround) return null;
-  return routeProgress(route.origin, route.destination, { lat: r.lat, lng: r.lng, speedKt: r.gsKt }).progress;
+  return routeProgress(route.origin, route.destination, { lat: r.lat, lng: r.lng, speedKt: r.gsKt, trackDeg: r.trackDeg ?? null, altFt: r.altFt ?? null, vrFpm: r.vrFpm ?? null }).progress;
 }
 
 /** The line under a named leg: how it was established. */

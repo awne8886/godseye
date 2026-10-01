@@ -8,11 +8,14 @@
  *     is labelled stale when older than 180 days.
  * With a current position, `basis`/`status`/`progress` come from the great circle; otherwise
  * `basis: 'schedule'`, `status: 'unknown'`. With `icao24`, the exact observed position of that
- * aircraft in the flights snapshot judges the leg (the card's query is quantised). The observed
- * direction beats the schedule: when the track points away from the leg's destination, the
- * flown track must corroborate a leg (`corroborate.ts`, the FLIGHT view's rule) or the leg is
- * withheld with the reason. A leg is never one airport to itself: a round trip asked without a
- * position is withheld ("leg unknown"), not answered ATL→ATL. Server-only.
+ * aircraft in the flights snapshot judges the leg (the card's query is quantised; a field the
+ * record lacks — track, speed — falls back to the query's). The observed departure beats the
+ * schedule: for an airborne aircraft with an address the flown track is read and its take-off
+ * decides (`corroborate.ts`, the FLIGHT view's rule): a take-off elsewhere, or at the destination
+ * without a course back to the origin, withholds the leg with the reason. A leg is never one
+ * airport to itself: a round trip asked without a position is withheld ("leg unknown"), not
+ * answered ATL→ATL; on the public API one asked without an observed track is withheld too (its two
+ * legs share a corridor). Server-only.
  */
 import 'server-only';
 import type { z } from 'zod';
@@ -25,8 +28,8 @@ import type { FlightRouteResponse, RouteAirport } from '@/lib/schemas/aviation';
 import type { Providers } from '@/lib/types';
 import type { FlightRecord } from '../adsb';
 import type { TrackPoint } from '../trace';
-import { isImplausible, pickLeg, routeProgress, sameAirport, type RoutePosition } from '../route-geometry';
-import { awayFromDestination, corroborateLeg } from '../corroborate';
+import { isImplausible, listsReverse, pickLeg, routeProgress, sameAirport, type RoutePosition } from '../route-geometry';
+import { corroborateLeg } from '../corroborate';
 import { adsbdbBucket, aircraftDetail } from './aircraft';
 
 export { IMPLAUSIBLE_FACTOR, isImplausible, pickLeg, routeProgress } from '../route-geometry';
@@ -187,10 +190,23 @@ const chainOf = (airports: readonly Airport[]) => airports.map(code).join('→')
 export interface RouteOptions {
   /** ICAO 24-bit hex of the aircraft: exact snapshot position + flown-track corroboration. */
   icao24?: string | null;
+  /**
+   * A round trip (KSEA-KMCI-KSEA) asked with a position but no observed track: its two legs lie on
+   * one corridor, so which one is flown is unknown (round 5 fix pass MAJOR-3: ASA418 got SEA→MCI
+   * while it flew MCI→SEA). `'withhold'` names no leg (GET /api/flight-route); `'pair'` (default)
+   * returns the earlier leg as the listed airport PAIR, for an in-process caller that settles the
+   * direction itself from the flown track (the FLIGHT view's `legOfTrack`).
+   */
+  roundTripWithoutTrack?: 'withhold' | 'pair';
 }
 
-/** The exact observed state of `icao24` when the snapshot has it airborne under this callsign. */
-function exactPosition(cs: string, icao24: string | null | undefined, deps: RouteDeps): Position | null {
+/**
+ * The exact observed state of `icao24` when the snapshot has it airborne under this callsign. A
+ * field the record lacks (no track or speed in that observation) is the query's, which the client
+ * read from the same aircraft (round 5 fix pass MAJOR-3: a trackless record discarded the query's
+ * track, and the round trip fell back to the wrong leg).
+ */
+function exactPosition(cs: string, icao24: string | null | undefined, deps: RouteDeps, query: Position | null): Position | null {
   if (!icao24) return null;
   let rec: FlightRecord | null = null;
   try {
@@ -199,7 +215,7 @@ function exactPosition(cs: string, icao24: string | null | undefined, deps: Rout
     rec = null;
   }
   if (!rec || rec.onGround || (rec.callsign ?? '').replace(/\s+/g, '').toUpperCase() !== cs) return null;
-  return { lat: rec.lat, lng: rec.lng, speedKt: rec.gsKt, trackDeg: rec.trackDeg, altFt: rec.altFt, vrFpm: rec.vrFpm };
+  return { lat: rec.lat, lng: rec.lng, speedKt: rec.gsKt ?? query?.speedKt ?? null, trackDeg: rec.trackDeg ?? query?.trackDeg ?? null, altFt: rec.altFt, vrFpm: rec.vrFpm };
 }
 
 /** The aircraft's flown track for corroboration, or null with the reason it is missing. */
@@ -223,15 +239,16 @@ export async function flightRoute(cs: string, pos: Position | null, deps: RouteD
   const base = { callsign: cs, providers: providersAt(s.providers, now), timestamp: new Date(now).toISOString() };
   if (!s.candidate) return { ...base, found: false, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: null };
   // R2 round 4 MINOR-6: the card's query position is quantised (0.5°, 50 kt, 45°); the snapshot has the exact one.
-  const exact = exactPosition(cs, opts.icao24, deps);
+  const exact = exactPosition(cs, opts.icao24, deps, pos);
   const p = exact ?? pos;
   const positionSource: FlightRoute['positionSource'] = exact ? 'snapshot' : pos ? 'query' : null;
   const here: LngLatTuple | null = p ? [p.lng, p.lat] : null;
-  const [o, d] = pickLeg(s.candidate.airports, here, p?.trackDeg ?? null);
+  const airports = s.candidate.airports;
+  const [o, d] = pickLeg(airports, here, p?.trackDeg ?? null);
   const updated = s.candidate.updatedAt;
   // Judge the whole listed route (first → last stop), not just the nearest leg.
-  const first = s.candidate.airports[0]!;
-  const last = s.candidate.airports[s.candidate.airports.length - 1]!;
+  const first = airports[0]!;
+  const last = airports[airports.length - 1]!;
   const listed = {
     source: s.candidate.source,
     sourceUpdatedAt: updated !== null ? new Date(updated).toISOString() : null,
@@ -242,26 +259,36 @@ export async function flightRoute(cs: string, pos: Position | null, deps: RouteD
   if (sameAirport(o, d)) {
     // R2 round 5 MINOR-3: a closed loop (KATL-KBNA-KATL) without a position has no leg to pick;
     // first→last would be ATL→ATL. Never answer one airport to itself.
-    const chain = chainOf(s.candidate.airports);
-    const routeCheck = !p && s.candidate.airports.length > 2 ? `round trip ${chain}: the leg being flown is unknown without an observed position` : `standing data lists ${chain}, from and back to ${code(o)}: no leg to show`;
+    const chain = chainOf(airports);
+    const routeCheck = !p && airports.length > 2 ? `round trip ${chain}: the leg being flown is unknown without an observed position` : `standing data lists ${chain}, from and back to ${code(o)}: no leg to show`;
     return { ...withheld, routeCheck };
   }
   if (isImplausible(first, last, p) && isImplausible(o, d, p)) {
     return { ...base, found: false, implausible: true, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: s.candidate.source, positionSource };
   }
-  if (p && awayFromDestination(o, d, p)) {
-    // R2 round 5 BLOCKING-1: the track points away from the leg's destination (> 60 km from both
-    // ends). The flown track must corroborate a leg, as in the FLIGHT view; otherwise withhold.
+  if (p && p.trackDeg == null && opts.roundTripWithoutTrack === 'withhold' && listsReverse(airports, o, d)) {
+    // Round 5 fix pass MAJOR-3: both legs score alike without a track; the earlier one is a guess.
+    return { ...withheld, routeCheck: `round trip ${chainOf(airports)}: leg unknown without an observed track` };
+  }
+  if (p) {
+    // Round 5 fix pass BLOCKING-1: the observed departure decides for every airborne aircraft, not
+    // only one flying away from its destination (the trace is cached from the card's own
+    // /api/aircraft call). Without an address only a course away from the destination withholds.
     const { track, missing } = await trackFor(opts.icao24, deps);
     const v = corroborateLeg(o, d, p, track, missing);
-    if (v.kind === 'reverse') {
-      return { ...base, found: true, origin: d, destination: o, ...routeProgress(d, o, p), ...listed, basis: 'observed', reversed: true, routeCheck: v.routeCheck };
+    const moving = p.speedKt !== null && p.speedKt > 50;
+    switch (v.kind) {
+      case 'reverse':
+        return { ...base, found: true, origin: d, destination: o, ...routeProgress(d, o, p), ...listed, basis: 'observed', reversed: true, routeCheck: v.routeCheck };
+      case 'listed':
+        return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed, basis: 'observed', status: moving ? 'airborne' : 'unknown', progress: null, routeCheck: v.routeCheck };
+      case 'withhold':
+        return { ...withheld, directionConflict: true, routeCheck: v.routeCheck };
+      case 'departed':
+        return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed, routeCheck: v.routeCheck };
+      case 'unobserved':
+        break;
     }
-    if (v.kind === 'listed') {
-      const moving = p.speedKt !== null && p.speedKt > 50;
-      return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed, basis: 'observed', status: moving ? 'airborne' : 'unknown', progress: null, routeCheck: v.routeCheck };
-    }
-    return { ...withheld, directionConflict: true, routeCheck: v.routeCheck };
   }
   return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed };
 }
