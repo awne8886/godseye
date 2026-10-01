@@ -13,6 +13,16 @@ beforeAll(async () => {
       res.end();
       return;
     }
+    if (req.url === '/org/arcgis/rest/services/x/FeatureServer/0/query') {
+      res.writeHead(302, { location: '/org/arcgis/sharing/rest/content/items/1' });
+      res.end();
+      return;
+    }
+    if (req.url === '/org/arcgis/rest/services/x/FeatureServer/1/query') {
+      res.writeHead(302, { location: '/org/arcgis/rest/services/y/FeatureServer/2/query' });
+      res.end();
+      return;
+    }
     if (req.url === '/cams/moved.jpg') {
       res.writeHead(302, { location: '/cams/2.jpg' });
       res.end();
@@ -43,6 +53,15 @@ describe('allowListedFetch', () => {
 
   it('still applies the SSRF guard to allow-listed hosts', async () => {
     await expect(allowListedFetch(`http://127.0.0.1:${port}/cams/2.jpg`, rules(), { ports: new Set([port]) })).rejects.toMatchObject({ code: 'blocked' });
+  });
+
+  it('a pathPattern keeps every redirect hop in the allowed resource shape', async () => {
+    const shaped: AllowRule[] = [{ host: '127.0.0.1', pathPrefix: '/', protocols: ['http:'], port, pathPattern: /^\/[A-Za-z0-9]{1,64}\/arcgis\/rest\/services\/[^?#]*\/(?:Feature|Map)Server\/\d{1,4}\/query$/ }];
+    // Same host, prefix '/' allows it, but /sharing/... is not a service query: refused.
+    await expect(allowListedFetch(`http://127.0.0.1:${port}/org/arcgis/rest/services/x/FeatureServer/0/query`, shaped, testOpts())).rejects.toMatchObject({ code: 'blocked' });
+    const ok = await allowListedFetch(`http://127.0.0.1:${port}/org/arcgis/rest/services/x/FeatureServer/1/query`, shaped, testOpts());
+    expect(ok.url.endsWith('/org/arcgis/rest/services/y/FeatureServer/2/query')).toBe(true);
+    expect(matchesAllowList(new URL(`http://127.0.0.1:${port}/org/arcgis/sharing/rest`), shaped)).toBe(false);
   });
 
   it('only matches a non-default port the rule names', () => {

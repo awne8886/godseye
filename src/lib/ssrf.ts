@@ -223,6 +223,11 @@ export interface AllowRule {
   protocols?: readonly ('https:' | 'http:')[];
   /** Exact non-default port, when the operator serves on one (default: scheme port only). */
   port?: string;
+  /**
+   * Optional shape the whole path must also match (on top of `pathPrefix`), for hosts whose
+   * prefix is `/` but whose allowed resources have a fixed layout (ArcGIS hosted services).
+   */
+  pathPattern?: RegExp;
 }
 
 /**
@@ -242,7 +247,7 @@ export function matchesAllowList(url: URL, rules: readonly AllowRule[]): boolean
     // A prefix is a directory boundary: `/arcgis` matches `/arcgis` and `/arcgis/…`, never `/arcgis-evil/`.
     const prefix = r.pathPrefix;
     const pathOk = prefix.endsWith('/') ? rawPath.startsWith(prefix) : rawPath === prefix || rawPath.startsWith(`${prefix}/`);
-    return hostOk && pathOk;
+    return hostOk && pathOk && (!r.pathPattern || r.pathPattern.test(rawPath));
   });
 }
 
