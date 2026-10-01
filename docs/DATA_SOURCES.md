@@ -985,6 +985,15 @@ Region Dossier live layers read other owners' feeds in-process (no HTTP): `cctv:
 whose box, grown by 150 km, holds the point), `maritime` (ports + chokepoints REFERENCE; vessels only
 with `AIS_API_KEY`), `cables` (TeleGeography REFERENCE, CC BY-NC-SA, only with `nc_sources`).
 
+### Probes 2026-10-01 (Phase 3 round-2b: KEV date-only rows, background NVD scoring)
+
+Honest UA `GODSEYE/0.1.0 (+repo; contact …/issues)`, no key.
+
+| URL | Status | Latency | CORS | Auth | Notes |
+|---|---|---|---|---|---|
+| `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` | 200 | 0.56 s | none | none (public domain, US Gov) | 1.76 MB; `catalogVersion` 2026.09.30, `dateReleased` 2026-09-30T16:59:23.0688Z, `count` 1730; `vulnerabilities[].dateAdded` is a **date only** (`2026-09-30`), so Intel Feed rows render the date, never an age or 00:00Z. ETag + Last-Modified |
+| `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2021-44228` | 200 | 0.46 s | `*` | none (keyless 5 req / 30 s; `NVD_API_KEY` in the `apiKey` header → 50 / 30 s) | 87 kB; `metrics` keys `cvssMetricV31` (baseScore 10), `cvssMetricV2`, `ssvcV203`. Lookups now run in a background batch through the shared `nvdBucket()`; `/api/cyber-threats` answers with KEV at once and `providers.nvd.error: "pending"` while the batch runs |
+
 ### panels-recon
 
 RECON, SEARCH, ROUTE, DRAW, ARCGIS and WORLD REMOTE. Every upstream is called by this server

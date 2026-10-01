@@ -7,12 +7,11 @@
 import { useMemo, useState } from 'react';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
-import { formatAge } from '@/lib/freshness';
 import { useFeedEventStore } from '@/lib/layer-host';
-import { LAYERS } from '@/lib/layer-registry';
 import { useUiStore } from '@/lib/store';
 import type { FeedEvent } from '@/lib/types';
 import { useNow } from './client';
+import { eventLayerLabel as layerLabel, eventTime } from './event-time';
 
 const SEVERITIES: FeedEvent['severity'][] = ['info', 'low', 'medium', 'high', 'critical'];
 const SEV_TOKEN: Record<FeedEvent['severity'], string> = {
@@ -22,8 +21,6 @@ const SEV_TOKEN: Record<FeedEvent['severity'], string> = {
   high: '--alert-orange',
   critical: '--alert-red',
 };
-
-const layerLabel = (id: string) => (LAYERS as readonly { id: string; label: string }[]).find((l) => l.id === id)?.label ?? id;
 
 export function filterEvents(events: readonly FeedEvent[], layer: string, minSeverity: FeedEvent['severity']): FeedEvent[] {
   const min = SEVERITIES.indexOf(minSeverity);
@@ -88,8 +85,8 @@ export function IntelFeedPanel(_: PanelProps) {
               <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em]">
                 <span style={{ color: `var(${SEV_TOKEN[e.severity]})` }}>{e.severity}</span>
                 <span className="text-[var(--text-secondary)]">{layerLabel(e.layer)}</span>
-                <span className="ml-auto tabular-nums text-[var(--text-muted)]" title={e.observedAt}>
-                  {formatAge(now - Date.parse(e.observedAt))} ago
+                <span className="ml-auto tabular-nums text-[var(--text-muted)]" title={eventTime(e, now).title}>
+                  {eventTime(e, now).text}
                 </span>
               </span>
               <span className="font-sans text-[13px] leading-snug text-[var(--text-primary)]">{e.title}</span>

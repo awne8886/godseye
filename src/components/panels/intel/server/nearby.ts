@@ -17,7 +17,7 @@ import { allFeeds, getFeed, type FeedResult } from '@/lib/feeds';
 import { normalizeUtc } from '@/lib/freshness';
 import { distanceKm } from '@/lib/geo';
 import type { FreshnessState } from '@/lib/types';
-import { CCTV_REGIONS, REGION_BOUNDS, regionsForPoint } from '@/features/surveillance/shared';
+import { CCTV_REGIONS, KEYED_REGIONS, REGION_BOUNDS, regionsForPoint, type CctvRegion } from '@/features/surveillance/shared';
 
 export interface Point {
   id: string;
@@ -243,22 +243,39 @@ export function nearbyFromResult(result: FeedResult<unknown> | null, lat: number
 
 const STATE_RANK: Record<FreshnessState, number> = { live: 0, reference: 0, recent: 1, stale: 2, offline: 3 };
 
+/**
+ * A feed that answered with every provider skipped for lack of a key is `not-configured`, never
+ * "did not answer". `label` names the keyed source when the region catalogue knows it.
+ */
+export function notConfiguredPart(result: FeedResult<unknown> | null, feedKey: string): LayerNearby | null {
+  const runs = result ? Object.values(result.providers) : [];
+  if (runs.length === 0 || !runs.every((p) => p.skipped === 'not-configured')) return null;
+  const region = feedKey.startsWith('cctv:') ? (feedKey.slice(5) as CctvRegion) : null;
+  const keyed = region ? KEYED_REGIONS[region] : undefined;
+  const what = keyed?.length ? keyed.map((k) => k.label).join(', ') : feedKey;
+  return { count: null, state: 'offline', points: [], reason: 'not-configured', note: `${what}: needs a key on this server` };
+}
+
 /** Combine several feeds of one layer (camera regions): counts add up, the stalest state wins. */
 export function mergeNearby(parts: LayerNearby[]): LayerNearby {
+  const unkeyed = parts.filter((p) => p.reason === 'not-configured');
+  const keyNote = unkeyed.length > 0 ? [...new Set(unkeyed.map((p) => p.note).filter(Boolean))].join('; ') : undefined;
   const answered = parts.filter((p) => p.count !== null);
   if (answered.length === 0) {
     if (parts.some((p) => p.reason === 'pending')) return { count: null, state: 'offline', points: [], reason: 'pending', note: 'Catalogue still loading' };
     if (parts.some((p) => p.reason === 'unavailable')) return { count: null, state: parts[0]?.state ?? 'offline', points: [], reason: 'unavailable', note: parts.find((p) => p.note)?.note };
+    if (unkeyed.length === parts.length) return { count: null, state: 'offline', points: [], reason: 'not-configured', note: keyNote };
     return { count: null, state: 'offline', points: [] };
   }
   const state = answered.reduce<FreshnessState>((s, p) => (STATE_RANK[p.state] > STATE_RANK[s] ? p.state : s), answered[0]!.state);
   const points = answered.flatMap((p) => p.points).sort((a, b) => a.distanceKm - b.distanceKm);
-  const missing = parts.length - answered.length;
+  const missing = parts.length - answered.length - unkeyed.length;
+  const notes = [missing > 0 ? `${missing} of ${parts.length} catalogue regions did not answer` : null, keyNote ?? null].filter(Boolean).join('; ');
   return {
     count: answered.reduce((s, p) => s + (p.count ?? 0), 0),
     state,
     points,
-    ...(missing > 0 ? { reason: 'partial' as const, note: `${missing} of ${parts.length} catalogue regions did not answer` } : {}),
+    ...(missing > 0 || unkeyed.length > 0 ? { reason: 'partial' as const, note: notes } : {}),
   };
 }
 
@@ -302,6 +319,8 @@ async function readLayer(def: LayerDef, lat: number, lng: number, radiusKm: numb
     keys.map(async (k) => {
       const { res, pending } = await readFeed(k, waitMs);
       if (pending) return { count: null, state: 'offline' as const, points: [], reason: 'pending' as const, note: 'Source still loading' };
+      const unkeyed = notConfiguredPart(res, k);
+      if (unkeyed) return unkeyed;
       return nearbyFromResult(res, lat, lng, radiusKm, def);
     }),
   );

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FeedResult } from '@/lib/feeds';
 import { CAMERA_FIELDS } from '@/lib/schemas/surveillance';
-import { adaptMaritimeReference, adaptVessels, cameraFeedKeys, cablesNear, decodeColumnar, extractPoints, lineDistanceKm, mergeNearby, NEARBY_LAYERS, nearbyFromResult, toPoint } from './nearby';
+import { adaptMaritimeReference, adaptVessels, cameraFeedKeys, cablesNear, decodeColumnar, extractPoints, lineDistanceKm, mergeNearby, NEARBY_LAYERS, nearbyFromResult, notConfiguredPart, toPoint } from './nearby';
 
 const live = (data: unknown, state = 'live') => ({ data, meta: { state }, providers: {} }) as unknown as FeedResult<unknown>;
 const repo = (p: string) => new URL(`../../../../../${p}`, import.meta.url);
@@ -59,6 +59,25 @@ describe('camera catalogue (cctv:* feeds)', () => {
     expect(mergeNearby([a, b])).toMatchObject({ count: 3, state: 'recent' });
     expect(mergeNearby([a, { count: null, state: 'offline', points: [] }])).toMatchObject({ count: 2, reason: 'partial' });
     expect(mergeNearby([{ count: null, state: 'offline', points: [], reason: 'pending' }])).toMatchObject({ count: null, reason: 'pending' });
+  });
+  it('R3 m1: a keyed region skipped for lack of a key is "needs a key", never "did not answer"', () => {
+    const skipped = { ok: false, count: 0, ms: 0, age_s: null, skipped: 'not-configured' };
+    const uk = { data: null, meta: { state: 'offline' }, providers: { tfl: skipped } } as unknown as FeedResult<unknown>;
+    const part = notConfiguredPart(uk, 'cctv:uk')!;
+    expect(part).toMatchObject({ count: null, reason: 'not-configured' });
+    expect(part.note).toMatch(/TFL_APP_KEY.*needs a key/);
+    // A region that really failed is not "not configured".
+    const failed = { data: null, meta: { state: 'offline' }, providers: { x: { ok: false, count: 0, ms: 5, age_s: null } } } as unknown as FeedResult<unknown>;
+    expect(notConfiguredPart(failed, 'cctv:europe')).toBeNull();
+    expect(notConfiguredPart(live([]), 'cctv:europe')).toBeNull();
+    const europe = { count: 3, state: 'live' as const, points: [] };
+    const merged = mergeNearby([europe, part]);
+    expect(merged.count).toBe(3);
+    expect(merged.note).not.toMatch(/did not answer/);
+    expect(merged.note).toMatch(/needs a key/);
+    expect(mergeNearby([part])).toMatchObject({ count: null, reason: 'not-configured' });
+    const both = mergeNearby([europe, part, { count: null, state: 'offline', points: [] }]);
+    expect(both.note).toMatch(/^1 of 3 catalogue regions did not answer; .*needs a key/);
   });
 });
 
