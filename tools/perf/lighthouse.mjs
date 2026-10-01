@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Lighthouse runner (perf-auditor). Same settings as lighthouserc.json (desktop preset,
- * pauseAfterLoadMs 9000, SwiftShader GL), N runs per URL, median by performance score, and the
+ * Lighthouse runner (perf-auditor), for local diagnosis under software GL. CI measures '/' on a GPU
+ * runner (lighthouserc.gpu.json) and '/docs', '/privacy' on ubuntu (lighthouserc.json); this script
+ * uses the same desktop preset and pauseAfterLoadMs 9000 with SwiftShader GL, N runs per URL, median by performance score, and the
  * diagnostics needed to attribute a miss: main-thread breakdown, script boot-up per URL, long tasks,
  * LCP element, layout shifts, failing accessibility audits.
  *
