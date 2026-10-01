@@ -10,9 +10,9 @@
  */
 import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
-import { isFacing } from '@/lib/geo';
 import type { LayerId } from '@/lib/layer-registry';
 import type { Selection } from '@/lib/layer-host';
+import { cameraFromMap, isFacing, type FarSideCamera } from '@/lib/map/far-side';
 import { registerHitTester, type HitTestMap, type PickCandidate } from '@/lib/map/picking';
 
 export interface Hit {
@@ -43,7 +43,19 @@ export function useHitTester(key: string, tester: HitTester): void {
   }, [key]);
 }
 
-/** Nearest point within `tolerancePx` of the click, skipping points on the far side of the globe. */
+/**
+ * The far-side camera of `map` on the globe (null in mercator): the same camera the layers filter
+ * their drawn subsets with (globe.tsx), so a point that is not drawn is never hit either.
+ */
+export function hitCamera(map: MapLibreMap): FarSideCamera | null {
+  return map.getProjection?.()?.type === 'globe' ? cameraFromMap(map) : null;
+}
+
+/**
+ * Nearest point within `tolerancePx` of the click, skipping points behind the globe's limb (the
+ * camera horizon from src/lib/map/far-side.ts, not a fixed 90° from the map centre: at zoom 2–4 the
+ * camera sees only ~58–78°, so the old test let points behind the limb be hit).
+ */
 export function nearestPoint<T>(
   map: MapLibreMap,
   e: HitEvent,
@@ -52,9 +64,7 @@ export function nearestPoint<T>(
   radiusPx: (t: T) => number,
   slackPx = 4,
 ): { item: T; distancePx: number } | null {
-  const c = map.getCenter();
-  const center: [number, number] = [c.lng, c.lat];
-  const globe = map.getProjection?.()?.type === 'globe';
+  const camera = hitCamera(map);
   // Cheap pre-filter in degrees around the click (generous: the projection is not linear on a globe).
   const degPerPx = 360 / (512 * 2 ** map.getZoom());
   const lat0 = e.lngLat.lat;
@@ -67,7 +77,7 @@ export function nearestPoint<T>(
     if (Math.abs(p[1] - lat0) > window) continue;
     const dLng = Math.abs(((p[0] - lng0 + 540) % 360) - 180);
     if (dLng > window / Math.max(0.05, Math.cos((lat0 * Math.PI) / 180))) continue;
-    if (globe && !isFacing(center, p)) continue;
+    if (camera && !isFacing(p, camera)) continue;
     const s = map.project(p);
     const d = Math.hypot(s.x - e.point.x, s.y - e.point.y);
     if (d <= r && (!best || d < best.distancePx)) best = { item: it, distancePx: d };
