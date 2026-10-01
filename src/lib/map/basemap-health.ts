@@ -12,7 +12,16 @@ export const BASEMAP_OFFLINE_AFTER = 3;
 export const BASEMAP_RETRY_BASE_MS = 2000;
 export const BASEMAP_RETRY_MAX_MS = 60_000;
 
-export type BasemapState = 'ok' | 'offline';
+/**
+ * - `offline`: consecutive failures with no tile in between (the host is down);
+ * - `incomplete`: some tiles in view failed while others loaded (holes in the globe: R3-m8);
+ * - `stalled`: the tiles in view have not finished loading for `BASEMAP_STALL_MS` (nothing failed,
+ *   nothing painted: R3-M2). Never an empty globe without a chip.
+ */
+export type BasemapState = 'ok' | 'offline' | 'incomplete' | 'stalled';
+
+/** Tiles in view still loading after this long → BASEMAP LOADING chip. */
+export const BASEMAP_STALL_MS = 10_000;
 
 export interface BasemapHealth {
   state: BasemapState;
@@ -20,31 +29,48 @@ export interface BasemapHealth {
   lastGoodAt: number | null;
   /** Delay before the next retry while offline, else null. */
   retryInMs: number | null;
+  /** Failed tiles not loaded since (distinct tile keys). */
+  missing: number;
 }
 
 export function createBasemapHealth() {
   let failures = 0;
   let retries = 0;
   let lastGoodAt: number | null = null;
+  let stalled = false;
+  const failed = new Set<string>();
   const snapshot = (): BasemapHealth => {
-    const offline = failures >= BASEMAP_OFFLINE_AFTER;
+    const state: BasemapState = failures >= BASEMAP_OFFLINE_AFTER ? 'offline' : failed.size ? 'incomplete' : stalled ? 'stalled' : 'ok';
     return {
-      state: offline ? 'offline' : 'ok',
+      state,
       lastGoodAt,
-      retryInMs: offline ? Math.min(BASEMAP_RETRY_MAX_MS, BASEMAP_RETRY_BASE_MS * 2 ** retries) : null,
+      retryInMs: state === 'offline' || state === 'incomplete' ? Math.min(BASEMAP_RETRY_MAX_MS, BASEMAP_RETRY_BASE_MS * 2 ** retries) : null,
+      missing: failed.size,
     };
   };
   return {
-    /** A basemap tile (or the source) failed to load. */
-    tileError(): BasemapHealth {
+    /** A basemap tile (`key` = z/x/y when known) or the source failed to load. */
+    tileError(key?: string): BasemapHealth {
       failures++;
+      if (key) failed.add(key);
       return snapshot();
     },
     /** A basemap tile loaded at `now`. */
-    tileLoaded(now: number): BasemapHealth {
+    tileLoaded(now: number, key?: string): BasemapHealth {
       failures = 0;
-      retries = 0;
+      if (key) failed.delete(key);
+      if (!failed.size) retries = 0;
       lastGoodAt = now;
+      return snapshot();
+    },
+    /** Whether the tiles in view have been loading for longer than BASEMAP_STALL_MS. */
+    setStalled(on: boolean): BasemapHealth {
+      stalled = on;
+      return snapshot();
+    },
+    /** The camera moved: forget the failed tiles (the host re-requests the tiles now in view). */
+    forgetMissing(): BasemapHealth {
+      failed.clear();
       return snapshot();
     },
     /** A retry was issued (the next one waits twice as long). */
@@ -60,6 +86,15 @@ const hhmm = (ms: number) => new Date(ms).toISOString().slice(11, 16);
 
 /** Chip text: SOURCE OFFLINE wording with the last observed tile time, never a guessed one. */
 export function basemapChipText(h: BasemapHealth): string | null {
-  if (h.state !== 'offline') return null;
-  return h.lastGoodAt === null ? 'BASEMAP OFFLINE · RETRYING' : `BASEMAP OFFLINE · LAST TILE ${hhmm(h.lastGoodAt)} UTC · RETRYING`;
+  const last = h.lastGoodAt === null ? '' : ` · LAST TILE ${hhmm(h.lastGoodAt)} UTC`;
+  switch (h.state) {
+    case 'offline':
+      return `BASEMAP OFFLINE${last} · RETRYING`;
+    case 'incomplete':
+      return `BASEMAP INCOMPLETE · ${h.missing} TILE${h.missing === 1 ? '' : 'S'} MISSING · RETRYING`;
+    case 'stalled':
+      return `BASEMAP LOADING${last}`;
+    default:
+      return null;
+  }
 }

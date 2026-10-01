@@ -16,7 +16,13 @@
  * classes are admitted one per slot of the map's admission scheduler (`admitLayers` +
  * `admission-scheduler.ts`: idle main thread, then a drained GPU queue, at most
  * ADMISSION_MAX_WAIT_MS apart), so each program link runs alone. The admission is a transition
- * render (time-sliced), never `flushSync`. Owner: map-engine.
+ * render (time-sliced), never `flushSync`.
+ *
+ * Layer groups (R3-M2): every `setProps` runs under `withParsedStyle`, so deck's layer groups enter
+ * the style as soon as it is parsed instead of waiting for `isStyleLoaded()` (false while any tile
+ * loads; a hung tile kept every deck layer off the globe). Groups still missing are re-applied on
+ * the next style/source/idle event and published as undrawn, so the header never counts them.
+ * Owner: map-engine.
  */
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
@@ -25,6 +31,7 @@ import { useControl, useMap } from 'react-map-gl/maplibre';
 import { orderedDeckLayers, useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
 import { admitLayers, createAdmissionState, flattenLayers } from '@/lib/map/deck-admission';
 import { useAdmissionStore } from '@/lib/map/admission-scheduler';
+import { type ApplyMap, missingDeckGroups, withParsedStyle } from '@/lib/map/deck-apply';
 import { type DeckLike, detachDeckPressPicking, initPendingLayers } from '@/lib/map/deck-events';
 import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
@@ -38,6 +45,9 @@ function withBeforeId(layers: readonly Layer[], beforeId: string | undefined): L
 
 /** The overlay's Deck instance (a private field; read-only use). */
 const deckOf = (o: MapLibreOverlay | undefined): DeckLike | undefined => (o as unknown as { _deck?: DeckLike } | undefined)?._deck;
+
+/** The map the overlay was added to (a private field, set in `onAdd`; read-only use). */
+const mapOfOverlay = (o: MapLibreOverlay): ApplyMap | null => (o as unknown as { _map?: ApplyMap })._map ?? null;
 
 export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   const entries = useDeckLayerStore((s) => s.entries);
@@ -69,10 +79,16 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   });
   const layersRef = useRef(layers);
   const beforeIdRef = useRef(beforeId);
+  /** Hand deck `next` (groups added once the style is parsed) and publish what is still off the map. */
+  const applyRef = useRef((next: LayersList) => {
+    const map = mapOfOverlay(overlay);
+    withParsedStyle(map, () => overlay.setProps({ layers: next }));
+    useAdmissionStore.getState().setUndrawn('deck', missingDeckGroups(map, flattenLayers<Layer>(next as unknown[])).length);
+  });
   useEffect(() => {
     layersRef.current = layers;
     beforeIdRef.current = beforeId;
-    overlay.setProps({ layers });
+    applyRef.current(layers);
   }, [overlay, layers, beforeId]);
   // Waiting layer classes are admitted one per scheduler slot.
   const scheduler = useAdmissionStore((s) => s.scheduler);
@@ -98,7 +114,7 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
         const all = flattenLayers<Layer>(orderedDeckLayers(useDeckLayerStore.getState().entries) as unknown[]);
         const now = withBeforeId(admitLayers(all, admission).pass, beforeIdRef.current);
         layersRef.current = now;
-        overlay.setProps({ layers: now });
+        applyRef.current(now);
         initPendingLayers(deckOf(overlay));
         // React catches up in time slices (same layers by id: deck diffs them, nothing re-links).
         startTransition(() => setAdmittedVersion((v) => v + 1));
@@ -110,10 +126,21 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   useEffect(() => {
     const map = mapRef?.getMap();
     if (!map) return;
-    const reapply = () => overlay.setProps({ layers: layersRef.current });
+    const reapply = () => applyRef.current(layersRef.current);
+    // A style change (deck's own retry needs isStyleLoaded) or a group still missing: apply again.
+    const heal = () => {
+      if (missingDeckGroups(map as unknown as ApplyMap, flattenLayers<Layer>(layersRef.current as unknown[])).length) reapply();
+    };
     map.on('webglcontextrestored', reapply);
+    map.on('styledata', heal);
+    map.on('sourcedata', heal);
+    map.on('idle', heal);
     return () => {
       map.off('webglcontextrestored', reapply);
+      map.off('styledata', heal);
+      map.off('sourcedata', heal);
+      map.off('idle', heal);
+      useAdmissionStore.getState().setUndrawn('deck', 0);
     };
   }, [mapRef, overlay]);
   useEffect(() => {
@@ -123,7 +150,7 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     return () => setPickOverlay(null);
   }, [overlay]);
   useEffect(() => {
-    if (ready) overlay.setProps({ layers: layersRef.current }); // #10733: re-apply once the style is idle
+    if (ready) applyRef.current(layersRef.current); // #10733: re-apply once the style is parsed
   }, [ready, overlay]);
   return null;
 }

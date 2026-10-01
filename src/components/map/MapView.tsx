@@ -26,7 +26,7 @@ import { BLACK_MARBLE_LABEL, ESRI_LABEL, gibsTrueColorLabel } from '@/lib/map/im
 import { geometryClient } from '@/lib/map/geometry-client';
 import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
 import { collectCandidates, routePick, setHoverPointer, type PickMap } from '@/lib/map/picking';
-import { basemapChipText, createBasemapHealth, type BasemapHealth } from '@/lib/map/basemap-health';
+import { BASEMAP_STALL_MS, basemapChipText, createBasemapHealth, type BasemapHealth } from '@/lib/map/basemap-health';
 import { fetchBasemapStyle } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
@@ -483,18 +483,16 @@ export default function MapView() {
     const el = map.getContainer();
     const health = createBasemapHealth();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let shown: BasemapHealth['state'] = 'ok';
+    let shown = 'ok|0';
     el.dataset.basemapState = 'ok';
     const publish = (h: BasemapHealth) => {
-      if (h.state === shown) return;
-      shown = h.state;
+      const key = `${h.state}|${h.missing}`;
+      if (key === shown) return;
+      shown = key;
       el.dataset.basemapState = h.state;
-      setBasemapHealth(h.state === 'offline' ? h : null);
+      setBasemapHealth(h.state === 'ok' ? null : h);
     };
-    const onError = (e: maplibregl.ErrorEvent) => {
-      if ((e as { sourceId?: string }).sourceId !== BASEMAP_SOURCE_ID) return;
-      const h = health.tileError();
-      publish(h);
+    const retry = (h: BasemapHealth) => {
       if (h.retryInMs === null || timer) return;
       timer = setTimeout(() => {
         timer = undefined;
@@ -502,18 +500,53 @@ export default function MapView() {
         if (map.getSource(BASEMAP_SOURCE_ID)) map.refreshTiles(BASEMAP_SOURCE_ID);
       }, h.retryInMs);
     };
+    const tileKey = (e: unknown): string | undefined => {
+      const c = (e as { tile?: { tileID?: { canonical?: { z: number; x: number; y: number } } } }).tile?.tileID?.canonical;
+      return c ? `${c.z}/${c.x}/${c.y}` : undefined;
+    };
+    const onError = (e: maplibregl.ErrorEvent) => {
+      if ((e as { sourceId?: string }).sourceId !== BASEMAP_SOURCE_ID) return;
+      const h = health.tileError(tileKey(e));
+      publish(h);
+      retry(h);
+    };
     const onData = (e: maplibregl.MapSourceDataEvent) => {
       if (e.sourceId !== BASEMAP_SOURCE_ID || !e.tile) return;
-      clearTimeout(timer);
-      timer = undefined;
-      publish(health.tileLoaded(Date.now()));
+      const h = health.tileLoaded(Date.now(), tileKey(e));
+      if (h.retryInMs === null) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      publish(h);
     };
+    // Tiles that failed out of view no longer matter; the ones now in view are asked for again.
+    const onMoveEnd = () => {
+      if (health.get().missing === 0) return;
+      publish(health.forgetMissing());
+      if (map.getSource(BASEMAP_SOURCE_ID)) map.refreshTiles(BASEMAP_SOURCE_ID);
+    };
+    // Tiles in view still loading after BASEMAP_STALL_MS (a hung host, nothing failed): LOADING chip.
+    let loadingSince: number | null = null;
+    const stallCheck = setInterval(() => {
+      let busy = false;
+      try {
+        busy = !!map.getSource(BASEMAP_SOURCE_ID) && !map.isSourceLoaded(BASEMAP_SOURCE_ID);
+      } catch {
+        busy = false;
+      }
+      const now = Date.now();
+      loadingSince = busy ? (loadingSince ?? now) : null;
+      publish(health.setStalled(loadingSince !== null && now - loadingSince >= BASEMAP_STALL_MS));
+    }, 1000);
     map.on('error', onError);
     map.on('sourcedata', onData);
+    map.on('moveend', onMoveEnd);
     return () => {
       clearTimeout(timer);
+      clearInterval(stallCheck);
       map.off('error', onError);
       map.off('sourcedata', onData);
+      map.off('moveend', onMoveEnd);
     };
   }, [loaded]);
 

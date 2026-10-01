@@ -49,3 +49,15 @@ surface as a `BASEMAP OFFLINE · [LAST TILE hh:mm UTC ·] RETRYING` chip and
 
 Browser requests now use `credentials: 'same-origin'` (sends nothing cross-origin, same as `omit`)
 so an app-shell `<link rel="preload" as="fetch" crossorigin>` for the two URLs above can be reused.
+
+## Re-probe 2026-10-01 (round 3b, honest UA)
+
+| URL | Status | Latency | Size | CORS | Notes |
+|---|---|---|---|---|---|
+| `https://tiles.openfreemap.org/styles/dark` | 200 | 0.28 s | 20,959 B | `*` | unchanged |
+| `https://tiles.openfreemap.org/planet` | 200 | 0.12 s | 19,254 B | `*` | unchanged; Cloudflare HIT, `max-age=86400`; tiles now under `planet/20260927_080001_pt/` |
+
+In the sandbox the browser's tile requests intermittently fail at the egress proxy
+(`net::ERR_TOO_MANY_RETRIES`), not at OpenFreeMap: curl from the same host gets 200. Those failed
+tiles are what left holes ("black wedge") in the globe; the map now reports them as
+BASEMAP INCOMPLETE · N TILES MISSING · RETRYING.

@@ -24,7 +24,7 @@ const tone = (id: string) => document.querySelector(`[data-testid="imagery-chip-
 
 describe('ImageryChips tones (m3: a source that is down uses the alert tone)', () => {
   it('BASEMAP OFFLINE and terrain unavailable are offline; dated imagery and other terrain states are reference', () => {
-    const offline = basemapChipText({ state: 'offline', lastGoodAt: null, retryInMs: 4000 })!;
+    const offline = basemapChipText({ state: 'offline', lastGoodAt: null, retryInMs: 4000, missing: 0 })!;
     render(
       <ImageryChips
         chips={[

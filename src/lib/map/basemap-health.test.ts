@@ -31,3 +31,31 @@ describe('basemap health (R1-m2)', () => {
     expect(basemapChipText(ok)).toBeNull();
   });
 });
+
+describe('basemap health: holes and stalls are reported (R3-M2, R3-m8)', () => {
+  it('a failed tile among loaded ones reads INCOMPLETE until that tile loads', () => {
+    const h = createBasemapHealth();
+    h.tileLoaded(1, '2/1/1');
+    const s = h.tileError('2/0/2');
+    expect(s.state).toBe('incomplete');
+    expect(s.retryInMs).toBe(BASEMAP_RETRY_BASE_MS);
+    expect(basemapChipText(h.tileLoaded(2, '2/1/2'))).toBe('BASEMAP INCOMPLETE · 1 TILE MISSING · RETRYING');
+    expect(h.tileLoaded(3, '2/0/2').state).toBe('ok');
+  });
+
+  it('forgets missing tiles after a camera move (the host re-requests the view)', () => {
+    const h = createBasemapHealth();
+    h.tileError('2/0/2');
+    h.tileError('2/2/0');
+    expect(h.get().missing).toBe(2);
+    expect(h.forgetMissing().state).toBe('ok');
+  });
+
+  it('tiles still loading after the stall window read LOADING, with the last observed tile time only', () => {
+    const h = createBasemapHealth();
+    expect(basemapChipText(h.setStalled(true))).toBe('BASEMAP LOADING');
+    h.tileLoaded(Date.UTC(2026, 9, 1, 4, 10));
+    expect(basemapChipText(h.get())).toBe('BASEMAP LOADING · LAST TILE 04:10 UTC');
+    expect(h.setStalled(false).state).toBe('ok');
+  });
+});
