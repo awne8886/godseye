@@ -38,5 +38,6 @@ export const GET = withRoute('/api/flight-route', async (req: Request) => {
   const pos = lat !== undefined && lng !== undefined ? { lat, lng, speedKt: speed ?? null, trackDeg: track ?? null } : null;
   const route = await flightRoute(callsign, pos, undefined, { icao24: icao24 ?? null });
   if (!route) return apiError(503, 'source_offline', 'No route source answered (VRS standing data, adsbdb, hexdb).', { retryAfter: 60, headers: { 'Retry-After': '60' } });
-  return json(route, { ttl: route.found ? 600 : 120 });
+  // A withheld (direction-conflict) answer is re-checked sooner: the next observation may settle it.
+  return json(route, { ttl: route.found && !route.directionConflict ? 600 : 120 });
 });
