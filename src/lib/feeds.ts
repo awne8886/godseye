@@ -164,6 +164,9 @@ export function defineFeed<T>(def: FeedDef<T>): Feed<T> {
     if ((state === 'live' || state === 'recent') && def.maxObservationAgeMs && observedAt !== null && now - observedAt > def.maxObservationAgeMs) {
       state = 'stale';
     }
+    // A mixed feed (reference rows + optional live rows) that observed nothing live this time is
+    // reference data: it must not light LIVE (e.g. maritime ports/chokepoints without an AIS key).
+    if (def.kind === 'mixed' && observedAt === null && (state === 'live' || state === 'recent')) state = 'reference';
     const meta: FeedMeta = {
       feed: def.key,
       kind: def.kind,

@@ -142,10 +142,14 @@ const KM_PER_DEG = 111.32;
 
 function segmentDistanceKm(lat: number, lng: number, a: readonly number[], b: readonly number[]): number {
   const k = Math.cos((lat * Math.PI) / 180);
-  const wrap = (x: number) => ((((x - lng) % 360) + 540) % 360) - 180;
-  const ax = wrap(a[0]!) * k * KM_PER_DEG;
+  const wrap = (x: number) => ((((x % 360) + 540) % 360) - 180);
+  // Wrap the first end around the query, the second around the first: a segment crossing the
+  // query's opposite meridian must not be unwrapped through the query point.
+  const aLng = wrap(a[0]! - lng);
+  const bLng = aLng + wrap(b[0]! - a[0]!);
+  const ax = aLng * k * KM_PER_DEG;
   const ay = (a[1]! - lat) * KM_PER_DEG;
-  const bx = wrap(b[0]!) * k * KM_PER_DEG;
+  const bx = bLng * k * KM_PER_DEG;
   const by = (b[1]! - lat) * KM_PER_DEG;
   const dx = bx - ax;
   const dy = by - ay;
