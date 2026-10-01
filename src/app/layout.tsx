@@ -1,15 +1,37 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, JetBrains_Mono, Space_Grotesk } from 'next/font/google';
+import localFont from 'next/font/local';
 import type { ReactNode } from 'react';
 import { APP_NAME, APP_SUBTITLE, REPO_URL } from '@/lib/config';
 import { THEME_BOOT_SCRIPT } from '@/lib/theme-boot';
 import Providers from './providers';
 import './globals.css';
 
-const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mono', display: 'swap' });
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
+// Fonts are bundled from @fontsource (OFL) so builds never depend on fonts.googleapis.com.
+const mono = localFont({
+  src: '../../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2',
+  weight: '100 800',
+  variable: '--font-jetbrains-mono',
+  display: 'swap',
+  fallback: ['ui-monospace', 'monospace'],
+});
+const inter = localFont({
+  src: '../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
+  weight: '100 900',
+  variable: '--font-inter',
+  display: 'swap',
+  fallback: ['system-ui', 'sans-serif'],
+});
 // Display face is used only for the wordmark and docs headings: don't preload it on the map route.
-const grotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-space-grotesk', display: 'swap', weight: ['500', '700'], preload: false });
+const grotesk = localFont({
+  src: [
+    { path: '../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-500-normal.woff2', weight: '500' },
+    { path: '../../node_modules/@fontsource/space-grotesk/files/space-grotesk-latin-700-normal.woff2', weight: '700' },
+  ],
+  variable: '--font-space-grotesk',
+  display: 'swap',
+  preload: false,
+  fallback: ['system-ui', 'sans-serif'],
+});
 
 export const metadata: Metadata = {
   title: `${APP_NAME} — ${APP_SUBTITLE}`,
