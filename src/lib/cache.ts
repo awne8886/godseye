@@ -184,7 +184,7 @@ export class FileStore implements SnapshotStore {
     // Temp files left by a crash mid-write (renamed into place on success) older than an hour, in
     // both directories: pinned snapshots are never evicted, but their orphaned temp files are.
     for (const dir of [lru, path.join(this.dir, 'pinned')]) {
-      const tmps = (await readdir(dir).catch(() => [] as string[])).filter((x) => x.endsWith('.tmp'));
+      const tmps = (await readdir(/*turbopackIgnore: true*/ dir).catch(() => [] as string[])).filter((x) => x.endsWith('.tmp'));
       for (const n of tmps) {
         const f = path.join(dir, n);
         const st = await stat(f).catch(() => null);
