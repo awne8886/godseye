@@ -66,3 +66,12 @@ export function admitLayers<T extends AdmissionLayer>(layers: readonly T[], stat
   }
   return { pass, waiting };
 }
+
+/**
+ * Admission order for waiting classes (visual-qa R4-M1): classes needed by the user's own focus
+ * layers (module Backgrounds: a planned route, drawn shapes) go before ambient data layers, each
+ * group keeping its first-seen order. Nothing is skipped; only the order changes.
+ */
+export function focusFirst(waiting: readonly string[], focusClasses: ReadonlySet<string>): string[] {
+  return [...waiting.filter((c) => focusClasses.has(c)), ...waiting.filter((c) => !focusClasses.has(c))];
+}

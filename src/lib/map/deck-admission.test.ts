@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { admitLayers, createAdmissionState, flattenLayers, layerClassKey } from './deck-admission';
+import { admitLayers, createAdmissionState, flattenLayers, focusFirst, layerClassKey } from './deck-admission';
 
 class ScatterplotLayer {
   static layerName = 'ScatterplotLayer';
@@ -51,5 +51,13 @@ describe('deck layer admission (perf B2)', () => {
     r = admitLayers(layers, st);
     expect(r.pass.map((l) => l.id)).toEqual(['a', 'iss-label', 'b']);
     expect(r.waiting).toEqual([]);
+  });
+});
+
+describe('R4-M1: focus classes first', () => {
+  it('puts the classes of the user focus layers (route, drawing) before ambient ones, keeping order', () => {
+    expect(focusFirst(['IconLayer', 'PathLayer', 'TextLayer', 'ScatterplotLayer'], new Set(['TextLayer', 'PathLayer']))).toEqual(['PathLayer', 'TextLayer', 'IconLayer', 'ScatterplotLayer']);
+    expect(focusFirst(['A', 'B'], new Set())).toEqual(['A', 'B']);
+    expect(focusFirst([], new Set(['A']))).toEqual([]);
   });
 });

@@ -61,3 +61,14 @@ In the sandbox the browser's tile requests intermittently fail at the egress pro
 (`net::ERR_TOO_MANY_RETRIES`), not at OpenFreeMap: curl from the same host gets 200. Those failed
 tiles are what left holes ("black wedge") in the globe; the map now reports them as
 BASEMAP INCOMPLETE · N TILES MISSING · RETRYING.
+
+## Re-probe 2026-10-01 06:50Z (round 4, curl, honest UA, `Origin: https://example.org`)
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| OpenFreeMap `styles/dark` | 200 | 0.29 s | `*` | style JSON; now fetched with a 15 s per-request deadline, retried after 2/4/8/16/30 s (BASEMAP UNAVAILABLE meanwhile) |
+| OpenFreeMap `planet` TileJSON | 200 | 0.28 s | `*` | tiles `planet/20260927_080001_pt/{z}/{x}/{y}.pbf` |
+| OpenFreeMap pbf 3/4/2 | 200 | 0.22 s | `*` | failed tiles are now retried by id (`refreshTiles(source, ids)`), never the whole view |
+| AWS Terrarium 10/163/395 | 200 | 0.19 s | `*` | keyless; a DEM outage after an earlier engage now reads "Terrain unavailable" |
+
+Auth: none. Licences unchanged (OpenFreeMap/OpenMapTiles/OSM ODbL attribution; Terrarium: Mapzen/AWS Open Data with its attribution).

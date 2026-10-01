@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { gotoMap, readCamera, waitForMapIdle } from '../map-engine/helpers';
+import { gotoMap, readCamera, tokenPixels, waitForMapIdle } from '../map-engine/helpers';
 
 /**
  * Flight Path Planner (§8). The plan uses bundled data (OurAirports, VRS standing data), so the
@@ -52,6 +52,8 @@ for (const proj of ['mercator', 'globe'] as const) {
         }, { timeout: 60_000 })
         .toBe(true);
       await page.waitForTimeout(1500); // tiles settle after the fly
+      // Pixels, not state (visual-qa R4-M1): the gold great circle is on screen left of the panel.
+      await expect.poll(() => tokenPixels(page, '--map-route-planned'), { timeout: 60_000 }).toBeGreaterThan(50);
       await page.screenshot({
         path: info.outputPath(`route-lhr-jfk-${proj}.png`),
         animations: 'disabled',

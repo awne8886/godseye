@@ -136,11 +136,12 @@ interface AdmissionStoreState {
   /** Start-up units still waiting for a slot (features, deck device, layer classes/types). */
   pending: number;
   /**
-   * Admitted entity layers the map has not drawn yet: deck layers whose MapLibre layer group is
-   * not in the style, native GeoJSON sources not loaded yet (visual-qa R3-M2).
+   * Admitted entity layers the map has not drawn yet (visual-qa R3-M2): deck layers whose MapLibre
+   * layer group is not in the style. Only the deck overlay produces this today; native layers are
+   * drawn by MapLibre as soon as they are added (their first draw is gated by `pending` instead).
    */
   undrawn: number;
-  /** Per producer (`deck`, `native`); `undrawn` is their sum. */
+  /** Per producer (currently only `deck`); `undrawn` is their sum. */
   undrawnBy: Record<string, number>;
   setScheduler(s: AdmissionScheduler | null): void;
   setPending(n: number): void;

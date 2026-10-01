@@ -73,6 +73,10 @@ export function attachTerrain(map: TerrainMap, { onStatus, onEngagedChange, isHi
     restoreOrder = undefined;
     if (originalPixelRatio !== null) map.setPixelRatio(originalPixelRatio);
     originalPixelRatio = null;
+    // A new engagement proves the DEM host again: tiles that arrived last time say nothing about
+    // now, so an outage after a release reads Terrain unavailable, not loading forever (R1r4-m3).
+    demTileArrived = false;
+    tileErrors = 0;
     onEngagedChange?.(false);
   };
   const activate = () => {

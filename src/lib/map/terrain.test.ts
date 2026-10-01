@@ -138,6 +138,24 @@ describe('terrain engage/release state machine', () => {
     expect(map.removeSource).not.toHaveBeenCalled();
   });
 
+  it('R1r4-m3: a DEM outage after an earlier successful engage reads error, not loading forever', async () => {
+    const { map, statuses } = setup(12);
+    vi.advanceTimersByTime(TERRAIN_SETTLE_MS);
+    map.emit('sourcedata', { sourceId: TERRAIN_SOURCE_ID, tile: {} });
+    expect(statuses.at(-1)).toBe('ready');
+    map.state.zoom = 9;
+    map.emit('zoom'); // release
+    expect(statuses.at(-1)).toBe('idle');
+    map.state.zoom = 12;
+    map.emit('moveend');
+    vi.advanceTimersByTime(TERRAIN_SETTLE_MS);
+    expect(statuses.at(-1)).toBe('loading');
+    for (let i = 0; i < 3; i++) map.emit('error', { sourceId: TERRAIN_SOURCE_ID });
+    await Promise.resolve();
+    expect(statuses.at(-1)).toBe('error');
+    expect(map.removeSource).toHaveBeenCalledTimes(2);
+  });
+
   it('cancels a pending engage when zooming back out, and stops on a source error', async () => {
     const { map, statuses } = setup(10.2);
     map.state.zoom = 9;

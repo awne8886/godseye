@@ -21,7 +21,12 @@
  * Layer groups (R3-M2): every `setProps` runs under `withParsedStyle`, so deck's layer groups enter
  * the style as soon as it is parsed instead of waiting for `isStyleLoaded()` (false while any tile
  * loads; a hung tile kept every deck layer off the globe). Groups still missing are re-applied on
- * the next style/source/idle event and published as undrawn, so the header never counts them.
+ * the next style/source/idle event and on a short backoff timer (`idle` may never come while tiles
+ * keep retrying), and published as undrawn, so the header never counts them.
+ *
+ * Focus first (visual-qa R4-M1): classes needed by module Backgrounds (the planned route, drawn
+ * shapes: what the user asked for) are admitted before ambient data-layer classes, ahead of
+ * native layer types too, so a `?route=` deep link draws within a few slots of style parse.
  * Owner: map-engine.
  */
 import { MapLibreOverlay } from '@deck.gl/maplibre';
@@ -29,7 +34,8 @@ import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useControl, useMap } from 'react-map-gl/maplibre';
 import { orderedDeckLayers, useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
-import { admitLayers, createAdmissionState, flattenLayers } from '@/lib/map/deck-admission';
+import { FEATURE_MODULES } from '@/features/registry';
+import { admitLayers, createAdmissionState, flattenLayers, focusFirst, layerClassKey, type AdmissionLayer } from '@/lib/map/deck-admission';
 import { useAdmissionStore } from '@/lib/map/admission-scheduler';
 import { type ApplyMap, missingDeckGroups, withParsedStyle } from '@/lib/map/deck-apply';
 import { type DeckLike, detachDeckPressPicking, initPendingLayers } from '@/lib/map/deck-events';
@@ -42,6 +48,21 @@ function withBeforeId(layers: readonly Layer[], beforeId: string | undefined): L
   if (!beforeId) return [...layers];
   return layers.map((layer) => ((layer.props as WithBeforeId).beforeId ? layer : layer.clone({ beforeId } as Partial<Layer['props']> & WithBeforeId)));
 }
+
+/** Deck entries published by module Backgrounds (keyed by module id): the user's own focus layers. */
+const FOCUS_KEYS = new Set(FEATURE_MODULES.filter((m) => m.Background).map((m) => m.id));
+
+function focusClasses(entries: ReturnType<typeof useDeckLayerStore.getState>['entries']): Set<string> {
+  const out = new Set<string>();
+  for (const [key, e] of Object.entries(entries)) {
+    if (!FOCUS_KEYS.has(key)) continue;
+    for (const l of flattenLayers<AdmissionLayer>([e.layers] as unknown[])) out.add(layerClassKey(l));
+  }
+  return out;
+}
+
+/** Re-apply delays while deck groups are still missing from the style (ms after each apply). */
+const HEAL_BACKOFF_MS = [50, 100, 200, 400, 800, 1600, 3200];
 
 /** The overlay's Deck instance (a private field; read-only use). */
 const deckOf = (o: MapLibreOverlay | undefined): DeckLike | undefined => (o as unknown as { _deck?: DeckLike } | undefined)?._deck;
@@ -57,7 +78,8 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
 
   const { pass, waiting } = useMemo(() => {
     const all = flattenLayers<Layer>(orderedDeckLayers(entries) as unknown[]);
-    return admitLayers(all, admission);
+    const r = admitLayers(all, admission);
+    return { pass: r.pass, waiting: focusFirst(r.waiting, focusClasses(entries)) };
     // `admittedVersion` re-runs admission when a class was admitted.
   }, [entries, admittedVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const layers = useMemo(() => withBeforeId(pass, beforeId), [pass, beforeId]);
@@ -80,10 +102,30 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   const layersRef = useRef(layers);
   const beforeIdRef = useRef(beforeId);
   /** Hand deck `next` (groups added once the style is parsed) and publish what is still off the map. */
+  const healTimer = useRef<{ id: ReturnType<typeof setTimeout> | null; step: number }>({ id: null, step: 0 });
   const applyRef = useRef((next: LayersList) => {
     const map = mapOfOverlay(overlay);
     withParsedStyle(map, () => overlay.setProps({ layers: next }));
-    useAdmissionStore.getState().setUndrawn('deck', missingDeckGroups(map, flattenLayers<Layer>(next as unknown[])).length);
+    const missing = missingDeckGroups(map, flattenLayers<Layer>(next as unknown[])).length;
+    useAdmissionStore.getState().setUndrawn('deck', missing);
+    // Groups still missing (style not parsed yet, or a style swap): try again shortly, with backoff,
+    // instead of waiting for an `idle` that failing tile retries can postpone indefinitely.
+    const h = healTimer.current;
+    if (h.id !== null) clearTimeout(h.id);
+    h.id = null;
+    if (!missing) h.step = 0;
+    else if (h.step < HEAL_BACKOFF_MS.length) {
+      h.id = setTimeout(() => {
+        h.id = null;
+        applyRef.current(layersRef.current);
+      }, HEAL_BACKOFF_MS[h.step++]);
+    }
+    const el = (map as { getContainer?: () => HTMLElement } | null)?.getContainer?.();
+    if (el) {
+      // Diagnostics for e2e: deck layers handed over, and groups still missing from the style.
+      el.dataset.deckLayers = String((next as unknown[]).length);
+      el.dataset.deckUndrawn = String(missing);
+    }
   });
   useEffect(() => {
     layersRef.current = layers;
@@ -101,7 +143,11 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     if (!scheduler) return;
     return scheduler.register({
       id: 'deck-classes',
-      priority: 2,
+      // Ahead of native layer types while a focus class (route, drawing) is next in line.
+      get priority() {
+        const next = waitingRef.current[0];
+        return next && focusClasses(useDeckLayerStore.getState().entries).has(next) ? 1 : 2;
+      },
       pending: () => waitingRef.current.length,
       admitOne: () => {
         const next = waitingRef.current[0];
@@ -126,6 +172,7 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   useEffect(() => {
     const map = mapRef?.getMap();
     if (!map) return;
+    const heal0 = healTimer.current; // a stable object (mutated, never replaced)
     const reapply = () => applyRef.current(layersRef.current);
     // A style change (deck's own retry needs isStyleLoaded) or a group still missing: apply again.
     const heal = () => {
@@ -140,6 +187,8 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
       map.off('styledata', heal);
       map.off('sourcedata', heal);
       map.off('idle', heal);
+      if (heal0.id !== null) clearTimeout(heal0.id);
+      heal0.id = null;
       useAdmissionStore.getState().setUndrawn('deck', 0);
     };
   }, [mapRef, overlay]);
