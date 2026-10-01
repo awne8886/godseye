@@ -1,0 +1,11 @@
+{
+  "_note": "Response headers of one official still per provider, probed 2026-10-01 07:49-08:04 UTC with the GODSEYE User-Agent and FRAME_ACCEPT (curl, 2 s pacing). Bodies are not recorded except the NSW HTML page (nsw-frame-unavailable.2026-10-01.html).",
+  "hktd": { "url": "https://tdcctv.data.one.gov.hk/H429F.JPG", "status": 200, "content-type": "image/jpeg", "last-modified": "Thu, 01 Oct 2026 07:48:33 GMT", "date": "Thu, 01 Oct 2026 07:49:41 GMT", "cors": "*", "ms": 1542 },
+  "caltrans": { "url": "https://cwwp2.dot.ca.gov/data/d7/cctv/image/i110196avenue26offramp/i110196avenue26offramp.jpg", "status": 200, "content-type": "image/jpeg", "last-modified": "Thu, 01 Oct 2026 07:48:12 GMT", "date": "Thu, 01 Oct 2026 07:49:43 GMT", "cors": "*", "ms": 488 },
+  "digitraffic": { "url": "https://weathercam.digitraffic.fi/C0150301.jpg", "status": 200, "content-type": "image/jpeg", "last-modified": "Thu, 01 Oct 2026 06:48:44 GMT", "date": "Thu, 01 Oct 2026 07:49:51 GMT", "cors": "*", "ms": 535 },
+  "nsw": { "url": "https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/5_ways_miranda.jpeg", "status": 200, "content-type": "text/html", "content-length": "307", "last-modified": "Wed, 30 Aug 2023 02:26:41 GMT", "date": "Thu, 01 Oct 2026 07:49:54 GMT", "x-cache": "Error from cloudfront", "cors": null, "ms": 1376 },
+  "ottawa": { "url": "https://traffic.ottawa.ca/map/camera?id=148", "status": 200, "content-type": "image/jpg", "last-modified": null, "date": "Thu, 01 Oct 2026 07:50:43 GMT", "cors": null, "ms": 502 },
+  "thb": { "url": "https://cctv-ss06.thb.gov.tw/T3-262K+800/snapshot", "status": 200, "content-type": "image/jpeg", "last-modified": null, "date": null, "cors": null, "ms": 1747 },
+  "vialietuva": { "url": "https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=305", "status": 200, "content-type": "image/jpeg", "last-modified": null, "date": "Thu, 01 Oct 2026 07:50:49 GMT", "cors": "*", "ms": 771 },
+  "toronto": { "url": "https://opendata.toronto.ca/transportation/tmc/rescucameraimages/CameraImages/loc8170.jpg", "status": 200, "content-type": "image/jpeg", "last-modified": "Wed, 30 Sep 2026 15:51:07 GMT", "date": "Thu, 01 Oct 2026 07:51:07 GMT", "cors": null, "ms": 404 }
+}

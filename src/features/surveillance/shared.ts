@@ -3,9 +3,10 @@
  * Isomorphic (no server-only imports). Owner: layers-surveillance.
  */
 import { contactFrom, REPO_URL } from '@/lib/config';
+import { formatAge } from '@/lib/freshness';
 import type { z } from 'zod';
 import type { RemovalContact as RemovalContactSchema } from '@/lib/schemas/surveillance';
-import type { Camera } from '@/lib/types';
+import type { Camera, FrameHealth } from '@/lib/types';
 
 export type RemovalContact = z.infer<typeof RemovalContactSchema>;
 
@@ -148,4 +149,80 @@ export const CCTV_ZOOM_BANDS = [
 export function zoomBand(zoom: number): number {
   const i = CCTV_ZOOM_BANDS.findIndex((b) => zoom < b.maxZoom);
   return i < 0 ? CCTV_ZOOM_BANDS.length - 1 : i;
+}
+
+// ── Frame freshness and availability (viewer, preview tiles, camera card) ───────
+export type FrameAge = { state: 'recent' | 'stale' | 'unknown'; label: string; ageS: number | null };
+
+/**
+ * Freshness of one relayed still from the operator's own frame time (`X-Frame-Observed-At`). A
+ * still is a snapshot, so this is never LIVE: `recent` within 6 operator intervals (≥ 60 s each),
+ * then `stale`. No frame time (or one more than a minute in the future) is `unknown` ("UNTIMED"):
+ * only the fetch time is known, and the frame is never presented as current.
+ */
+export function frameAge(observedAt: string | null | undefined, cadenceS: number, now: number = Date.now()): FrameAge {
+  const t = observedAt ? Date.parse(observedAt) : NaN;
+  if (!Number.isFinite(t) || t - now > 60_000) return { state: 'unknown', label: 'UNTIMED', ageS: null };
+  const ageMs = Math.max(0, now - t);
+  const ageS = Math.round(ageMs / 1000);
+  const recent = ageMs <= 6 * Math.max(60, cadenceS) * 1000;
+  return recent ? { state: 'recent', label: formatAge(ageMs), ageS } : { state: 'stale', label: `STALE · ${formatAge(ageMs)}`, ageS };
+}
+
+/** A failed stills-proxy answer as the client reads it (FrameError in the schema). */
+export interface FrameFailure {
+  /** `offline`: the operator answered without a usable frame (CAMERA OFFLINE); `unavailable`: transient (FEED UNAVAILABLE). */
+  state: 'offline' | 'unavailable';
+  detail: string;
+  message: string;
+}
+
+/** Read a failed proxy answer; anything unreadable is a transient FEED UNAVAILABLE. */
+export function readFrameFailure(status: number, body: unknown): FrameFailure {
+  const b = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
+  const detail = typeof b.detail === 'string' && /^[a-z0-9_]{1,40}$/.test(b.detail) ? b.detail : `http_${status}`;
+  const state = b.state === 'offline' ? 'offline' : 'unavailable';
+  const message = typeof b.message === 'string' && b.message.length <= 200 ? b.message : 'The frame could not be loaded. Try again.';
+  return { state, detail, message };
+}
+
+/** Short HUD wording for a frame failure reason (proxy `detail`, stream-status `reason`). */
+export const FRAME_REASON_LABEL: Record<string, string> = {
+  not_an_image: 'NOT AN IMAGE',
+  upstream_404: 'NO FRAME (404)',
+  upstream_410: 'NO FRAME (410)',
+  no_snapshot: 'NO SNAPSHOT',
+  timeout: 'TIMEOUT',
+  queued: 'SERVER BUSY',
+  too_large: 'FILE TOO LARGE',
+  blocked: 'OFF ALLOW-LIST',
+  network: 'UNREACHABLE',
+};
+
+/**
+ * Card / viewer wording for a provider's frame availability (/api/cctv/providers `frames`). FAILING
+ * and UNAVAILABLE count operator-wide failures over at least 5 cameras; a handful of failed cameras
+ * is only ever "NO FRAME RELAYED", never a verdict on the operator.
+ */
+export function frameHealthLabel(h: Pick<FrameHealth, 'state' | 'cameras' | 'camerasFailing' | 'camerasOperatorFault'> | null | undefined): { text: string; tone: 'ok' | 'warn' | 'error' | 'idle' } {
+  if (!h || h.state === 'unchecked') return { text: 'NOT CHECKED YET', tone: 'idle' };
+  const down = h.camerasOperatorFault ?? h.camerasFailing;
+  if (h.state === 'unavailable') return { text: `UNAVAILABLE · ${down}/${h.cameras} FAILING`, tone: 'error' };
+  if (h.state === 'failing') return { text: `FAILING · ${down}/${h.cameras} CAMERAS`, tone: 'warn' };
+  if (h.state === 'inconclusive') return { text: `NO FRAME RELAYED · ${h.cameras} TRIED`, tone: 'idle' };
+  return { text: h.camerasFailing ? `AVAILABLE · ${h.camerasFailing}/${h.cameras} WITHOUT FRAME` : 'AVAILABLE', tone: 'ok' };
+}
+
+/** One plain sentence for an operator whose frames are unavailable (null otherwise). */
+export function frameHealthNote(h: Pick<FrameHealth, 'state' | 'errors' | 'failed'> | null | undefined): string | null {
+  if (!h || h.state !== 'unavailable') return null;
+  const pages = (h.errors.not_an_image ?? 0) * 2 > h.failed;
+  return pages
+    ? 'This operator is answering with web pages instead of camera images for almost every camera tried in the last 10 minutes (a fault on the operator side). Each camera is still retried at the operator’s interval.'
+    : 'This operator failed with server errors, timeouts or connection failures for almost every camera tried in the last 10 minutes. Each camera is still retried at the operator’s interval.';
+}
+
+/** `hh:mmZ` of an ISO time (HUD clock), or null. */
+export function hhmmZ(iso: string | null | undefined): string | null {
+  return iso && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) ? `${iso.slice(11, 16)}Z` : null;
 }

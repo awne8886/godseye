@@ -158,6 +158,39 @@ describe('GET /api/cctv', () => {
     expect((await GET(req('/api/cctv?region=US;DROP'), undefined)).status).toBe(400);
   });
 
+  it('R2 MINOR-2 (rounds 3–4): providers age_s follows the inventory fetch instead of freezing at the first request', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const t0 = Date.parse('2026-10-01T05:10:54Z');
+      vi.setSystemTime(t0);
+      const first = await GET(req('/api/cctv?region=us-west'), undefined);
+      const a = (await body(first)).json;
+      expect(a.providers.caltrans.age_s).toBe(0);
+      // Reviewer's repro: 05:17:32 → fetchedAt 05:10:54 but providers {odot: 3, wsdot: 2, caltrans: 0}.
+      vi.setSystemTime(Date.parse('2026-10-01T05:17:32Z'));
+      const later = await GET(req('/api/cctv?region=us-west', { 'if-none-match': first.headers.get('etag')! }), undefined);
+      expect(later.status).toBe(200); // a new minute is a new version, never a 304 with the old ages
+      const b = (await body(later)).json;
+      expect(b.meta.fetchedAt).toBe(a.meta.fetchedAt);
+      const age = (Date.now() - Date.parse(b.meta.fetchedAt)) / 1000;
+      for (const [name, p] of Object.entries(b.providers as Record<string, { age_s: number | null }>)) {
+        if (p.age_s !== null) expect(p.age_s, name).toBeGreaterThanOrEqual(age - 60);
+      }
+      expect(b.providers.caltrans.age_s).toBe(398);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cctvVersion changes every minute and with the inventory, not within a minute', async () => {
+    const { cctvVersion } = await import('@/features/surveillance/server/cctv-response');
+    const s = [{ region: 'us-west', fetchedAt: '2026-10-01T05:10:54.000Z', state: 'live' }];
+    const t = Date.parse('2026-10-01T05:17:02Z');
+    expect(cctvVersion(s, [], [], '', t)).toBe(cctvVersion(s, [], [], '', t + 50_000));
+    expect(cctvVersion(s, [], [], '', t)).not.toBe(cctvVersion(s, [], [], '', t + 60_000));
+    expect(cctvVersion(s, [], [], '', t)).not.toBe(cctvVersion([{ ...s[0]!, fetchedAt: '2026-10-01T05:40:54.000Z' }], [], [], '', t));
+  });
+
   it('every region loads from its fixtures', async () => {
     for (const r of CCTV_REGIONS.filter((x) => x !== 'uk')) {
       const res = await GET(req(`/api/cctv?region=${r}`), undefined);

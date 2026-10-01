@@ -1,0 +1,134 @@
+[
+ {
+  "type": "Feature",
+  "id": "023651ee-389c-4677-978e-d39b6c24c1e7",
+  "geometry": {
+   "type": "Point",
+   "coordinates": [
+    151.10533,
+    -34.02977
+   ]
+  },
+  "properties": {
+   "region": "SYD_SOUTH",
+   "title": "5 Ways (Miranda)",
+   "view": "5 Ways at The Boulevarde looking west towards Sutherland.",
+   "direction": "W",
+   "href": "https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/5_ways_miranda.jpeg",
+   "searchDates": ", , , "
+  },
+  "eventCategory": "liveCams",
+  "path": "5-ways-miranda",
+  "eventType": "liveCams"
+ },
+ {
+  "type": "Feature",
+  "id": "9ca3da77-7d9c-4820-a23a-df48d4712522",
+  "geometry": {
+   "type": "Point",
+   "coordinates": [
+    151.161891,
+    -33.933667
+   ]
+  },
+  "properties": {
+   "region": "SYD_MET",
+   "title": "Airport Drive (Mascot)",
+   "view": "Airport Drive at Marsh Street looking east towards the city.",
+   "direction": "E",
+   "href": "https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/airport_dr_mascot.jpeg",
+   "searchDates": ", , , "
+  },
+  "eventCategory": "liveCams",
+  "path": "airport-drive-mascot",
+  "eventType": "liveCams"
+ },
+ {
+  "type": "Feature",
+  "id": "d103f206-1abb-4056-bf3d-2da06e579be4",
+  "geometry": {
+   "type": "Point",
+   "coordinates": [
+    151.23122,
+    -33.90641
+   ]
+  },
+  "properties": {
+   "region": "SYD_MET",
+   "title": "Alison Road (Randwick)",
+   "view": "Alison Road at Darley Road looking north-west towards Anzac Parade.",
+   "direction": "N-W",
+   "href": "https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/alison_road_randwick.jpeg",
+   "searchDates": ", , , "
+  },
+  "eventCategory": "liveCams",
+  "path": "alison-road-randwick",
+  "eventType": "liveCams"
+ },
+ {
+  "type": "Feature",
+  "id": "285aad4a-4108-4800-99a5-220b9d27d8b0",
+  "geometry": {
+   "type": "Point",
+   "coordinates": [
+    151.18022,
+    -33.86789
+   ]
+  },
+  "properties": {
+   "region": "SYD_MET",
+   "title": "Anzac Bridge (Eastbound)",
+   "view": "Intersection of Victoria Road and Anzac Bridge looking east towards the Sydney CBD.",
+   "direction": "E",
+   "href": "https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/anzac_bridge_eastbound.jpeg",
+   "searchDates": ", , , "
+  },
+  "eventCategory": "liveCams",
+  "path": "anzac-bridge-eastbound",
+  "eventType": "liveCams"
+ },
+ {
+  "type": "Feature",
+  "id": "087dafef-dd53-4eec-adfe-bc82c3ee9c1f",
+  "geometry": {
+   "type": "Point",
+   "coordinates": [
+    151.188029,
+    -33.869692
+   ]
+  },
+  "properties": {
+   "region": "SYD_MET",
+   "title": "Anzac Bridge (Westbound)",
+   "view": "Eastern side of Anzac Bridge looking west towards Rozelle.",
+   "direction": "W",
+   "href": "https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/anzac_bridge_westbound.jpeg",
+   "searchDates": ", , , "
+  },
+  "eventCategory": "liveCams",
+  "path": "anzac-bridge-westbound",
+  "eventType": "liveCams"
+ },
+ {
+  "type": "Feature",
+  "id": "494de179-e5e8-4938-a69b-3caf1aa4074f",
+  "geometry": {
+   "type": "Point",
+   "coordinates": [
+    151.223699,
+    -33.907296
+   ]
+  },
+  "properties": {
+   "region": "SYD_MET",
+   "title": "Anzac Parade (Kensington)",
+   "view": "Anzac Parade at Goodwood Street looking north towards the city.",
+   "direction": "N",
+   "href": "https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/anzac_parade_kensington.jpeg",
+   "searchDates": ", , , "
+  },
+  "eventCategory": "liveCams",
+  "path": "anzac-parade-kensington",
+  "eventType": "liveCams"
+ }
+]

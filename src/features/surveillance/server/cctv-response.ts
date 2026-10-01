@@ -2,7 +2,8 @@
  * Builds the columnar `/api/cctv` response for a set of regions: waits up to 12 s for regions with
  * no data yet (2 s once any region has data, OSIRIS's WARM_GRACE), lists the rest in
  * `pendingRegions` for the client to retry, merges meta/providers, and serves the payload
- * pre-serialised and precompressed with a weak ETag (304 on If-None-Match). A region whose every
+ * pre-serialised and precompressed with a weak ETag (304 on If-None-Match), rebuilt at least once a
+ * minute so `providers.*.age_s` is the inventory's real age (`cctvVersion`). A region whose every
  * provider needs a key this instance lacks is "not configured": it is never fetched, it is listed
  * in `disabledRegions` and its providers report `skipped: 'not-configured'` (200, no rows). 503
  * SOURCE OFFLINE only when configured providers were asked and none of them answered.
@@ -92,6 +93,24 @@ export function toRows(cameras: readonly Camera[], env: Record<string, string | 
   });
 }
 
+/** `providers.*.age_s` (and the freshness state) are re-derived at least this often. */
+export const AGE_BUCKET_MS = 60_000;
+
+/**
+ * Cache version of a /api/cctv payload. The payload is serialised and compressed once per version,
+ * so the version carries a minute bucket: without it `providers.*.age_s` stayed at the value of the
+ * first request (0–3 s) for the whole 30-min inventory TTL (R2 MINOR-2, rounds 3–4).
+ */
+export function cctvVersion(
+  served: readonly { region: string; fetchedAt: string | null; state: string }[],
+  pendingRegions: readonly string[],
+  disabledRegions: readonly string[],
+  linkOut: string,
+  now: number = Date.now(),
+): string {
+  return [...served.map((r) => `${r.region}@${r.fetchedAt}:${r.state}`), `pending=${pendingRegions.join('+')}`, `off=${disabledRegions.join('+')}`, `lo=${linkOut}`, `age=${Math.floor(now / AGE_BUCKET_MS)}`].join('|');
+}
+
 /** Providers of not-configured regions, reported as skipped (never silently absent). */
 export function disabledProviders(regions: readonly CctvRegion[]): Providers {
   const out: Providers = {};
@@ -132,7 +151,7 @@ export async function cctvResponse(req: Request, regions: readonly CctvRegion[],
   }
   const counts = Object.fromEntries(served.map((r) => [r.region, r.res.data!.length]));
   const linkOut = process.env.CCTV_LINK_OUT_ONLY ?? '';
-  const version = [...served.map((r) => `${r.region}@${r.res.meta.fetchedAt}:${r.res.meta.state}`), `pending=${pendingRegions.join('+')}`, `off=${disabledRegions.join('+')}`, `lo=${linkOut}`].join('|');
+  const version = cctvVersion(served.map((r) => ({ region: r.region, fetchedAt: r.res.meta.fetchedAt, state: r.res.meta.state })), pendingRegions, disabledRegions, linkOut);
   const key = `cctv:${regions.join(',')}`;
   return compressedJson(
     req,

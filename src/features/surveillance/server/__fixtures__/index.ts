@@ -36,6 +36,12 @@ export const FX = {
   vialietuvaVkr: 'vialietuva-vkr.2026-10-01.json',
   vialietuvaInfo: 'vialietuva-info.2026-10-01.json',
   catalogueStills: 'catalogue-stills.2026-10-01.json.gz',
+  /** Still response headers per provider (HK TD, Caltrans, Digitraffic, NSW, Ottawa, THB, Via Lietuva, Toronto). */
+  frameHeaders: 'frame-headers.2026-10-01.json',
+  /** The 307-byte text/html page NSW served for every `.jpeg` still (2026-09-30 → 10-01). */
+  nswHtmlFrame: 'nsw-frame-unavailable.2026-10-01.html',
+  /** The first six `liveCams` features of the NSW Live Traffic feed (241 cameras), probed 2026-10-01T10:35Z. */
+  nswLiveCams: 'livetraffic-livecams.2026-10-01.json',
   ytLive: `yt-aljazeera-live.${D}.html`,
   ytChannel: `yt-cspan-live.${D}.html`,
   ytUnknown: `yt-cbc-live.${D}.html`,
