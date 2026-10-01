@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FOCUS_MAX_WAIT_MS } from './admission-scheduler';
 import { admitLayers, createAdmissionState, flattenLayers, focusFirst } from './deck-admission';
-import { ADMISSION_PRIORITY, deckClassMaxWait, deckClassPriority, focusClassOrder, hasFocusLayers, registerFocusKeys } from './focus';
+import { FEATURE_MODULES } from '@/features/registry';
+import { ADMISSION_PRIORITY, deckClassMaxWait, deckClassPriority, focusClassOrder, focusKeysOf, hasFocusLayers, registerFocusKeys } from './focus';
 
 const layerClass = (layerName: string) =>
   class {
@@ -16,7 +17,8 @@ const ScatterplotLayer = layerClass('ScatterplotLayer');
 const TextLayer = layerClass('TextLayer');
 const IconLayer = layerClass('IconLayer');
 
-const KEYS = new Set(['flight-paths', 'panels-recon']);
+/** The focus keys the app registers (FeatureLayers.tsx, DeckOverlay.tsx), from the real registry. */
+const KEYS = new Set(focusKeysOf(FEATURE_MODULES));
 
 /** `?route=LHR-JFK` with the default layers: what the deck host sees once the data modules mounted. */
 function routeEntries() {
@@ -32,6 +34,14 @@ function routeEntries() {
 }
 
 describe('focus layers (the user’s route/flight/drawing) go first', () => {
+  it('registers exactly the module Backgrounds: the route planner and the recon overlays (not the aviation track)', () => {
+    expect([...KEYS]).toEqual(['flight-paths', 'panels-recon']);
+    expect(focusKeysOf([{ id: 'a', Background: () => null }, { id: 'b' }])).toEqual(['a']);
+    const ambient = { aviation: { z: 80, layers: [new PathLayer('track')] }, 'flight-paths-anim': { z: 91, layers: [new ScatterplotLayer('comet')] } };
+    expect(hasFocusLayers(ambient, KEYS)).toBe(false);
+    expect(focusClassOrder({ ...ambient, 'panels-recon': { z: 95, layers: [new TextLayer('drawn-label')] } }, KEYS)).toEqual(['TextLayer']);
+  });
+
   it('lists the focus classes in the focus layers’ drawing order: the arc’s PathLayer first', () => {
     expect(focusClassOrder(routeEntries(), KEYS)).toEqual(['PathLayer', 'ScatterplotLayer', 'TextLayer']);
     expect(focusClassOrder({ space: { z: 90, layers: [new IconLayer('s')] } }, KEYS)).toEqual([]);

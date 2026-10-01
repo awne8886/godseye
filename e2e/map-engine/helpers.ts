@@ -162,6 +162,13 @@ export interface TokenPixelOptions {
  * Measured with this rule on saved screenshots (desktop globe, default layers, day_night on): 0–2 px
  * before the arc is drawn, 713–1043 px once it is (globe and mercator), with or without the comet;
  * the same globe view without a route, every default layer drawn: 19–37 px.
+ *
+ * Count only once the style has parsed (and the splash, gold too, has lifted): on a slow style
+ * fetch something gold already scores ≈ 232 px under this rule in the default clip before the
+ * style parses (seen 9.1–15.2 s after navigation on both the old and the new build; with a route
+ * also after style parse, before the arc). It stays below the 300 px route threshold, and the route
+ * specs only count frames produced after style parse and splash removal; anyone starting a
+ * screencast or poll earlier must exclude that window too (`watchTokenFrames(...).first(notBefore)`).
  */
 export async function tokenPixels(page: Page, token: string, rect: CanvasRect = DEFAULT_RECT, opts: TokenPixelOptions = {}): Promise<number> {
   const rgb = await tokenRgb(page, token);
@@ -312,57 +319,127 @@ export interface TokenFrame {
   px: number;
   /** Frames decoded until this one (diagnostics). */
   frames: number;
-  /** Highest count seen in an earlier frame (diagnostics). */
+  /** Highest count in an earlier frame at or after `notBefore` (diagnostics). */
   maxBefore: number;
+  /** Highest count in a frame before `notBefore`, not eligible (diagnostics: splash, boot). */
+  maxEarly: number;
+  /** Frames at or after `notBefore` skipped for counting above `maxPx` (diagnostics). */
+  overMax: number;
+}
+
+export interface TokenFrameWatch {
+  /**
+   * The first frame produced at or after `notBefore` (epoch ms; may resolve later than the frames
+   * it rules on) with `minPx` ≤ count ≤ `maxPx`, or null after `timeoutMs` from this call. Reads
+   * the token colour and canvas box from the page first, so call it once the app has rendered.
+   */
+  first(notBefore: Promise<number> | number, timeoutMs: number): Promise<TokenFrame | null>;
+  /** Stop the screencast and detach (idempotent). */
+  stop(): Promise<void>;
+}
+
+/**
+ * Start a CDP screencast now (before `page.goto` if wanted, so no early frame is missed) and judge
+ * its frames later with `first()`. Frames are decoded in Node with `tokenPixels`' rule, so nothing
+ * waits for a page main thread that a software GPU keeps busy (a forced screenshot there took
+ * 4–22 s). Frames that arrive before `first()` knows the token colour are kept (as PNG bytes, at
+ * most `bufferFrames`) and judged once it does. Chromium only (every project in this suite).
+ */
+export async function watchTokenFrames(page: Page, token: string, o: { minPx: number; maxPx?: number; rect?: CanvasRect; opts?: TokenPixelOptions; bufferFrames?: number }): Promise<TokenFrameWatch> {
+  const maxPx = o.maxPx ?? Infinity;
+  const rect = o.rect ?? DEFAULT_RECT;
+  const cap = o.bufferFrames ?? 240;
+  const cdp = await page.context().newCDPSession(page);
+  const raw: { epochMs: number; png: Buffer }[] = [];
+  const counted: { epochMs: number; px: number }[] = [];
+  let measure: ((png: Buffer) => number) | null = null;
+  let onCounted: (() => void) | null = null;
+  let stopped = false;
+  cdp.on('Page.screencastFrame', (f) => {
+    if (stopped) return;
+    const epochMs = f.metadata.timestamp !== undefined ? f.metadata.timestamp * 1000 : Date.now();
+    try {
+      const png = Buffer.from(f.data, 'base64');
+      if (measure) {
+        counted.push({ epochMs, px: measure(png) });
+        onCounted?.();
+      } else {
+        raw.push({ epochMs, png });
+        if (raw.length > cap) raw.shift();
+      }
+    } finally {
+      // Acknowledged after counting, so frames never pile up faster than they are decoded.
+      cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
+    }
+  });
+  await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
+  const stop = async () => {
+    if (stopped) return;
+    stopped = true;
+    onCounted = null;
+    await cdp.send('Page.stopScreencast').catch(() => undefined);
+    await cdp.detach().catch(() => undefined);
+  };
+  const first = async (notBefore: Promise<number> | number, timeoutMs: number): Promise<TokenFrame | null> => {
+    const rgb = await tokenRgb(page, token);
+    const box = await canvasBox(page);
+    const view = page.viewportSize();
+    measure = (png) => {
+      const img = decodePng(png);
+      const s = view ? img.width / view.width : 1;
+      const area = { x: (box.x + box.width * rect.x0) * s, y: (box.y + box.height * rect.y0) * s, width: box.width * (rect.x1 - rect.x0) * s, height: box.height * (rect.y1 - rect.y0) * s };
+      return countTokenPixels(img, rgb, area, o.opts);
+    };
+    for (const r of raw.splice(0)) counted.push({ epochMs: r.epochMs, px: measure(r.png) });
+    let gate: number | undefined;
+    const judge = (): TokenFrame | null => {
+      if (gate === undefined) return null;
+      let maxBefore = 0;
+      let maxEarly = 0;
+      let overMax = 0;
+      for (let i = 0; i < counted.length; i++) {
+        const c = counted[i]!;
+        if (c.epochMs < gate) maxEarly = Math.max(maxEarly, c.px);
+        else if (c.px > maxPx) overMax++;
+        else if (c.px >= o.minPx) return { epochMs: c.epochMs, px: c.px, frames: i + 1, maxBefore, maxEarly, overMax };
+        else maxBefore = Math.max(maxBefore, c.px);
+      }
+      return null;
+    };
+    return new Promise<TokenFrame | null>((resolve) => {
+      let done = false;
+      const finish = (v: TokenFrame | null) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        onCounted = null;
+        resolve(v);
+      };
+      const timer = setTimeout(() => finish(null), timeoutMs);
+      const check = () => {
+        const hit = judge();
+        if (hit) finish(hit);
+      };
+      onCounted = check;
+      Promise.resolve(notBefore).then((t) => {
+        gate = t;
+        check();
+      }, () => finish(null));
+    });
+  };
+  return { first, stop };
 }
 
 /**
  * The first composited frame, from now on, that shows at least `minPx` pixels of `token` inside
  * `rect` (`tokenPixels`' rule), with the time the compositor produced it — or null after
- * `timeoutMs`. Frames come from a CDP screencast and are decoded here, so nothing waits for a
- * page main thread that a software GPU keeps busy (a forced screenshot there took 4–22 s).
- * Chromium only (every project in this suite).
+ * `timeoutMs` (see `watchTokenFrames`).
  */
-export async function firstTokenFrame(page: Page, token: string, o: { minPx: number; timeoutMs: number; rect?: CanvasRect; opts?: TokenPixelOptions }): Promise<TokenFrame | null> {
-  const rgb = await tokenRgb(page, token);
-  const box = await canvasBox(page);
-  const view = page.viewportSize();
-  const rect = o.rect ?? DEFAULT_RECT;
-  const cdp = await page.context().newCDPSession(page);
-  let frames = 0;
-  let maxBefore = 0;
+export async function firstTokenFrame(page: Page, token: string, o: { minPx: number; maxPx?: number; timeoutMs: number; rect?: CanvasRect; opts?: TokenPixelOptions }): Promise<TokenFrame | null> {
+  const watch = await watchTokenFrames(page, token, o);
   try {
-    return await new Promise<TokenFrame | null>((resolve) => {
-      let done = false;
-      const timer = setTimeout(() => {
-        done = true;
-        resolve(null);
-      }, o.timeoutMs);
-      cdp.on('Page.screencastFrame', (f) => {
-        if (done) return;
-        const receivedAt = Date.now();
-        try {
-          const img = decodePng(Buffer.from(f.data, 'base64'));
-          const s = view ? img.width / view.width : 1;
-          const area = { x: (box.x + box.width * rect.x0) * s, y: (box.y + box.height * rect.y0) * s, width: box.width * (rect.x1 - rect.x0) * s, height: box.height * (rect.y1 - rect.y0) * s };
-          const px = countTokenPixels(img, rgb, area, o.opts);
-          frames++;
-          if (px >= o.minPx) {
-            done = true;
-            clearTimeout(timer);
-            resolve({ epochMs: f.metadata.timestamp !== undefined ? f.metadata.timestamp * 1000 : receivedAt, px, frames, maxBefore });
-            return;
-          }
-          maxBefore = Math.max(maxBefore, px);
-        } finally {
-          // Acknowledged after counting, so frames never pile up faster than they are decoded.
-          cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
-        }
-      });
-      cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 }).catch(() => undefined);
-    });
+    return await watch.first(0, o.timeoutMs);
   } finally {
-    await cdp.send('Page.stopScreencast').catch(() => undefined);
-    await cdp.detach().catch(() => undefined);
+    await watch.stop();
   }
 }

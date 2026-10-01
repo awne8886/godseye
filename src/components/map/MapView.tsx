@@ -518,8 +518,8 @@ export default function MapView() {
   }, [loaded]);
   // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
   const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
-  // Focus layers (a `?route=` deep link, a tracked flight, drawn shapes: what the user asked for,
-  // published by module Backgrounds) get the deck device first, once the globe has drawn its first
+  // Focus layers (module Backgrounds: a `?route=` deep link or a `?flight=` tracked flight's
+  // planned arc, drawn shapes — what the user asked for) get the deck device first, once the globe has drawn its first
   // frame, without waiting for basemap tiles or a quiet GPU (focus.ts). Ambient data layers keep
   // waiting for the first painted basemap frame (visual-qa R2-M6); deck layers published before the
   // data modules mount can only come from Backgrounds, so the device then still goes first (R4-M1).

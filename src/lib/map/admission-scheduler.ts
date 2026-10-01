@@ -10,7 +10,7 @@
  * unit per `maxWaitMs`. Admissions are plain state updates rendered by React in time slices
  * (`startTransition` in the requesters) — never `flushSync`, which once produced a 6 s task.
  *
- * Focus work (what the user asked for: a `?route=` deep link, a tracked flight, a drawn shape; see
+ * Focus work (what the user asked for: a `?route=` / `?flight=` planned arc, a drawn shape; see
  * `focus.ts`) runs first and has a requester-level `maxWaitMs` (FOCUS_MAX_WAIT_MS): on a software
  * GPU (SwiftShader: CI, Lighthouse, GPU-less machines) the quiet slot never comes — 0 of 68 fences
  * signalled while the globe repainted — so the full wait was pure latency in front of the route.

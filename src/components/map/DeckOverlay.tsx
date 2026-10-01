@@ -25,7 +25,7 @@
  * keep retrying), and published as undrawn, so the header never counts them.
  *
  * Focus first (visual-qa R4-M1, CI globe first draw): classes needed by module Backgrounds (the
- * planned route, drawn shapes: what the user asked for) are admitted before ambient data-layer
+ * planned route or tracked flight's arc, drawn shapes: what the user asked for) are admitted before ambient data-layer
  * classes, in the focus layers' own drawing order (the route's arc first), the first of them ahead
  * of the data-module mount, each with a short wait for a quiet slot (`focus.ts`).
  *
@@ -49,7 +49,7 @@ import { admitLayers, createAdmissionState, createStableLists, flattenLayers, fo
 import { useAdmissionStore } from '@/lib/map/admission-scheduler';
 import { type ApplyMap, missingDeckGroups, withParsedStyle } from '@/lib/map/deck-apply';
 import { type DeckLike, detachDeckPressPicking, type FeatureDevice, initPendingLayers, primeLinkDrawFeatures } from '@/lib/map/deck-events';
-import { deckClassMaxWait, deckClassPriority, focusClassOrder, registerFocusKeys } from '@/lib/map/focus';
+import { deckClassMaxWait, deckClassPriority, focusClassOrder, focusKeysOf, registerFocusKeys } from '@/lib/map/focus';
 import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
 /** `beforeId` is a MapLibreOverlay-specific layer prop (not in deck's LayerProps typings). */
@@ -58,8 +58,8 @@ type WithBeforeId = { beforeId?: string };
 const applyBeforeId = (layer: Layer, beforeId: string): Layer =>
   (layer.props as WithBeforeId).beforeId ? layer : layer.clone({ beforeId } as Partial<Layer['props']> & WithBeforeId);
 
-// Deck entries published by module Backgrounds (keyed by module id): the user's own focus layers.
-registerFocusKeys(FEATURE_MODULES.filter((m) => m.Background).map((m) => m.id));
+// Deck entries published by module Backgrounds (keyed by module id; flight-paths, panels-recon): the focus layers.
+registerFocusKeys(focusKeysOf(FEATURE_MODULES));
 
 const createLists = () => createStableLists<Layer>(applyBeforeId);
 

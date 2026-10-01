@@ -1,7 +1,10 @@
 /**
- * Focus layers (visual-qa R4-M1; CI globe first draw): deck entries published by module
- * Backgrounds — the user's own planned route, tracked flight or drawn shapes, i.e. what the user
- * asked for. Their start-up units go first in the admission queue (`admission-scheduler.ts`) and
+ * Focus layers (visual-qa R4-M1; CI globe first draw): deck entries published by feature-module
+ * Backgrounds, keyed by module id (`focusKeysOf`). Today two modules have one: `flight-paths` (the planned
+ * route of a `?route=` deep link, or the planned arc of a `?flight=` tracked flight) and
+ * `panels-recon` (ReconOverlays: directions routes, drawn shapes, imported ArcGIS layers) — what
+ * the user asked for. Not focus (ordinary first-seen admission): the live aircraft track
+ * (`aviation`) and the route comet (`flight-paths-anim`), published under other keys. Their start-up units go first in the admission queue (`admission-scheduler.ts`) and
  * wait at most FOCUS_MAX_WAIT_MS for a quiet slot (a software GPU never gives one):
  *  - the deck device is created as soon as a focus layer exists and the globe has drawn its first
  *    frame (ambient data layers still wait for the first painted basemap frame);
@@ -14,7 +17,7 @@
  *
  * Nothing is skipped and nothing is reported drawn early: every unit stays in `pending` until it is
  * admitted, so the header keeps saying RECEIVED + DRAWING. The keys are registered by the
- * Background host (FeatureBackgrounds), so the map chunk never imports the feature registry.
+ * Background host (FeatureLayers.tsx) and the deck host from the feature registry.
  * Owner: map-engine. Pure and unit-tested.
  */
 import { FOCUS_MAX_WAIT_MS } from './admission-scheduler';
@@ -41,6 +44,11 @@ export const ADMISSION_PRIORITY = {
 } as const;
 
 const registered = new Set<string>();
+
+/** Focus keys of a module list: the ids of the modules that have a Background. */
+export function focusKeysOf(modules: readonly { id: string; Background?: unknown }[]): string[] {
+  return modules.filter((m) => m.Background).map((m) => m.id);
+}
 
 /** Deck entry keys published by module Backgrounds (registered by the Background host). */
 export function registerFocusKeys(keys: Iterable<string>): void {

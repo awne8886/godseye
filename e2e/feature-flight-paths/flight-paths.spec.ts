@@ -54,7 +54,9 @@ for (const proj of ['mercator', 'globe'] as const) {
       await page.waitForTimeout(1500); // tiles settle after the fly
       // Pixels, not state (visual-qa R4-M1): the gold great circle is on screen left of the panel.
       // tokenPixels counts the token blended over the dark map, so this is the 60 %-alpha arc
-      // itself (713–1043 px measured on the desktop map), not the comet head (≈ 110 px).
+      // itself (713–1043 px measured on the desktop map), not the comet head (≈ 110 px). Without a
+      // route the same globe view counts < 100 px at any hour, night lights included (controls in
+      // e2e/map-engine/route-draw.spec.ts, one pinned to 03:00 UTC), so ≥ 300 means the arc.
       await expect.poll(() => tokenPixels(page, '--map-route-planned'), { timeout: 60_000 }).toBeGreaterThanOrEqual(300);
       await page.screenshot({
         path: info.outputPath(`route-lhr-jfk-${proj}.png`),
