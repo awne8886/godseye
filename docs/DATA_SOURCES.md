@@ -407,9 +407,26 @@ capabilities and `/api/air-quality` reports only Open-Meteo.
 | adsb.lol `api.adsb.lol/v2/point/{lat}/{lng}/250` (fixture source for live NACp tests; the app reads aircraft only from the in-process flights feed) | 200 · 0.43–0.69 s · 0.1–12 kB | none | ODbL 1.0 · `ac[].{hex,lat,lon,nac_p,seen_pos}`, `now` (ms). Night-time sample: Kuwait/Gulf (29.5, 48.0) 18 aircraft → one r4 cell `84536e1ffffffff` with 5 NACp reporters, one at NACp 0; Baltic (55.5, 21.0) 32 aircraft, 12 at NACp ≤ 4 but no cell with ≥ 3 reporters. |
 
 Live NACp binning reads `FlightsSnapshot.records[].{lat,lng,nacP,seenAt}` (aviation `nacP` = readsb
-`nac_p`), drops positions older than 300 s, and reports `live_nacp` `ok:false` with
+`nac_p`), drops positions older than 300 s (60 s since 2026-10-01, see below), and reports `live_nacp` `ok:false` with
 `flights_feed_not_running` / `no_flights_snapshot` / `no_recent_positions` / `nacp_not_reported`
 instead of a zero count when the binning could not run.
+
+#### Re-probe 2026-10-01 02:07 UTC (Phase 3 round 2, same UA)
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| gpsjam `gpsjam.org/data/manifest.csv` | 200 · 0.67 s · 8.4 kB | none | latest `2026-09-30,false,512,merged` |
+| gpsjam `gpsjam.org/data/2026-09-30-h3_4.csv` | 200 · 1.10 s · 190 kB gzip | none | 47 695 cells; 3 106 with bad > 0, 1 548 with bad ≥ 2. With gpsjam's formula: HIGH 449 / MEDIUM 604 (HIGH was 857 with `bad / aircraft`). |
+| gpsjam `gpsjam.org/faq` | 200 · 0.78 s | none | Published formula `percent_bad_aircraft = 100 * (num_bad_aircraft - 1) / (num_good_aircraft + num_bad_aircraft)`, implemented as `gpsjamBadShare()` (round-2 MINOR-1). Cells whose share is 0 (a single bad aircraft) are not served; `totalCells` still counts the whole grid. |
+| adsb.lol `api.adsb.lol/v2/point/51.5/-0.1/100` | 200 · 0.50 s · 2.5 kB | none | 18 aircraft: 7 `alt_baro:"ground"`, 1 `type:"mlat"`, no `~` (TIS-B) addresses at this hour. Recorded as fixture `adsblol-point-51.5_-0.1_100.2026-10-01.json`. |
+
+Live NACp binning since round 2 (MAJOR-A, MINOR-3): only **airborne ADS-B** positions count.
+Aircraft `onGround`, non-ICAO `~` addresses (TIS-B / ADS-R track files) and any `posSource` other
+than `adsb` (MLAT, TIS-B, ADS-R, Mode S, unknown) are skipped (docs/reference/03: "the aircraft is
+not grounded"). In the recorded Gulf fixture the only NACp-0 aircraft of the former live cell
+`84536e1ffffffff` was `89405c`, on the ground at Bahrain, so that cell was an artefact and is now
+excluded. The position window is **60 s** (was 300 s), and positions of unknown age are skipped.
+Both rules are stated in the `/api/gps-interference` `meta.note` and on the card.
 
 ## layers-space — probe log
 

@@ -109,7 +109,10 @@ export const GpsJamCell = z.object({
   h3: z.string(),
   lat: Lat,
   lng: Lng,
-  /** Share of aircraft in the cell with degraded NACp (0..1). */
+  /**
+   * Share of degraded aircraft (0..1). gpsjam-daily: gpsjam's published `(bad − 1) / (good + bad)`;
+   * live-nacp: `bad / aircraft` over airborne ADS-B positions ≤ 60 s old.
+   */
   badRatio: z.number().min(0).max(1),
   /** Aircraft counted in the cell, and how many of them were degraded. */
   aircraft: z.number().int().nonnegative(),
@@ -122,7 +125,7 @@ export const GpsJamCell = z.object({
 });
 
 export const GpsInterferenceResponse = Envelope.extend({
-  /** Only cells with bad > 0 are returned (the full grid would exceed 4 MB). */
+  /** Only daily cells with a gpsjam share > 0 (bad ≥ 2) are returned (the full grid would exceed 4 MB). */
   items: z.array(GpsJamCell).max(30_000),
   totalCells: z.number().int().nonnegative(),
   /** gpsjam's own "suspect data" flag for the day, when published. */
