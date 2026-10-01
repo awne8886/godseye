@@ -6,9 +6,9 @@ import { httpJson } from '@/lib/http';
 import { MAX_RESPONSE_BYTES } from '@/lib/respond';
 import { SatellitesResponse } from '@/lib/schemas';
 import { celestrakRoutes, netError, upstreamRouter } from '@/features/space/__fixtures__/upstreams';
-import { fx } from '@/features/space/__fixtures__';
+import { FUTURE_EPOCH_CAPTURED_AT, fx } from '@/features/space/__fixtures__';
 import { resetCelestrakErrors } from '@/features/space/server/satellites';
-import { COL } from '@/features/space/lib/catalog';
+import { COL, epochIso } from '@/features/space/lib/catalog';
 import { GET } from './route';
 
 vi.mock('@/lib/http', async (orig) => ({ ...(await orig<Record<string, unknown>>()), httpJson: vi.fn() }));
@@ -25,7 +25,29 @@ beforeEach(() => {
 afterEach(() => {
   resetFeeds();
   setStore(undefined);
+  vi.useRealTimers();
 });
+
+/**
+ * Size fixture: the recorded `active` sample (every 100th of 16 612 real records, 2026-09-30) tiled to
+ * `n` rows with distinct NORAD ids. Test-only scale model, like src/lib/regression/a-payload-size.
+ */
+function tiledActive(n: number): Record<string, unknown>[] {
+  return Array.from({ length: n }, (_, i) => ({ ...fx.active[i % fx.active.length]!, NORAD_CAT_ID: 100_000 + i }));
+}
+
+async function rawBody(rows: number): Promise<Buffer> {
+  clearL1();
+  resetFeeds();
+  setStore(new MemoryStore());
+  resetCelestrakErrors();
+  const routes = celestrakRoutes();
+  routes['GROUP=active&'] = tiledActive(rows);
+  vi.mocked(httpJson).mockImplementation(upstreamRouter(routes).impl as never);
+  const res = await GET(req('', { 'accept-encoding': 'gzip' }), undefined);
+  expect(res.status).toBe(200);
+  return zlib.gunzipSync(Buffer.from(await res.arrayBuffer()));
+}
 
 describe('GET /api/satellites', () => {
   it('serves the columnar OMM catalogue with meta, providers, missions and counts', async () => {
@@ -76,14 +98,54 @@ describe('GET /api/satellites', () => {
     expect(SatellitesResponse.safeParse(JSON.parse(raw.toString('utf8'))).success).toBe(true);
   });
 
-  it('labels the SatNOGS fallback', async () => {
+  it('labels the SatNOGS fallback in providers and the note, and lets caches re-ask within 5 min', async () => {
     vi.mocked(httpJson).mockImplementation(upstreamRouter({ 'GROUP=active&': netError(), 'db.satnogs.org': fx.satnogs }).impl as never);
-    const body = await (await GET(req(), undefined)).json();
+    const res = await GET(req(), undefined);
+    const body = await res.json();
     expect(SatellitesResponse.safeParse(body).success).toBe(true);
     expect(body.catalogueSource).toBe('satnogs-fallback');
     expect(body.note).toMatch(/SatNOGS/);
+    expect(body.note).toMatch(/Next CelesTrak attempt after \d\d:\d\d UTC/);
     expect(body.providers.celestrak.ok).toBe(false);
-    expect(body.providers.satnogs.ok).toBe(true);
+    expect(body.providers['satnogs-fallback'].ok).toBe(true);
+    expect(body.providers.satnogs).toBeUndefined();
+    const maxAge = Number(/s-maxage=(\d+)/.exec(res.headers.get('cache-control') ?? '')?.[1]);
+    expect(maxAge).toBeGreaterThan(0);
+    expect(maxAge).toBeLessThanOrEqual(300);
+  });
+
+  it('meta.observedAt is never after fetchedAt (CelesTrak publishes CXO with a future epoch)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FUTURE_EPOCH_CAPTURED_AT);
+    const routes = celestrakRoutes();
+    routes['GROUP=active&'] = fx.futureEpoch;
+    vi.mocked(httpJson).mockImplementation(upstreamRouter(routes).impl as never);
+    const body = await (await GET(req(), undefined)).json();
+    expect(SatellitesResponse.safeParse(body).success).toBe(true);
+    expect(Date.parse(body.meta.observedAt)).toBeLessThanOrEqual(Date.parse(body.meta.fetchedAt));
+    expect(body.meta.observedAt).toBe('2026-10-01T03:22:47.196Z');
+    const cxo = body.rows.find((r: unknown[]) => r[COL.noradId] === 25867);
+    expect(epochIso(cxo[COL.epoch])).toBe('2026-10-02T03:42:59.671Z');
+  });
+
+  it('serves epochs as integer ms (epochUnit "ms")', async () => {
+    vi.mocked(httpJson).mockImplementation(upstreamRouter(celestrakRoutes()).impl as never);
+    const body = await (await GET(req('?id=25544'), undefined)).json();
+    expect(body.epochUnit).toBe('ms');
+    expect(Number.isInteger(body.rows[0][COL.epoch])).toBe(true);
+  });
+
+  // perf round 4 m-a: the live catalogue (16 612 rows) used 71 % of the cap with ISO epochs.
+  it('payload headroom: 20k rows stay under 80 % of the 4 MB cap and 24k rows under the cap', async () => {
+    const at20k = (await rawBody(20_000)).length;
+    expect(at20k / MAX_RESPONSE_BYTES).toBeLessThan(0.8);
+    const at24k = await rawBody(24_000);
+    expect(at24k.length).toBeLessThan(MAX_RESPONSE_BYTES);
+    const parsed = SatellitesResponse.safeParse(JSON.parse(at24k.toString('utf8')));
+    expect(parsed.success).toBe(true);
+    // Today's size (16 612 rows) for the record: ≤ 68 % of the cap (was 71 %).
+    const per = at20k / 20_000;
+    expect((per * 16_612) / MAX_RESPONSE_BYTES).toBeLessThan(0.68);
   });
 
   it('503 SOURCE OFFLINE when every provider fails', async () => {

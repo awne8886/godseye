@@ -5,7 +5,7 @@
  * nested arrays. Card look-ups slice the string on demand. Pure and isomorphic. Owner: layers-space.
  */
 import type { SatCategory } from '@/lib/types';
-import { COL, SAT_CATEGORIES } from './catalog';
+import { COL, SAT_CATEGORIES, epochIso } from './catalog';
 
 /** The fields a satellite card / selection needs (a subset of SatRecord). */
 export interface CardRecord {
@@ -62,7 +62,8 @@ export function packRows(rows: readonly (readonly unknown[])[]): PackedCatalogue
     elements[i * 3 + 2] = r[COL.inclination] as number;
     for (let k = 0; k < 3; k++) {
       const v = r[TEXT_FIELDS[k]!];
-      const s = typeof v === 'string' ? v : '';
+      // The epoch travels as ms (older snapshots: ISO); cards read it as ISO-8601 UTC.
+      const s = k === 2 ? epochIso(v) : typeof v === 'string' ? v : '';
       textOffsets[i * 3 + k] = off;
       parts[i * 3 + k] = s;
       off += s.length;

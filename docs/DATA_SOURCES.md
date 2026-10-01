@@ -592,6 +592,47 @@ Client change recorded here because it affects how the catalogue reaches the bro
 to the main thread; the SPACE panel asks `/api/satellites?id=25544` (one row) instead of the whole
 catalogue.
 
+### Re-probe 2026-10-01 06:14–06:21 UTC (Phase 3 round 4)
+
+Same honest UA, `curl -sS -m 90 --compressed`, one request each, ≥ 15 s apart, `Origin: https://example.org`.
+
+| URL | Status | Latency | Size (gzip) | CORS | Notes |
+|---|---|---|---|---|---|
+| `…gp.php?GROUP=active&FORMAT=json` | 200 | 1.15 s | 1 166 586 B | `*` | 16 612 objects, max id 100 830. **1 epoch in the future**: CXO 25867 `2026-10-02T03:42:59.671584` (21.5 h after the download); newest epoch not after the download: STARLINK-2185 `2026-10-01T03:22:47`. The feed's `observedAt` is now the newest epoch ≤ download time; per-object epochs are served unchanged. Fixture `celestrak-future-epoch.json`. |
+| `…GROUP=stations` | 200 | 1.40 s | 1.5 kB | `*` | ISS epoch 2026-09-30T20:27:19 |
+| `…GROUP=science` | reset (000, 11.25 s) then 200 (0.79 s, 46 objects) 60 s later | | | `*` | random resets, not group-specific |
+| `…GROUP=geodetic` | 200 | 0.80 s | 1.1 kB | `*` | |
+| `…GROUP=gps-ops` | 200 | 3.02 s | 2.6 kB | `*` | |
+| `…GROUP=glonass-operational` | **200 text/plain** | 0.70 s | 102 B | `*` | `Invalid query: "GROUP=glonass-operational&FORMAT=json" (GROUP=glonass-operational not found)` → the feed's 5th group could never succeed, so a run that "stops at the first failure" never reached groups 6–12. |
+| `…GROUP=glo-ops` | 200 | 1.15 s | 2.3 kB | `*` | 29 objects — the correct GLONASS group (now used). |
+| `…GROUP=galileo` | 200 | 0.67 s | 2.4 kB | `*` | |
+| `…GROUP=beidou` | reset (000, 11.12 s) | | | | |
+| `…GROUP=military` | 200 | 21.5 s | 1.9 kB | `*` | slow |
+| `…GROUP=radar` | 200 | 21.4 s | 1.1 kB | `*` | slow |
+| `…GROUP=weather` | reset ×2 (000, 11.2 s) | | | | |
+| `…GROUP=resource` | 200 | 0.63 s | 13.8 kB | `*` | |
+| `…GROUP=other-comm` | reset (000, 11.29 s) | | | | |
+| `https://db.satnogs.org/api/tle/?format=json` | 200 | 1.79 s | 519 914 B | none | 1 679 items |
+| `https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json` | 200 | 0.33 s | 405 B | `*` | Last-Modified 06:17:45Z |
+| `https://services.swpc.noaa.gov/products/noaa-scales.json` | 200 | 0.51 s | 208 B | `*` | |
+
+**Why the groups failed 0/12 after a restart (R2 minor 5):** from this network ~30 % of CelesTrak
+requests are reset after ≈ 11 s (5 of 15 today, random groups, even at 15–20 s spacing), and the old
+run stopped at the first failure and then waited for the next 2 h refresh. With no previous membership
+after a restart, one reset on `stations` meant 0/12 for 2 h; and `glonass-operational` (wrong name)
+failed deterministically. Fixes: `glo-ops`; per-group download times (a regular run only asks for
+groups missing or > 12 h old); up to 2 failures per run; missing groups retried 20 min later by the
+recovery loop and handed to the feed without a second `active` download.
+
+**SatNOGS fallback:** CelesTrak is retried 20, 40, 80, then every 120 min while the fallback is
+served (each try counts against the 12-error budget); the first good `active` download replaces the
+fallback at once. Providers name the fallback `satnogs-fallback`, the newest failed CelesTrak attempt
+replaces the snapshot's `celestrak` entry, the note gives the next attempt time, Cache-Control drops
+to 300 s and the rail shows a `FALLBACK · SatNOGS DB TLEs, n objects` line.
+
+**Payload:** `epoch` now travels as integer ms (`epochUnit: 'ms'`): ≈ 161 B/row on the live catalogue
+(≈ 2.68 MB for 16 612 rows, 64 % of the 4 MB cap, was 71 %); 20k rows stay < 80 % and 24k < 100 % (route test).
+
 ### layers-surveillance
 
 Probed **2026-09-30 19:58–20:45 UTC** from the build sandbox with

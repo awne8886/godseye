@@ -13,8 +13,11 @@ import xrays from './swpc-xrays-6h.json';
 import scales from './swpc-scales.json';
 import alerts from './swpc-alerts.json';
 import iss from './wheretheiss.json';
+import futureEpoch from './celestrak-future-epoch.json';
 
 export const FIXTURE_CAPTURED_AT = Date.parse('2026-09-30T18:05:00Z');
+/** Download time of `celestrak-future-epoch.json` (CXO published with an epoch 21.5 h later). */
+export const FUTURE_EPOCH_CAPTURED_AT = Date.parse(futureEpoch.capturedAt);
 
 export const fx = {
   active: active.data as unknown as Record<string, unknown>[],
@@ -27,4 +30,5 @@ export const fx = {
   scales: scales.data as unknown,
   alerts: alerts.data as unknown,
   iss: iss.data as unknown,
+  futureEpoch: futureEpoch.data as unknown as Record<string, unknown>[],
 };

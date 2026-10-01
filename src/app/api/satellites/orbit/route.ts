@@ -7,7 +7,7 @@
  */
 import { z } from 'zod';
 import { apiError, json, parseQuery, withRoute } from '@/lib/respond';
-import { satellitesFeed } from '@/features/space/feeds';
+import { noteSatellitesRead, satellitesFeed } from '@/features/space/feeds';
 import { lookupSatellite } from '@/features/space/server/lookup';
 import { anchorTime, orbitClass, orbitTrack, periodMinutes, splitTrackAtAntimeridian } from '@/features/space/lib/orbit';
 import type { OrbitResponse } from '@/lib/types';
@@ -24,6 +24,7 @@ export const GET = withRoute('/api/satellites/orbit', async (req: Request) => {
   if (!q.ok) return q.response;
   const noradId = (q.data.id ?? q.data.norad)!;
   const feed = await satellitesFeed.get();
+  noteSatellitesRead();
   if (!feed.data) {
     return json({ error: 'source_offline', detail: 'The satellite catalogue has not loaded yet.', providers: feed.providers }, { status: 503, headers: { 'Retry-After': '30' } });
   }
