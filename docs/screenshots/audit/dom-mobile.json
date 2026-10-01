@@ -47,15 +47,15 @@
   },
   "named": {
     "attribution": {
-      "x": 0,
-      "y": 759,
-      "w": 390,
-      "h": 28,
+      "x": 12,
+      "y": 740,
+      "w": 378,
+      "h": 47,
       "z": "auto"
     },
     "imageryChips": {
       "x": 142,
-      "y": 723,
+      "y": 704,
       "w": 238,
       "h": 26,
       "z": "auto"
@@ -92,9 +92,9 @@
   "tiny": [],
   "tracking": [],
   "smallTargets": [
-    "67x12 OpenFreeMap",
-    "68x12 OpenMapTiles",
-    "75x12 OpenStreetMap"
+    "70x13 OpenFreeMap",
+    "77x13 OpenMapTiles",
+    "83x13 OpenStreetMap"
   ],
   "attributionText": "Night lights: VIIRS Black Marble 2016 · Imagery: NASA GIBS, part of NASA ESDIS | OpenFreeMap © OpenMapTiles Data from OpenStreetMap",
   "attributionClass": "maplibregl-ctrl maplibregl-ctrl-attrib"
