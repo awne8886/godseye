@@ -24,8 +24,18 @@ export function refreshMsFor(layer: LayerId): number | null {
   return LAYERS.find((l) => l.id === layer)?.refreshMs ?? null;
 }
 
+/**
+ * Request options for every feed poll. Feed routes send `Cache-Control: public, s-maxage=N,
+ * stale-while-revalidate=2N` for shared caches, and Chrome applies that stale-while-revalidate
+ * too: each poll was answered from disk with the previous snapshot while a second, background
+ * request revalidated it (two requests per poll and data one interval behind; perf r4 m-g, the
+ * "second requester"). `no-cache` revalidates on every poll instead: one request, a 304 when the
+ * snapshot is unchanged (ETag), never an outdated body.
+ */
+export const FEED_FETCH_INIT = { cache: 'no-cache', headers: { accept: 'application/json' } } as const satisfies RequestInit;
+
 async function load<T>(url: string, signal: AbortSignal): Promise<Result<T>> {
-  const res = await fetch(url, { signal, headers: { accept: 'application/json' } });
+  const res = await fetch(url, { ...FEED_FETCH_INIT, signal });
   const body = (await res.json().catch(() => ({}))) as T & Enveloped;
   if (res.status === 503 || res.status === 403) return { ok: false, status: res.status, body };
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

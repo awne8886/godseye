@@ -18,7 +18,7 @@ import { freshCache, req, resetCache } from '@/features/threats/server/__fixture
 import { useLayerStatusStore } from '@/lib/layer-host';
 import type { MaritimeResponse } from '@/lib/types';
 import { GET } from '@/app/api/maritime/route';
-import { useFeedData } from '../../threats/client/hooks';
+import { FEED_FETCH_INIT, useFeedData } from '../../threats/client/hooks';
 import { MARITIME_LIVE_MS, MARITIME_REFERENCE_MS, maritimePollMs } from './poll';
 
 const count = (b: MaritimeResponse) => b.ports.length + b.vessels.length;
@@ -132,6 +132,21 @@ describe('maritime poll schedule (perf m-g)', () => {
     const settled = f.mock.calls.length;
     await advance(60_000);
     expect(f).toHaveBeenCalledTimes(settled);
+  });
+
+  it('each poll is one request that revalidates: no stale-while-revalidate second request, no outdated body', async () => {
+    // Round-4 bench: 12 requests a minute at a 10 s interval. Chrome applied the routes'
+    // `stale-while-revalidate` to fetch(): every poll was served the previous snapshot from disk
+    // plus a background revalidation (CDP initiator "other"). `no-cache` makes it one request.
+    const f = serve({ ...keyless, aisConfigured: true });
+    renderHook(() => useFeedData<MaritimeResponse>('maritime', '/api/maritime', count, maritimePollMs), { wrapper: wrapperFor(newClient()) });
+    await advance(25_000);
+    expect(f.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of f.mock.calls as unknown as [string, RequestInit][]) {
+      expect(call[0]).toBe('/api/maritime');
+      expect(call[1]).toMatchObject({ cache: 'no-cache' });
+    }
+    expect(FEED_FETCH_INIT.cache).toBe('no-cache');
   });
 
   it('MaritimeLayer is the only browser requester of /api/maritime', () => {
