@@ -79,6 +79,23 @@ describe('frame-health ledger', () => {
     expect(h.lastOkAt).toBe('2026-10-01T07:49:51.000Z');
   });
 
+  it('round 5 (R2 minor 4): freshestFrameAge_s is the freshest operator frame among each camera’s latest relayed frame', () => {
+    const at = Date.parse('2026-10-01T13:20:00Z');
+    const old = (cam: string, ageS: number, dt = 0) => o(cam, true, 0, { at: at + dt * 1000, observedAt: at + dt * 1000 - ageS * 1000 });
+    // Toronto: every frame relayed is ~21 h old (the reviewer saw lastFrameAge_s 77879).
+    const toronto = summarise([old('t1', 77879), old('t2', 77700, 5), old('t3', 78000, 10)], at + 60_000);
+    expect(toronto).toMatchObject({ state: 'available', lastFrameAge_s: 78000, freshestFrameAge_s: 77700 });
+    expect(FrameHealth.safeParse(toronto).success).toBe(true);
+    // One fresh camera among stale ones: the operator does publish current frames.
+    expect(summarise([old('a', 77879), old('b', 45, 5)], at + 60_000).freshestFrameAge_s).toBe(45);
+    // Only each camera's latest attempt counts: a camera that was fresh and is now stale is stale.
+    expect(summarise([old('a', 30), old('a', 9000, 30)], at + 60_000).freshestFrameAge_s).toBe(9000);
+    // A camera whose latest attempt failed contributes no age; untimed or future frames are not ages.
+    expect(summarise([old('a', 30), o('a', false, 30, { at: at + 30_000, error: 'upstream_404' }), old('b', 600, 5)], at + 60_000).freshestFrameAge_s).toBe(600);
+    expect(summarise([o('u', true, 0, { at, observedAt: null }), o('f', true, 0, { at, observedAt: at + 3_600_000 })], at + 60_000)).toMatchObject({ freshestFrameAge_s: null, lastFrameAge_s: null, untimed: 1 });
+    expect(summarise([], at).freshestFrameAge_s).toBeNull();
+  });
+
   it('recordFrame/frameHealth keep providers apart', () => {
     recordFrame('nsw', { cameraId: 'nsw-1', ok: false, error: 'not_an_image', observedAt: null });
     recordFrame('hktd', { cameraId: 'hktd-1', ok: true, error: null, observedAt: Date.now() - 68_000 });

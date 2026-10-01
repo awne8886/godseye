@@ -876,6 +876,29 @@ per camera; a request still waiting in this server's per-operator limiter (or cu
 that wait) is `queued` (503, `Retry-After: 15`) and never recorded. A failure answered without any request to the
 operator carries `fetchedAt: null` and no `X-Frame-Fetched-At`.
 
+#### Phase 3 round 5 fix pass (2026-10-01 17:34 UTC, same honest UA, `Accept: application/json`, 6 s apart)
+
+TxDOT snapshot endpoint, one camera with and one without a current snapshot (R2 MAJOR-1). Recorded
+`__fixtures__/txdot-snapshot-null.2026-10-01.json` (the exact 4-byte body).
+
+| Request | Status · latency · type | CORS | Body | Effect |
+|---|---|---|---|---|
+| TxDOT `GetCctvSnapshotByIcdId?districtCode=YKM&icdId=YKM-US59 @ Youngdale Rd (S)- El Campo` | 200 · 0.61 s · application/json; charset=utf-8 (br) | none | `null` (4 bytes) | Listed camera with no current snapshot. Was a TypeError → 500 on `/api/cctv/proxy` and `/api/cctv/texas/snapshot`; now **404** FrameError `no_snapshot` (CAMERA OFFLINE · NO SNAPSHOT), recorded against the camera only (`operatorWide` false). |
+| TxDOT `GetCctvSnapshotByIcdId?districtCode=AUS&icdId=IH-35 @ Centerpoint Rd 448` | 200 · 0.58 s · application/json; charset=utf-8 (br) · 60.3 kB | none | `{icd_Id, snippet (base64 JPEG, 60 204 chars), timestampFormatted: "10/1/2026 12:32 PM"}` | Relayed as image/jpeg with `X-Frame-Observed-At` 17:32Z (CDT → UTC). Unchanged shape. |
+
+Any JSON body without a usable `snippet` (null, an array, a string, a number, `{}`, an empty or
+non-base64 snippet) or an empty body is `no_snapshot` (404, per camera); a body that is not JSON at
+all is `parse` (502, operator-wide). Every list adapter now checks the shapes it reads and each loader
+refuses a wrong top-level shape (`null`, string, number, object/array swapped) as `parse`, so a
+provider reads SOURCE OFFLINE with its last good rows — never a TypeError, never a 500 and never
+"0 cameras" presented as the operator's answer.
+
+Frame freshness on cards (R2 minor 4): `/api/cctv/providers` `frames.<id>.freshestFrameAge_s` is the
+operator age of the freshest frame among each camera's latest relayed frame. Cards say AVAILABLE only
+within 6 operator intervals (≥ 60 s each, the viewer's own rule), otherwise `STALE · FRAMES 21h OLD`
+(Toronto, reviewer sample `lastFrameAge_s` 77 879); frames without an operator time read
+`RELAYED · UNTIMED`.
+
 ### layers-threats-network
 
 Probed **2026-09-30 20:02–20:10 UTC** from the build sandbox with

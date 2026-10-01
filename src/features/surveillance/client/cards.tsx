@@ -25,7 +25,8 @@ export function CameraCard({ selection }: CardProps) {
   const provider = providers?.get(cam.providerId);
   const place = [cam.city, cam.country].filter(Boolean).join(', ');
   const proxied = !!provider && provider.proxy_allowed && !provider.link_out_only && cam.streamType !== 'link';
-  const frames = proxied ? frameHealthLabel(health[cam.providerId]) : null;
+  // AVAILABLE only for fresh frames: judged against this operator's own refresh interval.
+  const frames = proxied ? frameHealthLabel(health[cam.providerId], refreshSeconds(provider)) : null;
   return (
     <div className="flex flex-col gap-2" data-testid="camera-card">
       <p className="font-sans text-[13px] text-[var(--text-heading)]">{cam.name}</p>

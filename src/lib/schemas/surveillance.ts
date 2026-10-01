@@ -149,6 +149,12 @@ export const FrameHealth = z.object({
    * time (published timestamp or Last-Modified); null when the operator publishes none.
    */
   lastFrameAge_s: z.number().nonnegative().nullable(),
+  /**
+   * Age in seconds, when fetched, of the freshest frame among each camera's latest relayed frame
+   * (operator time; null when none of them carried one). Cards call the operator's frames AVAILABLE
+   * only when this is within 6 operator intervals (≥ 60 s each), else STALE with this age.
+   */
+  freshestFrameAge_s: z.number().nonnegative().nullable().optional(),
   /** Frames relayed in the window that carried no operator frame time. */
   untimed: z.number().int().nonnegative(),
 });
