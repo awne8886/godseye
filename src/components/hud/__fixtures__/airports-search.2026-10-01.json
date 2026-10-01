@@ -1,0 +1,339 @@
+{
+ "capturedAt": "2026-10-01T06:47:29.670Z",
+ "source": "http://127.0.0.1:3217/api/airports/search?q=<name>&submit=1 (local production build, zero keys)",
+ "note": "Trimmed to the fields resolvePlace() reads and the first 3 results; values unchanged.",
+ "responses": {
+  "Can Tho": {
+   "status": 200,
+   "body": {
+    "query": "Can Tho",
+    "metro": null,
+    "results": [
+     {
+      "iata": "VCA",
+      "icao": "VVCT",
+      "ident": "VVCT",
+      "name": "Can Tho International Airport",
+      "municipality": "Can Tho",
+      "keywords": "Binh Thuy Air Base, Trà Nóc Airport",
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "CIW",
+      "icao": "TVSC",
+      "ident": "TVSC",
+      "name": "Canouan Airport",
+      "municipality": "Canouan",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "SGN",
+      "icao": "VVTS",
+      "ident": "VVTS",
+      "name": "Tan Son Nhat International Airport",
+      "municipality": "Ho Chi Minh City",
+      "keywords": "Tansonnhat, Sài Gòn, Saigon, Sân bay Quốc tế Tân Sơn Nhất, Tan Son Nhut Air Base, Tan Son Nhut Airfield",
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "Hanoi": {
+   "status": 200,
+   "body": {
+    "query": "Hanoi",
+    "metro": null,
+    "results": [
+     {
+      "iata": "HAN",
+      "icao": "VVNB",
+      "ident": "VVNB",
+      "name": "Noi Bai International Airport",
+      "municipality": "Hanoi (Soc Son)",
+      "keywords": "Noibai Airport, Sân bay Quốc tế Nội Bài",
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": null,
+      "icao": null,
+      "ident": "VVGL",
+      "name": "Gia Lam Air Base",
+      "municipality": "Hanoi  (Long Bien)",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "In Salah": {
+   "status": 200,
+   "body": {
+    "query": "In Salah",
+    "metro": null,
+    "results": [
+     {
+      "iata": "INZ",
+      "icao": "DAUI",
+      "ident": "DAUI",
+      "name": "In Salah Airport",
+      "municipality": "In Salah",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "MLG",
+      "icao": "WARA",
+      "ident": "WARA",
+      "name": "Abdul Rachman Saleh Airport",
+      "municipality": "Malang",
+      "keywords": "WIAS, Malang, Singosari",
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "BMU",
+      "icao": "WADB",
+      "ident": "WADB",
+      "name": "Sultan Muhammad Salahuddin Airport",
+      "municipality": "Bima",
+      "keywords": "WRRB, PBW, Palibelo Airport, Bima, Raba Airfield",
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "Algiers": {
+   "status": 200,
+   "body": {
+    "query": "Algiers",
+    "metro": null,
+    "results": [
+     {
+      "iata": "ALG",
+      "icao": "DAAG",
+      "ident": "DAAG",
+      "name": "Houari Boumediene Airport",
+      "municipality": "Algiers",
+      "keywords": "Algiers, Maison Blanche",
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "Hilton Head": {
+   "status": 200,
+   "body": {
+    "query": "Hilton Head",
+    "metro": null,
+    "results": [
+     {
+      "iata": "HHH",
+      "icao": "KHXD",
+      "ident": "KHXD",
+      "name": "Hilton Head Airport",
+      "municipality": "Hilton Head Island",
+      "keywords": "49J",
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "SAV",
+      "icao": "KSAV",
+      "ident": "KSAV",
+      "name": "Savannah Hilton Head International Airport",
+      "municipality": "Savannah",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "Atlanta": {
+   "status": 200,
+   "body": {
+    "query": "Atlanta",
+    "metro": null,
+    "results": [
+     {
+      "iata": "ATL",
+      "icao": "KATL",
+      "ident": "KATL",
+      "name": "Hartsfield Jackson Atlanta International Airport",
+      "municipality": "Atlanta",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "PDK",
+      "icao": "KPDK",
+      "ident": "KPDK",
+      "name": "DeKalb Peachtree Airport",
+      "municipality": "Atlanta",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "FTY",
+      "icao": "KFTY",
+      "ident": "KFTY",
+      "name": "Fulton County Airport Brown Field",
+      "municipality": "Atlanta",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "Show Low": {
+   "status": 200,
+   "body": {
+    "query": "Show Low",
+    "metro": null,
+    "results": [
+     {
+      "iata": "SOW",
+      "icao": "KSOW",
+      "ident": "KSOW",
+      "name": "Show Low Regional Airport",
+      "municipality": "Show Low",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "BLB",
+      "icao": "MPPA",
+      "ident": "MPHO",
+      "name": "Panamá Pacífico International Airport",
+      "municipality": "Panamá City",
+      "keywords": "HOW, Howard Air Force Base, Panama Pacifico",
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "Phoenix": {
+   "status": 200,
+   "body": {
+    "query": "Phoenix",
+    "metro": null,
+    "results": [
+     {
+      "iata": "PHX",
+      "icao": "KPHX",
+      "ident": "KPHX",
+      "name": "Phoenix Sky Harbor International Airport",
+      "municipality": "Phoenix",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "DVT",
+      "icao": "KDVT",
+      "ident": "KDVT",
+      "name": "Phoenix Deer Valley Airport",
+      "municipality": "Phoenix",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     },
+     {
+      "iata": "SYX",
+      "icao": "ZJSY",
+      "ident": "ZJSY",
+      "name": "Sanya Phoenix International Airport",
+      "municipality": "Sanya (Tianya)",
+      "keywords": null,
+      "matchedBy": "fuzzy"
+     }
+    ]
+   }
+  },
+  "London": {
+   "status": 200,
+   "body": {
+    "query": "London",
+    "metro": {
+     "name": "London",
+     "codes": [
+      "LHR",
+      "LGW",
+      "STN",
+      "LTN",
+      "LCY",
+      "SEN"
+     ]
+    },
+    "results": [
+     {
+      "iata": "LHR",
+      "icao": "EGLL",
+      "ident": "EGLL",
+      "name": "London Heathrow Airport",
+      "municipality": "London",
+      "keywords": "LON, Londres",
+      "matchedBy": "metro"
+     },
+     {
+      "iata": "LGW",
+      "icao": "EGKK",
+      "ident": "EGKK",
+      "name": "London Gatwick Airport",
+      "municipality": "London",
+      "keywords": "LON, Crawley, Charlwood",
+      "matchedBy": "metro"
+     },
+     {
+      "iata": "STN",
+      "icao": "EGSS",
+      "ident": "EGSS",
+      "name": "London Stansted Airport",
+      "municipality": "London, Essex",
+      "keywords": "LON",
+      "matchedBy": "metro"
+     }
+    ]
+   }
+  },
+  "New York": {
+   "status": 200,
+   "body": {
+    "query": "New York",
+    "metro": {
+     "name": "New York",
+     "codes": [
+      "JFK",
+      "EWR",
+      "LGA"
+     ]
+    },
+    "results": [
+     {
+      "iata": "JFK",
+      "icao": "KJFK",
+      "ident": "KJFK",
+      "name": "John F. Kennedy International Airport",
+      "municipality": "New York",
+      "keywords": "Manhattan, New York City, NYC, Idlewild, IDL, KIDL",
+      "matchedBy": "metro"
+     },
+     {
+      "iata": "EWR",
+      "icao": "KEWR",
+      "ident": "KEWR",
+      "name": "Newark Liberty International Airport",
+      "municipality": "Newark",
+      "keywords": "Manhattan, New York City, NYC",
+      "matchedBy": "metro"
+     },
+     {
+      "iata": "LGA",
+      "icao": "KLGA",
+      "ident": "KLGA",
+      "name": "LaGuardia Airport",
+      "municipality": "New York",
+      "keywords": "Manhattan, New York City, NYC, Glenn H. Curtiss Airport, North Beach Airport, La Guardia",
+      "matchedBy": "metro"
+     }
+    ]
+   }
+  }
+ }
+}

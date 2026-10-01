@@ -151,24 +151,40 @@ function useDockWidth() {
 /**
  * Keep docked panels clear of MapLibre's bottom-right stack (attribution + map-engine's imagery
  * chips), whose height changes with the imagery on screen. Returns the bottom offset in px.
+ * Measured only while a docked/pinned panel is shown (`enabled`): a ResizeObserver on the stack plus
+ * window resize, never a timed layout read (perf m-c). Until the map mounts (or after it remounts)
+ * the stack is looked up by selector once a second — a DOM query, no layout — and not at all while
+ * the tab is hidden.
  */
-export function useBottomRightClearance(minPx = 40): number {
+export function useBottomRightClearance(enabled: boolean, minPx = 40): number {
   const [bottom, setBottom] = useState(minPx);
   useEffect(() => {
-    const measure = () => {
-      const el = document.querySelector('.maplibregl-ctrl-bottom-right');
-      const top = el && el.childElementCount ? el.getBoundingClientRect().top : window.innerHeight;
+    if (!enabled) return;
+    let stack: Element | null = null;
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => measure());
+    function measure() {
+      const top = stack?.isConnected && stack.childElementCount ? stack.getBoundingClientRect().top : window.innerHeight;
       const next = Math.max(minPx, Math.round(window.innerHeight - top + 8));
       setBottom((b) => (b === next ? b : next));
-    };
-    measure();
-    const t = setInterval(measure, 1000);
+    }
+    function find() {
+      if (stack?.isConnected) return;
+      ro?.disconnect();
+      stack = document.querySelector('.maplibregl-ctrl-bottom-right');
+      if (stack) ro?.observe(stack);
+      measure();
+    }
+    find();
+    const poll = setInterval(() => {
+      if (!document.hidden) find();
+    }, 1000);
     window.addEventListener('resize', measure);
     return () => {
-      clearInterval(t);
+      clearInterval(poll);
       window.removeEventListener('resize', measure);
+      ro?.disconnect();
     };
-  }, [minPx]);
+  }, [enabled, minPx]);
   return bottom;
 }
 
@@ -184,7 +200,7 @@ export default function PanelHost() {
   const side = openPanel && !isModal(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
   const pinnedShown = pinned.filter((p) => !MODAL_PANELS.has(p) && isPanelAvailable(p, bt));
   const dock = useDockWidth();
-  const clearance = useBottomRightClearance();
+  const clearance = useBottomRightClearance(!mobile && (side !== null || pinnedShown.length > 0));
   // Docked panels size to their content, capped above the bottom-right controls (m4).
   const dockStyle = { '--panel-width': `${dock.width}px`, maxHeight: `calc(100dvh - 4rem - ${clearance}px)` } as CSSProperties;
   // Pinned column spans the full height so its panels share it.
@@ -279,7 +295,7 @@ export function MobileSheetBody({ id }: { id: PanelId }) {
             ))}
           </div>
         )}
-        <InstrumentFrame key={id} title={panelLabel(id)} onClose={close} sheet={siblings.length > 1} className="min-h-0 flex-1">
+        <InstrumentFrame key={id} title={panelLabel(id)} onClose={close} sheet={siblings.length > 1} touch className="min-h-0 flex-1">
           <PanelBody id={id} onClose={close} />
         </InstrumentFrame>
       </div>

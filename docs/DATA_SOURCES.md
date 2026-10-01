@@ -250,6 +250,29 @@ before this run (Toronto licence → `open-data-licence/`, FOSSGIS home for Valh
 | `https://www.youtube.com/t/terms` | HEAD 200 | 155 ms |  |
 | `https://xposedornot.com/` | HEAD 200 | 454 ms |  |
 
+#### Round 4 (2026-10-01): palette place names, recorded for unit tests
+
+No new upstream. The command palette resolves typed place names through the app's own
+`GET /api/airports/search?q=<name>&submit=1` (owner feature-flight-paths; bundled OurAirports data,
+no external call for these names). Probed once per name against a local production build of this
+branch (`pnpm build && pnpm start --port 3217`, zero keys) on 2026-10-01 06:47 UTC; CORS not
+relevant (same origin). Response keys: `query, results, metro, providers, timestamp`; each result
+carries `iata, icao, ident, name, municipality, keywords, matchedBy`. Recorded (trimmed to those
+fields, first 3 results) in `src/components/hud/__fixtures__/airports-search.2026-10-01.json`.
+
+| Name | Status | Latency | First result (matchedBy) | Metro |
+|---|---|---|---|---|
+| Can Tho | 200 | 596 ms (cold) | VCA Can Tho (fuzzy) | — |
+| Hanoi | 200 | 13 ms | HAN Hanoi (Soc Son) (fuzzy) | — |
+| In Salah | 200 | 12 ms | INZ In Salah (fuzzy) | — |
+| Algiers | 200 | 7 ms | ALG Algiers (fuzzy) | — |
+| Hilton Head | 200 | 7 ms | HHH Hilton Head Island (fuzzy) | — |
+| Atlanta | 200 | 6 ms | ATL Atlanta (fuzzy) | — |
+| Show Low | 200 | 14 ms | SOW Show Low (fuzzy) | — |
+| Phoenix | 200 | 12 ms | PHX Phoenix (fuzzy) | — |
+| London | 200 | 11 ms | LHR London (metro) | LHR LGW STN LTN LCY SEN |
+| New York | 200 | 6 ms | JFK New York (metro) | JFK EWR LGA |
+
 ### feature-flight-paths
 
 Probed 2026-09-30 20:02 UTC from the build sandbox with

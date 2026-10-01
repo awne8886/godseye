@@ -229,6 +229,43 @@
     display: inline-block;
     animation: splash-letter-in 0.7s var(--ease-hud) both;
   }
+  /* Boot splash (CSS only, so motion stays out of the first-load bundle — perf m-d). The exit
+     duration matches SPLASH_EXIT_MS in splash-logic.ts. */
+  .splash-screen {
+    transition:
+      opacity 0.7s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .splash-screen[data-exiting] {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  .splash-ring {
+    animation: hud-spin 20s linear infinite;
+  }
+  .splash-ring[data-reverse] {
+    animation-direction: reverse;
+  }
+  .splash-bar {
+    transition: width 0.55s var(--ease-hud);
+  }
+  /* Layer toggle knob (28×14 track): slides 14 px; a transition, not a JS spring. */
+  .hud-toggle-knob {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.4);
+    transition:
+      transform var(--dur-flyout) var(--ease-hud),
+      background-color var(--dur-flyout) var(--ease-hud);
+  }
+  .hud-toggle[data-on='true'] .hud-toggle-knob {
+    transform: translateX(14px);
+    background: var(--gold-light);
+  }
 }
 
 /* ── Sensor post-processing (keys 1–4). Filters the map canvas only (deck is interleaved). ── */
