@@ -9,8 +9,9 @@
  */
 import type { ReactNode } from 'react';
 import type { CardProps } from '@/lib/feature-module';
-import type { AttackOrigin, C2Server, Chokepoint, ConflictEvent, ConflictZone, CountryRisk, GdacsIncident, GdeltEvent, LandingPoint, MalwareHost, NuclearSite, Outage, Port, SubmarineCable, ThreatIndicator, Vessel } from '@/lib/types';
+import type { AttackOrigin, C2Server, Chokepoint, ConflictZone, CountryRisk, GdacsIncident, GdeltEvent, LandingPoint, MalwareHost, NuclearSite, Outage, Port, SubmarineCable, ThreatIndicator, Vessel } from '@/lib/types';
 import { CAMEO_ROOT, GEO_PRECISION_LABEL, QUAD_LABEL } from '../shared/gdelt';
+import type { ConflictEventCardData } from './selection';
 
 const safeHttp = (u: unknown): string | null => (typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null);
 const iso = (t: string | null | undefined) => (t ? `${t.slice(0, 16).replace('T', ' ')} UTC` : '—');
@@ -158,12 +159,12 @@ export function GdeltCard({ selection }: CardProps) {
 }
 
 export function ConflictZoneCard({ selection }: CardProps) {
-  const d = selection.data as unknown as (ConflictZone & { kind: 'reference' }) | (ConflictEvent & { kind?: undefined });
+  const d = selection.data as unknown as (ConflictZone & { kind: 'reference' }) | (ConflictEventCardData & { kind?: undefined });
   if (d.kind !== 'reference') {
-    const e = d as ConflictEvent;
+    const e = d as ConflictEventCardData;
     return (
       <Body testId="card-conflict-event" title={e.title} chips={<Chip tone="red">GDELT event</Chip>}>
-        <Row label="Zone">{dash(e.zoneId)}</Row>
+        <Row label="Zone">{dash(e.zoneLabel)}</Row>
         <Row label="Precision">{e.precision}</Row>
         <Row label="Reported">{iso(e.observedAt)}</Row>
         <Note>Drawn at the event’s own geocoded coordinates, never moved toward a zone anchor.</Note>

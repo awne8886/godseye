@@ -10,12 +10,13 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo } from 'react';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { LAYERS } from '@/lib/layer-registry';
-import { useDeckLayers, useFeedEventStore, type Selection } from '@/lib/layer-host';
+import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
 import { readCssColor } from '@/lib/tokens';
 import type { ConflictEvent, ConflictsResponse, CountryRiskResponse, FeedEvent, FrontlinesResponse, GdacsIncident, GdacsResponse, GdeltEvent, GdeltEventsResponse, InfrastructureResponse, NuclearSite } from '@/lib/types';
 import { gdeltTitle, QUAD_TOKEN } from '../shared/gdelt';
 import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from './hooks';
 import { buildRiskGeometry } from './risk-geometry';
+import { conflictEventSelection, zoneSelection } from './selection';
 
 const zOf = (id: string) => LAYERS.find((l) => l.id === id)!.z;
 const css = (token: Parameters<typeof readCssColor>[0], alpha = 1) => rgbaCss(readCssColor(token, alpha));
@@ -220,13 +221,14 @@ function ConflictLayer() {
     [events],
   );
   useDeckLayers('threats:zone-events', eventLayers, zOf('conflict_zones'));
+  // Zone cards are headed by the zone's display name, events name their zone the same way.
   useNativePick(['tn-zones-fill'], (id) => {
     const z = zById.get(id);
-    return z ? { kind: 'conflict_zone', id: z.id, layer: 'conflict_zones', source: 'curated', observedAt: null, data: z as unknown as Record<string, unknown>, lngLat: z.anchor } : null;
+    return z ? zoneSelection(z) : null;
   });
   useDeckPick('tn-zone-events', (info) => {
     const e = info.object as ConflictEvent | undefined;
-    return e ? ({ kind: 'conflict_zone', id: e.id, layer: 'conflict_zones', source: 'gdelt', observedAt: e.observedAt, data: e as unknown as Record<string, unknown>, lngLat: [e.lng, e.lat] } satisfies Selection) : null;
+    return e ? conflictEventSelection(e, e.zoneId ? zById.get(e.zoneId) : undefined) : null;
   });
   return null;
 }

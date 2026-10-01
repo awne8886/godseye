@@ -2,7 +2,8 @@
  * R3-M3: clicking (desktop) or tapping (phone) a conflict-zone polygon opens the conflict-zone card
  * with its REFERENCE badge. The zone is a native MapLibre fill (`tn-zones-fill`) resolved by the
  * map's single click router (registerNativePick). Ukraine is a curated reference polygon, so the
- * camera centre 48.558,31.377 is always inside a drawn zone.
+ * camera centre 48.558,31.377 is always inside a drawn zone. The card header names the zone by its
+ * display name (visual-qa r4 m5), not the internal id.
  */
 import { expect, test } from '@playwright/test';
 import { gotoMap, MAP, waitForMapStyle } from '../map-engine/helpers';
@@ -25,4 +26,8 @@ test('a conflict-zone polygon opens its card with REFERENCE', async ({ page, isM
     await expect(card).toBeVisible({ timeout: 3_000 });
   }).toPass({ timeout: 45_000 });
   await expect(card.getByTestId('card-reference')).toHaveText('REFERENCE');
+  // visual-qa r4 m5: the line under CONFLICT ZONE is the zone's display name, never its id.
+  const idLine = page.locator('section', { has: card }).locator('header h2 + p');
+  await expect(idLine).toHaveText('UKRAINE WAR');
+  await expect(idLine).not.toHaveText(/^ukraine$/i);
 });

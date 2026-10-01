@@ -32,14 +32,29 @@ async function load<T>(url: string, signal: AbortSignal): Promise<Result<T>> {
   return { ok: true, body };
 }
 
-/** Poll a route (registry refreshMs; react-query pauses while the tab is hidden) and report status. */
-export function useFeedData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null, refreshMs: number | null = refreshMsFor(layer)) {
+/**
+ * How often a layer re-fetches: a fixed interval (the registry's refreshMs), null to fetch once, or
+ * a function of the last good body (null before one arrived or while the feed is offline). A
+ * function also sets the query's staleTime to the same interval, so a layer toggled off and on
+ * within it reuses what it has (maritime: REFERENCE-only answers refresh on an hours-long TTL).
+ */
+export type PollPolicy<T> = number | null | ((body: (T & Enveloped) | null) => number | null);
+
+/** The interval a policy picks for the current query result (false = no polling). */
+export function pollInterval<T>(policy: PollPolicy<T>, data: Result<T> | undefined): number | false {
+  const ms = typeof policy === 'function' ? policy(data?.ok ? data.body : null) : policy;
+  return ms ?? false;
+}
+
+/** Poll a route (registry refreshMs or a PollPolicy; react-query pauses while the tab is hidden) and report status. */
+export function useFeedData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null, refreshMs: PollPolicy<T> = refreshMsFor(layer)) {
   const update = useLayerStatusStore((s) => s.update);
   const q = useQuery({
     queryKey: ['threats-network', url],
     queryFn: ({ signal }) => load<T>(url!, signal),
     enabled: url !== null,
-    refetchInterval: refreshMs ?? false,
+    refetchInterval: (query) => pollInterval(refreshMs, query.state.data),
+    ...(typeof refreshMs === 'function' ? { staleTime: (query: { state: { data: Result<T> | undefined } }) => pollInterval(refreshMs, query.state.data) || 0 } : {}),
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
   });

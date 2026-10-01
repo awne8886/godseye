@@ -2,7 +2,9 @@
 /**
  * Maritime layer: ports and chokepoints (REFERENCE, native circles) and — only when the server
  * relays AISStream — live vessels (deck points) with speed-coloured recent tracks (segment speed
- * computed from consecutive AIS positions). Owner: layers-threats-network.
+ * computed from consecutive AIS positions). Keyless, the REFERENCE answer is fetched once and
+ * refreshed on an hours-long TTL; only a keyed AIS relay is polled (./poll.ts).
+ * Owner: layers-threats-network.
  */
 import { LineLayer, ScatterplotLayer } from '@deck.gl/layers';
 import { useMemo } from 'react';
@@ -12,6 +14,8 @@ import { useDeckLayers } from '@/lib/layer-host';
 import { readCssColor, type MapToken } from '@/lib/tokens';
 import type { Chokepoint, MaritimeResponse, Port, RiskLevel, Vessel } from '@/lib/types';
 import { useDeckPick, useFeedData } from '../../threats/client/hooks';
+import { chokepointSelection, portSelection } from '../../threats/client/selection';
+import { maritimePollMs } from './poll';
 
 const Z = LAYERS.find((l) => l.id === 'maritime')!.z;
 const CHOKE_TOKEN: Record<RiskLevel, MapToken> = { CRITICAL: '--map-choke-critical', HIGH: '--map-choke-high', ELEVATED: '--map-choke-elevated', MODERATE: '--map-choke-elevated', LOW: '--map-choke-low' };
@@ -34,6 +38,8 @@ export function segmentKnots(a: [number, number, number], b: [number, number, nu
 
 const speedToken = (kn: number | null): MapToken => (kn === null ? '--map-ship-other' : kn < 0.5 ? '--map-seismic-low' : kn < 12 ? '--map-ship-cargo' : '--map-alt-high');
 
+const countMaritime = (b: MaritimeResponse) => b.ports.length + b.vessels.length;
+
 interface Segment {
   from: [number, number];
   to: [number, number];
@@ -41,7 +47,8 @@ interface Segment {
 }
 
 export default function MaritimeLayer() {
-  const data = useFeedData<MaritimeResponse>('maritime', '/api/maritime', (b) => b.ports.length + b.vessels.length);
+  // Keyless the answer is REFERENCE only (fetched once, hours-long TTL); a keyed AIS relay polls.
+  const data = useFeedData<MaritimeResponse>('maritime', '/api/maritime', countMaritime, maritimePollMs);
   const ports = data?.ports;
   const chokes = data?.chokepoints;
   const vessels = data?.vessels;
@@ -81,11 +88,11 @@ export default function MaritimeLayer() {
   useDeckLayers('maritime:reference', refLayers, Z - 1);
   useDeckPick('tn-ports', (info) => {
     const p = info.object as Port | undefined;
-    return p ? { kind: 'port', id: p.id, layer: 'maritime', source: p.source, observedAt: null, data: p as unknown as Record<string, unknown>, lngLat: [p.lng, p.lat] } : null;
+    return p ? portSelection(p) : null;
   });
   useDeckPick('tn-chokepoints', (info) => {
     const c = info.object as Chokepoint | undefined;
-    return c ? { kind: 'chokepoint', id: c.id, layer: 'maritime', source: 'curated', observedAt: null, data: c as unknown as Record<string, unknown>, lngLat: [c.lng, c.lat] } : null;
+    return c ? chokepointSelection(c) : null;
   });
 
   const layers = useMemo(() => {
