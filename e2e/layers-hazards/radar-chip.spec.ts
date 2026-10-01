@@ -98,7 +98,11 @@ test('the radar frame time stays clear of attribution, nav, rails, chips and hin
   const label = (await chip.textContent()) ?? '';
   const m = label.match(/^RADAR · RAINVIEWER · (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC$/);
   expect(m, label).not.toBeNull();
-  expect(frames!.map((t) => `${t.slice(0, 10)} ${t.slice(11, 16)}`)).toContain(`${m![1]} ${m![2]}`);
+  // RainViewer publishes a frame every 10 min: the page may have loaded a newer list than the one
+  // fetched above, so the label must name a frame from either snapshot (never an invented time).
+  const after = (await liveFrames(page)) ?? [];
+  const known = new Set([...frames!, ...after].map((t) => `${t.slice(0, 10)} ${t.slice(11, 16)}`));
+  expect([...known]).toContain(`${m![1]} ${m![2]}`);
   // It joined MapLibre's bottom-right stack (placed by the HUD safe areas), not a free overlay.
   expect(await chip.evaluate((el) => el.closest('.maplibregl-ctrl-bottom-right') !== null)).toBe(true);
 
