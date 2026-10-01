@@ -139,12 +139,15 @@ dossier nearby layers, markets chip truth, live NACp, malware count/co-location,
 (no 503), TfL key in header, narrowed allow-lists, ArcGIS allow-list, directions snap gate, classifier parity,
 lazy layers (initial JS 560 → ~459 KB gz), worker-side satellite parse, /docs try-it/⌘K (LH 0.99), Docker
 hardening.
-- [ ] Lighthouse `/` on a GPU runner (user decision 2026-10-01; job `lighthouse-gpu`, `lighthouserc.gpu.json`,
-      hardware-WebGL2 check `pnpm lhci:gpu:check` first). Owner step left: provision the runner (GitHub-hosted GPU
-      needs an organisation on Team or Enterprise Cloud; self-hosted needs the README pre-job hook + fork approval)
-      and set the repository variable `LIGHTHOUSE_GPU_RUNNER`; until then the job is red "not measured". Tick only
-      after a green run whose job summary names a hardware renderer (software-GL reference: perf 0.54, TBT 4.1 s on
-      c25edd6; budget 0.85 / 300 ms); initial JS ~459 KB gz vs 350 stays open (map-engine perf task)
+- [ ] Lighthouse `/` on a GPU runner (user decision 2026-10-01; job `lighthouse-gpu`, `lighthouserc.gpu.json`:
+      pre-check `pnpm lhci:gpu:check`, `lhci collect` with the in-run audit `godseye-map-webgl-hardware`,
+      `pnpm lhci:gpu:verify`, `lhci assert`). Owner step left: provision the runner (GitHub-hosted GPU needs an
+      organisation on Team or Enterprise Cloud with a payment method and a non-zero Actions budget; self-hosted needs
+      the README just-in-time controller, pre-job hook and fork approval) and set the repository variable
+      `LIGHTHOUSE_GPU_RUNNER`; until then the job is red "not measured". Tick only after a green run whose job
+      summary lists, for each of the three scored runs, a hardware renderer from the in-run audit (software-GL
+      reference: perf 0.46-0.54, TBT 4.1-16.8 s; budget 0.85 / 300 ms); initial JS ~459 KB gz vs 350 stays open
+      (map-engine perf task)
 - [ ] aviation: 40–79 % of positions older than 60 s after a few minutes under adsb.lol 429 on shared egress;
       `ADSBLOL_REAPI` is the real fix; rail shows the stale count
 - [ ] feature-flight-paths: FAA airways layer (needs a cached, quota-aware provider); ArcLayer arc height and

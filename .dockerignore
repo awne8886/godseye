@@ -33,3 +33,5 @@ Dockerfile
 docker-compose.yml
 Caddyfile
 lighthouserc.json
+lighthouserc.gpu.json
+tools/lighthouse
