@@ -93,7 +93,8 @@ Kept current by the lead after every phase. The build is done when this file is 
       Playwright, Turbopack alias for satellite.js multi-thread WASM, docs scripts, js-yaml, image-size 2.0.4 override)
 - [x] map-engine (integration round): ONE click router (deck + native + CPU hit-testers → `choosePick`), aviation and
       hazards migrated off their own `map.on('click')`; `ready` after load; tokens re-read on `godseye:style`
-- [ ] map-engine (integration round): startup performance — tracked in Phase 3 (Lighthouse `/` under software GL)
+- [ ] map-engine (integration round): startup performance under software GL (SwiftShader e2e, GPU-less visitors); the
+      Lighthouse gate on `/` moved to the GPU runner (job `lighthouse-gpu`)
 - [x] map-engine: merged-main e2e regressions (terrain → mercator, double-right-click dossier, attribution on mobile,
       worker URL, imagery chips) — fixed in Phase 3 round 1; label density z 3–5 still open (Phase 3 list)
 - [x] design-system-hud (integration round): MAP|SAT control, scale bar + cursor readout from `src/lib/map/cursor.ts`,
@@ -105,15 +106,17 @@ Kept current by the lead after every phase. The build is done when this file is 
       ScatterplotLayer; catalogue 3.18 MB (cap at ~21.9k rows) — split by group if the catalogue grows
 - [ ] layers-hazards: NWS alerts without geometry are `unplacedAlerts` until the zone cache fills (120/refresh);
       OpenAQ/WAQI keyed adapters unwired (no keys to test) — shown as skipped: not-configured
-- [ ] pages-docs-privacy-ops follow-up: README screenshots (Phase 3); confirm the Lighthouse desktop preset choice
+- [ ] pages-docs-privacy-ops follow-up: README screenshots (Phase 3)
+- [x] Lighthouse desktop preset, median of 3 runs: confirmed by the lead's GPU-runner task (2026-10-01), kept in both
+      configs (`lighthouserc.json`, `lighthouserc.gpu.json`) and asserted identical in tools/ops-config.test.ts
 
 ## Phase 2 wave B + integration — merged (surveillance, threats-network, alerts/markets/dossier/graph, recon, flight paths)
 - [x] All five branches + both integration rounds merged; 1,113 unit tests, lint, typecheck, build green;
       every catalogued route mounted (`CHECK_CATALOG_COMPLETENESS=1` in CI)
 - [x] Cross-builder links: aircraft card → PATHS, palette route/flight commands, SCM alerts only on live risk
-- [ ] CI red: desktop e2e (HUD panel launchers, Style Studio, double-right-click dossier) and Lighthouse on `/`
-      (0.61 perf / 1.7 s TBT on the last measured run; the space client's 3 MB satellites parse + clone should
-      move into `src/workers/tle-propagate.ts`)
+- [ ] CI red: desktop e2e (HUD panel launchers, Style Studio, double-right-click dossier); Lighthouse on `/` is now
+      gated on the GPU runner (software-GL reference 0.61 perf / 1.7 s TBT; the space client's 3 MB satellites
+      parse + clone should move into `src/workers/tle-propagate.ts`)
 - [ ] layers-surveillance: IBI 511, Windy, INDOT, MLIT, Edmonton, Via Lietuva not wired; Trafikverket untested live
 - [ ] layers-threats-network: polygon clicks (zones, risk, frontlines, cables) unverified in the sandbox; alert
       pins not yet counted in conflict zones; AIS relay + Cloudflare untested live (keys); DeepState proxying
@@ -136,8 +139,12 @@ dossier nearby layers, markets chip truth, live NACp, malware count/co-location,
 (no 503), TfL key in header, narrowed allow-lists, ArcGIS allow-list, directions snap gate, classifier parity,
 lazy layers (initial JS 560 → ~459 KB gz), worker-side satellite parse, /docs try-it/⌘K (LH 0.99), Docker
 hardening.
-- [ ] Lighthouse `/`: perf 0.54, TBT 4.1 s on c25edd6 (budget 0.85 / 300 ms); initial JS ~459 KB gz (350) —
-      dedicated map-engine perf task in progress
+- [ ] Lighthouse `/` on a GPU runner (user decision 2026-10-01; job `lighthouse-gpu`, `lighthouserc.gpu.json`,
+      hardware-WebGL2 check `pnpm lhci:gpu:check` first). Owner step left: provision the runner (GitHub-hosted GPU
+      needs an organisation on Team or Enterprise Cloud; self-hosted needs the README pre-job hook + fork approval)
+      and set the repository variable `LIGHTHOUSE_GPU_RUNNER`; until then the job is red "not measured". Tick only
+      after a green run whose job summary names a hardware renderer (software-GL reference: perf 0.54, TBT 4.1 s on
+      c25edd6; budget 0.85 / 300 ms); initial JS ~459 KB gz vs 350 stays open (map-engine perf task)
 - [ ] aviation: 40–79 % of positions older than 60 s after a few minutes under adsb.lol 429 on shared egress;
       `ADSBLOL_REAPI` is the real fix; rail shows the stale count
 - [ ] feature-flight-paths: FAA airways layer (needs a cached, quota-aware provider); ArcLayer arc height and

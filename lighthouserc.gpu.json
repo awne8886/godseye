@@ -4,12 +4,12 @@
       "startServerCommand": "pnpm start --port 3200",
       "startServerReadyPattern": "Ready",
       "startServerReadyTimeout": 90000,
-      "url": ["http://127.0.0.1:3200/docs", "http://127.0.0.1:3200/privacy"],
+      "url": ["http://127.0.0.1:3200/"],
       "numberOfRuns": 3,
       "settings": {
         "preset": "desktop",
         "pauseAfterLoadMs": 9000,
-        "chromeFlags": "--headless=new --no-sandbox --enable-unsafe-swiftshader --use-angle=swiftshader --ignore-gpu-blocklist"
+        "chromeFlags": "--headless=new --no-sandbox --enable-gpu --ignore-gpu-blocklist --use-angle=vulkan --enable-features=Vulkan --disable-vulkan-surface"
       }
     },
     "assert": {

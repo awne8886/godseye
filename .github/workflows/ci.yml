@@ -1,6 +1,7 @@
 # GODSEYE CI: every push and pull request must pass a placeholder check, lint, typecheck, unit
 # tests with the 80 % line-coverage gate, a production build, Playwright e2e (in the official
-# Playwright image, SwiftShader WebGL), Lighthouse CI and a production dependency audit.
+# Playwright image, SwiftShader WebGL), Lighthouse CI (/docs and /privacy on ubuntu-24.04; / on a
+# GPU runner after a hardware-WebGL2 check) and a production dependency audit.
 # Actions are pinned to full commit SHAs (tag in the trailing comment), images to digests.
 name: CI
 
@@ -110,8 +111,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  lighthouse:
-    name: Build + Lighthouse CI
+  lighthouse-pages:
+    name: Build + Lighthouse CI (/docs, /privacy)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -125,7 +126,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # Thresholds live in lighthouserc.json (perf >= 0.85, a11y = 1, LCP <= 2.5 s, CLS <= 0.1, TBT <= 300 ms).
+      # Thresholds live in lighthouserc.json and lighthouserc.gpu.json, identical and equal to the
+      # contract (perf >= 0.85, a11y = 1, LCP <= 2.5 s, CLS <= 0.1, TBT <= 300 ms; enforced by
+      # tools/ops-config.test.ts). These pages draw no WebGL, so SwiftShader flags are harmless here.
       # Uses the runner's preinstalled Google Chrome. Reports stay in the workflow artifacts; nothing is
       # uploaded to public storage.
       - name: Lighthouse CI
@@ -134,7 +137,86 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: lighthouse
+          name: lighthouse-pages
+          path: .lighthouseci/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Lighthouse on / (the WebGL globe) is measured only on a hardware GPU: under SwiftShader the globe
+  # is rasterised on the CPU, which is not what visitors with a GPU get, and the thresholds are the
+  # same as everywhere else. The runner is named by the repository variable LIGHTHOUSE_GPU_RUNNER: a
+  # runner label (for example gpu-t4-4core) or a JSON array of labels (for example
+  # ["self-hosted","linux","x64","godseye-gpu"]). README.md, "GPU runner for Lighthouse on /", says
+  # how to provision one.
+  # When the variable is empty or the run comes from a fork (forks and Dependabot cannot read
+  # repository variables anyway), the job runs on ubuntu-24.04 and its first step fails within
+  # seconds: it is never skipped (a skipped job reports success to a required check), never queued
+  # for a runner that does not exist, and never measured on software GL.
+  # This routing is a cost guard, not a security boundary (a fork pull request runs its own copy of
+  # this file): a self-hosted GPU runner also needs the pre-job hook and the fork-approval setting
+  # described in the README.
+  lighthouse-gpu:
+    name: Build + Lighthouse CI (/, GPU runner)
+    runs-on: ${{ (vars.LIGHTHOUSE_GPU_RUNNER != '' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)) && (startsWith(vars.LIGHTHOUSE_GPU_RUNNER, '[') && fromJSON(vars.LIGHTHOUSE_GPU_RUNNER) || vars.LIGHTHOUSE_GPU_RUNNER) || 'ubuntu-24.04' }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GPU_RUNNER: ${{ vars.LIGHTHOUSE_GPU_RUNNER }}
+      TRUSTED_SOURCE: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - name: Require a GPU runner and a trusted source
+        run: |
+          if [ "$TRUSTED_SOURCE" != "true" ]; then
+            echo "::error title=Lighthouse on / not measured::Pull requests from forks never run on the GPU runner. A maintainer re-runs the reviewed change from a branch of this repository."
+            exit 1
+          fi
+          if [ -z "$GPU_RUNNER" ]; then
+            echo "::error title=Lighthouse on / not measured::The repository variable LIGHTHOUSE_GPU_RUNNER is empty in this run. Set it under Settings > Secrets and variables > Actions > Variables to the GPU runner's label or a JSON array of labels (README.md, 'GPU runner for Lighthouse on /'). Runs triggered by Dependabot cannot read repository variables."
+            exit 1
+          fi
+          echo "GPU runner requested: $GPU_RUNNER; running on $RUNNER_NAME"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Lighthouse and the renderer check share Playwright's Chromium build (pinned by @playwright/test;
+      # it ships its own Vulkan loader, the GPU driver provides the Vulkan ICD). A GitHub-hosted runner
+      # installs the system libraries with apt; a self-hosted runner has them preinstalled (README) and
+      # this workflow never runs sudo there.
+      - name: Install Chromium (GitHub-hosted runner)
+        if: runner.environment == 'github-hosted'
+        run: pnpm exec playwright install --with-deps --no-shell chromium
+      - name: Install Chromium (self-hosted runner)
+        if: runner.environment == 'self-hosted'
+        run: pnpm exec playwright install --no-shell chromium
+      - name: Point Lighthouse CI at that Chromium (CHROME_PATH)
+        run: echo "CHROME_PATH=$(node -e "process.stdout.write(require('@playwright/test').chromium.executablePath())")" >> "$GITHUB_ENV"
+      # Diagnostics only; the renderer check below is the gate.
+      - name: GPU diagnostics
+        run: |
+          if command -v nvidia-smi > /dev/null; then nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv; else echo "nvidia-smi not found"; fi
+          ls -l /usr/share/vulkan/icd.d /etc/vulkan/icd.d 2> /dev/null || echo "no Vulkan ICD manifests in /usr/share/vulkan/icd.d or /etc/vulkan/icd.d"
+          "$CHROME_PATH" --version
+      - run: pnpm build
+      # Same binary (CHROME_PATH) and the exact chromeFlags of lighthouserc.gpu.json. Fails unless WebGL2
+      # runs on a hardware GPU, on a blank canvas and on the MapLibre canvas of /, served by the config's
+      # own start command (SwiftShader, llvmpipe, lavapipe, any "software" renderer, a performance-caveat
+      # context or no WebGL2 all fail). Evidence: the job summary and .lighthouseci/gpu-renderer.json.
+      - name: Hardware WebGL2 check (same Chromium and flags as Lighthouse)
+        run: pnpm lhci:gpu:check
+      - name: Lighthouse CI on / (GPU)
+        run: pnpm exec lhci autorun --config=./lighthouserc.gpu.json
+      - name: Upload Lighthouse reports and renderer evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lighthouse-gpu
           path: .lighthouseci/
           if-no-files-found: ignore
           retention-days: 7
