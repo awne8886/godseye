@@ -1,9 +1,10 @@
+import type * as Respond from '@/lib/respond';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import zlib from 'node:zlib';
 import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { resetFeeds } from '@/lib/feeds';
 import { httpJson } from '@/lib/http';
-import { MAX_RESPONSE_BYTES } from '@/lib/respond';
+import { MAX_RESPONSE_BYTES, compressedJson } from '@/lib/respond';
 import { SatellitesResponse } from '@/lib/schemas';
 import { celestrakRoutes, netError, upstreamRouter } from '@/features/space/__fixtures__/upstreams';
 import { FUTURE_EPOCH_CAPTURED_AT, fx } from '@/features/space/__fixtures__';
@@ -12,6 +13,11 @@ import { COL, epochIso } from '@/features/space/lib/catalog';
 import { GET } from './route';
 
 vi.mock('@/lib/http', async (orig) => ({ ...(await orig<Record<string, unknown>>()), httpJson: vi.fn() }));
+// Pass-through spy: lets a test prove a 304 never serialises or compresses the catalogue.
+vi.mock('@/lib/respond', async (orig) => {
+  const real = await orig<typeof Respond>();
+  return { ...real, compressedJson: vi.fn(real.compressedJson) };
+});
 
 const req = (qs = '', headers: Record<string, string> = {}) => new Request(`http://localhost/api/satellites${qs}`, { headers: { 'x-forwarded-for': '10.1.2.3', ...headers } });
 
@@ -87,6 +93,55 @@ describe('GET /api/satellites', () => {
     expect(body.rows[0][COL.noradId]).toBe(25544);
     expect(Object.values(body.categoryCounts as Record<string, number>).reduce((a, b) => a + b, 0)).toBe(1);
     expect((await GET(req('?id=abc'), undefined)).status).toBe(400);
+  });
+
+  // perf round 5 m-i: the ETag carried the current minute, so a reload 2.5 min later re-downloaded
+  // ~800 KB br (and re-serialised 2.6 MB) although the catalogue had not changed.
+  it('the ETag depends on content, not the clock: revalidating minutes later is a bodiless 304', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    const t0 = Date.parse('2026-10-01T15:04:33Z');
+    vi.setSystemTime(t0);
+    vi.mocked(httpJson).mockImplementation(upstreamRouter(celestrakRoutes()).impl as never);
+    const first = await GET(req(), undefined);
+    expect(first.status).toBe(200);
+    const etag = first.headers.get('etag')!;
+    const body = await first.json();
+    expect(body.providers.celestrak.age_s).toBe(0);
+
+    for (const minutes of [1.5, 2.5, 30]) {
+      vi.setSystemTime(t0 + minutes * 60_000);
+      vi.mocked(compressedJson).mockClear();
+      const again = await GET(req('', { 'if-none-match': etag, 'accept-encoding': 'br' }), undefined);
+      expect(again.status, `${minutes} min later`).toBe(304);
+      expect(again.headers.get('etag')).toBe(etag);
+      expect(again.headers.get('cache-control')).toMatch(/must-revalidate, s-maxage=\d+/);
+      expect(again.headers.get('vary')).toBe('Accept-Encoding');
+      expect((await again.arrayBuffer()).byteLength).toBe(0);
+      expect(compressedJson).not.toHaveBeenCalled(); // nothing serialised or compressed
+    }
+
+    // A full 200 later carries the same validator; providers' age_s is re-derived for it, and meta
+    // still says when the catalogue was fetched (freshness is honest without a per-minute ETag).
+    const later = await GET(req(), undefined);
+    expect(later.status).toBe(200);
+    expect(later.headers.get('etag')).toBe(etag);
+    const b = await later.json();
+    expect(SatellitesResponse.safeParse(b).success).toBe(true);
+    expect(b.providers.celestrak.age_s).toBe(30 * 60);
+    expect(b.meta.fetchedAt).toBe(body.meta.fetchedAt);
+    expect(b.rows).toEqual(body.rows);
+  });
+
+  it('a different filter has a different validator, and a stale validator gets a 200', async () => {
+    vi.mocked(httpJson).mockImplementation(upstreamRouter(celestrakRoutes()).impl as never);
+    const all = await GET(req(), undefined);
+    const nav = await GET(req('?category=navigation'), undefined);
+    expect(all.headers.get('etag')).not.toBe(nav.headers.get('etag'));
+    const other = await GET(req('', { 'if-none-match': nav.headers.get('etag')! }), undefined);
+    expect(other.status).toBe(200);
+    expect(other.headers.get('etag')).toBe(all.headers.get('etag'));
+    const legacy = await GET(req('', { 'if-none-match': 'W/"per-minute-etag-from-before"' }), undefined);
+    expect(legacy.status).toBe(200);
   });
 
   it('negotiates brotli/gzip and stays under the 4 MB cap', async () => {

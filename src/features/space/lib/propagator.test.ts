@@ -77,13 +77,42 @@ describe('tle-propagate worker protocol', () => {
   it('propagates frames from the worker-held catalogue and transfers the frame buffers', async () => {
     const { p, sent } = harness(ok);
     await p.handle({ type: 'load', url: '/api/satellites' });
-    p.handle({ type: 'view', center: null, visible: [0, 1, 2, 3, 4, 5], palette: SAT_CATEGORIES.map(() => [255, 255, 255, 255]), selectedId: 25544 });
+    p.handle({ type: 'view', camera: null, visible: [0, 1, 2, 3, 4, 5], palette: SAT_CATEGORIES.map(() => [255, 255, 255, 255]), selectedId: 25544 });
     p.handle({ type: 'tick', at: Date.parse('2026-09-30T18:05:00Z') });
     const { msg, transfer } = sent.at(-1)!;
     if (msg.type !== 'frame') throw new Error('expected a frame');
     expect(msg.count).toBeGreaterThan(0);
     expect(msg.selected?.noradId).toBe(25544);
     expect(transfer).toEqual([msg.positions.buffer, msg.colors.buffer, msg.radii.buffer, msg.index.buffer]);
+  });
+
+  it('a camera move re-filters the newest propagation at once (same `at`, no tick needed)', async () => {
+    const { p, sent } = harness(ok);
+    await p.handle({ type: 'load', url: '/api/satellites' });
+    const palette = SAT_CATEGORIES.map(() => [255, 255, 255, 255] as [number, number, number, number]);
+    // Before the first tick there is nothing to re-filter: no frame.
+    p.handle({ type: 'camera', camera: { lng: 0, lat: 0, altitude: 7_000_000 } });
+    expect(sent.filter((s) => s.msg.type === 'frame')).toHaveLength(0);
+    p.handle({ type: 'view', camera: null, visible: [0, 1, 2, 3, 4, 5], palette, selectedId: null });
+    const at = Date.parse('2026-09-30T18:05:00Z');
+    p.handle({ type: 'tick', at });
+    const flat = sent.at(-1)!.msg;
+    if (flat.type !== 'frame') throw new Error('expected a frame');
+    expect(flat.camera).toBeNull();
+    // The globe turns: the worker posts a re-filtered frame for the same propagation.
+    const camera = { lng: -98, lat: 39, altitude: 5_700_000 };
+    p.handle({ type: 'camera', camera });
+    const { msg, transfer } = sent.at(-1)!;
+    if (msg.type !== 'frame') throw new Error('expected a re-filtered frame');
+    expect(msg.at).toBe(at);
+    expect(msg.camera).toEqual(camera);
+    expect(msg.count).toBeLessThan(flat.count);
+    expect(msg.count + msg.hidden + msg.failed).toBe(flat.count + flat.hidden + flat.failed);
+    expect(transfer).toEqual([msg.positions.buffer, msg.colors.buffer, msg.radii.buffer, msg.index.buffer]);
+    // The next tick keeps the camera.
+    p.handle({ type: 'tick', at: at + 1000 });
+    const next = sent.at(-1)!.msg;
+    expect(next.type === 'frame' && next.camera).toEqual(camera);
   });
 
   it('does not rebuild or re-send the arrays when the catalogue version is unchanged', async () => {

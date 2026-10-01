@@ -144,8 +144,8 @@ describe('bulk propagation (worker core)', () => {
   const all = new Set([0, 1, 2, 3, 4, 5]);
 
   it('is deterministic at a fixed time', () => {
-    const a = propagateBatch(input, { at: AT, palette, visible: all, center: null, selectedId: 25544 });
-    const b = propagateBatch(input, { at: AT, palette, visible: all, center: null, selectedId: 25544 });
+    const a = propagateBatch(input, { at: AT, palette, visible: all, camera: null, selectedId: 25544 });
+    const b = propagateBatch(input, { at: AT, palette, visible: all, camera: null, selectedId: 25544 });
     expect(a.count).toBeGreaterThan(recs.length * 0.9);
     expect(Array.from(a.positions)).toEqual(Array.from(b.positions));
     expect(Array.from(a.colors)).toEqual(Array.from(b.colors));
@@ -157,22 +157,20 @@ describe('bulk propagation (worker core)', () => {
     expect(a.positions[i * 3 + 2]).toBeCloseTo(displayAltM(a.selected!.altKm), -1);
   });
 
-  it('dims satellites in Earth shadow and filters the far side and hidden categories', () => {
-    const r = propagateBatch(input, { at: AT, palette, visible: all, center: null, selectedId: null });
+  it('dims satellites in Earth shadow and filters hidden categories', () => {
+    const r = propagateBatch(input, { at: AT, palette, visible: all, camera: null, selectedId: null });
     const alphas = new Set<number>();
     for (let i = 0; i < r.count; i++) alphas.add(r.colors[i * 4 + 3]!);
     expect(alphas).toEqual(new Set([242, Math.round(242 * 0.3)]));
 
-    const facing = propagateBatch(input, { at: AT, palette, visible: all, center: [0, 0], selectedId: null });
-    expect(facing.count).toBeLessThan(r.count);
-    for (let i = 0; i < facing.count; i++) expect(Math.abs(facing.positions[i * 3]!)).toBeLessThanOrEqual(90.0001);
+    // The far-side filter has its own spec: propagate-batch.test.ts.
 
-    const navOnly = propagateBatch(input, { at: AT, palette, visible: new Set([2]), center: null, selectedId: null });
+    const navOnly = propagateBatch(input, { at: AT, palette, visible: new Set([2]), camera: null, selectedId: null });
     for (let i = 0; i < navOnly.count; i++) expect(recs[navOnly.index[i]!]!.category).toBe('navigation');
   });
 
   it('counts unpropagatable elements as failed, never drawn', () => {
-    const r = propagateBatch({ ...input, satrecs: input.satrecs.map((s, i) => (i === 0 ? null : s)) }, { at: AT, palette, visible: all, center: null, selectedId: null });
+    const r = propagateBatch({ ...input, satrecs: input.satrecs.map((s, i) => (i === 0 ? null : s)) }, { at: AT, palette, visible: all, camera: null, selectedId: null });
     expect(r.failed).toBeGreaterThanOrEqual(1);
     expect(Array.from(r.index)).not.toContain(0);
   });

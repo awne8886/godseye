@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FeedMeta } from '@/lib/types';
-import { ISS_LABEL, ISS_LABEL_CHARSET, issLabelLayer, orbitLayer, railAttribution } from './SatelliteLayer';
+import { ISS_LABEL, ISS_LABEL_CHARSET, frameDiagnostics, issLabelLayer, orbitLayer, railAttribution, satelliteDotsLayer } from './SatelliteLayer';
 
 const color: [number, number, number, number] = [10, 20, 30, 255];
 
@@ -43,6 +43,42 @@ describe('satellite deck layers (globe rules)', () => {
     for (const ch of ISS_LABEL) expect(props.characterSet).toContain(ch);
     expect(props.parameters?.cullMode).toBe('none');
     expect(props.billboard).toBe(true);
+  });
+
+  const frame = (at: number, count: number) => ({
+    version: '2026-10-01T06:14:19.000Z|2',
+    at,
+    count,
+    positions: new Float32Array(count * 3),
+    colors: new Uint8Array(count * 4),
+    radii: new Float32Array(count),
+    index: new Uint32Array(count),
+    hidden: 2 - count,
+    failed: 0,
+    selected: null,
+    camera: count === 2 ? null : { lng: -98, lat: 39, altitude: 5_700_000 },
+  });
+
+  it('the satellite dots are never culled, pickable, and re-upload on a same-`at` camera re-filter', () => {
+    const a = frame(1_790_900_000_000, 2);
+    const b = frame(1_790_900_000_000, 1); // same propagation, re-filtered for a new camera
+    const la = satelliteDotsLayer(a);
+    const lb = satelliteDotsLayer(b);
+    const pa = la.props as unknown as { parameters?: { cullMode?: string }; pickable?: boolean; billboard?: boolean; drawnFrame?: unknown; updateTriggers: Record<string, unknown> };
+    const pb = lb.props as unknown as typeof pa;
+    expect(pa.parameters?.cullMode).toBe('none');
+    expect(pa.pickable).toBe(true);
+    expect(pa.billboard).toBe(true);
+    expect(pa.drawnFrame).toBe(a);
+    expect(pb.updateTriggers.getPosition).not.toBe(pa.updateTriggers.getPosition);
+    // The same frame object keeps its trigger (no needless re-upload on unrelated re-renders).
+    expect((satelliteDotsLayer(a).props as unknown as typeof pa).updateTriggers.getPosition).toBe(pa.updateTriggers.getPosition);
+  });
+
+  it('diagnostics name the frame and the far-side camera it was filtered with (e2e)', () => {
+    expect(frameDiagnostics(null)).toBe('');
+    const d = JSON.parse(frameDiagnostics(frame(1_790_900_000_000, 1)));
+    expect(d).toEqual({ version: '2026-10-01T06:14:19.000Z|2', at: 1_790_900_000_000, count: 1, hidden: 1, failed: 0, camera: { lng: -98, lat: 39, altitude: 5_700_000 } });
   });
 });
 

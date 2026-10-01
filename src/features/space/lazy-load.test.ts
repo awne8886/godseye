@@ -61,3 +61,29 @@ describe('space module lazy loading', () => {
     expect([...packages]).toContain('satellite.js');
   });
 });
+
+// perf round 5 m-k: field-name constants came from the zod contract, so zod (88.6 KB gz) was
+// downloaded on `/` and inside the worker. They now live in the zod-free `lib/fields.ts`.
+describe('space client code never loads zod', () => {
+  const schemas = path.join(ROOT, 'src/lib/schemas') + path.sep;
+
+  it('the tle-propagate worker reaches neither zod nor a schema module', () => {
+    const { packages, files } = staticGraph(path.join(ROOT, 'src/workers/tle-propagate.ts'));
+    expect([...packages]).not.toContain('zod');
+    expect([...files].filter((f) => f.startsWith(schemas))).toEqual([]);
+  });
+
+  it.each(['index.ts', 'SatelliteLayer.tsx', 'SatelliteCard.tsx', 'SpacePanel.tsx', 'client/data.ts', 'client/pick.ts', 'lib/catalog.ts', 'lib/packed.ts'])(
+    '%s reaches no schema module (zod stays off the main thread)',
+    (file) => {
+      const { packages, files } = staticGraph(space(file));
+      expect([...files].filter((f) => f.startsWith(schemas))).toEqual([]);
+      expect([...packages]).not.toContain('zod');
+    },
+  );
+
+  it('the contract re-exports the same field list', async () => {
+    const [{ SATELLITE_FIELDS: contract }, { SATELLITE_FIELDS: plain }] = await Promise.all([import('@/lib/schemas/space'), import('./lib/fields')]);
+    expect(contract).toBe(plain);
+  });
+});
