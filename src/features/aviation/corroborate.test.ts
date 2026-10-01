@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import legs from './__fixtures__/route-legs-2026-10-01.json';
 import r5 from './__fixtures__/route-r5-2026-10-01.json';
+import ual374 from '@/features/flight-paths/__fixtures__/r3/flight-UAL374.json';
+import traceA5d31d from '@/features/flight-paths/__fixtures__/r3/trace-a5d31d.json';
 import { flyingRoute } from '@/features/flight-paths/lib/geometry';
 import { distanceKm } from '@/lib/geo';
-import { awayFromDestination, corroborateLeg, headingFor, lastTakeoff, onCourseFor, type LegEnd } from './corroborate';
+import { alongCorridor, awayFromDestination, corroborateLeg, headingFor, lastTakeoff, onCourseFor, type LegEnd } from './corroborate';
 import { onRouteCorridor, pickLeg, type RoutePosition } from './route-geometry';
 
 // R2 round 5 BLOCKING-1 cases: real adsb.lol traces (2026-10-01, fetched 16:07Z) and VRS standing
@@ -125,6 +127,22 @@ describe('corroborateLeg on the three R2 round 5 cases (agrees with the FLIGHT v
 
   it('SWA1332: departed neither ATL nor MDW → withheld', () => {
     expect(verdict('SWA1332')).toEqual({ kind: 'withhold', routeCheck: 'observed departure is not ATL — contradicts standing data ATL→MDW; route not confirmed' });
+  });
+
+  it('UAL374 (VRS ORD-LAX, flight-paths r3 fixture): departed LAX along the corridor but on 100° with ORD at ~60° → withheld (it landed at Phoenix)', () => {
+    // Airport coordinates: OurAirports. The trace a5d31d fetched 2026-10-01T16:49Z shows the
+    // landing at KPHX 03:24Z; the FLIGHT view's lenient corridor test had shown "flown LAX→ORD".
+    const ord: LegEnd = { icao: 'KORD', iata: 'ORD', lat: 41.9786, lng: -87.9048, elevationFt: 672 };
+    const lax: LegEnd = { icao: 'KLAX', iata: 'LAX', lat: 33.9425, lng: -118.408, elevationFt: 125 };
+    const p = ual374.position;
+    const pos: RoutePosition = { lat: p.lat, lng: p.lng, speedKt: p.gsKt, trackDeg: p.trackDeg, altFt: p.altFt, vrFpm: 0 };
+    expect(awayFromDestination(ord, lax, pos)).toBe(true);
+    expect(alongCorridor(pos, lax, ord)).toBe(true); // what the FLIGHT view's `rev` saw
+    expect(onCourseFor(pos, lax, ord)).toBe(false);
+    expect(corroborateLeg(ord, lax, pos, traceA5d31d.track)).toEqual({
+      kind: 'withhold',
+      routeCheck: 'observed departure LAX contradicts standing data ORD→LAX, and the aircraft is not on course for ORD — route not confirmed',
+    });
   });
 
   it('without a flown track every case is withheld, with the reason', () => {

@@ -1,20 +1,23 @@
 /**
  * Flown-track corroboration of a standing-data leg (R2 round 5 BLOCKING-1). One rule for
  * GET /api/flight-route (so the aircraft card and Flight Watch) and the FLIGHT view
- * (src/features/flight-paths/server/flight.ts uses the same `onCourseFor` predicate), so the
- * views give one answer. Pure and isomorphic; no I/O.
+ * (src/features/flight-paths/server/flight.ts): the same `flyingRoute` decides what to WITHHOLD,
+ * and the same `onCourseFor` is needed to SHOW a reversed leg, so the views give one answer.
+ * Pure and isomorphic; no I/O.
  *
  * When it applies (`awayFromDestination`): the aircraft is more than 60 km from both ends of the
  * leg and its observed track points away from the listed destination (cos(track − bearing to D)
  * < −0.3, i.e. more than ~107° off). Being "toward the origin" is NOT required: SWA1241 (VRS
  * KSMF-KLAS-KDCA) flew 214° 380 km south-west of DCA, away from DCA and not toward LAS, and the
  * card said LAS→DCA 93 % while it was flying BWI→CLT. Then the flown track decides:
- *  - take-off observed at D, on course for O → the reverse leg, shown as flown (`reverse`);
+ *  - take-off observed at D, on course for O (`onCourseFor`) → the reverse leg, shown as flown;
  *  - take-off observed at D otherwise → withheld (it departed D for somewhere else);
- *  - take-off observed at O, on course back toward O → withheld (turnaround not observed);
+ *  - take-off observed at O, flying back along the corridor toward O (`flyingRoute`) → withheld
+ *    (turnaround not observed);
  *  - take-off observed at O otherwise → the listed leg without progress (`listed`, the FLIGHT
  *    view's "departed O but not observed on course for D");
  *  - take-off elsewhere, not observed, or no flown track → withheld, with the reason.
+ * The lenient corridor test may only withhold; asserting a reversed leg needs the strict one.
  */
 import { distanceKm, initialBearing, type LngLatTuple } from '@/lib/geo';
 import { flyingRoute, positionOnPath } from '@/features/flight-paths/lib/geometry';
@@ -49,9 +52,10 @@ export function awayFromDestination(o: RoutePoint, d: RoutePoint, pos: RoutePosi
 
 /**
  * The track points at `to`: within max(20°, asin(80 km / distance)) of the direct bearing. A course
- * that only runs roughly parallel to the corridor is not "toward": UAL1789 departed IAD on 237°
- * inside the IAD–RDU corridor (the path's local bearing ~199°) while RDU bore 152°, and landed at
- * San Antonio (trace a2bbcc, 2026-10-01).
+ * that only runs roughly along the corridor is not "toward": UAL1789 departed IAD on 237° inside
+ * the IAD–RDU corridor (the path's local bearing ~199°) while RDU bore 152°, and landed at San
+ * Antonio (trace a2bbcc, 2026-10-01); UAL374 (VRS ORD-LAX) departed LAX on 100° over Arizona while
+ * ORD bore ~60°, and landed at Phoenix (trace a5d31d) — the FLIGHT view had shown "flown LAX→ORD".
  */
 export function headingFor(pos: Pick<RoutePosition, 'lat' | 'lng' | 'trackDeg'>, to: RoutePoint): boolean {
   if (pos.trackDeg == null) return false;
@@ -62,13 +66,18 @@ export function headingFor(pos: Pick<RoutePosition, 'lat' | 'lng' | 'trackDeg'>,
 }
 
 /**
- * On course for `to` from `from`: the FLIGHT view's `flyingRoute` (inside the corridor, track
- * within 60° of the path's local bearing; near an end the vertical rate decides) AND `headingFor`.
+ * The FLIGHT view's `flyingRoute` from→to: inside the corridor and the track within 60° of the
+ * path's local bearing (near an end the vertical rate decides). Enough to withhold, not to assert.
  */
-export function onCourseFor(pos: RoutePosition, from: RoutePoint, to: RoutePoint): boolean {
+export function alongCorridor(pos: RoutePosition, from: RoutePoint, to: RoutePoint): boolean {
   if (pos.trackDeg == null) return false;
   const s = { lat: pos.lat, lng: pos.lng, altFt: pos.altFt ?? null, gsKt: pos.speedKt, trackDeg: pos.trackDeg, vrFpm: pos.vrFpm ?? null };
-  return flyingRoute(s, ll(from), ll(to)) && headingFor(pos, to);
+  return flyingRoute(s, ll(from), ll(to));
+}
+
+/** On course for `to` from `from`: `alongCorridor` AND `headingFor` (needed to show a reversed leg). */
+export function onCourseFor(pos: RoutePosition, from: RoutePoint, to: RoutePoint): boolean {
+  return alongCorridor(pos, from, to) && headingFor(pos, to);
 }
 
 export interface Takeoff {
@@ -120,10 +129,10 @@ export function corroborateLeg(o: LegEnd, d: LegEnd, pos: RoutePosition, track: 
   const O = code(o);
   const D = code(d);
   const sched = `${O}→${D}`;
-  const back = onCourseFor(pos, d, o);
+  const back = alongCorridor(pos, d, o);
   const takeoff = track?.length ? lastTakeoff(track, o, d) : null;
   if (takeoff?.end === 'd') {
-    return back
+    return back && headingFor(pos, o)
       ? { kind: 'reverse', routeCheck: `observed departure ${D} and course toward ${O}: shown as flown ${D}→${O}; standing data lists ${sched}` }
       : { kind: 'withhold', routeCheck: `observed departure ${D} contradicts standing data ${sched}, and the aircraft is not on course for ${O} — route not confirmed` };
   }

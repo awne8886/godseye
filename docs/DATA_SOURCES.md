@@ -489,6 +489,7 @@ requests ≥ 2 s apart (adsb.lol) / 1.2 s (VRS):
 | `https://adsb.lol/data/traces/54/trace_full_abd254.json` | 200 | 2.84 s | none | 2,070 rows. SWA1241 took off **BWI** 12:43:36Z (51 km from DCA), landed **CLT** 13:42:09Z — not VRS's KSMF-KLAS-KDCA |
 | `https://adsb.lol/data/traces/cc/trace_full_a2bbcc.json` | 200 | 0.80 s | none | 4,009 rows. UAL1789 took off **IAD** 12:55:47Z, landed **San Antonio** 15:46:22Z — not VRS's KRDU-KIAD-KORF (the FLIGHT view had shown "flown IAD→RDU") |
 | `https://adsb.lol/data/traces/47/trace_full_ac1747.json` | 200 | 0.79 s | none | 3,750 rows. SWA1332 took off **Dallas Love** 11:20:21Z, landed **BWI** 13:52:18Z — not VRS's KMCO-KATL-KMDW |
+| `https://adsb.lol/data/traces/1d/trace_full_a5d31d.json` (16:49Z) | 200 | 0.98 s | none | 2,998 rows. UAL374 (VRS ORD-LAX) took off **LAX** 02:28:47Z, landed **Phoenix** 03:24:56Z — flight-paths' r3 fixture expects "flown LAX→ORD"; the shared `headingFor` test refuses it (request to feature-flight-paths) |
 | `https://vrs-standing-data.adsb.lol/routes/{SW,UA,SW,DA}/{SWA1241,UAL1789,SWA1332,DAL3069}.json` | 200 ×4 | 0.22–0.39 s | `*` | `airport_codes` KSMF-KLAS-KDCA, KRDU-KIAD-KORF, KMCO-KATL-KMDW, KATL-KBNA-KATL; `Last-Modified: Sun, 20 Sep 2026 18:47–18:48 GMT` |
 
 Kept as `src/features/aviation/__fixtures__/route-r5-2026-10-01.json`: the trace row nearest the
