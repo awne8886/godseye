@@ -87,6 +87,36 @@ describe('camera card', () => {
     expect(screen.queryByTestId('camera-frames-note')).toBeNull();
   });
 
+  it('round 5 (R2 minor 4): Toronto frames 21.6 h old read STALE · FRAMES 21h OLD in orange, not AVAILABLE in green', async () => {
+    const toronto = { ...provider, id: 'toronto', operator: 'City of Toronto', max_poll_interval: 60 };
+    // The reviewer's /api/cctv/providers sample: frames relayed, lastFrameAge_s 77879 (2026-10-01).
+    const frames = { toronto: { state: 'available', windowS: 600, attempts: 6, ok: 6, failed: 0, cameras: 6, camerasFailing: 0, camerasOperatorFault: 0, errors: {}, lastOkAt: '2026-10-01T13:20:00.000Z', lastFailAt: null, lastError: null, lastFrameAge_s: 77879, freshestFrameAge_s: 77650, untimed: 0 } };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [toronto], frames }), { status: 200 })));
+    const c = { ...cam, id: 'toronto-8001', providerId: 'toronto', source: 'toronto', name: 'YORK ST / BREMNER BLVD' };
+    const sel: Selection = { kind: 'camera', id: c.id, layer: 'cctv', source: 'toronto', observedAt: null, data: c as unknown as Record<string, unknown>, lngLat: [c.lng, c.lat] };
+    render(wrap(<CameraCard selection={sel} />));
+    const value = (await screen.findByTestId('camera-frames')).querySelector('dd span')!;
+    expect(value.textContent).toBe('STALE · FRAMES 21h OLD');
+    expect(value.className).toContain('--alert-orange');
+    expect(value.className).not.toContain('--alert-green');
+  });
+
+  it('fresh operator frames are AVAILABLE in green; untimed ones are not', async () => {
+    const fresh = { state: 'available', windowS: 600, attempts: 3, ok: 3, failed: 0, cameras: 3, camerasFailing: 0, camerasOperatorFault: 0, errors: {}, lastOkAt: '2026-10-01T10:30:00.000Z', lastFailAt: null, lastError: null, lastFrameAge_s: 68, freshestFrameAge_s: 68, untimed: 0 };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [provider], frames: { hktd: fresh } }), { status: 200 })));
+    const sel: Selection = { kind: 'camera', id: cam.id, layer: 'cctv', source: 'hktd', observedAt: null, data: cam as unknown as Record<string, unknown>, lngLat: [cam.lng, cam.lat] };
+    const { unmount } = render(wrap(<CameraCard selection={sel} />));
+    const ok = (await screen.findByTestId('camera-frames')).querySelector('dd span')!;
+    expect(ok.textContent).toBe('AVAILABLE');
+    expect(ok.className).toContain('--alert-green');
+    unmount();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [provider], frames: { hktd: { ...fresh, lastFrameAge_s: null, freshestFrameAge_s: null, untimed: 3 } } }), { status: 200 })));
+    render(wrap(<CameraCard selection={sel} />));
+    const untimed = (await screen.findByTestId('camera-frames')).querySelector('dd span')!;
+    expect(untimed.textContent).toBe('RELAYED · UNTIMED');
+    expect(untimed.className).not.toContain('--alert-green');
+  });
+
   it('a camera list frame time is labelled as such (the viewer shows the current frame’s own time)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [provider] }), { status: 200 })));
     const c = { ...cam, observedAt: '2026-10-01T07:20:00.000Z' };

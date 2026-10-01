@@ -154,6 +154,14 @@ export function zoomBand(zoom: number): number {
 // ── Frame freshness and availability (viewer, preview tiles, camera card) ───────
 export type FrameAge = { state: 'recent' | 'stale' | 'unknown'; label: string; ageS: number | null };
 
+/** A frame is current for this many operator intervals (each counted as at least 60 s). */
+export const FRAME_RECENT_INTERVALS = 6;
+
+/** Oldest frame age (seconds) still called current for an operator polled every `cadenceS`. */
+export function frameRecentS(cadenceS: number): number {
+  return FRAME_RECENT_INTERVALS * Math.max(60, Number.isFinite(cadenceS) ? cadenceS : 60);
+}
+
 /**
  * Freshness of one relayed still from the operator's own frame time (`X-Frame-Observed-At`). A
  * still is a snapshot, so this is never LIVE: `recent` within 6 operator intervals (≥ 60 s each),
@@ -165,7 +173,7 @@ export function frameAge(observedAt: string | null | undefined, cadenceS: number
   if (!Number.isFinite(t) || t - now > 60_000) return { state: 'unknown', label: 'UNTIMED', ageS: null };
   const ageMs = Math.max(0, now - t);
   const ageS = Math.round(ageMs / 1000);
-  const recent = ageMs <= 6 * Math.max(60, cadenceS) * 1000;
+  const recent = ageMs <= frameRecentS(cadenceS) * 1000;
   return recent ? { state: 'recent', label: formatAge(ageMs), ageS } : { state: 'stale', label: `STALE · ${formatAge(ageMs)}`, ageS };
 }
 
@@ -192,6 +200,7 @@ export const FRAME_REASON_LABEL: Record<string, string> = {
   upstream_404: 'NO FRAME (404)',
   upstream_410: 'NO FRAME (410)',
   no_snapshot: 'NO SNAPSHOT',
+  no_still: 'NO STILL',
   timeout: 'TIMEOUT',
   queued: 'SERVER BUSY',
   too_large: 'FILE TOO LARGE',
@@ -199,18 +208,30 @@ export const FRAME_REASON_LABEL: Record<string, string> = {
   network: 'UNREACHABLE',
 };
 
+type FrameHealthView = Pick<FrameHealth, 'state' | 'cameras' | 'camerasFailing' | 'camerasOperatorFault'> & Partial<Pick<FrameHealth, 'lastFrameAge_s' | 'freshestFrameAge_s' | 'untimed'>>;
+
 /**
  * Card / viewer wording for a provider's frame availability (/api/cctv/providers `frames`). FAILING
  * and UNAVAILABLE count operator-wide failures over at least 5 cameras; a handful of failed cameras
  * is only ever "NO FRAME RELAYED", never a verdict on the operator.
+ *
+ * Round 5 (R2 minor 4): AVAILABLE (green) means fresh frames — the freshest relayed frame was at
+ * most 6 operator intervals (`cadenceS`, ≥ 60 s each) old when fetched, the viewer's own rule.
+ * Older frames read `STALE · FRAMES 21h OLD` (warn); frames without any operator time read
+ * `RELAYED · UNTIMED` (never green: their age is unknown).
  */
-export function frameHealthLabel(h: Pick<FrameHealth, 'state' | 'cameras' | 'camerasFailing' | 'camerasOperatorFault'> | null | undefined): { text: string; tone: 'ok' | 'warn' | 'error' | 'idle' } {
+export function frameHealthLabel(h: FrameHealthView | null | undefined, cadenceS = 60): { text: string; tone: 'ok' | 'warn' | 'error' | 'idle' } {
   if (!h || h.state === 'unchecked') return { text: 'NOT CHECKED YET', tone: 'idle' };
   const down = h.camerasOperatorFault ?? h.camerasFailing;
   if (h.state === 'unavailable') return { text: `UNAVAILABLE · ${down}/${h.cameras} FAILING`, tone: 'error' };
   if (h.state === 'failing') return { text: `FAILING · ${down}/${h.cameras} CAMERAS`, tone: 'warn' };
   if (h.state === 'inconclusive') return { text: `NO FRAME RELAYED · ${h.cameras} TRIED`, tone: 'idle' };
-  return { text: h.camerasFailing ? `AVAILABLE · ${h.camerasFailing}/${h.cameras} WITHOUT FRAME` : 'AVAILABLE', tone: 'ok' };
+  const without = h.camerasFailing ? ` · ${h.camerasFailing}/${h.cameras} WITHOUT FRAME` : '';
+  // Older servers sent only the last relayed frame's age.
+  const age = h.freshestFrameAge_s !== undefined ? h.freshestFrameAge_s : (h.lastFrameAge_s ?? null);
+  if (age === null) return { text: `RELAYED · UNTIMED${without}`, tone: 'idle' };
+  if (age > frameRecentS(cadenceS)) return { text: `STALE · FRAMES ${formatAge(age * 1000)} OLD${without}`, tone: 'warn' };
+  return { text: `AVAILABLE${without}`, tone: 'ok' };
 }
 
 /** One plain sentence for an operator whose frames are unavailable (null otherwise). */

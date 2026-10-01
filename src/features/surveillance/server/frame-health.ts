@@ -112,6 +112,14 @@ export function summarise(outcomes: readonly FrameOutcome[], now: number = Date.
             ? 'available'
             : 'inconclusive';
   const lastObserved = lastOk?.observedAt ?? null;
+  // Freshest operator frame among each camera's latest relayed frame (an operator whose every
+  // frame is hours old relays images, but they are not current: the card says STALE, not AVAILABLE).
+  let freshest: number | null = null;
+  for (const o of latest.values()) {
+    if (!o.ok || o.observedAt === null || o.observedAt > o.at + 60_000) continue;
+    const age = Math.max(0, Math.round((o.at - o.observedAt) / 1000));
+    if (freshest === null || age < freshest) freshest = age;
+  }
   return {
     state,
     windowS: FRAME_WINDOW_MS / 1000,
@@ -127,6 +135,7 @@ export function summarise(outcomes: readonly FrameOutcome[], now: number = Date.
     lastError: lastFail?.error ?? null,
     // Age of that frame when it was fetched (operator time vs fetch time); a future time is not an age.
     lastFrameAge_s: lastOk && lastObserved !== null && lastObserved <= lastOk.at + 60_000 ? Math.max(0, Math.round((lastOk.at - lastObserved) / 1000)) : null,
+    freshestFrameAge_s: freshest,
     untimed,
   };
 }

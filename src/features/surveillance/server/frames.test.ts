@@ -1,16 +1,20 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { FrameError } from '@/lib/schemas/surveillance';
 import type { Camera } from '@/lib/types';
-import { FX, json } from './__fixtures__';
+import { FX, json, text } from './__fixtures__';
 import { jpeg } from './__fixtures__/helpers';
-import { acceptImage, FRAME_ACCEPT, fetchFrame, fetchTxdotSnapshot, frameResponse, MAX_FRAME_BYTES, mediaRules, playableFor, probeCamera, publicCamera, sniffImage, zonedToUtc, type FrameDeps } from './frames';
+import { frameHealth, resetFrameHealth } from './frame-health';
+import { acceptImage, FRAME_ACCEPT, fetchFrame, fetchTxdotSnapshot, frameResponse, MAX_FRAME_BYTES, mediaRules, playableFor, probeCamera, publicCamera, sniffImage, txdotSnippet, zonedToUtc, type FrameDeps } from './frames';
 import { PROVIDERS, providerRow, type ProviderDef } from './registry';
 
 // A local camera operator: `cams.test` resolves to the loopback server (test-only resolver).
 let server: http.Server;
 let port = 0;
 const JPEG = jpeg();
+/** Body the local TxDOT endpoint answers (null → the recorded snapshot fixture). */
+let txdotBody: string | null = null;
 
 beforeAll(async () => {
   server = http.createServer((req, res) => {
@@ -40,8 +44,8 @@ beforeAll(async () => {
       res.writeHead(404);
       res.end();
     } else if (u.pathname.startsWith('/its/DistrictIts/GetCctvSnapshotByIcdId')) {
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(json(FX.txdotSnapshot)));
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(txdotBody ?? JSON.stringify(json(FX.txdotSnapshot)));
     } else {
       res.writeHead(404);
       res.end();
@@ -118,6 +122,78 @@ describe('TxDOT snapshots', () => {
     const c = cam('', { id: 'txdot-AUS-FM-734 @ US-290 EB', providerId: 'txdot', stillUrl: `http://its.test:${port}/its/DistrictIts/GetCctvSnapshotByIcdId?districtCode=AUS&icdId=FM-734%20%40%20US-290%20EB` });
     const r = await fetchTxdotSnapshot(c, tx, deps());
     expect(r).toMatchObject({ ok: true, contentType: 'image/jpeg', observedAt: '2026-09-30T20:02:00.000Z', maxAgeS: 30 });
+  });
+
+  describe('round 5 (R2 MAJOR-1): a TxDOT body without a snapshot is a 404 for that camera, never a 500', () => {
+    const tx = (): ProviderDef => ({ ...PROVIDERS.find((p) => p.row.id === 'txdot')!, rules: [{ host: 'its.test', pathPrefix: '/its/DistrictIts/GetCctvSnapshotByIcdId', protocols: ['http:'], port: String(port) }] });
+    const elCampo = () =>
+      cam('', {
+        id: 'txdot-YKM-YKM-US59 @ Youngdale Rd (S)- El Campo',
+        providerId: 'txdot',
+        stillUrl: `http://its.test:${port}/its/DistrictIts/GetCctvSnapshotByIcdId?districtCode=YKM&icdId=YKM-US59%20%40%20Youngdale%20Rd%20(S)-%20El%20Campo`,
+      });
+    beforeEach(resetFrameHealth);
+    afterEach(() => {
+      txdotBody = null;
+      resetFrameHealth();
+    });
+
+    it('the recorded `null` body (El Campo, 2026-10-01) → 404 no_snapshot FrameError, recorded per camera', async () => {
+      txdotBody = text(FX.txdotSnapshotNull);
+      expect(txdotBody).toBe('null');
+      const r = await fetchTxdotSnapshot(elCampo(), tx(), deps());
+      expect(r).toMatchObject({ ok: false, status: 404, error: 'no_snapshot', httpStatus: 200 });
+      expect(r.ok ? null : r.fetchedAt).toMatch(/Z$/); // a request did reach TxDOT
+      const res = frameResponse(r);
+      expect(res.status).toBe(404);
+      expect(res.headers.get('content-type')).toMatch(/^application\/json/);
+      expect(res.headers.get('x-frame-error')).toBe('no_snapshot');
+      const body = await res.json();
+      expect(FrameError.safeParse(body).success).toBe(true);
+      expect(body).toMatchObject({ error: 'frame_unavailable', detail: 'no_snapshot', state: 'offline' });
+      // Against the camera, not the operator: one outcome, zero operator-wide faults.
+      expect(frameHealth(['txdot']).txdot).toMatchObject({ attempts: 1, failed: 1, cameras: 1, camerasFailing: 1, camerasOperatorFault: 0, errors: { no_snapshot: 1 } });
+    });
+
+    it.each([
+      ['empty body', ''],
+      ['whitespace', ' \r\n'],
+      ['array', '[]'],
+      ['array of snapshots', JSON.stringify([json(FX.txdotSnapshot)])],
+      ['string', '"null"'],
+      ['number', '42'],
+      ['boolean', 'true'],
+      ['object without snippet', '{"icd_Id":"YKM-US59"}'],
+      ['snippet null', '{"snippet":null}'],
+      ['snippet empty', '{"snippet":"","timestampFormatted":"10/1/2026 12:32 PM"}'],
+      ['snippet number', '{"snippet":12345}'],
+      ['snippet not base64', '{"snippet":"<html>"}'],
+    ])('%s → 404 no_snapshot (camera)', async (_, b) => {
+      txdotBody = b;
+      const r = await fetchTxdotSnapshot(elCampo(), tx(), deps());
+      expect(r).toMatchObject({ ok: false, status: 404, error: 'no_snapshot' });
+      expect(frameHealth(['txdot']).txdot!.camerasOperatorFault).toBe(0);
+    });
+
+    it('a body that is not JSON at all is the operator’s fault (502 parse); a non-JPEG snippet is not_an_image', async () => {
+      txdotBody = 'Service Unavailable';
+      expect(await fetchTxdotSnapshot(elCampo(), tx(), deps())).toMatchObject({ ok: false, status: 502, error: 'parse' });
+      txdotBody = JSON.stringify({ snippet: Buffer.from('GIF89a not a jpeg').toString('base64') });
+      expect(await fetchTxdotSnapshot(elCampo(), tx(), deps())).toMatchObject({ ok: false, status: 502, error: 'not_an_image' });
+      // A snapshot without a usable time is still relayed, untimed.
+      txdotBody = JSON.stringify({ snippet: JPEG.toString('base64'), timestampFormatted: 42 });
+      expect(await fetchTxdotSnapshot(elCampo(), tx(), deps())).toMatchObject({ ok: true, observedAt: null, timeSource: 'none' });
+    });
+
+    it('stream status reads the camera offline with the reason, not an error', async () => {
+      txdotBody = text(FX.txdotSnapshotNull);
+      expect(await probeCamera(elCampo(), tx(), deps())).toMatchObject({ status: 'offline', httpStatus: 200, reason: 'no_snapshot' });
+    });
+
+    it('txdotSnippet accepts only an object with a base64 string', () => {
+      for (const v of [null, undefined, [], ['x'], 'abc', 1, true, {}, { snippet: null }, { snippet: '' }, { snippet: '  ' }, { snippet: '{}' }]) expect(txdotSnippet(v), JSON.stringify(v)).toBeNull();
+      expect(txdotSnippet({ snippet: ' /9j/4A== ' })).toBe('/9j/4A==');
+    });
   });
 
   it('zonedToUtc handles CDT/CST/MDT and rejects junk', () => {

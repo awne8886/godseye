@@ -77,6 +77,8 @@ export function frameErrorInfo(error: string): Pick<FrameError, 'state' | 'messa
   if (error === 'not_an_image') return { state: 'offline', message: 'The operator answered with a web page instead of an image (a fault on the operator side). No frame to show.' };
   if (error === 'upstream_404' || error === 'upstream_410') return { state: 'offline', message: 'The operator has no current image for this camera.' };
   if (error === 'no_snapshot') return { state: 'offline', message: 'The operator returned no snapshot for this camera.' };
+  if (error === 'no_still') return { state: 'offline', message: 'The operator publishes no still image for this camera.' };
+  if (error === 'link_out_only') return { state: 'offline', message: 'This operator’s images open on the operator’s own site only.' };
   if (error === 'too_large') return { state: 'offline', message: 'The operator sent a file larger than a camera still.' };
   if (error === 'blocked') return { state: 'unavailable', message: 'The frame address left the operator’s allow-listed image path, so it was not fetched.' };
   if (error === 'timeout') return { state: 'unavailable', message: 'The operator did not answer in time. Try again.' };
@@ -256,7 +258,28 @@ export async function fetchFrame(camera: Camera, def: ProviderDef, deps: FrameDe
   return noted(def, camera, { ok: true, body: res.body, contentType: type, ...t, fetchedAt, maxAgeS: row.max_poll_interval });
 }
 
-/** TxDOT answers JSON `{snippet: <base64 JPEG>, timestampFormatted: 'M/D/YYYY h:mm AM'}` (local time). */
+/** A JSON object: not null, not an array, not a string/number/boolean. */
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * The base64 JPEG of a parsed TxDOT snapshot answer, or null when the answer holds none. TxDOT
+ * answers `200 application/json` with the body `null` for a listed camera that has no current
+ * snapshot (probed 2026-10-01: YKM "US59 @ Youngdale Rd (S)- El Campo"); an array, a string, a
+ * number, an object without a `snippet` string or an empty/non-base64 snippet is the same case.
+ */
+export function txdotSnippet(json: unknown): string | null {
+  if (!isRecord(json) || typeof json.snippet !== 'string') return null;
+  const s = json.snippet.trim();
+  return s && /^[A-Za-z0-9+/=\s]+$/.test(s) ? s : null;
+}
+
+/**
+ * TxDOT answers JSON `{snippet: <base64 JPEG>, timestampFormatted: 'M/D/YYYY h:mm AM'}` (local time).
+ * Any JSON body without a usable snippet (`null`, an array, a string…) or an empty body is "no
+ * snapshot for this camera": 404 FrameError `no_snapshot`, recorded against the camera — never
+ * against the operator (frame-health `operatorWide`) and never a 500. A body that is not JSON at
+ * all is the operator's fault (`parse`, 502).
+ */
 export async function fetchTxdotSnapshot(camera: Camera, def: ProviderDef, deps: FrameDeps = {}): Promise<FrameResult> {
   const parts = parseTxdotId(camera.id);
   if (!parts || !camera.stillUrl) return failed(404, 'no_still');
@@ -271,17 +294,22 @@ export async function fetchTxdotSnapshot(camera: Camera, def: ProviderDef, deps:
   const answered = { fetchedAt, httpStatus: res.status };
   if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, answered));
   if (declaredType(res.headers['content-type'])?.includes('html')) return noted(def, camera, failed(502, 'not_an_image', { ...answered, upstreamType: declaredType(res.headers['content-type']) }));
-  let json: { snippet?: unknown; timestampFormatted?: unknown };
-  try {
-    json = JSON.parse(res.body.toString('utf8'));
-  } catch {
-    return noted(def, camera, failed(502, 'parse', answered));
+  const raw = Buffer.isBuffer(res.body) ? res.body.toString('utf8') : '';
+  let json: unknown = null;
+  if (raw.trim() !== '') {
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      return noted(def, camera, failed(502, 'parse', answered));
+    }
   }
-  if (typeof json.snippet !== 'string' || !/^[A-Za-z0-9+/=\s]+$/.test(json.snippet)) return noted(def, camera, failed(502, 'no_snapshot', answered));
-  const body = Buffer.from(json.snippet, 'base64');
+  const snippet = txdotSnippet(json);
+  if (!snippet) return noted(def, camera, failed(404, 'no_snapshot', answered));
+  const body = Buffer.from(snippet, 'base64');
   if (body.length > MAX_FRAME_BYTES || sniffImage(body) !== 'image/jpeg') return noted(def, camera, failed(502, 'not_an_image', { ...answered, upstreamType: null }));
   const zone = parts.district === 'ELP' ? 'America/Denver' : (def.timeZone ?? 'America/Chicago');
-  const published = typeof json.timestampFormatted === 'string' ? zonedToUtc(json.timestampFormatted.trim(), zone) : null;
+  const stamp = isRecord(json) ? json.timestampFormatted : null;
+  const published = typeof stamp === 'string' ? zonedToUtc(stamp.trim(), zone) : null;
   const t = frameTime(published, null, Date.parse(fetchedAt));
   return noted(def, camera, { ok: true, body, contentType: 'image/jpeg', ...t, fetchedAt, maxAgeS: def.row.max_poll_interval });
 }

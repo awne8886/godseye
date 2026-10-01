@@ -1,6 +1,6 @@
 /** Round-4 items 1–2: still freshness is never LIVE, untimed frames are never current, failures are classified. */
 import { describe, expect, it } from 'vitest';
-import { frameAge, frameHealthLabel, frameHealthNote, readFrameFailure } from './shared';
+import { FRAME_RECENT_INTERVALS, frameAge, frameHealthLabel, frameHealthNote, frameRecentS, readFrameFailure } from './shared';
 
 const NOW = Date.parse('2026-10-01T07:49:41Z');
 
@@ -57,8 +57,8 @@ describe('provider frame availability wording', () => {
     expect(frameHealthLabel({ state: 'unchecked', cameras: 0, camerasFailing: 0 }).text).toBe('NOT CHECKED YET');
     expect(frameHealthLabel({ state: 'unavailable', cameras: 5, camerasFailing: 5, camerasOperatorFault: 5 })).toEqual({ text: 'UNAVAILABLE · 5/5 FAILING', tone: 'error' });
     expect(frameHealthLabel({ state: 'failing', cameras: 6, camerasFailing: 5, camerasOperatorFault: 4 })).toEqual({ text: 'FAILING · 4/6 CAMERAS', tone: 'warn' });
-    expect(frameHealthLabel({ state: 'available', cameras: 5, camerasFailing: 0 })).toEqual({ text: 'AVAILABLE', tone: 'ok' });
-    expect(frameHealthLabel({ state: 'available', cameras: 5, camerasFailing: 2, camerasOperatorFault: 0 })).toEqual({ text: 'AVAILABLE · 2/5 WITHOUT FRAME', tone: 'ok' });
+    expect(frameHealthLabel({ state: 'available', cameras: 5, camerasFailing: 0, freshestFrameAge_s: 68 })).toEqual({ text: 'AVAILABLE', tone: 'ok' });
+    expect(frameHealthLabel({ state: 'available', cameras: 5, camerasFailing: 2, camerasOperatorFault: 0, freshestFrameAge_s: 68 })).toEqual({ text: 'AVAILABLE · 2/5 WITHOUT FRAME', tone: 'ok' });
     // Round-4 review: one failed camera is not a verdict on the operator.
     expect(frameHealthLabel({ state: 'inconclusive', cameras: 1, camerasFailing: 1, camerasOperatorFault: 1 })).toEqual({ text: 'NO FRAME RELAYED · 1 TRIED', tone: 'idle' });
   });
@@ -68,5 +68,48 @@ describe('provider frame availability wording', () => {
     expect(frameHealthNote({ state: 'unavailable', errors: { upstream_503: 3, timeout: 2 }, failed: 5 })).toMatch(/server errors, timeouts or connection failures/);
     expect(frameHealthNote({ state: 'inconclusive', errors: { not_an_image: 2 }, failed: 2 })).toBeNull();
     expect(frameHealthNote({ state: 'available', errors: {}, failed: 0 })).toBeNull();
+  });
+});
+
+describe('round 5 (R2 minor 4): AVAILABLE only for fresh operator frames', () => {
+  const available = { state: 'available' as const, cameras: 5, camerasFailing: 0, camerasOperatorFault: 0 };
+
+  it('Toronto, frames 21.6 h old when relayed (lastFrameAge_s 77879, reviewer) → STALE with the age, warn tone', () => {
+    expect(frameHealthLabel({ ...available, lastFrameAge_s: 77879, freshestFrameAge_s: 77879, untimed: 0 }, 60)).toEqual({ text: 'STALE · FRAMES 21h OLD', tone: 'warn' });
+    expect(frameHealthLabel({ ...available, camerasFailing: 1, freshestFrameAge_s: 77879 }, 60)).toEqual({ text: 'STALE · FRAMES 21h OLD · 1/5 WITHOUT FRAME', tone: 'warn' });
+  });
+
+  it('within 6 operator intervals (≥ 60 s each) → AVAILABLE; one second past → STALE', () => {
+    expect(FRAME_RECENT_INTERVALS).toBe(6);
+    expect(frameRecentS(30)).toBe(360);
+    expect(frameRecentS(300)).toBe(1800);
+    expect(frameHealthLabel({ ...available, freshestFrameAge_s: 360 }, 60).text).toBe('AVAILABLE');
+    expect(frameHealthLabel({ ...available, freshestFrameAge_s: 361 }, 60)).toEqual({ text: 'STALE · FRAMES 6m OLD', tone: 'warn' });
+    expect(frameHealthLabel({ ...available, freshestFrameAge_s: 1500 }, 300).text).toBe('AVAILABLE');
+    expect(frameHealthLabel({ ...available, freshestFrameAge_s: 1801 }, 300).text).toBe('STALE · FRAMES 30m OLD');
+  });
+
+  it('the card and the viewer agree on the threshold (frameAge uses the same rule)', () => {
+    const now = Date.parse('2026-10-01T12:00:00Z');
+    for (const [ageS, cadence] of [[359, 60], [361, 60], [1799, 300], [1801, 300], [100, 10]] as const) {
+      const viewer = frameAge(new Date(now - ageS * 1000).toISOString(), cadence, now).state;
+      const card = frameHealthLabel({ ...available, freshestFrameAge_s: ageS }, cadence).tone;
+      expect(card === 'ok', `${ageS}s @ ${cadence}s`).toBe(viewer === 'recent');
+    }
+  });
+
+  it('frames without an operator time are RELAYED · UNTIMED, never green', () => {
+    expect(frameHealthLabel({ ...available, lastFrameAge_s: null, freshestFrameAge_s: null, untimed: 3 }, 60)).toEqual({ text: 'RELAYED · UNTIMED', tone: 'idle' });
+    expect(frameHealthLabel(available, 60)).toEqual({ text: 'RELAYED · UNTIMED', tone: 'idle' });
+  });
+
+  it('falls back to lastFrameAge_s from a server without freshestFrameAge_s', () => {
+    expect(frameHealthLabel({ ...available, lastFrameAge_s: 77879 }, 60).tone).toBe('warn');
+    expect(frameHealthLabel({ ...available, lastFrameAge_s: 40 }, 60).text).toBe('AVAILABLE');
+  });
+
+  it('failing / unavailable / inconclusive wording is unchanged by age', () => {
+    expect(frameHealthLabel({ state: 'failing', cameras: 6, camerasFailing: 5, camerasOperatorFault: 4, freshestFrameAge_s: 10 }, 60).text).toBe('FAILING · 4/6 CAMERAS');
+    expect(frameHealthLabel({ state: 'unavailable', cameras: 5, camerasFailing: 5, camerasOperatorFault: 5, freshestFrameAge_s: null }, 60).tone).toBe('error');
   });
 });

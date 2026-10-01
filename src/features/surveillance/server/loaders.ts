@@ -12,17 +12,52 @@ import * as A from './adapters';
 
 export type Loader = (signal: AbortSignal) => Promise<Camera[]>;
 
-// Adapters validate every field they read, so the parsed JSON is handed over as `any`-shaped input.
-async function getJson<T>(url: string, o: HttpOptions): Promise<T> {
-  const r = await httpJson<T>(url, o);
+/** The top-level JSON shape an operator's camera list must have. */
+export type BodyShape = 'array' | 'object';
+
+/** Kind of a parsed JSON value, for the shape check and its error message (never the value itself). */
+export function jsonKind(v: unknown): 'null' | 'array' | 'object' | 'string' | 'number' | 'boolean' | 'undefined' {
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  const t = typeof v;
+  return t === 'object' || t === 'string' || t === 'number' || t === 'boolean' ? t : 'undefined';
+}
+
+/**
+ * Refuse a list body of the wrong top-level shape (`null`, a string, an object where an array is
+ * expected…) as `parse`: the provider reads SOURCE OFFLINE and keeps its last good rows, rather
+ * than reporting "0 cameras" as if the operator had none.
+ */
+export function expectShape<T = unknown>(data: unknown, shape: BodyShape, url: string): T {
+  const kind = jsonKind(data);
+  if (kind !== shape) throw new HttpError(`Unexpected body: ${kind}, expected ${shape}`, 'parse', url);
+  return data as T;
+}
+
+/** JSON served under another content type (ODOT as JavaScript, Toronto as octet-stream). */
+export function parseJsonText(text: string, url: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new HttpError('Body is not JSON', 'parse', url);
+  }
+}
+
+// Adapters validate every field they read; the loader checks the top-level shape first.
+async function getJson(url: string, o: HttpOptions, shape: BodyShape): Promise<unknown> {
+  const r = await httpJson<unknown>(url, o);
   if (r.data === undefined) throw new HttpError('Empty body', 'parse', url);
-  return r.data;
+  return expectShape(r.data, shape, url);
 }
 
 async function getText(url: string, o: HttpOptions): Promise<string> {
   const r = await httpText(url, o);
-  if (r.text === undefined) throw new HttpError('Empty body', 'parse', url);
+  if (typeof r.text !== 'string') throw new HttpError('Empty body', 'parse', url);
   return r.text;
+}
+
+async function getJsonText(url: string, o: HttpOptions, shape: BodyShape): Promise<unknown> {
+  return expectShape(parseJsonText(await getText(url, o), url), shape, url);
 }
 
 const opts = (signal: AbortSignal, extra: HttpOptions = {}): HttpOptions => ({ signal, timeoutMs: 20_000, retries: 1, ...extra });
@@ -61,76 +96,95 @@ export const INDOT_QUERY = {
   variables: { input: { north: 41.8, south: 37.7, east: -84.7, west: -88.2, zoom: 16, layerSlugs: ['normalCameras'] } },
 } as const;
 
-type In<F extends (raw: never, ...rest: never[]) => unknown> = Parameters<F>[0];
+/**
+ * The top-level JSON shape of each operator's camera list (checked against the recorded fixtures in
+ * loaders.test.ts). A body of any other shape is refused as `parse` before the adapter runs.
+ */
+export const LIST_SHAPES = {
+  caltrans: 'object',
+  odot: 'object',
+  txdot: 'object',
+  mdot: 'array',
+  indot: 'object',
+  ottawa: 'array',
+  quebec: 'object',
+  toronto: 'object',
+  drivebc: 'array',
+  tfl: 'array',
+  dgt: 'object',
+  rws: 'array',
+  digitraffic: 'object',
+  vegagerdin: 'array',
+  trafikverket: 'object',
+  vialietuvaLayers: 'array',
+  vialietuvaInfo: 'array',
+  lta: 'object',
+  thb: 'array',
+  nsw: 'array',
+} as const satisfies Record<string, BodyShape>;
 
 export const LOADERS: Record<string, Loader> = {
   caltrans: (signal) =>
     settledRows(
       Array.from({ length: 12 }, (_, i) => i + 1).map(async (d) => {
         const dd = String(d).padStart(2, '0');
-        return A.parseCaltrans(await getJson<In<typeof A.parseCaltrans>>(`https://cwwp2.dot.ca.gov/data/d${d}/cctv/cctvStatusD${dd}.json`, opts(signal, { limiter: caltransBucket() })), d);
+        return A.parseCaltrans(await getJson(`https://cwwp2.dot.ca.gov/data/d${d}/cctv/cctvStatusD${dd}.json`, opts(signal, { limiter: caltransBucket() }), LIST_SHAPES.caltrans), d);
       }),
     ),
   wsdot: async (signal) => A.parseWsdotKml(await getText('https://wsdot.wa.gov/traffic/api/HighwayCameras/kml.aspx', opts(signal))),
   // A specific JSON Accept gets a 406 from TripCheck; the file is JSON served as JavaScript.
-  odot: async (signal) => A.parseOdot(JSON.parse(await getText('https://www.tripcheck.com/Scripts/map/data/cctvinventory.js', opts(signal, { headers: { accept: '*/*' } })))),
+  odot: async (signal) => A.parseOdot(await getJsonText('https://www.tripcheck.com/Scripts/map/data/cctvinventory.js', opts(signal, { headers: { accept: '*/*' } }), LIST_SHAPES.odot)),
   txdot: (signal) =>
     settledRows(
-      A.TXDOT_DISTRICTS.map(async (d) =>
-        A.parseTxdot(await getJson<In<typeof A.parseTxdot>>(`https://its.txdot.gov/its/DistrictIts/GetCctvStatusListByDistrict?districtCode=${d}`, opts(signal, { limiter: txdotBucket() })), d),
-      ),
+      A.TXDOT_DISTRICTS.map(async (d) => A.parseTxdot(await getJson(`https://its.txdot.gov/its/DistrictIts/GetCctvStatusListByDistrict?districtCode=${d}`, opts(signal, { limiter: txdotBucket() }), LIST_SHAPES.txdot), d)),
     ),
-  mdot: async (signal) => A.parseMdot(await getJson<In<typeof A.parseMdot>>('https://mdotjboss.state.mi.us/MiDrive/camera/list', opts(signal))),
+  mdot: async (signal) => A.parseMdot(await getJson('https://mdotjboss.state.mi.us/MiDrive/camera/list', opts(signal), LIST_SHAPES.mdot)),
   // One statewide query (probed 2026-10-01: 748 features in ~1 s); the site's own map query.
   indot: async (signal) =>
-    A.parseIndot(
-      await getJson<In<typeof A.parseIndot>>(
-        INDOT_GRAPHQL_URL,
-        opts(signal, { method: 'POST', body: JSON.stringify(INDOT_QUERY), headers: { 'content-type': 'application/json' }, retries: 0 }),
-      ),
-    ),
-  ottawa: async (signal) => A.parseOttawa(await getJson<In<typeof A.parseOttawa>>('https://traffic.ottawa.ca/beta/camera_list', opts(signal))),
+    A.parseIndot(await getJson(INDOT_GRAPHQL_URL, opts(signal, { method: 'POST', body: JSON.stringify(INDOT_QUERY), headers: { 'content-type': 'application/json' }, retries: 0 }), LIST_SHAPES.indot)),
+  ottawa: async (signal) => A.parseOttawa(await getJson('https://traffic.ottawa.ca/beta/camera_list', opts(signal), LIST_SHAPES.ottawa)),
   quebec: async (signal) =>
     A.parseQuebec(
-      await getJson<In<typeof A.parseQuebec>>(
+      await getJson(
         'https://ws.mapserver.transports.gouv.qc.ca/swtq?service=wfs&version=2.0.0&request=getfeature&typename=ms:infos_cameras&outfile=Camera&srsname=EPSG:4326&outputformat=geojson',
         opts(signal),
+        LIST_SHAPES.quebec,
       ),
     ),
   // Served as application/octet-stream.
   toronto: async (signal) =>
     A.parseToronto(
-      JSON.parse(
-        await getText('https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/a3309088-5fd4-4d34-8297-77c8301840ac/resource/4a568300-c7f8-496d-b150-dff6f5dc6d4f/download/traffic-camera-list-4326.geojson', opts(signal)),
+      await getJsonText(
+        'https://ckan0.cf.opendata.inter.prod-toronto.ca/dataset/a3309088-5fd4-4d34-8297-77c8301840ac/resource/4a568300-c7f8-496d-b150-dff6f5dc6d4f/download/traffic-camera-list-4326.geojson',
+        opts(signal),
+        LIST_SHAPES.toronto,
       ),
     ),
   // Moved 2026: drivebc.ca/api/webcams → www.drivebc.ca/api/webcams/ (both old forms 301).
-  drivebc: async (signal) => A.parseDriveBc(await getJson<In<typeof A.parseDriveBc>>('https://www.drivebc.ca/api/webcams/', opts(signal))),
-  tfl: async (signal) => A.parseTfl(await getJson<In<typeof A.parseTfl>>(TFL_JAMCAM_URL, opts(signal, { headers: tflKeyHeaders() }))),
-  dgt: async (signal) => A.parseDgt(await getJson<In<typeof A.parseDgt>>('https://www.dgt.es/.content/.assets/json/camaras.json', opts(signal))),
+  drivebc: async (signal) => A.parseDriveBc(await getJson('https://www.drivebc.ca/api/webcams/', opts(signal), LIST_SHAPES.drivebc)),
+  tfl: async (signal) => A.parseTfl(await getJson(TFL_JAMCAM_URL, opts(signal, { headers: tflKeyHeaders() }), LIST_SHAPES.tfl)),
+  dgt: async (signal) => A.parseDgt(await getJson('https://www.dgt.es/.content/.assets/json/camaras.json', opts(signal), LIST_SHAPES.dgt)),
   // Moved 2026: /api/cameras → /api/cameras/ (301).
-  rws: async (signal) => A.parseRws(await getJson<In<typeof A.parseRws>>('https://api.rwsverkeersinfo.nl/api/cameras/', opts(signal))),
+  rws: async (signal) => A.parseRws(await getJson('https://api.rwsverkeersinfo.nl/api/cameras/', opts(signal), LIST_SHAPES.rws)),
   // Digitraffic asks every client to identify itself with a Digitraffic-User header.
-  digitraffic: async (signal) =>
-    A.parseDigitraffic(await getJson<In<typeof A.parseDigitraffic>>('https://tie.digitraffic.fi/api/weathercam/v1/stations', opts(signal, { headers: { 'digitraffic-user': 'GODSEYE' } }))),
-  vegagerdin: async (signal) => A.parseVegagerdin(await getJson<In<typeof A.parseVegagerdin>>('https://gagnaveita.vegagerdin.is/api/vefmyndavelar2014_1', opts(signal))),
+  digitraffic: async (signal) => A.parseDigitraffic(await getJson('https://tie.digitraffic.fi/api/weathercam/v1/stations', opts(signal, { headers: { 'digitraffic-user': 'GODSEYE' } }), LIST_SHAPES.digitraffic)),
+  vegagerdin: async (signal) => A.parseVegagerdin(await getJson('https://gagnaveita.vegagerdin.is/api/vefmyndavelar2014_1', opts(signal), LIST_SHAPES.vegagerdin)),
   trafikverket: async (signal) => {
     const key = (process.env.TRAFIKVERKET_KEY ?? '').replace(/[^\w-]/g, '');
     const body = `<REQUEST><LOGIN authenticationkey="${key}"/><QUERY objecttype="Camera" schemaversion="1" limit="5000"><FILTER><EQ name="Active" value="true"/></FILTER></QUERY></REQUEST>`;
-    return A.parseTrafikverket(
-      await getJson<In<typeof A.parseTrafikverket>>('https://api.trafikinfo.trafikverket.se/v2/data.json', opts(signal, { method: 'POST', body, headers: { 'content-type': 'text/xml' }, retries: 0 })),
-    );
+    return A.parseTrafikverket(await getJson('https://api.trafikinfo.trafikverket.se/v2/data.json', opts(signal, { method: 'POST', body, headers: { 'content-type': 'text/xml' }, retries: 0 }), LIST_SHAPES.trafikverket));
   },
   vialietuva: async (signal) => {
     const [layers, info] = await Promise.all([
-      getJson<Parameters<typeof A.parseViaLietuva>[0]>('https://eismoinfo.lt/eismoinfo-backend/layer-static-features/VKR?lks=false', opts(signal)),
-      getJson<Parameters<typeof A.parseViaLietuva>[1]>('https://eismoinfo.lt/eismoinfo-backend/camera-info-table', opts(signal)),
+      getJson('https://eismoinfo.lt/eismoinfo-backend/layer-static-features/VKR?lks=false', opts(signal), LIST_SHAPES.vialietuvaLayers),
+      getJson('https://eismoinfo.lt/eismoinfo-backend/camera-info-table', opts(signal), LIST_SHAPES.vialietuvaInfo),
     ]);
     return A.parseViaLietuva(layers, info);
   },
   hktd: async (signal) => A.parseHongKong(await getText('https://static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_En.xml', opts(signal))),
-  lta: async (signal) => A.parseLta(await getJson<In<typeof A.parseLta>>('https://api.data.gov.sg/v1/transport/traffic-images', opts(signal))),
-  thb: async (signal) => A.parseThb(await getJson<In<typeof A.parseThb>>('https://thbapp.thb.gov.tw/services/cctv/thb', opts(signal))),
+  lta: async (signal) => A.parseLta(await getJson('https://api.data.gov.sg/v1/transport/traffic-images', opts(signal), LIST_SHAPES.lta)),
+  thb: async (signal) => A.parseThb(await getJson('https://thbapp.thb.gov.tw/services/cctv/thb', opts(signal), LIST_SHAPES.thb)),
   nzta: async (signal) => A.parseNzta(await getText('https://trafficnz.info/service/traffic/rest/4/cameras/all', opts(signal))),
-  nsw: async (signal) => A.parseLiveTrafficNsw(await getJson<In<typeof A.parseLiveTrafficNsw>>('https://www.livetraffic.com/datajson/all-feeds-web.json', opts(signal))),
+  nsw: async (signal) => A.parseLiveTrafficNsw(await getJson('https://www.livetraffic.com/datajson/all-feeds-web.json', opts(signal), LIST_SHAPES.nsw)),
 };
+

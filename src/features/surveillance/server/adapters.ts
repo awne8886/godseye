@@ -7,12 +7,33 @@
  * dates (Caltrans `recordTimestamp`, DGT `fecha`, TfL `modified`) are metadata, not frame times,
  * so they are NOT used; the viewer shows "time not published by operator" or the frame's own
  * Last-Modified from the stills proxy instead. Upstream strings are plain text (toPlainText).
+ *
+ * Hostile bodies (round 5): every adapter takes `unknown` and checks the shape it reads. A body of
+ * `null`, an array where an object is expected (or the reverse), a string, a number, null elements
+ * or fields of the wrong type yield no rows for that record, never a thrown TypeError. The loaders
+ * refuse a wrong top-level shape first (`parse`: SOURCE OFFLINE with the last good rows).
  * Owner: layers-surveillance.
  */
 import { decodeEntities, toPlainText } from '@/lib/rss';
 import type { Camera } from '@/lib/types';
 
 type Row = Camera;
+type Rec = Record<string, unknown>;
+
+/** A JSON object, or null for null, arrays, strings, numbers and booleans. */
+export function asRecord(v: unknown): Rec | null {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Rec) : null;
+}
+
+/** The object elements of `v` when it is an array (anything else → []; null/primitive elements dropped). */
+export function records<T extends object = Rec>(v: unknown): T[] {
+  return Array.isArray(v) ? (v.filter((x) => asRecord(x) !== null) as T[]) : [];
+}
+
+const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+
+/** An identifier: a non-empty string, or an integer written as one (objects never become ids). */
+const idOf = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : typeof v === 'number' && Number.isInteger(v) ? String(v) : null);
 
 const num = (v: unknown): number | null => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
@@ -62,10 +83,10 @@ interface CaltransRecord {
 }
 
 /** Caltrans CWWP2 per-district JSON (`cctvStatusDNN.json`); HLS from `streamingVideoURL` where present. */
-export function parseCaltrans(raw: { data?: CaltransRecord[] }, district: number): Row[] {
+export function parseCaltrans(raw: unknown, district: number): Row[] {
   const out: Row[] = [];
-  for (const r of raw.data ?? []) {
-    const c = r.cctv;
+  for (const r of records<CaltransRecord>(asRecord(raw)?.data)) {
+    const c = asRecord(r.cctv) as CaltransRecord['cctv'] | null;
     if (!c || c.inService !== 'true') continue;
     const lat = num(c.location?.latitude);
     const lng = num(c.location?.longitude);
@@ -76,12 +97,12 @@ export function parseCaltrans(raw: { data?: CaltransRecord[] }, district: number
     if (!still && !stream) continue;
     out.push(
       cam({
-        id: `caltrans-d${district}-${c.index ?? out.length}`,
+        id: `caltrans-d${district}-${idOf(c.index) ?? out.length}`,
         lat,
         lng: lng!,
         source: 'caltrans',
         providerId: 'caltrans',
-        name: text(c.location?.locationName) || `Caltrans D${district} camera ${c.index}`,
+        name: text(c.location?.locationName) || `Caltrans D${district} camera ${idOf(c.index) ?? out.length}`,
         city: text(c.location?.nearbyPlace) || text(c.location?.county) || null,
         country: 'US',
         streamType: stream ? 'hls' : 'jpg',
@@ -96,8 +117,9 @@ export function parseCaltrans(raw: { data?: CaltransRecord[] }, district: number
 }
 
 /** WSDOT keyless KML (`HighwayCameras/kml.aspx`); only frames on WSDOT's own image host are kept. */
-export function parseWsdotKml(kml: string): Row[] {
+export function parseWsdotKml(kml: unknown): Row[] {
   const out: Row[] = [];
+  if (typeof kml !== 'string') return out;
   for (const m of kml.matchAll(/<Placemark\s+id="ID\s*(\d+)">([\s\S]*?)<\/Placemark>/g)) {
     const [, id, body] = m as unknown as [string, string, string];
     const coords = body.match(/<coordinates>\s*([-\d.]+),([-\d.]+)/);
@@ -121,21 +143,23 @@ export function safeFileName(f: string): boolean {
   return f.length <= 120 && /\.jpe?g$/i.test(f) && !/[/\\]/.test(f) && !f.includes('..') && [...f].every((ch) => ch.charCodeAt(0) >= 32);
 }
 
+type EsriFeature = NonNullable<EsriFeatureSet['features']>[number];
+
 /** ODOT TripCheck `cctvinventory.js` (an Esri FeatureSet served as JavaScript text). */
-export function parseOdot(raw: EsriFeatureSet): Row[] {
+export function parseOdot(raw: unknown): Row[] {
   const out: Row[] = [];
   const seen = new Set<string>();
-  for (const f of raw.features ?? []) {
-    const a = f.attributes;
+  for (const f of records<EsriFeature>(asRecord(raw)?.features)) {
+    const a = asRecord(f.attributes) as EsriFeature['attributes'] | null;
     // Real filenames carry spaces and '@' ("I-5@Goshen_pid1504.jpg"); refuse only path tricks.
-    if (!a?.filename || !safeFileName(a.filename) || seen.has(a.filename)) continue;
+    if (!a || typeof a.filename !== 'string' || !safeFileName(a.filename) || seen.has(a.filename)) continue;
     const lat = num(a.latitude);
     const lng = num(a.longitude);
     if (!validLatLng(lat, lng)) continue;
     seen.add(a.filename);
     out.push(
       cam({
-        id: `odot-${a.cameraId ?? 0}-${a.publishedImageId ?? seen.size}`,
+        id: `odot-${idOf(a.cameraId) ?? 0}-${idOf(a.publishedImageId) ?? seen.size}`,
         lat,
         lng: lng!,
         source: 'odot',
@@ -180,12 +204,16 @@ export function parseTxdotId(id: string): { district: string; icdId: string } | 
  * (roadway → cameras) and, on some districts, `cctvStatusRoadways[].ctts[]`. Only cameras with
  * `hasSnapshot` are kept; frames come through /api/cctv/texas/snapshot (base64 JPEG in JSON).
  */
-export function parseTxdot(raw: { cctvStatusRoadways?: { ctts?: TxdotCamera[] }[]; roadwayCctvStatuses?: Record<string, TxdotCamera[]> }, district: string): Row[] {
-  const all: TxdotCamera[] = [...Object.values(raw.roadwayCctvStatuses ?? {}).flat(), ...(raw.cctvStatusRoadways ?? []).flatMap((r) => r.ctts ?? [])];
+export function parseTxdot(raw: unknown, district: string): Row[] {
+  const body = asRecord(raw);
+  const all: TxdotCamera[] = [
+    ...Object.values(asRecord(body?.roadwayCctvStatuses) ?? {}).flatMap((list) => records<TxdotCamera>(list)),
+    ...records<{ ctts?: unknown }>(body?.cctvStatusRoadways).flatMap((r) => records<TxdotCamera>(r.ctts)),
+  ];
   const out: Row[] = [];
   const seen = new Set<string>();
   for (const c of all) {
-    if (!c?.icd_Id || c.hasSnapshot !== true || seen.has(c.icd_Id) || c.icd_Id.length > 120) continue;
+    if (typeof c.icd_Id !== 'string' || !c.icd_Id || c.hasSnapshot !== true || seen.has(c.icd_Id) || c.icd_Id.length > 120) continue;
     const lat = num(c.latitude);
     const lng = num(c.longitude);
     if (!validLatLng(lat, lng)) continue;
@@ -211,16 +239,17 @@ export function parseTxdot(raw: { cctvStatusRoadways?: { ctts?: TxdotCamera[] }[
 
 // ── US Midwest ──────────────────────────────────────────────────────────────────
 /** MDOT Mi Drive camera list: coordinates and id live inside HTML fragments. */
-export function parseMdot(raw: { route?: string; location?: string; county?: string; image?: string }[]): Row[] {
+export function parseMdot(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const r of raw ?? []) {
-    const m = r.county?.match(/lat=([-\d.]+)&(?:amp;)?lon=([-\d.]+)[^"]*?id=(\d+)/);
-    const src = r.image?.match(/src="(https:\/\/micamerasimages\.net\/[^"]+)"/);
+  for (const r of records<{ route?: unknown; location?: unknown; county?: unknown; image?: unknown }>(raw)) {
+    const countyHtml = str(r.county) ?? '';
+    const m = countyHtml.match(/lat=([-\d.]+)&(?:amp;)?lon=([-\d.]+)[^"]*?id=(\d+)/);
+    const src = (str(r.image) ?? '').match(/src="(https:\/\/micamerasimages\.net\/[^"]+)"/);
     if (!m || !src) continue;
     const lat = num(m[1]);
     const lng = num(m[2]);
     if (!validLatLng(lat, lng)) continue;
-    const county = toPlainText((r.county ?? '').replace(/<a[\s\S]*<\/a>/, ''));
+    const county = toPlainText(countyHtml.replace(/<a[\s\S]*<\/a>/, ''));
     out.push(
       cam({
         id: `mdot-${m[3]}`,
@@ -257,21 +286,22 @@ const INDOT_STILL = /^https:\/\/public\.carsprogram\.org\/cameras\/IN\/(?:INDOT|
  * poster frame. Closed cameras carry a site icon instead of a frame and are skipped. The HLS edge
  * is not used: its first ~20 s are a pre-roll filler.
  */
-export function parseIndot(raw: { data?: { mapFeaturesQuery?: { mapFeatures?: IndotFeature[] } } }): Row[] {
+export function parseIndot(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const f of raw?.data?.mapFeaturesQuery?.mapFeatures ?? []) {
-    const id = f.uri?.match(/^camera\/(\d{1,9})$/)?.[1];
-    const still = f.views?.[0]?.url;
-    const pt = pointOf(f.features?.[0]?.geometry);
+  const features = asRecord(asRecord(asRecord(raw)?.data)?.mapFeaturesQuery)?.mapFeatures;
+  for (const f of records<IndotFeature>(features)) {
+    const id = (str(f.uri) ?? '').match(/^camera\/(\d{1,9})$/)?.[1];
+    const still = str(records<{ url?: unknown }>(f.views)[0]?.url);
+    const pt = pointOf(records<{ geometry?: unknown }>(f.features)[0]?.geometry);
     if (!id || f.active !== true || !still || !INDOT_STILL.test(still) || !pt) continue;
     out.push(cam({ id: `indot-${id}`, lat: pt[1], lng: pt[0], source: 'indot', providerId: 'indot', name: text(f.title) || `INDOT camera ${id}`, country: 'US', streamType: 'jpg', stillUrl: still }));
   }
   return out;
 }
 
-export function parseOttawa(raw: { number?: number; latitude?: number; longitude?: number; description?: string; type?: string }[]): Row[] {
+export function parseOttawa(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const r of raw ?? []) {
+  for (const r of records<{ number?: unknown; latitude?: unknown; longitude?: unknown; description?: unknown }>(raw)) {
     const lat = num(r.latitude);
     const lng = num(r.longitude);
     if (!Number.isInteger(r.number) || !validLatLng(lat, lng)) continue;
@@ -284,21 +314,25 @@ interface GeoJsonPoints {
   features?: { id?: string | number; geometry?: { type?: string; coordinates?: unknown }; properties?: Record<string, unknown> }[];
 }
 
-function pointOf(g: { type?: string; coordinates?: unknown } | undefined): [number, number] | null {
-  const c = g?.type === 'MultiPoint' ? (g.coordinates as unknown[])?.[0] : g?.coordinates;
+function pointOf(geometry: unknown): [number, number] | null {
+  const g = asRecord(geometry);
+  const c = g?.type === 'MultiPoint' ? (Array.isArray(g.coordinates) ? (g.coordinates as unknown[])[0] : null) : g?.coordinates;
   if (!Array.isArray(c)) return null;
   const lng = num(c[0]);
   const lat = num(c[1]);
   return validLatLng(lat, lng) ? [lng!, lat] : null;
 }
 
+/** The features of a GeoJSON FeatureCollection body (anything else → []). */
+const featuresOf = (raw: unknown) => records<NonNullable<GeoJsonPoints['features']>[number]>(asRecord(raw)?.features);
+
 /** Québec 511 WFS: cameras are listed with their operator page only (frames refuse non-browser clients). */
-export function parseQuebec(raw: GeoJsonPoints): Row[] {
+export function parseQuebec(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const f of raw.features ?? []) {
-    const p = f.properties ?? {};
+  for (const f of featuresOf(raw)) {
+    const p = asRecord(f.properties) ?? {};
     const pt = pointOf(f.geometry);
-    const id = text(p.IDEcamera) || String(f.id ?? '');
+    const id = text(p.IDEcamera) || idOf(f.id) || '';
     const page = https(p.URL_FLUX_DONNEE);
     if (!pt || !id || !page) continue;
     out.push(
@@ -319,10 +353,10 @@ export function parseQuebec(raw: GeoJsonPoints): Row[] {
   return out;
 }
 
-export function parseToronto(raw: GeoJsonPoints): Row[] {
+export function parseToronto(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const f of raw.features ?? []) {
-    const p = f.properties ?? {};
+  for (const f of featuresOf(raw)) {
+    const p = asRecord(f.properties) ?? {};
     const pt = pointOf(f.geometry);
     const still = https(p.IMAGEURL);
     const id = num(p.REC_ID);
@@ -347,13 +381,14 @@ interface DriveBcCam {
 }
 
 /** DriveBC `/api/webcams/` (new URL): `last_update_modified` is the operator's image time. */
-export function parseDriveBc(raw: DriveBcCam[]): Row[] {
+export function parseDriveBc(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const r of raw ?? []) {
+  for (const r of records<DriveBcCam>(raw)) {
     if (!Number.isInteger(r.id) || r.is_on === false || r.should_appear === false) continue;
-    const lng = num(r.location?.coordinates?.[0]);
-    const lat = num(r.location?.coordinates?.[1]);
-    const path = r.links?.imageDisplay?.split('?')[0];
+    const coords: unknown = asRecord(r.location)?.coordinates;
+    const lng = num(Array.isArray(coords) ? coords[0] : null);
+    const lat = num(Array.isArray(coords) ? coords[1] : null);
+    const path = str(asRecord(r.links)?.imageDisplay)?.split('?')[0];
     if (!validLatLng(lat, lng) || !path || !/^\/images\/\d+\.jpg$/.test(path)) continue;
     out.push(
       cam({
@@ -386,11 +421,12 @@ interface TflPlace {
 }
 
 /** TfL JamCams (`/Place/Type/JamCam`): still + short mp4 clip ("latest clip", never "live"). */
-export function parseTfl(raw: TflPlace[]): Row[] {
+export function parseTfl(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const p of raw ?? []) {
-    const props = Object.fromEntries((p.additionalProperties ?? []).map((a) => [a.key ?? '', a.value ?? '']));
-    const id = p.id?.replace(/^JamCams_/, '');
+  for (const p of records<TflPlace>(raw)) {
+    const props: Record<string, string> = {};
+    for (const a of records<{ key?: unknown; value?: unknown }>(p.additionalProperties)) if (typeof a.key === 'string' && typeof a.value === 'string') props[a.key] = a.value;
+    const id = str(p.id)?.replace(/^JamCams_/, '');
     const lat = num(p.lat);
     const lng = num(p.lon);
     if (!id || !/^[\w.]+$/.test(id) || props.available === 'false' || !validLatLng(lat, lng)) continue;
@@ -418,23 +454,24 @@ export function parseTfl(raw: TflPlace[]): Row[] {
 }
 
 // ── Europe ──────────────────────────────────────────────────────────────────────
-export function parseDgt(raw: { camaras?: { id?: string; latitud?: string; longitud?: string; carretera?: string; pk?: string; sentido?: string; imagen?: string }[] }): Row[] {
+export function parseDgt(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const c of raw.camaras ?? []) {
+  for (const c of records<{ id?: unknown; latitud?: unknown; longitud?: unknown; carretera?: unknown; pk?: unknown; sentido?: unknown; imagen?: unknown }>(asRecord(raw)?.camaras)) {
     const lat = num(c.latitud);
     const lng = num(c.longitud);
     const still = https(c.imagen);
-    if (!c.id || !/^\d+$/.test(c.id) || !still || !validLatLng(lat, lng)) continue;
-    const dir = c.sentido && c.sentido !== '-' ? ` (${text(c.sentido)})` : '';
-    out.push(cam({ id: `dgt-${c.id}`, lat, lng: lng!, source: 'dgt', providerId: 'dgt', name: `${text(c.carretera)} km ${text(c.pk)}${dir}`.trim(), country: 'ES', streamType: 'jpg', stillUrl: still }));
+    const id = idOf(c.id);
+    if (!id || !/^\d+$/.test(id) || !still || !validLatLng(lat, lng)) continue;
+    const dir = text(c.sentido) && c.sentido !== '-' ? ` (${text(c.sentido)})` : '';
+    out.push(cam({ id: `dgt-${id}`, lat, lng: lng!, source: 'dgt', providerId: 'dgt', name: `${text(c.carretera)} km ${text(c.pk)}${dir}`.trim(), country: 'ES', streamType: 'jpg', stillUrl: still }));
   }
   return out;
 }
 
 /** Rijkswaterstaat (`/api/cameras/`, new URL): frames need a browser Referer, so link out only. */
-export function parseRws(raw: { id?: number; latitude?: string; longitude?: string; road?: string; near?: string; stream_url?: string }[]): Row[] {
+export function parseRws(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const c of raw ?? []) {
+  for (const c of records<{ id?: unknown; latitude?: unknown; longitude?: unknown; road?: unknown; near?: unknown; stream_url?: unknown }>(raw)) {
     const lat = num(c.latitude);
     const lng = num(c.longitude);
     const page = https(c.stream_url);
@@ -445,14 +482,14 @@ export function parseRws(raw: { id?: number; latitude?: string; longitude?: stri
 }
 
 // ── Nordics ─────────────────────────────────────────────────────────────────────
-export function parseDigitraffic(raw: GeoJsonPoints): Row[] {
+export function parseDigitraffic(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const f of raw.features ?? []) {
-    const p = f.properties ?? {};
+  for (const f of featuresOf(raw)) {
+    const p = asRecord(f.properties) ?? {};
     if (p.collectionStatus !== 'GATHERING') continue;
-    const preset = (p.presets as { id?: string; inCollection?: boolean }[] | undefined)?.find((x) => x.inCollection && x.id && /^[A-Z]\d+$/.test(x.id));
+    const preset = records<{ id?: unknown; inCollection?: unknown }>(p.presets).find((x) => x.inCollection === true && typeof x.id === 'string' && /^[A-Z]\d+$/.test(x.id));
     const pt = pointOf(f.geometry);
-    if (!preset?.id || !pt) continue;
+    if (typeof preset?.id !== 'string' || !pt) continue;
     out.push(
       cam({
         id: `digitraffic-${preset.id}`,
@@ -470,10 +507,10 @@ export function parseDigitraffic(raw: GeoJsonPoints): Row[] {
   return out;
 }
 
-export function parseVegagerdin(raw: { Myndavel?: string; Skyring?: string; Vegheiti?: string; Slod?: string; Breidd?: number; Lengd?: number }[]): Row[] {
+export function parseVegagerdin(raw: unknown): Row[] {
   const out: Row[] = [];
   const seen = new Set<string>();
-  for (const c of raw ?? []) {
+  for (const c of records<{ Myndavel?: unknown; Skyring?: unknown; Slod?: unknown; Breidd?: unknown; Lengd?: unknown }>(raw)) {
     const still = https(c.Slod);
     const lat = num(c.Breidd);
     const lng = num(c.Lengd);
@@ -489,13 +526,16 @@ interface TrafikverketResponse {
   RESPONSE?: { RESULT?: { Camera?: { Id?: string; Name?: string; Active?: boolean; Geometry?: { WGS84?: string }; PhotoUrl?: string; PhotoTime?: string; HasFullSizePhoto?: boolean; Direction?: number }[] }[] };
 }
 
+type TrafikverketCamera = NonNullable<NonNullable<NonNullable<TrafikverketResponse['RESPONSE']>['RESULT']>[number]['Camera']>[number];
+
 /** Trafikverket open API `Camera` objects (keyed; CC0). `PhotoTime` is the image time. */
-export function parseTrafikverket(raw: TrafikverketResponse): Row[] {
+export function parseTrafikverket(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const c of raw.RESPONSE?.RESULT?.[0]?.Camera ?? []) {
-    const m = c.Geometry?.WGS84?.match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/);
+  const result = records<{ Camera?: unknown }>(asRecord(asRecord(raw)?.RESPONSE)?.RESULT)[0];
+  for (const c of records<TrafikverketCamera>(result?.Camera)) {
+    const m = (str(asRecord(c.Geometry)?.WGS84) ?? '').match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/);
     const photo = https(c.PhotoUrl);
-    if (!c.Id || !/^[\w-]{1,60}$/.test(c.Id) || c.Active === false || !m || !photo) continue;
+    if (typeof c.Id !== 'string' || !/^[\w-]{1,60}$/.test(c.Id) || c.Active === false || !m || !photo) continue;
     const lng = num(m[1]);
     const lat = num(m[2]);
     if (!validLatLng(lat, lng)) continue;
@@ -509,7 +549,7 @@ export function parseTrafikverket(raw: TrafikverketResponse): Row[] {
         name: text(c.Name) || c.Id,
         country: 'SE',
         streamType: 'jpg',
-        stillUrl: c.HasFullSizePhoto ? `${photo}${photo.includes('?') ? '&' : '?'}type=fullsize` : photo,
+        stillUrl: c.HasFullSizePhoto === true ? `${photo}${photo.includes('?') ? '&' : '?'}type=fullsize` : photo,
         headingDeg: typeof c.Direction === 'number' && c.Direction >= 0 && c.Direction < 360 ? c.Direction : null,
         observedAt: isoWithOffset(c.PhotoTime),
       }),
@@ -524,8 +564,9 @@ function tag(block: string, name: string): string | null {
   return m ? toPlainText(m[1]!) : null;
 }
 
-export function parseHongKong(xml: string): Row[] {
+export function parseHongKong(xml: unknown): Row[] {
   const out: Row[] = [];
+  if (typeof xml !== 'string') return out;
   for (const m of xml.matchAll(/<image>([\s\S]*?)<\/image>/g)) {
     const b = m[1]!;
     const key = tag(b, 'key');
@@ -542,30 +583,35 @@ interface LtaResponse {
   items?: { timestamp?: string; cameras?: { camera_id?: string; image?: string; timestamp?: string; location?: { latitude?: number; longitude?: number } }[] }[];
 }
 
+type LtaCamera = NonNullable<NonNullable<LtaResponse['items']>[number]['cameras']>[number];
+
 /** LTA traffic images (data.gov.sg v1): each image URL is one snapshot with its own timestamp. */
-export function parseLta(raw: LtaResponse): Row[] {
+export function parseLta(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const c of raw.items?.[0]?.cameras ?? []) {
-    const lat = num(c.location?.latitude);
-    const lng = num(c.location?.longitude);
+  for (const c of records<LtaCamera>(records<{ cameras?: unknown }>(asRecord(raw)?.items)[0]?.cameras)) {
+    const loc = asRecord(c.location);
+    const lat = num(loc?.latitude);
+    const lng = num(loc?.longitude);
     const still = https(c.image);
-    if (!c.camera_id || !/^\d+$/.test(c.camera_id) || !still || !validLatLng(lat, lng)) continue;
-    out.push(cam({ id: `lta-${c.camera_id}`, lat, lng: lng!, source: 'lta', providerId: 'lta', name: `LTA traffic camera ${c.camera_id}`, city: 'Singapore', country: 'SG', streamType: 'jpg', stillUrl: still, observedAt: isoWithOffset(c.timestamp) }));
+    const id = idOf(c.camera_id);
+    if (!id || !/^\d+$/.test(id) || !still || !validLatLng(lat, lng)) continue;
+    out.push(cam({ id: `lta-${id}`, lat, lng: lng!, source: 'lta', providerId: 'lta', name: `LTA traffic camera ${id}`, city: 'Singapore', country: 'SG', streamType: 'jpg', stillUrl: still, observedAt: isoWithOffset(c.timestamp) }));
   }
   return out;
 }
 
 /** Taiwan THB provincial highways: frames at `{html}/snapshot` on the cctv-ssNN encoders only. */
-export function parseThb(raw: { id?: string; stakenumber?: string; gisx?: number; gisy?: number; html?: string }[]): Row[] {
+export function parseThb(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const c of raw ?? []) {
+  for (const c of records<{ id?: unknown; stakenumber?: unknown; gisx?: unknown; gisy?: unknown; html?: unknown }>(raw)) {
     const lat = num(c.gisy);
     const lng = num(c.gisx);
     const base = https(c.html);
-    if (!c.id || !/^[\w-]+$/.test(c.id) || !base || !validLatLng(lat, lng)) continue;
+    const id = idOf(c.id);
+    if (!id || !/^[\w-]+$/.test(id) || !base || !validLatLng(lat, lng)) continue;
     const u = new URL(base);
     if (!/^cctv-ss\d{2}\.thb\.gov\.tw$/.test(u.hostname)) continue;
-    out.push(cam({ id: `thb-${c.id}`, lat, lng: lng!, source: 'thb', providerId: 'thb', name: text(c.stakenumber) || c.id, country: 'TW', streamType: 'jpg', stillUrl: `${u.origin}${u.pathname.replace(/\/$/, '')}/snapshot` }));
+    out.push(cam({ id: `thb-${id}`, lat, lng: lng!, source: 'thb', providerId: 'thb', name: text(c.stakenumber) || id, country: 'TW', streamType: 'jpg', stillUrl: `${u.origin}${u.pathname.replace(/\/$/, '')}/snapshot` }));
   }
   return out;
 }
@@ -588,19 +634,17 @@ export const VIA_LIETUVA_MAX_FRAME_AGE_MS = 6 * 3600_000;
  * Joined on id. The list's frame time goes stale between inventory refreshes, so it only filters
  * dead cameras (no frame for 6 h) and is not shown as `observedAt`.
  */
-export function parseViaLietuva(
-  layers: { layer?: string; features?: { id?: string; name?: string; points?: { point?: unknown }[] }[] }[],
-  info: ViaLietuvaInfo[],
-  now: number = Date.now(),
-): Row[] {
+export function parseViaLietuva(layers: unknown, info: unknown, now: number = Date.now()): Row[] {
   const byId = new Map<string, ViaLietuvaInfo>();
-  for (const i of info ?? []) if (Number.isInteger(i.id)) byId.set(String(i.id), i);
+  for (const i of records<ViaLietuvaInfo>(info)) if (Number.isInteger(i.id)) byId.set(String(i.id), i);
   const out: Row[] = [];
-  for (const f of (layers ?? []).find((l) => l.layer === 'VKR')?.features ?? []) {
-    if (!f.id || !/^\d{1,6}$/.test(f.id)) continue;
-    const i = byId.get(f.id);
+  const vkr = records<{ layer?: unknown; features?: unknown }>(layers).find((l) => l.layer === 'VKR');
+  for (const f of records<{ id?: unknown; name?: unknown; points?: unknown }>(vkr?.features)) {
+    const fid = idOf(f.id);
+    if (!fid || !/^\d{1,6}$/.test(fid)) continue;
+    const i = byId.get(fid);
     if (!i || typeof i.date !== 'number' || now - i.date > VIA_LIETUVA_MAX_FRAME_AGE_MS) continue;
-    const p = f.points?.[0]?.point;
+    const p = records<{ point?: unknown }>(f.points)[0]?.point;
     if (!Array.isArray(p)) continue;
     const lat = num(p[0]);
     const lng = num(p[1]);
@@ -608,16 +652,16 @@ export function parseViaLietuva(
     const road = [text(i.roadNr), text(i.roadName)].filter(Boolean).join(' ');
     out.push(
       cam({
-        id: `vialietuva-${f.id}`,
+        id: `vialietuva-${fid}`,
         lat,
         lng: lng!,
         source: 'vialietuva',
         providerId: 'vialietuva',
-        name: text(i.name) || text(f.name) || `Via Lietuva camera ${f.id}`,
+        name: text(i.name) || text(f.name) || `Via Lietuva camera ${fid}`,
         city: road || null,
         country: 'LT',
         streamType: 'jpg',
-        stillUrl: `https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=${f.id}`,
+        stillUrl: `https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=${fid}`,
       }),
     );
   }
@@ -626,8 +670,9 @@ export function parseViaLietuva(
 
 // ── Oceania ─────────────────────────────────────────────────────────────────────
 /** NZTA `cameras/all` XML. Nested journey/leg/region/way blocks are removed before reading fields. */
-export function parseNzta(xml: string): Row[] {
+export function parseNzta(xml: unknown): Row[] {
   const out: Row[] = [];
+  if (typeof xml !== 'string') return out;
   for (const m of xml.matchAll(/<camera>([\s\S]*?)<\/camera>/g)) {
     const full = m[1]!;
     const region = full.match(/<region>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/region>/)?.[1];
@@ -659,13 +704,15 @@ export function parseNzta(xml: string): Row[] {
   return out;
 }
 
-export function parseLiveTrafficNsw(raw: { id?: string; path?: string; eventType?: string; geometry?: { type?: string; coordinates?: unknown }; properties?: { title?: string; view?: string; href?: string; region?: string; direction?: string } }[]): Row[] {
+export function parseLiveTrafficNsw(raw: unknown): Row[] {
   const out: Row[] = [];
-  for (const f of raw ?? []) {
+  for (const f of records<{ id?: unknown; path?: unknown; eventType?: unknown; geometry?: unknown; properties?: unknown }>(raw)) {
     if (f.eventType !== 'liveCams') continue;
+    const props = asRecord(f.properties) ?? {};
     const pt = pointOf(f.geometry);
-    const still = https(f.properties?.href);
-    const key = f.path && /^[\w-]+$/.test(f.path) ? f.path : f.id;
+    const still = https(props.href);
+    const path = str(f.path);
+    const key = path && /^[\w-]+$/.test(path) ? path : idOf(f.id);
     if (!pt || !still || !key) continue;
     out.push(
       cam({
@@ -674,13 +721,13 @@ export function parseLiveTrafficNsw(raw: { id?: string; path?: string; eventType
         lng: pt[0],
         source: 'nsw',
         providerId: 'nsw',
-        name: text(f.properties?.title) || key,
-        city: text(f.properties?.region).replace(/_/g, ' ') || null,
+        name: text(props.title) || key,
+        city: text(props.region).replace(/_/g, ' ') || null,
         country: 'AU',
         streamType: 'jpg',
         stillUrl: still,
         externalUrl: null,
-        headingDeg: headingOf(f.properties?.direction),
+        headingDeg: headingOf(props.direction),
       }),
     );
   }

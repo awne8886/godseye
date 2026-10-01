@@ -17,6 +17,11 @@ export const FX = {
   odot: `odot-cctvinventory.${D}.json`,
   txdot: `txdot-aus.${D}.json`,
   txdotSnapshot: `txdot-snapshot.${D}.json`,
+  /**
+   * The exact body TxDOT answered (`200 application/json; charset=utf-8`, 4 bytes `null`) for a listed
+   * camera without a current snapshot: YKM "YKM-US59 @ Youngdale Rd (S)- El Campo", probed 2026-10-01T17:34Z.
+   */
+  txdotSnapshotNull: 'txdot-snapshot-null.2026-10-01.json',
   mdot: `mdot-list.${D}.json`,
   ottawa: `ottawa-camera-list.${D}.json`,
   quebec: `quebec-wfs.${D}.json`,

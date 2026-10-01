@@ -174,6 +174,10 @@ describe('item 2: NSW HTML frames are refused by content type and reported offli
     expect(frameErrorInfo('upstream_404').state).toBe('offline');
     expect(frameErrorInfo('timeout').state).toBe('unavailable');
     expect(frameErrorInfo('upstream_503').state).toBe('unavailable');
+    // Round 5: a camera without a snapshot / still is offline with its own wording, not "could not be reached".
+    expect(frameErrorInfo('no_snapshot')).toEqual({ state: 'offline', message: 'The operator returned no snapshot for this camera.' });
+    expect(frameErrorInfo('no_still')).toMatchObject({ state: 'offline', message: expect.stringMatching(/no still image/) });
+    expect(frameErrorInfo('link_out_only')).toMatchObject({ state: 'offline', message: expect.stringMatching(/operator’s own site/) });
   });
 });
 
