@@ -3,6 +3,7 @@
  * Threats & intel layers: nuclear facilities, GDACS global incidents, GDELT events, conflict zones
  * (+ in-zone events at their own coordinates), DeepState frontlines and the country-risk
  * choropleth. Each sub-layer fetches, renders and reports its own status and unmounts cleanly.
+ * Point layers draw over the globe surface and only on the camera-facing hemisphere (./globe.ts).
  * Owner: layers-threats-network.
  */
 import { ScatterplotLayer } from '@deck.gl/layers';
@@ -13,7 +14,8 @@ import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
 import { readCssColor } from '@/lib/tokens';
 import type { ConflictEvent, ConflictsResponse, CountryRiskResponse, FeedEvent, FrontlinesResponse, GdacsIncident, GdacsResponse, GdeltEvent, GdeltEventsResponse, InfrastructureResponse, NuclearSite } from '@/lib/types';
-import { gdeltTitle, QUAD_TOKEN } from '../shared/gdelt';
+import { gdeltCoverage, gdeltTitle, QUAD_TOKEN } from '../shared/gdelt';
+import { GLOBE_POINT_PARAMETERS, lngLatOf, useFacing } from './globe';
 import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from './hooks';
 import { buildRiskGeometry } from './risk-geometry';
 import { conflictEventSelection, zoneSelection } from './selection';
@@ -40,7 +42,7 @@ const NUCLEAR_TOKEN: Record<string, Parameters<typeof readCssColor>[0]> = {
 
 function NuclearLayer() {
   const data = useFeedData<InfrastructureResponse>('infrastructure', '/api/infrastructure', (b) => b.items.length);
-  const items = data?.items;
+  const items = useFacing(data?.items, lngLatOf);
   const layers = useMemo(
     () =>
       items
@@ -48,7 +50,8 @@ function NuclearLayer() {
             new ScatterplotLayer<NuclearSite>({
               id: 'tn-nuclear',
               data: items,
-              getPosition: (s) => [s.lng, s.lat],
+              parameters: GLOBE_POINT_PARAMETERS,
+              getPosition: lngLatOf,
               getRadius: (s) => (s.flags.length ? 6 : 4.5),
               radiusUnits: 'pixels',
               getFillColor: (s) => readCssColor(NUCLEAR_TOKEN[nuclearClass(s)]!, 0.9),
@@ -92,11 +95,12 @@ export function gdacsEvents(items: readonly GdacsIncident[]): FeedEvent[] {
 
 function GdacsLayer() {
   const data = useFeedData<GdacsResponse>('global_incidents', '/api/gdacs', (b) => b.items.length);
-  const items = data?.items;
+  const all = data?.items;
   const push = useFeedEventStore((s) => s.push);
   useEffect(() => {
-    if (items) push(gdacsEvents(items));
-  }, [items, push]);
+    if (all) push(gdacsEvents(all));
+  }, [all, push]);
+  const items = useFacing(all, lngLatOf);
   const layers = useMemo(
     () =>
       items
@@ -104,7 +108,8 @@ function GdacsLayer() {
             new ScatterplotLayer<GdacsIncident>({
               id: 'tn-gdacs',
               data: items,
-              getPosition: (i) => [i.lng, i.lat],
+              parameters: GLOBE_POINT_PARAMETERS,
+              getPosition: lngLatOf,
               getRadius: (i) => (i.alertLevel === 'red' ? 8 : i.alertLevel === 'orange' ? 6 : 4),
               radiusUnits: 'pixels',
               getFillColor: (i) => readCssColor(i.alertLevel === 'red' ? '--map-incident' : i.alertLevel === 'orange' ? '--map-seismic' : '--map-seismic-low', 0.85),
@@ -138,20 +143,28 @@ export function gdeltEvents(items: readonly GdeltEvent[]): FeedEvent[] {
 
 const gdeltRadius = (e: GdeltEvent) => Math.min(9, 2.5 + Math.log2(1 + e.numMentions));
 
+/** The whole 1 h window (the feed keeps ≤ 5 000 events); `total`/`truncated` say if any were left out. */
+export const GDELT_EVENTS_URL = '/api/gdelt-events?limit=5000';
+
 function GdeltLayer() {
-  const data = useFeedData<GdeltEventsResponse>('gdelt_events', '/api/gdelt-events?limit=2000', (b) => b.items.length);
-  const items = data?.items;
+  const data = useFeedData<GdeltEventsResponse>('gdelt_events', GDELT_EVENTS_URL, (b) => b.items.length);
+  const all = data?.items;
+  const coverage = useMemo(() => (data ? gdeltCoverage(data) : null), [data]);
   const push = useFeedEventStore((s) => s.push);
   useEffect(() => {
-    if (items) push(gdeltEvents(items));
-  }, [items, push]);
+    if (all) push(gdeltEvents(all));
+  }, [all, push]);
+  // Material conflict drawn last (on top).
+  const sorted = useMemo(() => (all ? [...all].sort((a, b) => a.quadClass - b.quadClass) : null), [all]);
+  const items = useFacing(sorted, lngLatOf);
   const layers = useMemo(() => {
     if (!items) return null;
     return [
       new ScatterplotLayer<GdeltEvent>({
         id: 'tn-gdelt',
-        data: [...items].sort((a, b) => a.quadClass - b.quadClass),
-        getPosition: (e) => [e.lng, e.lat],
+        data: items,
+        parameters: GLOBE_POINT_PARAMETERS,
+        getPosition: lngLatOf,
         getRadius: gdeltRadius,
         radiusUnits: 'pixels',
         getFillColor: (e) => readCssColor(QUAD_TOKEN[e.quadClass], 0.7),
@@ -167,7 +180,7 @@ function GdeltLayer() {
   useDeckLayers('threats:gdelt', layers, zOf('gdelt_events'));
   useDeckPick('tn-gdelt', (info) => {
     const e = info.object as GdeltEvent | undefined;
-    return e ? { kind: 'gdelt_event', id: e.id, layer: 'gdelt_events', source: 'gdelt', observedAt: e.dateAdded, data: e as unknown as Record<string, unknown>, lngLat: [e.lng, e.lat] } : null;
+    return e ? { kind: 'gdelt_event', id: e.id, layer: 'gdelt_events', source: 'gdelt', observedAt: e.dateAdded, data: { ...e, ...(coverage ? { windowCoverage: coverage } : {}) }, lngLat: [e.lng, e.lat] } : null;
   });
   return null;
 }
@@ -199,14 +212,16 @@ function ConflictLayer() {
   );
   useNativeLayers('tn-zones', zoneFc, zoneLayers);
   const zById = useMemo(() => new Map((zones ?? []).map((z) => [z.id, z])), [zones]);
+  const shownEvents = useFacing(events, lngLatOf);
   const eventLayers = useMemo(
     () =>
-      events
+      shownEvents
         ? [
             new ScatterplotLayer<ConflictEvent>({
               id: 'tn-zone-events',
-              data: events,
-              getPosition: (e) => [e.lng, e.lat],
+              data: shownEvents,
+              parameters: GLOBE_POINT_PARAMETERS,
+              getPosition: lngLatOf,
               getRadius: 3.5,
               radiusUnits: 'pixels',
               getFillColor: readCssColor('--map-gdelt-4', 0.85),
@@ -218,7 +233,7 @@ function ConflictLayer() {
             }),
           ]
         : null,
-    [events],
+    [shownEvents],
   );
   useDeckLayers('threats:zone-events', eventLayers, zOf('conflict_zones'));
   // Zone cards are headed by the zone's display name, events name their zone the same way.

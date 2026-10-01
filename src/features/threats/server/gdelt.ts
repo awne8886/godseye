@@ -19,7 +19,7 @@ import { unzipFirst } from './zip';
 
 export const GDELT_BASE = 'https://data.gdeltproject.org/gdeltv2/';
 export const WINDOW_BATCHES = 4;
-const MAX_EVENTS = 5_000;
+export const MAX_EVENTS = 5_000;
 
 /** Latest export batch from lastupdate.txt, with the URL upgraded to https. */
 export function parseLastUpdate(text: string): { ts: string; url: string } | null {
@@ -153,6 +153,8 @@ export interface GdeltData {
   items: GdeltEvent[];
   window: { from: string; to: string; batches: number; latestLabel?: string };
   scanned: number;
+  /** Geocoded events in the window before the MAX_EVENTS cap (`items` keeps the newest of them). */
+  windowEvents?: number;
 }
 
 interface ParsedBatch {
@@ -201,6 +203,7 @@ export function aggregate(parsed: { ts: string; batch: ParsedBatch }[]): GdeltDa
   const newest = sorted.at(-1)!;
   return {
     items: items.slice(0, MAX_EVENTS),
+    windowEvents: items.length,
     window: {
       from: new Date(oldest.batch.observedAt - GDELT_CADENCE_MS).toISOString(),
       to: new Date(newest.batch.observedAt).toISOString(),

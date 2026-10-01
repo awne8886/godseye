@@ -3,15 +3,17 @@
  * Client plumbing shared by the threats, network and maritime layers: a polling hook that mirrors
  * the honest feed state into the layer status store (LIVE/age/STALE from meta.state, SOURCE
  * OFFLINE with last-good on 503, capability-disabled on 403), a native GeoJSON source/layer hook
- * inserted under the basemap labels, and pick registration. Owner: layers-threats-network.
+ * inserted under the basemap labels, and pick registration. Layers whose registry capability
+ * /api/health reports off are never requested (visual-qa round 5 m11: a 403 per poll in the
+ * console); their row states the skipped provider instead. Owner: layers-threats-network.
  */
 import { useQuery } from '@tanstack/react-query';
 import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { LAYERS, type LayerId } from '@/lib/layer-registry';
-import { useLayerStatusStore, useMapInstance, type Selection } from '@/lib/layer-host';
+import { useLayerStatusStore, useMapInstance, type LayerStatus, type Selection } from '@/lib/layer-host';
 import { registerDeckPick, registerNativePick, type DeckPickInfo, type NativeFeature } from '@/lib/map/picking';
-import type { FeedMeta, Providers } from '@/lib/types';
+import type { FeedMeta, HealthResponse, ProviderStatus, Providers } from '@/lib/types';
 
 export interface Enveloped {
   meta: FeedMeta;
@@ -56,22 +58,88 @@ export function pollInterval<T>(policy: PollPolicy<T>, data: Result<T> | undefin
   return ms ?? false;
 }
 
-/** Poll a route (registry refreshMs or a PollPolicy; react-query pauses while the tab is hidden) and report status. */
+type Capabilities = HealthResponse['capabilities'];
+
+/** `enabled`: fetch; `disabled`: the deployment does not serve it; `unknown`: /api/health not loaded yet. */
+export type CapabilityGate = 'enabled' | 'disabled' | 'unknown';
+
+/**
+ * A layer's capability gate. Keyless layers are always enabled. When /api/health failed the route
+ * is asked anyway (it answers 403 capability_disabled itself), so a broken health check never
+ * hides a layer the server would serve.
+ */
+export function capabilityGate(layer: LayerId, caps: Capabilities | undefined, healthFailed = false): CapabilityGate {
+  const cap = LAYERS.find((l) => l.id === layer)?.capability ?? null;
+  if (cap === null) return 'enabled';
+  if (caps) return caps[cap]?.enabled === true ? 'enabled' : 'disabled';
+  return healthFailed ? 'enabled' : 'unknown';
+}
+
+/**
+ * Status of a layer whose capability is off: not requested, nothing drawn, the capability shown as
+ * a skipped provider — "not-configured" when a key is missing (the row reads NEEDS KEY · …),
+ * "licence" when a licence flag keeps it off.
+ */
+export function gatedStatus(layer: LayerId, caps: Capabilities | undefined): Partial<LayerStatus> {
+  const cap = LAYERS.find((l) => l.id === layer)?.capability ?? 'unknown';
+  const reason = caps?.[cap]?.reason ?? '';
+  const skipped: ProviderStatus['skipped'] = /\bnot set\b/.test(reason) ? 'not-configured' : 'licence';
+  return { state: 'idle', count: null, fetchedAt: null, observedAt: null, lastGoodAt: null, error: 'capability_disabled', providers: { [cap]: { ok: false, count: 0, ms: 0, age_s: null, skipped } } };
+}
+
+/**
+ * /api/health under the HUD's query key (one shared cache entry and request), asked only for a
+ * capability-gated layer: keyless layers never wait on, or add, a health request.
+ */
+function useHealthFor(gated: boolean) {
+  return useQuery({
+    queryKey: ['health'],
+    queryFn: async ({ signal }) => {
+      const r = await fetch('/api/health', { signal });
+      if (!r.ok) throw new Error(`health HTTP ${r.status}`);
+      return (await r.json()) as HealthResponse;
+    },
+    enabled: gated,
+    retry: 1,
+  });
+}
+
+/** Read the layer's capability from /api/health and report the gated status while it is not enabled. */
+export function useCapabilityGate(layer: LayerId): CapabilityGate {
+  const gated = (LAYERS.find((l) => l.id === layer)?.capability ?? null) !== null;
+  const health = useHealthFor(gated);
+  const caps = health.data?.capabilities;
+  const gate = capabilityGate(layer, caps, health.isError && !health.data);
+  const update = useLayerStatusStore((s) => s.update);
+  useEffect(() => {
+    if (gate === 'unknown') update(layer, { state: 'loading' });
+    else if (gate === 'disabled') update(layer, gatedStatus(layer, caps));
+  }, [gate, layer, caps, update]);
+  return gate;
+}
+
+/**
+ * Poll a route (registry refreshMs or a PollPolicy; react-query pauses while the tab is hidden) and
+ * report status. A capability-gated layer is requested only once /api/health reports it enabled.
+ */
 export function useFeedData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null, refreshMs: PollPolicy<T> = refreshMsFor(layer)) {
   const update = useLayerStatusStore((s) => s.update);
+  const gate = useCapabilityGate(layer);
+  const enabled = url !== null && gate === 'enabled';
   const q = useQuery({
     queryKey: ['threats-network', url],
     queryFn: ({ signal }) => load<T>(url!, signal),
-    enabled: url !== null,
+    enabled,
     refetchInterval: (query) => pollInterval(refreshMs, query.state.data),
     ...(typeof refreshMs === 'function' ? { staleTime: (query: { state: { data: Result<T> | undefined } }) => pollInterval(refreshMs, query.state.data) || 0 } : {}),
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
   });
-  const result = q.data;
+  const result = enabled ? q.data : undefined;
   const failed = q.isError;
-  const loading = q.isPending && url !== null;
+  const loading = q.isPending && enabled;
   useEffect(() => {
+    if (!enabled) return; // useCapabilityGate reports a gated layer
     if (loading) return update(layer, { state: 'loading' });
     if (failed && !result) return update(layer, { state: 'offline', count: null, error: 'unreachable' });
     if (!result) return;
@@ -90,7 +158,7 @@ export function useFeedData<T>(layer: LayerId, url: string | null, count: (body:
     }
     const { meta, providers } = result.body;
     update(layer, { state: meta.state, count: count(result.body), fetchedAt: meta.fetchedAt, observedAt: meta.observedAt, lastGoodAt: meta.lastGoodAt, error: undefined, providers, attribution: meta.attribution });
-  }, [layer, result, failed, loading, update, count]);
+  }, [layer, enabled, result, failed, loading, update, count]);
   useEffect(() => () => update(layer, { state: 'idle', count: null }), [layer, update]);
   return result?.ok ? result.body : null;
 }

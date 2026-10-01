@@ -1,12 +1,8 @@
-'use client';
 /**
  * Co-located indicators (many blocklist IPs geolocate to one city or country label point) are drawn
  * as ONE point at their shared, true coordinate with a count; the card lists every indicator there.
- * Nothing is ever displaced, jittered or spread (visual-qa M10). Owner: layers-threats-network.
+ * Nothing is ever displaced, jittered or spread (visual-qa M10). Pure; owner: layers-threats-network.
  */
-import { useEffect, useState } from 'react';
-import { useMapInstance } from '@/lib/layer-host';
-import { getFarSideCamera, isFacing } from '@/lib/map/far-side';
 
 export interface Colocated<T> {
   /** Exact shared coordinate key (`lat,lng` as served). */
@@ -37,23 +33,10 @@ export function colocatedRadiusPx(n: number, base: number): number {
   return n > 1 ? Math.min(28, base + 2 * Math.sqrt(n)) : base;
 }
 
-/** Count labels (billboard text) only for groups of ≥ 2 on the camera-facing side of the globe. */
+/**
+ * Count labels (billboard text) only for groups of ≥ 2. Pass the camera-facing groups
+ * (threats/client/globe.ts `useFacing`): the labels then share the points' far-side filter.
+ */
 export function countLabels<T>(groups: readonly Colocated<T>[]): Colocated<T>[] {
-  const cam = getFarSideCamera();
-  return groups.filter((g) => g.items.length > 1 && isFacing([g.lng, g.lat], cam));
-}
-
-/** Bumps after every camera move so billboard labels re-run the far-side filter. */
-export function useMoveEndTick(): number {
-  const map = useMapInstance();
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    if (!map) return;
-    const on = () => setTick((t) => t + 1);
-    map.on('moveend', on);
-    return () => {
-      map.off('moveend', on);
-    };
-  }, [map]);
-  return tick;
+  return groups.filter((g) => g.items.length > 1);
 }

@@ -3,7 +3,8 @@
  * Maritime layer: ports and chokepoints (REFERENCE, native circles) and — only when the server
  * relays AISStream — live vessels (deck points) with speed-coloured recent tracks (segment speed
  * computed from consecutive AIS positions). Keyless, the REFERENCE answer is fetched once and
- * refreshed on an hours-long TTL; only a keyed AIS relay is polled (./poll.ts).
+ * refreshed on an hours-long TTL; only a keyed AIS relay is polled (./poll.ts). Points draw over
+ * the globe surface and only on the camera-facing hemisphere (threats/client/globe.ts).
  * Owner: layers-threats-network.
  */
 import { LineLayer, ScatterplotLayer } from '@deck.gl/layers';
@@ -13,6 +14,7 @@ import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers } from '@/lib/layer-host';
 import { readCssColor, type MapToken } from '@/lib/tokens';
 import type { Chokepoint, MaritimeResponse, Port, RiskLevel, Vessel } from '@/lib/types';
+import { GLOBE_POINT_PARAMETERS, lngLatOf, useFacing } from '../../threats/client/globe';
 import { useDeckPick, useFeedData } from '../../threats/client/hooks';
 import { chokepointSelection, portSelection } from '../../threats/client/selection';
 import { maritimePollMs } from './poll';
@@ -49,9 +51,10 @@ interface Segment {
 export default function MaritimeLayer() {
   // Keyless the answer is REFERENCE only (fetched once, hours-long TTL); a keyed AIS relay polls.
   const data = useFeedData<MaritimeResponse>('maritime', '/api/maritime', countMaritime, maritimePollMs);
-  const ports = data?.ports;
-  const chokes = data?.chokepoints;
-  const vessels = data?.vessels;
+  const ports = useFacing(data?.ports, lngLatOf);
+  const chokes = useFacing(data?.chokepoints, lngLatOf);
+  const allVessels = data?.vessels;
+  const vessels = useFacing(allVessels, lngLatOf);
 
   const refLayers = useMemo(() => {
     if (!ports || !chokes) return null;
@@ -59,7 +62,8 @@ export default function MaritimeLayer() {
       new ScatterplotLayer<Port>({
         id: 'tn-ports',
         data: ports,
-        getPosition: (p) => [p.lng, p.lat],
+        parameters: GLOBE_POINT_PARAMETERS,
+        getPosition: lngLatOf,
         getRadius: (p) => (p.dataset === 'curated' ? 4.5 : 2.5),
         radiusUnits: 'pixels',
         getFillColor: (p) => readCssColor(p.type === 'naval' ? '--map-port-naval' : p.type === 'energy' ? '--map-port-energy' : '--map-port', 0.85),
@@ -73,7 +77,8 @@ export default function MaritimeLayer() {
       new ScatterplotLayer<Chokepoint>({
         id: 'tn-chokepoints',
         data: chokes,
-        getPosition: (c) => [c.lng, c.lat],
+        parameters: GLOBE_POINT_PARAMETERS,
+        getPosition: lngLatOf,
         getRadius: 7,
         radiusUnits: 'pixels',
         filled: false,
@@ -95,11 +100,15 @@ export default function MaritimeLayer() {
     return c ? chokepointSelection(c) : null;
   });
 
+  // Tracks are built from every vessel once per snapshot (lines keep the globe's depth test).
+  const segments = useMemo(() => {
+    const out: Segment[] = [];
+    for (const v of allVessels ?? [])
+      for (let i = 1; i < v.track.length; i++) out.push({ from: [v.track[i - 1]![0], v.track[i - 1]![1]], to: [v.track[i]![0], v.track[i]![1]], kn: segmentKnots(v.track[i - 1]!, v.track[i]!) });
+    return out;
+  }, [allVessels]);
   const layers = useMemo(() => {
-    if (!vessels?.length) return null;
-    const segments: Segment[] = [];
-    for (const v of vessels)
-      for (let i = 1; i < v.track.length; i++) segments.push({ from: [v.track[i - 1]![0], v.track[i - 1]![1]], to: [v.track[i]![0], v.track[i]![1]], kn: segmentKnots(v.track[i - 1]!, v.track[i]!) });
+    if (!vessels || !allVessels?.length) return null;
     return [
       new LineLayer<Segment>({
         id: 'tn-vessel-tracks',
@@ -115,7 +124,8 @@ export default function MaritimeLayer() {
       new ScatterplotLayer<Vessel>({
         id: 'tn-vessels',
         data: vessels,
-        getPosition: (v) => [v.lng, v.lat],
+        parameters: GLOBE_POINT_PARAMETERS,
+        getPosition: lngLatOf,
         getRadius: (v) => (v.type === 'military' ? 4 : 3),
         radiusUnits: 'pixels',
         getFillColor: (v) => readCssColor(SHIP_TOKEN[v.type], 0.9),
@@ -123,7 +133,7 @@ export default function MaritimeLayer() {
         autoHighlight: true,
       }),
     ];
-  }, [vessels]);
+  }, [vessels, allVessels, segments]);
   useDeckLayers('maritime:vessels', layers, Z);
   useDeckPick('tn-vessels', (info) => {
     const v = info.object as Vessel | undefined;

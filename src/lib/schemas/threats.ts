@@ -79,6 +79,14 @@ export const GdeltEventsResponse = Envelope.extend({
   window: z.object({ from: IsoTime, to: IsoTime, batches: z.number().int().positive(), latestLabel: IsoTime.optional() }),
   /** Rows read before geo/quad filtering. */
   scanned: z.number().int().nonnegative(),
+  /**
+   * Geocoded events in the window that match the query (`quad`), before `limit`. When the window
+   * held more than the feed keeps (5 000, newest first) this is the window's count for an
+   * unfiltered query, so `items.length < total` always means not everything was served.
+   */
+  total: z.number().int().nonnegative().optional(),
+  /** True when `items` is not every matching event in the window (`limit` or the feed's cap). */
+  truncated: z.boolean().optional(),
 });
 
 export const ConflictZone = z.object({
