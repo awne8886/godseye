@@ -99,6 +99,7 @@ interface Loaded {
   runways?: RunwayIndexFile;
   vrs?: VrsIndex;
   openflights?: OpenFlightsFile;
+  services?: Map<string, number>;
 }
 
 const G = globalThis as unknown as { __godseyeFlightPaths?: Loaded };
@@ -160,6 +161,24 @@ export function buildVrsIndex(file: VrsRoutesFile): VrsIndex {
 
 export function vrsIndex(): VrsIndex {
   return (loaded.vrs ??= buildVrsIndex(readData<VrsRoutesFile>('routes-vrs.json.gz')));
+}
+
+/**
+ * VRS standing-data services (callsigns) that call at an airport (ICAO), as a measure of scheduled
+ * traffic: it tells a city's main airport from a namesake with the same OurAirports class
+ * (Santiago: SCL ≫ SCU/STI/SCQ). Built once from the VRS index on first use.
+ */
+export function servicesAt(icao: string | null): number {
+  if (!icao) return 0;
+  if (!loaded.services) {
+    // Callsigns of one VRS route share its chain array: count per chain, then per airport.
+    const perChain = new Map<readonly string[], number>();
+    for (const chain of vrsIndex().chainOf.values()) perChain.set(chain, (perChain.get(chain) ?? 0) + 1);
+    const counts = new Map<string, number>();
+    for (const [chain, n] of perChain) for (const c of new Set(chain)) counts.set(c, (counts.get(c) ?? 0) + n);
+    loaded.services = counts;
+  }
+  return loaded.services.get(icao) ?? 0;
 }
 
 export function openFlights(): OpenFlightsFile {

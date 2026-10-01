@@ -14,6 +14,8 @@ export interface FitNotice {
   fits: boolean;
   /** Endpoint codes whose dot or label is under an overlay (or off screen) as framed; empty when clear. */
   hidden?: readonly string[];
+  /** The projection it was framed in (the wording differs: a globe is turned, a flat map dragged). */
+  projection?: 'globe' | 'mercator';
 }
 
 let current: FitNotice | null = null;
@@ -22,7 +24,7 @@ const listeners = new Set<() => void>();
 const sameHidden = (a: readonly string[] = [], b: readonly string[] = []) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 export function setFitNotice(n: FitNotice | null): void {
-  if (current?.key === n?.key && current?.fits === n?.fits && sameHidden(current?.hidden, n?.hidden)) return;
+  if (current?.key === n?.key && current?.fits === n?.fits && current?.projection === n?.projection && sameHidden(current?.hidden, n?.hidden)) return;
   current = n;
   for (const l of listeners) l();
 }
@@ -46,7 +48,15 @@ export function fitState(n: FitNotice): 'full' | 'full-obscured' | 'partial' {
   return n.hidden?.length ? 'full-obscured' : 'full';
 }
 
-export const PARTIAL_FIT_TEXT = 'The whole route does not fit this screen at the lowest zoom — centred on its visible half; drag the globe to see the rest.';
+/**
+ * PATHS line when the route does not fit at the lowest zoom (round 5 visual-qa: the 2D map said
+ * "drag the globe"). Globe: centred on the visible half; mercator: as much as fits.
+ */
+export function partialFitText(projection: FitNotice['projection'] = 'globe'): string {
+  return projection === 'mercator'
+    ? 'The whole route does not fit this screen at the lowest zoom — showing as much of it as fits; drag the map to see the rest.'
+    : 'The whole route does not fit this screen at the lowest zoom — centred on its visible half; drag the globe to see the rest.';
+}
 
 /** PATHS line when the route fits but the named endpoints could not be kept clear of the map controls. */
 export function obscuredFitText(hidden: readonly string[]): string {

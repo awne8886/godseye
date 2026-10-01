@@ -22,6 +22,13 @@
  * (C) one endpoint's marks clear, else marks inside the area only — the endpoints left under
  * chrome are reported (`hidden`, shown in PATHS), (D) nothing fits at the minimum zoom — centred on the route's visible hemisphere and
  * reported as a partial fit.
+ *
+ * Globe limb (round 5 visual-qa M2): maximising the zoom alone favoured centres near one end, where
+ * the far end sinks to the horizon, foreshortened under the atmosphere (SVO→LAX: LAX on the limb).
+ * Each level is first solved with both endpoints well inside the visible hemisphere — at most
+ * `LIMB.maxDeg` from the camera's ground point and `LIMB.marginDeg` inside the horizon at the solved
+ * zoom; a route too long for that (> ~110°: PER→LHR, SIN→JFK) gets the relaxed limits
+ * (`limbModes`: half its span + 4°, 6° inside the horizon), and only then none.
  */
 import type { LngLatTuple } from '@/lib/geo';
 import { pointAlong } from '../lib/geometry';
@@ -143,6 +150,39 @@ export function labelBox(text: string, offset: readonly [number, number]): Rect 
 
 export const DOT_BOX: Rect = { left: -DOT_HALF_PX, right: DOT_HALF_PX, top: -DOT_HALF_PX, bottom: DOT_HALF_PX };
 
+/** Turns (deg) tried around the dot when the default label side is taken, nearest first. */
+const LABEL_TURNS_DEG = [0, 50, -50, 100, -100] as const;
+
+/**
+ * Label offsets to try for an endpoint, best first (round 5 visual-qa: the SCL pill sat over the
+ * basemap's "CHILE"): the default side (away from the arc, `endpointLabelOffset`), then that
+ * direction turned ±50° and ±100° on the same ellipse — never back onto the arc.
+ */
+export function labelOffsetCandidates(def: readonly [number, number]): [number, number][] {
+  const θ = Math.atan2(def[1] / LABEL_GAP_Y_PX, def[0] / LABEL_GAP_X_PX);
+  const out: [number, number][] = [];
+  for (const t of LABEL_TURNS_DEG) {
+    const a = θ + t * D2R;
+    const c: [number, number] = t === 0 ? [def[0], def[1]] : [Math.round(Math.cos(a) * LABEL_GAP_X_PX) + 0, Math.round(Math.sin(a) * LABEL_GAP_Y_PX) + 0];
+    if (!out.some((o) => o[0] === c[0] && o[1] === c[1])) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * The first candidate offset whose label box — `xy` being the endpoint's screen point — `free`
+ * accepts (clear of the HUD chrome, on screen, off the basemap's own labels); the first candidate
+ * (the default side) when none is.
+ */
+export function pickLabelOffset(label: string, xy: readonly [number, number], candidates: readonly (readonly [number, number])[], free: (box: Rect) => boolean): [number, number] {
+  for (const c of candidates) {
+    const b = labelBox(label, c);
+    if (free({ left: xy[0] + b.left, right: xy[0] + b.right, top: xy[1] + b.top, bottom: xy[1] + b.bottom })) return [c[0], c[1]];
+  }
+  const d = candidates[0]!;
+  return [d[0], d[1]];
+}
+
 /** A geographic point with a screen box around its projection (px, relative to the projected point). */
 export interface Mark {
   at: LngLatTuple;
@@ -224,6 +264,52 @@ const MERC_MAX_LAT = 85.051129;
 function mercWorld([lng, lat]: LngLatTuple, world: number): [number, number] {
   const s = Math.sin(Math.max(-MERC_MAX_LAT, Math.min(MERC_MAX_LAT, lat)) * D2R);
   return [(world * (lng + 180)) / 360, world * (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI))];
+}
+
+/** Globe limb limits for the endpoints (round 5 visual-qa M2). */
+export const LIMB = {
+  /** At most this far (central angle) from the camera's ground point: foreshortening cos 60° = 0.5. */
+  maxDeg: 60,
+  /** And at least this far inside the horizon at the solved zoom (the atmosphere band dims the limb). */
+  marginDeg: 12,
+  /** A route too long for those: each end at most half the span + this from the centre … */
+  relaxedSlackDeg: 4,
+  /** … and at least this far inside the horizon. */
+  relaxedMarginDeg: 6,
+} as const;
+
+/** Limb limits a level is solved under: the endpoints, how far from the centre, how far inside the horizon. */
+export interface LimbLimits {
+  ends: readonly LngLatTuple[];
+  maxDeg: number;
+  marginDeg: number;
+}
+
+/**
+ * The limb limits to try, strictest first, ending with none (`undefined`): the `LIMB` limits, then —
+ * for a route whose ends are too far apart for them — half its span + 4° and 6° inside the horizon.
+ * Mercator (no limb) or no endpoints: none only.
+ */
+export function limbModes(projection: FrameEnv['projection'], ends: readonly LngLatTuple[]): (LimbLimits | undefined)[] {
+  if (projection !== 'globe' || !ends.length) return [undefined];
+  let span = 0;
+  for (const a of ends) for (const b of ends) span = Math.max(span, angleBetween(a, b));
+  const strict: LimbLimits = { ends, maxDeg: LIMB.maxDeg, marginDeg: LIMB.marginDeg };
+  const relaxedDeg = Math.max(LIMB.maxDeg, span / 2 + LIMB.relaxedSlackDeg);
+  return relaxedDeg > LIMB.maxDeg ? [strict, { ends, maxDeg: relaxedDeg, marginDeg: LIMB.relaxedMarginDeg }, undefined] : [strict, undefined];
+}
+
+/** Angular radius (deg) of the globe cap visible from the camera at pitch 0 (the horizon, from the ground point). */
+export function horizonDeg(center: LngLatTuple, zoom: number, viewportHeight: number): number {
+  const R = (TILE_PX * 2 ** zoom) / (2 * Math.PI) / Math.max(0.05, Math.cos(center[1] * D2R));
+  const camDist = (0.5 / Math.tan((GLOBE_FOV_DEG / 2) * D2R)) * viewportHeight;
+  return Math.acos(R / (R + camDist)) / D2R;
+}
+
+/** Central angle (deg) between two points. */
+export function angleBetween(a: LngLatTuple, b: LngLatTuple): number {
+  const [x, y] = [toVec(a), toVec(b)];
+  return Math.acos(Math.max(-1, Math.min(1, x[0] * y[0] + x[1] * y[1] + x[2] * y[2]))) / D2R;
 }
 
 /** Web-mercator at pitch 0: px offsets from the anchor (where `center` is drawn). */
@@ -495,6 +581,8 @@ function solveLevel(
   maxZoom: number,
   /** Only the marks for which this is true must clear the obstacles (all of them by default). */
   mustClear?: (m: Mark) => boolean,
+  /** Globe: limits that keep the endpoints off the limb (`limbModes`); none when omitted. */
+  limb?: LimbLimits,
 ): Solved | null {
   const projector = (c: LngLatTuple, z: number) => (env.projection === 'globe' ? globeProjector(c, z, env.viewport.height) : mercatorProjector(c, z));
   let best: Solved | null = null;
@@ -502,10 +590,15 @@ function solveLevel(
   for (const cand of candidates) {
     // Globe: the least pulled-toward-the-equator level that fits wins (the route stays centred in view).
     if (best && cand.group !== group) break;
+    // Limb: the farthest endpoint's angle from this centre; past the limit at any zoom → skip.
+    const endDeg = limb ? Math.max(...limb.ends.map((e) => angleBetween(cand.center, e))) : null;
+    if (limb && endDeg! > limb.maxDeg) continue;
     group = cand.group;
     const floor = zoomFloor(env, cand.center, minZoom);
     const hit = bestZoom(
       (z) => {
+        // The horizon closes in as the globe grows: the zoom is capped where the far end nears it.
+        if (limb && endDeg! > horizonDeg(cand.center, z, env.viewport.height) - limb.marginDeg) return null;
         const shape = shapeOf(projector(cand.center, z), pts, marks);
         if (!shape) return null;
         return placeAnchor(mustClear ? { ext: shape.ext, marks: shape.marks.filter((_, i) => mustClear(marks[i]!)) } : shape, area, obstacles, env.viewport);
@@ -575,12 +668,20 @@ export function solveFrame(frame: RouteFrame, env: FrameEnv): FrameFit | null {
   };
   const done = (s: Solved, hidden: string[]): FrameFit => finish(s.center, s.zoom, s.anchor, true, hidden);
 
+  // Globe: every level is tried with the endpoints inside the limb limits first, relaxed for a very
+  // long route, then without (it still fits as before). Mercator has no limb.
+  const ends = frame.endpoints.map((e) => e.position);
+  const limbs = limbModes(env.projection, ends);
+
   if (obstacles.length) {
-    const b = solveLevel(candidates, env, pts, marks, area, obstacles, minZoom, maxZoom);
     const shrunk = shrinkArea(area, obstacles);
-    const a = shrunk.right - shrunk.left < area.right - area.left || shrunk.bottom - shrunk.top < area.bottom - area.top ? solveLevel(candidates, env, pts, marks, shrunk, obstacles, minZoom, maxZoom) : null;
-    if (a && (!b || a.size >= b.size - LEVEL_A_SLACK)) return done(a, []);
-    if (b) return done(b, []);
+    const canShrink = shrunk.right - shrunk.left < area.right - area.left || shrunk.bottom - shrunk.top < area.bottom - area.top;
+    for (const limb of limbs) {
+      const b = solveLevel(candidates, env, pts, marks, area, obstacles, minZoom, maxZoom, undefined, limb);
+      const a = canShrink ? solveLevel(candidates, env, pts, marks, shrunk, obstacles, minZoom, maxZoom, undefined, limb) : null;
+      if (a && (!b || a.size >= b.size - LEVEL_A_SLACK)) return done(a, []);
+      if (b) return done(b, []);
+    }
   }
   // (C) The marks cannot all be kept clear: keep as many endpoints clear as possible (one end
   // clear when only one can be, the larger such framing), else the marks only inside the area; say
@@ -593,23 +694,26 @@ export function solveFrame(frame: RouteFrame, env: FrameEnv): FrameFit | null {
     });
     return hiddenLabels(boxes, obstacles);
   };
-  let partial: { s: Solved; hidden: string[] } | null = null;
-  if (obstacles.length && frame.endpoints.length > 1) {
-    for (const e of frame.endpoints) {
-      const s = solveLevel(candidates, env, pts, marks, area, obstacles, minZoom, maxZoom, (m) => m.label === e.label);
-      if (!s) continue;
-      const hidden = hiddenAt(s);
-      if (!partial || hidden.length < partial.hidden.length || (hidden.length === partial.hidden.length && s.size > partial.s.size + 0.01)) partial = { s, hidden };
+  for (const limb of limbs) {
+    let partial: { s: Solved; hidden: string[] } | null = null;
+    if (obstacles.length && frame.endpoints.length > 1) {
+      for (const e of frame.endpoints) {
+        const s = solveLevel(candidates, env, pts, marks, area, obstacles, minZoom, maxZoom, (m) => m.label === e.label, limb);
+        if (!s) continue;
+        const hidden = hiddenAt(s);
+        if (!partial || hidden.length < partial.hidden.length || (hidden.length === partial.hidden.length && s.size > partial.s.size + 0.01)) partial = { s, hidden };
+      }
     }
+    if (partial) return done(partial.s, partial.hidden);
   }
-  if (partial) return done(partial.s, partial.hidden);
-  const c = solveLevel(candidates, env, pts, marks, area, [], minZoom, maxZoom);
-  if (c) return done(c, hiddenAt(c));
+  for (const limb of limbs) {
+    const c = solveLevel(candidates, env, pts, marks, area, [], minZoom, maxZoom, undefined, limb);
+    if (c) return done(c, hiddenAt(c));
+  }
 
   // (D) Cannot fit at the minimum zoom: keep both ends in front of the horizon, then show as much
   // of the route inside the area as possible, anchored at the area's centre.
   const anchor: [number, number] = [(area.left + area.right) / 2, (area.top + area.bottom) / 2];
-  const ends = frame.endpoints.map((e) => e.position);
   const inArea = (xy: [number, number] | null) => xy !== null && xy[0] + anchor[0] >= area.left && xy[0] + anchor[0] <= area.right && xy[1] + anchor[1] >= area.top && xy[1] + anchor[1] <= area.bottom;
   let fallback: { c: LngLatTuple; zoom: number; score: number } | null = null;
   for (const { center } of candidates) {

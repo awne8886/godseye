@@ -31,9 +31,9 @@ import { useUiStore } from '@/lib/store';
 import type { LngLatTuple } from '@/lib/geo';
 import { useFlight, useLive, usePlan } from './api';
 import { fitState, getFitNotice, setFitNotice, useFitNotice } from './fit';
-import { frameArea, type FrameFit, intersects, markBoxes, solveFrame } from './framing';
+import { frameArea, type FrameFit, intersects, labelOffsetCandidates, markBoxes, MARK_CLEAR_PX, pickLabelOffset, type Rect, solveFrame } from './framing';
 import { isPhoneLayout, measureObstacles, overlayElements, publishedSheet, sheetOccupiedPx } from './insets';
-import { buildRouteAnimLayers, buildRouteLayers, frameBounds, routeFrame, type RouteFrame } from './layers';
+import { buildRouteAnimLayers, buildRouteLayers, frameBounds, routeFrame, type RouteFrame, type ScreenSpace } from './layers';
 
 /** Above aviation (80–83) so the route and its aircraft rings sit on top. */
 const Z = 90;
@@ -57,6 +57,8 @@ const RELEASE_DURATION_MS = 600;
 /** Event data on the framing's own camera moves (MapLibre copies it onto movestart/moveend). */
 const FRAMING_EVENT = { routeFraming: true } as const;
 const ANIM_KEY = 'flight-paths-anim';
+/** After a camera stop, the endpoint label sides are chosen again this long after (basemap labels placed late). */
+const LABEL_RECHECK_MS = [1_500, 5_000] as const;
 
 const prefersReducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -98,21 +100,92 @@ function releaseFramePadding(m: MapLibreMap, reduced: boolean): () => void {
 }
 
 /**
- * Screen boxes (viewport px) of the endpoint dots and labels for the map's current camera, through
- * MapLibre's own projection. Globe: far-side endpoints are not drawn, so they have no box.
- * Mercator: deck repeats world copies; the copy nearest the camera is the one on screen.
+ * Viewport px of a point at the map's current camera, through MapLibre's own projection. Globe:
+ * far-side points are not drawn (null). Mercator: deck repeats world copies; the copy nearest the
+ * camera is the one on screen.
  */
-function currentMarks(m: MapLibreMap, fr: Pick<RouteFrame, 'endpoints'>, globe: boolean) {
+function viewportProjector(m: MapLibreMap, globe: boolean): (p: LngLatTuple) => [number, number] | null {
   const c = m.getCenter();
   const o = m.getContainer().getBoundingClientRect();
   const far = getFarSideCamera();
-  return markBoxes(fr, (p) => {
+  return (p) => {
     if (globe && !isFacing(p, far)) return null;
     const lng = globe ? p[0] : p[0] + 360 * Math.round((c.lng - p[0]) / 360);
     const xy = m.project([lng, p[1]]);
     return [xy.x + o.left, xy.y + o.top];
-  });
+  };
 }
+
+/** Screen boxes (viewport px) of the endpoint dots and labels for the map's current camera. */
+function currentMarks(m: MapLibreMap, fr: Pick<RouteFrame, 'endpoints'>, globe: boolean) {
+  return markBoxes(fr, viewportProjector(m, globe));
+}
+
+/** Everything over the map: the measured HUD chrome plus the docked panel (desktop). */
+function chromeBoxes(phone: boolean, panelOpen: boolean): Rect[] {
+  const out = measureObstacles({ sheet: panelOpen });
+  const panel = panelGeometry(phone, panelOpen);
+  if (panel?.side === 'right') out.push({ left: window.innerWidth - panel.size, top: 0, right: window.innerWidth, bottom: window.innerHeight });
+  return out;
+}
+
+const sameRects = (a: readonly Rect[], b: readonly Rect[]) =>
+  a.length === b.length && a.every((r, i) => r.left === b[i]!.left && r.top === b[i]!.top && r.right === b[i]!.right && r.bottom === b[i]!.bottom);
+
+/** The basemap's own symbol layers (place and country names) in the current style. */
+function symbolLayerIds(m: MapLibreMap): string[] {
+  try {
+    return (m.getStyle()?.layers ?? []).filter((l) => l.type === 'symbol').map((l) => l.id);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Endpoint label offsets for the current camera (round 5 visual-qa: the SCL pill sat over the
+ * basemap's "CHILE"): for each drawn endpoint, the first side (`labelOffsetCandidates`: away from
+ * the arc first) whose pill is on screen, clear of the HUD chrome and of every label the basemap
+ * placed there (MapLibre's own collision boxes, via queryRenderedFeatures); the default side when
+ * none is. Keyed by endpoint id.
+ */
+function freeLabelOffsets(m: MapLibreMap, fr: RouteFrame, globe: boolean, chrome: readonly Rect[]): Record<string, [number, number]> {
+  const project = viewportProjector(m, globe);
+  const o = m.getContainer().getBoundingClientRect();
+  const ids = symbolLayerIds(m);
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  const g = MARK_CLEAR_PX;
+  const underBasemapLabel = (b: Rect) => {
+    if (!ids.length) return false;
+    try {
+      return m.queryRenderedFeatures([[b.left - o.left, b.top - o.top], [b.right - o.left, b.bottom - o.top]], { layers: ids }).length > 0;
+    } catch {
+      return false;
+    }
+  };
+  const out: Record<string, [number, number]> = {};
+  for (const e of fr.endpoints) {
+    const xy = project(e.position);
+    if (!xy || !e.labelOffset) continue;
+    out[e.id] = pickLabelOffset(e.label, xy, labelOffsetCandidates(e.labelOffset), (b) => {
+      if (b.left < 0 || b.top < 0 || b.right > W || b.bottom > H) return false;
+      if (chrome.some((r) => intersects({ left: b.left - g, top: b.top - g, right: b.right + g, bottom: b.bottom + g }, r))) return false;
+      return !underBasemapLabel(b);
+    });
+  }
+  return out;
+}
+
+/** The frame with the endpoint labels moved to the chosen sides. */
+function withLabelOffsets(fr: RouteFrame, offsets: Record<string, [number, number]> | null): RouteFrame {
+  if (!offsets) return fr;
+  return { ...fr, endpoints: fr.endpoints.map((e) => (offsets[e.id] ? { ...e, labelOffset: offsets[e.id] } : e)) };
+}
+
+const sameOffsets = (a: Record<string, [number, number]>, b: Record<string, [number, number]>) => {
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => !!b[k] && a[k]![0] === b[k]![0] && a[k]![1] === b[k]![1]);
+};
 
 export default function RouteLayer() {
   const route = useUiStore((s) => s.plannedRoute);
@@ -130,6 +203,10 @@ export default function RouteLayer() {
   // Diagnostics for the framing e2e: endpoint mark boxes after the last camera move.
   const [marksDiag, setMarksDiag] = useState('');
   const [themeTick, setThemeTick] = useState(0);
+  // HUD chrome over the map at the last camera stop (progress chips keep clear of it).
+  const [chrome, setChrome] = useState<Rect[]>([]);
+  // Endpoint label sides chosen at the last camera stop, for the frame they were chosen for.
+  const [labelSides, setLabelSides] = useState<{ frame: RouteFrame; offsets: Record<string, [number, number]> } | null>(null);
 
   const plan = usePlan(route);
   const live = useLive(route, openPanel === 'paths' || !!route);
@@ -147,21 +224,47 @@ export default function RouteLayer() {
   }, [key, setOpenPanel]);
 
   // Latest frame for the camera handlers below, which must not restart (and drop a pending fit)
-  // when only the live aircraft refresh.
+  // when only the live aircraft refresh; `drawnRef`: the same with the label sides as drawn.
   const frameRef = useRef<RouteFrame | null>(null);
+  const drawnRef = useRef<RouteFrame | null>(null);
   useEffect(() => {
     if (!map) return;
-    const update = () => {
-      const c = map.getCenter();
-      setView({ center: [c.lng, c.lat], zoom: typeof map.getZoom === 'function' ? map.getZoom() : 2 });
+    // At each camera stop, and once the basemap has placed its labels (`idle`): measure the chrome,
+    // choose the endpoint label sides, publish where the marks are.
+    const place = (moved: boolean) => {
+      if (moved) {
+        const c = map.getCenter();
+        setView({ center: [c.lng, c.lat], zoom: typeof map.getZoom === 'function' ? map.getZoom() : 2 });
+      }
+      if (map.isMoving()) return;
+      const globe = useMapInstanceStore.getState().projection === 'globe';
+      const boxes = chromeBoxes(isPhoneLayout(), useUiStore.getState().openPanel !== null);
+      setChrome((prev) => (sameRects(prev, boxes) ? prev : boxes));
       const fr = frameRef.current;
-      const marks = fr ? currentMarks(map, fr, useMapInstanceStore.getState().projection === 'globe') : [];
+      const offsets = fr ? freeLabelOffsets(map, fr, globe, boxes) : {};
+      if (fr) setLabelSides((prev) => (prev && prev.frame === fr && sameOffsets(prev.offsets, offsets) ? prev : { frame: fr, offsets }));
+      const drawn = fr ? withLabelOffsets(fr, offsets) : null;
+      drawnRef.current = drawn;
+      const marks = drawn ? currentMarks(map, drawn, globe) : [];
       setMarksDiag(marks.length ? JSON.stringify(marks.map((b) => ({ label: b.label, kind: b.kind, box: [b.box.left, b.box.top, b.box.right, b.box.bottom].map(Math.round) }))) : '');
     };
-    update();
-    map.on('moveend', update);
+    // The basemap places its labels as tiles arrive, after the camera stopped; while the pulse and
+    // comet animate the map never goes `idle`, so look again shortly after each stop.
+    const later: ReturnType<typeof setTimeout>[] = [];
+    const clearLater = () => later.splice(0).forEach(clearTimeout);
+    const onMoveEnd = () => {
+      place(true);
+      clearLater();
+      for (const ms of LABEL_RECHECK_MS) later.push(setTimeout(() => place(false), ms));
+    };
+    const onIdle = () => place(false);
+    onMoveEnd();
+    map.on('moveend', onMoveEnd);
+    map.on('idle', onIdle);
     return () => {
-      map.off('moveend', update);
+      clearLater();
+      map.off('moveend', onMoveEnd);
+      map.off('idle', onIdle);
     };
   }, [map]);
 
@@ -214,7 +317,7 @@ export default function RouteLayer() {
     const apply = (sol: FrameFit, animate: boolean) => {
       framedOnce = true;
       lastClear = sol.clear;
-      setFitNotice({ key: frameKey, fits: sol.fits, hidden: sol.hidden });
+      setFitNotice({ key: frameKey, fits: sol.fits, hidden: sol.hidden, projection: globeNow() ? 'globe' : 'mercator' });
       const duration = animate && !reduced ? FIT_DURATION_MS : 0;
       m.easeTo({ center: sol.center, zoom: sol.zoom, padding: sol.padding, bearing: 0, pitch: 0, duration, essential: false }, FRAMING_EVENT);
     };
@@ -240,7 +343,9 @@ export default function RouteLayer() {
       const W = window.innerWidth;
       const H = window.innerHeight;
       const obstacles = measureObstacles({ sheet: useUiStore.getState().openPanel !== null });
-      const marks = currentMarks(m, fr, globeNow());
+      // Where the labels are drawn now (a label may have moved off a basemap label to a clear side).
+      const drawn = drawnRef.current && drawnRef.current.endpoints.length === fr.endpoints.length ? drawnRef.current : fr;
+      const marks = currentMarks(m, drawn, globeNow());
       const hidden = fr.endpoints
         .map((e) => e.label)
         .filter((label) => {
@@ -369,10 +474,15 @@ export default function RouteLayer() {
     return releaseFramePadding(cameraMap as MapLibreMap, m === 'reduced' || (m === 'system' && prefersReducedMotion()));
   }, [holdPadding, cameraMap]);
 
+  // The label sides apply to the frame they were chosen for (a new route starts on the default sides).
+  const drawnFrame = useMemo(() => (frame && labelSides && labelSides.frame === frame ? withLabelOffsets(frame, labelSides.offsets) : frame), [frame, labelSides]);
   const layers = useMemo(() => {
-    if (!frame) return null;
-    return buildRouteLayers({ plan: p, live: l, flight: f, globe: projection === 'globe', center: view.center, zoom: view.zoom, theme: themeTick }, frame);
-  }, [frame, p, l, f, projection, view, themeTick]);
+    if (!drawnFrame) return null;
+    const globe = projection === 'globe';
+    // The real screen at this camera (`view` changes at each camera stop): chips keep clear of the chrome.
+    const screen: ScreenSpace | undefined = map && typeof window !== 'undefined' ? { project: viewportProjector(map as MapLibreMap, globe), obstacles: chrome, width: window.innerWidth, height: window.innerHeight } : undefined;
+    return buildRouteLayers({ plan: p, live: l, flight: f, globe, center: view.center, zoom: view.zoom, theme: themeTick, screen }, drawnFrame);
+  }, [drawnFrame, p, l, f, projection, view, themeTick, map, chrome]);
 
   // Pulse + comet: a slow clock while something is drawn, paused in hidden tabs and under reduced
   // motion. The phase never enters React state: each tick builds the two small layers and hands

@@ -249,40 +249,89 @@ export function corridorReject(s: LiveState, a: LngLatTuple, b: LngLatTuple): Co
   return onCorridor(p, a, b) ? null : 'detour';
 }
 
-/** Direction test thresholds (R4 round 3, B1/M1; round 4 M1). */
+/** Direction test thresholds (R4 round 3, B1/M1; round 4 M1; round 5 M1). */
 export const DIRECTION = {
   /** Track within this of the local great-circle bearing toward b (airways and oceanic tracks are not great circles). */
   maxTrackDiffDeg: 60,
-  /** Within this of an endpoint the path bearing says little (SIDs, holds, downwind legs): the vertical rate and the bearing to the endpoint decide. */
+  /** Within this of an endpoint the path bearing says little (SIDs, holds, downwind legs): the vertical rate, the bearing to the endpoint and the height above it decide. */
   terminalKm: 150,
   /** Climbing faster than this near b is a departure from b; descending faster than this near a is an arrival at a. */
   vrFpm: 500,
-  /** Near b, a level aircraft tracking more than this away from b is not arriving; near a, a level one tracking less than this toward a is not departing. */
-  endpointDeg: 90,
+  /**
+   * Round 5 M1: near b a LEVEL aircraft must track within this of the bearing to b (UAL1239 at
+   * FL340, ATL 88° off its nose, was "arriving" at ATL under the old 90° rule); near a a level one
+   * must track within this of the bearing away from a.
+   */
+  coneDeg: 60,
+  /** A 3° path: 1,000 ft per 3 nm (≈ 333 ft/nm, the "3:1" rule). */
+  pathFtPerNm: 1000 / 3,
+  /** Margin over the profile for a level aircraft (an ATC level-off) … */
+  levelMarginFt: 5_000,
+  /** … and for one climbing or descending (kept high, then a steep descent). */
+  transitionMarginFt: 10_000,
 } as const;
+
+/**
+ * Highest plausible height (ft above the airport) of an aircraft arriving there from `distKm` out:
+ * level, the 3° path + 5,000 ft (FL340 40 nm out is not arriving — round 5 M1); descending toward
+ * it, twice that slope + 10,000 ft (SWA3785 was at 25,225 ft 37 nm from SNA, straight in and
+ * descending, and landed there); descending while not tracking at it (a downwind or base leg), the
+ * 3° path + 10,000 ft.
+ */
+export function arrivalCeilingFt(distKm: number, descending: boolean, inCone: boolean): number {
+  const nm = kmToNm(distKm);
+  if (!descending) return nm * DIRECTION.pathFtPerNm + DIRECTION.levelMarginFt;
+  return nm * DIRECTION.pathFtPerNm * (inCone ? 2 : 1) + DIRECTION.transitionMarginFt;
+}
+
+/** Highest plausible height (ft above the airport) of a departure `distKm` out: twice the 3° slope + 5,000 ft level, + 10,000 ft climbing. */
+export function departureCeilingFt(distKm: number, climbing: boolean): number {
+  return kmToNm(distKm) * DIRECTION.pathFtPerNm * 2 + (climbing ? DIRECTION.transitionMarginFt : DIRECTION.levelMarginFt);
+}
+
+/** Field elevations (ft AMSL) of the two ends; unknown ends count as sea level. */
+export interface EndElevations {
+  a?: number | null;
+  b?: number | null;
+}
 
 /**
  * Is an airborne aircraft flying a→b (true), not (false), or is that unknown from what was observed
  * (null: no track; near an endpoint without a vertical rate and nothing contradicting)? En route:
  * the observed track within ±60° of the local great-circle bearing toward b. Within 150 km of an
- * endpoint (round 4 M1: a level aircraft there was "on course" whatever its track):
- *  - near b: not climbing out of it, and — unless descending — tracking within 90° of b;
- *  - near a: not descending into it, and — unless climbing — tracking more than 90° from a.
- * Says nothing about the corridor (see `onCorridor`).
+ * endpoint (round 4 M1, round 5 M1: cruise traffic passing abeam an endpoint is not arriving there):
+ *  - near b (arriving): not climbing; unless descending, tracking within 60° of b; and no higher
+ *    above b than `arrivalCeilingFt`;
+ *  - near a (departing): not descending; unless climbing, tracking within 60° of the bearing away
+ *    from a; and no higher above a than `departureCeilingFt`.
+ * Near both ends (a short route) a climbing aircraft is judged as a departure only and a descending
+ * one as an arrival only. Says nothing about the corridor (see `onCorridor`).
  */
-export function headingAlong(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean | null {
+export function headingAlong(s: LiveState, a: LngLatTuple, b: LngLatTuple, elev: EndElevations = {}): boolean | null {
   if (s.trackDeg === null) return null;
   const p: LngLatTuple = [s.lng, s.lat];
   const total = distanceKm(a, b);
-  const nearB = distanceKm(p, b) <= DIRECTION.terminalKm;
-  const nearA = distanceKm(p, a) <= DIRECTION.terminalKm;
+  const toB = distanceKm(p, b);
+  const fromA = distanceKm(p, a);
+  const nearB = toB <= DIRECTION.terminalKm;
+  const nearA = fromA <= DIRECTION.terminalKm;
   if (nearB || nearA) {
     const climbing = s.vrFpm !== null && s.vrFpm > DIRECTION.vrFpm;
     const descending = s.vrFpm !== null && s.vrFpm < -DIRECTION.vrFpm;
-    if (nearB && climbing) return false;
-    if (nearA && !nearB && descending) return false;
-    if (nearB && !descending && angleDiff(s.trackDeg, initialBearing(p, b)) > DIRECTION.endpointDeg) return false;
-    if (nearA && !climbing && angleDiff(s.trackDeg, initialBearing(p, a)) < DIRECTION.endpointDeg) return false;
+    const arriving = nearB && !(nearA && climbing);
+    const departing = nearA && !(nearB && descending);
+    if (arriving) {
+      if (climbing) return false;
+      const inCone = angleDiff(s.trackDeg, initialBearing(p, b)) <= DIRECTION.coneDeg;
+      if (!descending && !inCone) return false;
+      if (s.altFt !== null && s.altFt - (elev.b ?? 0) > arrivalCeilingFt(toB, descending, inCone)) return false;
+    }
+    if (departing) {
+      if (descending) return false;
+      if (s.altFt !== null && s.altFt - (elev.a ?? 0) > departureCeilingFt(fromA, climbing)) return false;
+      // The radial away from a at p (meaningless right over the field: a level aircraft there is a pattern, not a departure).
+      if (!climbing && (fromA < 1 || angleDiff(s.trackDeg, finalBearing(a, p)) > DIRECTION.coneDeg)) return false;
+    }
     return s.vrFpm === null ? null : true;
   }
   const f = total > 0 ? alongTrackKm(p, a, b) / total : 0;
@@ -292,8 +341,67 @@ export function headingAlong(s: LiveState, a: LngLatTuple, b: LngLatTuple): bool
 }
 
 /** On a→b: inside the corridor AND heading toward b (an observed direction, never assumed). */
-export function flyingRoute(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean {
-  return onCorridor([s.lng, s.lat], a, b) && headingAlong(s, a, b) === true;
+export function flyingRoute(s: LiveState, a: LngLatTuple, b: LngLatTuple, elev: EndElevations = {}): boolean {
+  return onCorridor([s.lng, s.lat], a, b) && headingAlong(s, a, b, elev) === true;
+}
+
+/**
+ * Relabelling a standing-data route as flown in reverse (round 5 B1). The aircraft took off from
+ * the listed DESTINATION; it is shown flying back to the listed origin only when the observation
+ * is consistent with that reverse leg end to end — otherwise it may be flying to a third airport
+ * (SWA2816 "MCO→MDW" landed at RDU) and the route is withheld.
+ */
+export const REVERSE_LEG = {
+  /** Still this close to where it took off: its course does not say where it is going yet. */
+  minFromStartKm: 150,
+  /** Present track within this of the direct bearing to the new destination (the 18 correct live relabels: ≤ 41°; the wrong ones: 48–117°). */
+  maxCourseDeg: 45,
+  /** Off the great circle by at most max(this, `offFraction` × route length), now and along the observed trace … */
+  minOffKm: 150,
+  /** … (the correct live relabels: ≤ 0.17 of the route; the wrong ones up to 0.35). */
+  offFraction: 0.2,
+} as const;
+
+export type ReverseLegReject = 'no-track' | 'near-start' | 'off-path' | 'course' | 'trace-off-path';
+
+/** Why an aircraft that took off from `from` is NOT confirmed flying the leg to `to` (null = consistent). */
+export function reverseLegReject(
+  s: LiveState,
+  from: LngLatTuple,
+  to: LngLatTuple,
+  trace: readonly { lat: number; lng: number }[] = [],
+  elev: { from?: number | null; to?: number | null } = {},
+): ReverseLegReject | null {
+  if (s.trackDeg === null) return 'no-track';
+  const p: LngLatTuple = [s.lng, s.lat];
+  if (distanceKm(p, from) <= REVERSE_LEG.minFromStartKm) return 'near-start';
+  if (distanceKm(p, to) <= DIRECTION.terminalKm) {
+    // Arriving: the terminal rules (descending, or level inside the cone, at a plausible height).
+    if (headingAlong(s, from, to, { a: elev.from, b: elev.to }) !== true) return 'course';
+  } else if (angleDiff(s.trackDeg, initialBearing(p, to)) > REVERSE_LEG.maxCourseDeg) return 'course';
+  const maxOff = Math.max(REVERSE_LEG.minOffKm, REVERSE_LEG.offFraction * distanceKm(from, to));
+  if (positionOnPath(p, from, to).offKm > maxOff) return 'off-path';
+  for (const q of trace) {
+    const at: LngLatTuple = [q.lng, q.lat];
+    if (distanceKm(at, from) > REVERSE_LEG.minFromStartKm && positionOnPath(at, from, to).offKm > maxOff) return 'trace-off-path';
+  }
+  return null;
+}
+
+/** Plain-words reason for a `reverseLegReject` result, `to` being the new destination's code. */
+export function reverseLegReason(r: ReverseLegReject, toCode: string): string {
+  switch (r) {
+    case 'no-track':
+      return 'no observed track';
+    case 'near-start':
+      return `still within ${REVERSE_LEG.minFromStartKm} km of its departure, course not yet established`;
+    case 'off-path':
+      return `too far off the great circle to ${toCode}`;
+    case 'course':
+      return `not on course for ${toCode}`;
+    case 'trace-off-path':
+      return `its observed track left the corridor to ${toCode}`;
+  }
 }
 
 export function corridorMatch(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean {

@@ -202,6 +202,24 @@ describe('route-progress chips declutter (R2-M3)', () => {
     expect(ids(layers)).toContain('route-inferred-aircraft');
   });
 
+  it('on the real screen a chip is never placed under the HUD chrome or off screen (round 5 visual-qa: "JBU…" ran under the BLACK MARBLE chip)', () => {
+    // A 390×844 phone in viewport px; each aircraft's screen point is given directly (MapLibre's
+    // projection in the app). The chip box sits 20 px below the aircraft (CHIP_OFFSET_Y).
+    const screenAt = new Map<string, [number, number]>([
+      ['1,0', [120, 600]], // its chip would land on the BLACK MARBLE chip
+      ['2,0', [200, 300]], // clear
+      ['3,0', [385, 420]], // its chip would run off the right edge
+    ]);
+    const project = (p: [number, number]) => screenAt.get(`${p[0]},${p[1]}`) ?? null;
+    const all = [ac('JBU1107', 1, 0, 0.42), ac('CLEAR', 2, 0), ac('EDGE', 3, 0)];
+    const blackMarble = { left: 50, top: 612, right: 290, bottom: 638 };
+    const screen = { obstacles: [blackMarble], width: 390, height: 844 };
+    // Without the screen (the approximate projector of the unit tests) nothing knows about the chrome …
+    expect(selectChips(all, [], project).map((a) => a.id)).toEqual(['JBU1107', 'CLEAR', 'EDGE']);
+    // … with it, the chip under the BLACK MARBLE chip and the one cut by the edge are dropped (their rings stay).
+    expect(selectChips(all, [], project, CHIP_MAX, screen).map((a) => a.id)).toEqual(['CLEAR']);
+  });
+
   it('endpoint chips pile-up at a busy endpoint reduces to a readable few', () => {
     // Ten matched aircraft within ~150 km of JFK at the zoom that frames LHR–JFK.
     const pile = Array.from({ length: 10 }, (_, i) => ac(`P${i}`, -73.8 + (i % 5) * 0.35, 40.7 + Math.floor(i / 5) * 0.35, 0.9));

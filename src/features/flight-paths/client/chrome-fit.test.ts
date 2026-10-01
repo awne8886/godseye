@@ -6,24 +6,27 @@
  */
 import { describe, expect, it } from 'vitest';
 import { liveChip, liveCounts } from './PathsPanel';
-import { frameArea, hudChrome, PHONE_FRAME_MARGIN_PX } from './framing';
+import { frameArea, hudChrome, labelBox, labelOffsetCandidates, PHONE_FRAME_MARGIN_PX, pickLabelOffset } from './framing';
 import { sheetOccupiedPx, sheetRect } from './insets';
 import { endpointLabelOffset, LABEL_GAP_X_PX, LABEL_GAP_Y_PX } from './layers';
 
 const M = { basis: 'matched' as const };
 const I = { basis: 'inferred' as const };
 
-describe('live header chip (R3-m3)', () => {
-  it('drops a zero count and abbreviates only when both are present, never summing', () => {
+describe('live header chip (R3-m3, round 5 visual-qa: "6 M · 1 I" was cryptic)', () => {
+  it('says MATCHED or INFERRED in words, never abbreviated, never summed', () => {
     expect(liveChip([])).toBe('0 AIRCRAFT');
     expect(liveChip([M])).toBe('1 MATCHED');
     expect(liveChip([I, I])).toBe('2 INFERRED');
-    expect(liveChip([I, M, I])).toBe('1 M · 2 I');
-    expect(liveChip([M, M, M, M, M, M, M, M, M, M, M, M, I, I, I])).toBe('12 M · 3 I');
-    // Every form fits the ~14-character header slot.
-    for (const a of [[], [M], [I, I], [I, M, I]]) expect(liveChip(a).length).toBeLessThanOrEqual(14);
-    // The tab body keeps the full wording.
+    // Both present: the matched count in words; the inferred count is in the tooltip and the tab.
+    expect(liveChip([I, M, I])).toBe('1 MATCHED');
+    expect(liveChip([M, M, M, M, M, M, M, M, M, M, M, M, I, I, I])).toBe('12 MATCHED');
+    for (const a of [[I, M, I], [M, M, M, M, M, M, I]]) expect(liveChip(a)).not.toMatch(/\b[MI]\b/);
+    // Every form fits the ~14-character header slot (no ellipsis).
+    for (const a of [[], [M], [I, I], [I, M, I], Array.from({ length: 150 }, () => I)]) expect(liveChip(a).length).toBeLessThanOrEqual(14);
+    // The tooltip and the tab body keep the full wording.
     expect(liveCounts([M])).toBe('1 MATCHED · 0 INFERRED');
+    expect(liveCounts([M, M, M, M, M, M, I])).toBe('6 MATCHED · 1 INFERRED');
   });
 });
 
@@ -41,6 +44,38 @@ describe('endpoint label offset (R3-m4)', () => {
     expect(endpointLabelOffset([0, 0], [0, 10])).toEqual([0, LABEL_GAP_Y_PX]);
     expect(endpointLabelOffset([0, 0], null)).toEqual([0, -LABEL_GAP_Y_PX]);
     expect(endpointLabelOffset([0, 0], [0, 0])).toEqual([0, -LABEL_GAP_Y_PX]);
+  });
+});
+
+describe('endpoint label side off the basemap labels (round 5 visual-qa: the SCL pill over "CHILE")', () => {
+  // SCL with the arc arriving from the west: the default side is east of the dot.
+  const def = endpointLabelOffset([-70.7858, -33.393], [-90, -40]);
+  const xy: [number, number] = [600, 400];
+
+  it('candidates: the default side first, then turned ±50° and ±100° on the label ellipse — never back onto the arc', () => {
+    const c = labelOffsetCandidates(def);
+    expect(c[0]).toEqual(def);
+    expect(c.length).toBe(5);
+    // Every candidate keeps the label's distance from the dot (on the 28 × 17 px ellipse).
+    for (const [x, y] of c) expect((x / LABEL_GAP_X_PX) ** 2 + (y / LABEL_GAP_Y_PX) ** 2).toBeCloseTo(1, 0);
+    // None turns more than ~100° from the default side, i.e. none points back along the arc.
+    const dir = ([x, y]: readonly [number, number]) => Math.atan2(y / LABEL_GAP_Y_PX, x / LABEL_GAP_X_PX);
+    for (const k of c) expect(Math.abs(((dir(k) - dir(def) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI)).toBeLessThanOrEqual((102 * Math.PI) / 180);
+  });
+
+  it('pickLabelOffset: the first side whose pill is free; the default when none is', () => {
+    const c = labelOffsetCandidates(def);
+    // A basemap label ("CHILE") over the default pill only: the next side is taken.
+    const chile = { left: xy[0] + def[0] - 30, top: xy[1] + def[1] - 9, right: xy[0] + def[0] + 30, bottom: xy[1] + def[1] + 9 };
+    const free = (b: { left: number; top: number; right: number; bottom: number }) => !(b.left < chile.right && b.right > chile.left && b.top < chile.bottom && b.bottom > chile.top);
+    const picked = pickLabelOffset('SCL', xy, c, free);
+    expect(picked).not.toEqual(def);
+    expect(c).toContainEqual(picked);
+    const box = labelBox('SCL', picked);
+    expect(free({ left: xy[0] + box.left, right: xy[0] + box.right, top: xy[1] + box.top, bottom: xy[1] + box.bottom })).toBe(true);
+    // Nothing free: the default side (the framing's own choice) stays.
+    expect(pickLabelOffset('SCL', xy, c, () => false)).toEqual(def);
+    expect(pickLabelOffset('SCL', xy, c, () => true)).toEqual(def);
   });
 });
 

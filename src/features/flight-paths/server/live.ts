@@ -4,7 +4,10 @@
  *  - `matched`: the callsign is a VRS standing-data service on the pair (either way) and the
  *    aircraft is airborne inside the corridor (detour ≤ direct × 1.15 + 150 km) with an observed
  *    direction (`headingAlong`): flying A→B → forward; flying B→A → reverse, only with reverse=1
- *    (round 3 M1: a DFW→JFK service seen inbound to DFW is never a forward DFW→JFK aircraft);
+ *    (round 3 M1: a DFW→JFK service seen inbound to DFW is never a forward DFW→JFK aircraft). A
+ *    service listed A→B only, seen flying B→A, is listed as reverse only when it is consistent with
+ *    that unlisted leg (`reverseLegReject`, round 5 B1: SWA2331, a LIT→LAS service flying SE 600 km
+ *    off the great circle toward Laredo, was "MATCHED reverse" with an ETA at LIT);
  *  - `inferred` (R2-M2): no callsign match AND no known route elsewhere (a VRS route for the
  *    callsign that is not this pair rejects it), not military / business / private / helicopter,
  *    not an all-cargo operator, not a short-range type on a long route; then the geometric
@@ -21,7 +24,7 @@ import type { FlightRecord } from '@/features/aviation/adsb';
 import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { distanceKm } from '@/lib/geo';
 import { airlineCodeOf } from '@/features/aviation/classify';
-import { corridorReject, etaMs, flyingRoute, progressOn } from '../lib/geometry';
+import { corridorReject, etaMs, flyingRoute, progressOn, reverseLegReject } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import type { AirportRecord, VrsIndex } from './data';
 import { icaoOf } from './plan';
@@ -79,6 +82,9 @@ export function aircraftOnRoute(
   const b = icaoOf(d);
   const fwd = new Set(a && b ? (opts.vrs.byPair.get(`${a}-${b}`) ?? []) : []);
   const rev = new Set(a && b && opts.reverse ? (opts.vrs.byPair.get(`${b}-${a}`) ?? []) : []);
+  // Field elevations: the terminal rules compare the height above each end (round 5 M1).
+  const elevAB = { a: o.elevationFt, b: d.elevationFt };
+  const elevBA = { a: d.elevationFt, b: o.elevationFt };
   const out: LiveAircraft[] = [];
   for (const r of records) {
     if (r.onGround) continue;
@@ -90,10 +96,13 @@ export function aircraftOnRoute(
     // B→A is the reverse leg — counted there only when the reverse toggle is on, never forward.
     const isFwd = !!r.callsign && fwd.has(r.callsign);
     const isRev = !!r.callsign && rev.has(r.callsign);
-    if ((isFwd || isRev) && flyingRoute(state, A, B)) {
+    if ((isFwd || isRev) && flyingRoute(state, A, B, elevAB)) {
       if (isFwd) direction = 'forward';
-    } else if ((isFwd || isRev) && opts.reverse && flyingRoute(state, B, A)) {
-      direction = 'reverse';
+    } else if ((isFwd || isRev) && opts.reverse && flyingRoute(state, B, A, elevBA)) {
+      // Listed B→A: standing data. Listed A→B only: an unlisted reverse leg, shown only when the
+      // observation fits it (no trace here: the present position and course).
+      if (isRev || reverseLegReject(state, B, A, [], { from: d.elevationFt, to: o.elevationFt }) === null) direction = 'reverse';
+      else continue;
     } else if (isFwd || isRev) {
       continue;
     } else {

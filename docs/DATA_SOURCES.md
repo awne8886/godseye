@@ -372,6 +372,25 @@ Fixtures from the reviewer's live capture at 05:15–05:21Z (same server, adsb.l
 `/api/airports/search?submit=1`) are `src/features/flight-paths/__fixtures__/r4/` (SKW541T and JAL908 traces;
 Atlantis / London / qwerty searches), each with a `_captured` note. Licence: adsb.lol ODbL 1.0.
 
+#### Re-probe 2026-10-01 16:49 UTC (Phase 3 round 5, B1 observed-reverse / B2 city resolution)
+
+Honest UA (`GODSEYE/0.1 (open-source monitor; feature-flight-paths round-5 probe)`), `Origin: https://example.org`, 3 s between requests.
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/callsign/SWA2816` | 200 | 0.72 s | none (server-side only) | 1 row: hex `aa7ac8` N7744A B737, FL380, `baro_rate 0`, track 241° over Mississippi — a later leg of the day |
+| `https://adsb.lol/data/traces/c8/trace_full_aa7ac8.json` | 200 | 1.86 s (140 kB gzip) | none | readsb trace: took off **MCO** 13:09Z, descended through 2,950 ft at 14:26Z and was **on the ground at RDU** (35.87,-78.79) 14:31–14:37Z — confirming the reviewer's B1 finding that round 5 showed it "AS FLOWN MCO→MDW" with an ETA at MDW (VRS lists only MDW→MCO). |
+
+The airport search and city resolution use only the bundled OurAirports index (public domain) and the VRS
+standing-data index (CC0; per-airport service counts for ranking); Photon was not called for this round.
+
+Fixtures (reviewer R4's live capture, 2026-10-01 14:04–14:31Z, phase3/round5) in
+`src/features/flight-paths/__fixtures__/r5/`: `observed-reverse-live.json` (all 25 observed-reverse
+`/api/flight` answers with their adsb.lol traces, thinned, and vertical rates), `route-live-matched.json`
+(every MATCHED aircraft of `/api/route/live?reverse=1` on 20 busy pairs plus LIT-LAS, with the
+flights-snapshot row), and `search-{St_Petersburg,Bali,Bangalore,Kiev}.json` (`/api/airports/search?submit=1`
+answers). Licence: adsb.lol ODbL 1.0; VRS standing data CC0; OurAirports public domain.
+
 ### layers-aviation
 
 Probed 2026-09-30 18:07–18:20 UTC from the build sandbox with

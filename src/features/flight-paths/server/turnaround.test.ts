@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { TrackPoint } from '@/features/aviation/trace';
 import skw from '../__fixtures__/r4/trace-SKW541T-a08f6b.json';
 import jal from '../__fixtures__/r4/trace-JAL908-8479bc.json';
+import { distanceKm } from '@/lib/geo';
 import { findAirport } from './data';
 import { flightDetail, legOfTrack, lowness, sinceTurnaroundGap, type FlightDeps } from './flight';
 
@@ -65,6 +66,13 @@ describe('unobserved turnaround at the destination (round 4 B1)', () => {
     expect(sinceTurnaroundGap(outbound)).toEqual({ track: outbound, gapMin: null });
   });
 
+  it('SKW541T still cuts under the round-5 displacement rule: 28 km apart after 37 min, against ≈ 490 km it could have flown', () => {
+    const i = skwTrack.findIndex((p) => p.t === '2026-10-01T05:03:21.637Z');
+    const [a, b] = [skwTrack[i - 1]!, skwTrack[i]!];
+    expect(Math.round(distanceKm([a.lng, a.lat], [b.lng, b.lat]))).toBe(28);
+    expect(sinceTurnaroundGap(skwTrack).gapMin).toBe(37);
+  });
+
   it('low is above ground level at the nearer endpoint: the DEN climb-out at 5,250 ft MSL is low', () => {
     const DEN = findAirport('DEN')!;
     const DRO = findAirport('DRO')!;
@@ -74,6 +82,35 @@ describe('unobserved turnaround at the destination (round 4 B1)', () => {
     expect(isLow(climb)).toBe(true);
     expect(isLow({ ...climb, lat: DRO.lat, lng: DRO.lng, altFt: 9_000 })).toBe(true); // 2,315 ft AGL at DRO
     expect(isLow({ ...climb, lat: DRO.lat, lng: DRO.lng, altFt: 10_000 })).toBe(false);
+  });
+});
+
+// R4 round 5 m4 (synthetic, the reviewer's repro: no aircraft north of 66° N in keyless coverage that
+// day): a trans-polar flight's true course flips ~180° across the pole, and Arctic coverage gaps of
+// 10 min or more are the norm — that is not a turnaround.
+describe('a polar crossing under a coverage gap is not a turnaround (round 5 m4)', () => {
+  const pt = (t: string, lat: number, lng: number, trackDeg: number, gsKt: number | null = 490): TrackPoint => ({ t, lat, lng, altFt: 36000, onGround: false, gsKt, trackDeg }) as TrackPoint;
+  const polar = [
+    pt('2026-10-01T10:00:00Z', 82, 100, 2),
+    pt('2026-10-01T10:05:00Z', 83.3, 100, 1),
+    pt('2026-10-01T10:10:00Z', 84.6, 100, 0),
+    pt('2026-10-01T11:20:00Z', 85.5, -80, 181),
+    pt('2026-10-01T11:25:00Z', 84.2, -80, 180),
+  ];
+
+  it('HKG→JFK-like: north at 84.6° N 100° E, a 70-min gap, south at 85.5° N 80° W (≈ 1,100 km on) → no cut', () => {
+    expect(Math.round(distanceKm([100, 84.6], [-80, 85.5]))).toBeGreaterThan(1000);
+    expect(sinceTurnaroundGap(polar)).toEqual({ track: polar, gapMin: null });
+  });
+
+  it('the same reversal with the aircraft reappearing where it vanished is still a turnaround', () => {
+    const back = [...polar.slice(0, 3), pt('2026-10-01T11:20:00Z', 84.5, 100.5, 181), pt('2026-10-01T11:25:00Z', 83.2, 100.5, 180)];
+    expect(sinceTurnaroundGap(back).gapMin).toBe(70);
+  });
+
+  it('without a ground speed either side the reversal alone decides (as before)', () => {
+    const noGs = polar.map((p) => ({ ...p, gsKt: null }));
+    expect(sinceTurnaroundGap(noGs).gapMin).toBe(70);
   });
 });
 

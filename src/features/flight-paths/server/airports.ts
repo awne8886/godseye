@@ -4,6 +4,15 @@
  * (large +3, medium +2, scheduled +3, IATA +1, exact municipality +2) → Photon aerodromes re-ranked
  * against the local index → Photon place / Nominatim (explicit submits only) → nearest 5
  * scheduled-service airports within 150 km. Server-only.
+ *
+ * Round 5 B2 (the palette planned BWU for "Sydney", AHN for "Athens", Torino's LIMA for "Lima"):
+ *  - a fuzzy hit that carries the typed name as whole words (`nameMatch`) ranks above every hit that
+ *    does not, and among those the city's main airport comes first: scheduled service, then size
+ *    (large > medium > small), then VRS services calling there, then an IATA code — the MiniSearch
+ *    score (20–120, which used to swamp the ≤ +9 boosts) only breaks the remaining ties;
+ *  - an ordinary word is not an airport code: a 4+-letter word typed in lower or mixed case ("Lima",
+ *    "Bali") matches an ICAO code / ident only when that airport has scheduled service ("egll" still
+ *    finds EGLL); typed in capitals it is a code ("LIMA" is Torino-Aeritalia).
  */
 import 'server-only';
 import MiniSearch from 'minisearch';
@@ -14,7 +23,8 @@ import { nominatimSearch, photonSearch } from '@/lib/geocode';
 import type { AirportMatch as AirportMatchSchema } from '@/lib/schemas/flight-paths';
 import type { Place } from '@/lib/types';
 import { metroFor, normalizePlace } from '../lib/metro';
-import { airportIndex, findAirport, type AirportIndex, type AirportRecord } from './data';
+import { nameMatch, sizeRank, wordNotCode } from '../lib/names';
+import { airportIndex, findAirport, servicesAt, type AirportIndex, type AirportRecord } from './data';
 
 export type AirportMatch = z.infer<typeof AirportMatchSchema>;
 type MatchedBy = AirportMatch['matchedBy'];
@@ -77,10 +87,11 @@ const match = (a: AirportRecord, score: number, matchedBy: MatchedBy): AirportMa
 export function exactMatches(q: string, all: boolean): AirportMatch[] {
   const c = q.trim().toUpperCase();
   if (!/^[A-Z0-9-]{2,10}$/.test(c)) return [];
+  const word = wordNotCode(q);
   const out: AirportMatch[] = [];
   const seen = new Set<string>();
   const add = (a: AirportRecord | undefined, by: MatchedBy, score: number) => {
-    if (a && !seen.has(a.ident)) {
+    if (a && !seen.has(a.ident) && (!word || a.scheduledService)) {
       seen.add(a.ident);
       out.push(match(a, score, by));
     }
@@ -94,14 +105,37 @@ export function exactMatches(q: string, all: boolean): AirportMatch[] {
   return out;
 }
 
+interface Scored {
+  a: AirportRecord;
+  score: number;
+  named: boolean;
+}
+
+/**
+ * Fuzzy order (round 5 B2): hits carrying the typed name as whole words first; among those the
+ * city's main airport (scheduled service → size → VRS services → IATA code); then the score.
+ */
+export function compareFuzzy(x: Scored, y: Scored): number {
+  if (x.named !== y.named) return x.named ? -1 : 1;
+  if (x.named) {
+    const d =
+      Number(y.a.scheduledService) - Number(x.a.scheduledService) ||
+      sizeRank(y.a.type) - sizeRank(x.a.type) ||
+      servicesAt(y.a.icao) - servicesAt(x.a.icao) ||
+      Number(!!y.a.iata) - Number(!!x.a.iata);
+    if (d) return d;
+  }
+  return y.score - x.score;
+}
+
 export function fuzzyMatches(q: string, all: boolean, limit = MAX_RESULTS): AirportMatch[] {
   const idx = airportIndex(all ? 'all' : 'min');
   const hits = engine(idx).search(q);
-  const scored = hits.slice(0, 200).map((h) => {
+  const scored: Scored[] = hits.slice(0, 200).map((h) => {
     const a = idx.list[h.id as number]!;
-    return { a, score: h.score + boost(a, q) };
+    return { a, score: h.score + boost(a, q), named: nameMatch(a, q) !== null };
   });
-  scored.sort((x, y) => y.score - x.score);
+  scored.sort(compareFuzzy);
   return scored.slice(0, limit).map(({ a, score }) => match(a, score, 'fuzzy'));
 }
 

@@ -38,7 +38,7 @@ const live = (await import('@/app/api/route/live/route')).GET;
 const search = (await import('@/app/api/airports/search/route')).GET;
 const flight = (await import('@/app/api/flight/[ident]/route')).GET;
 const { default: PathsPanel } = await import('./PathsPanel');
-const { fitState, obscuredFitText, setFitNotice } = await import('./fit');
+const { fitState, obscuredFitText, partialFitText, setFitNotice } = await import('./fit');
 
 async function serve(input: string | URL | Request): Promise<Response> {
   const url = new URL(String(input instanceof Request ? input.url : input), 'http://localhost');
@@ -134,6 +134,13 @@ describe('PATHS panel', () => {
     expect(fitState({ key: 'k', fits: false, hidden: ['PER'] })).toBe('partial');
     await act(async () => setFitNotice({ key: 'route:YPPH-EGLL', fits: true, hidden: [] }));
     expect(screen.queryByTestId('paths-fit-obscured')).toBeNull();
+    // Round 5 visual-qa: a partial fit on the flat (2D) map says "drag the map", not "drag the globe".
+    await act(async () => setFitNotice({ key: 'route:YPPH-EGLL', fits: false, projection: 'mercator' }));
+    expect(screen.getByTestId('paths-fit-partial').textContent).toBe(partialFitText('mercator'));
+    expect(partialFitText('mercator')).toMatch(/drag the map to see the rest\.$/);
+    expect(partialFitText('mercator')).not.toMatch(/globe/);
+    await act(async () => setFitNotice({ key: 'route:YPPH-EGLL', fits: false, projection: 'globe' }));
+    expect(screen.getByTestId('paths-fit-partial').textContent).toMatch(/centred on its visible half; drag the globe to see the rest\.$/);
     await act(async () => setFitNotice(null));
   });
 

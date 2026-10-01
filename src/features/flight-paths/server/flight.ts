@@ -22,7 +22,7 @@ import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
 import { honestFlights } from '@/features/aviation/server/view';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
-import { angleDiff, etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progressOn } from '../lib/geometry';
+import { angleDiff, etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progressOn, reverseLegReason, reverseLegReject } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { findAirport, openFlights, vrsIndex, type AirportRecord } from './data';
@@ -234,30 +234,54 @@ export function sinceLastTakeoff(track: readonly TrackPoint[], ends?: RouteEnds)
   return [...track];
 }
 
-/** The nearest observed track (deg) at index i, looking up to 10 points in direction `step`. */
-function trackAt(track: readonly TrackPoint[], i: number, step: 1 | -1): number | null {
+/** The nearest observed value of `key` at index i, looking up to 10 points in direction `step`. */
+function valueAt(track: readonly TrackPoint[], i: number, step: 1 | -1, key: 'trackDeg' | 'gsKt'): number | null {
   for (let k = 0, j = i; k < 10 && j >= 0 && j < track.length; k++, j += step) {
-    const t = track[j]!.trackDeg;
-    if (t !== null) return t;
+    const v = track[j]![key];
+    if (v !== null) return v;
   }
   return null;
 }
 
 /**
+ * A turnaround lands and turns: across the gap the aircraft ends up less than this share of the
+ * distance it could have flown (at the faster of its ground speeds either side) from where it was.
+ */
+const TURNAROUND_DISPLACEMENT = 0.5;
+
+/**
  * The trace after its LAST coverage gap of >= 10 min across which the observed track turned by more
- * than 120° (round 4 B1: SKW541T flew DEN→DRO, vanished for 37 min while it landed and turned
- * around below coverage, and reappeared heading back to DEN; the DEN→DRO part is the previous leg).
- * `gapMin` is the length of that gap; the whole trace and null when there is none.
+ * than 120° AND the aircraft reappeared near where it vanished (round 4 B1: SKW541T flew DEN→DRO,
+ * vanished for 37 min while it landed and turned around below coverage, and reappeared 28 km away
+ * heading back to DEN; the DEN→DRO part is the previous leg). Round 5 m4: a trans-polar flight's
+ * true course also flips ~180° across the pole, under an Arctic coverage gap — but it reappears
+ * ~1,000 km on, about as far as it could fly in the gap: not a turnaround. Without a ground speed on
+ * either side, the course reversal alone decides. `gapMin` is the length of that gap; the whole
+ * trace and null when there is none.
  */
 export function sinceTurnaroundGap(track: readonly TrackPoint[]): { track: TrackPoint[]; gapMin: number | null } {
   for (let i = track.length - 1; i > 0; i--) {
     const gap = Date.parse(track[i]!.t) - Date.parse(track[i - 1]!.t);
     if (!(gap >= LEG_GAP_MS)) continue;
-    const before = trackAt(track, i - 1, -1);
-    const after = trackAt(track, i, 1);
-    if (before !== null && after !== null && angleDiff(before, after) > TURNAROUND_DEG) return { track: track.slice(i), gapMin: Math.round(gap / 60_000) };
+    const before = valueAt(track, i - 1, -1, 'trackDeg');
+    const after = valueAt(track, i, 1, 'trackDeg');
+    if (before === null || after === null || angleDiff(before, after) <= TURNAROUND_DEG) continue;
+    const speeds = [valueAt(track, i - 1, -1, 'gsKt'), valueAt(track, i, 1, 'gsKt')].filter((v): v is number => v !== null && v > 0);
+    if (speeds.length) {
+      const couldFlyKm = Math.max(...speeds) * 1.852 * (gap / 3_600_000);
+      const movedKm = distanceKm([track[i - 1]!.lng, track[i - 1]!.lat], [track[i]!.lng, track[i]!.lat]);
+      if (movedKm >= TURNAROUND_DISPLACEMENT * couldFlyKm) continue;
+    }
+    return { track: track.slice(i), gapMin: Math.round(gap / 60_000) };
   }
   return { track: [...track], gapMin: null };
+}
+
+/** Does the callsign's VRS chain fly `from` then `to` as consecutive stops (a listed leg)? */
+function listedLeg(callsign: string | null, from: AirportRecord, to: AirportRecord): boolean {
+  const chain = callsign ? vrsIndex().chainOf.get(callsign) : undefined;
+  const [f, t] = [icaoOf(from), icaoOf(to)];
+  return !!chain && chain.some((c, i) => c === f && chain[i + 1] === t);
 }
 
 const toRun = (p: Providers[string]): ProviderRun => ({ status: p, okAt: p.ok && p.age_s !== null ? Date.now() - p.age_s * 1000 : null });
@@ -351,8 +375,8 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
       // An airborne aircraft's current leg IS this flight: its observed departure and course decide
       // the direction; the standing data only names the pair.
       const s = { lat: live.lat, lng: live.lng, altFt: live.altFt, gsKt: live.gsKt, trackDeg: live.trackDeg, vrFpm: live.vrFpm };
-      const fwd = flyingRoute(s, O, D);
-      const rev = flyingRoute(s, D, O);
+      const fwd = flyingRoute(s, O, D, { a: origin.elevationFt, b: destination.elevationFt });
+      const rev = flyingRoute(s, D, O, { a: destination.elevationFt, b: origin.elevationFt });
       // A trace that ends on the ground away from where the aircraft now flies is an earlier leg:
       // this leg's departure and track were not observed.
       const end = flownTrack[flownTrack.length - 1];
@@ -367,6 +391,11 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
       // Both take-offs in the trace: the later one (shorter remainder) is this leg.
       const latest = departedO && departedD ? (leg.track.length <= back.track.length ? 'O' : 'D') : departedO ? 'O' : departedD ? 'D' : null;
       const offKm = Math.round(positionOnPath([live.lng, live.lat], O, D).offKm);
+      // Round 5 B1: a D→O leg that no source lists is shown only when the observation fits it end to
+      // end (away from D, on course for O, inside the corridor now and along the trace); otherwise the
+      // aircraft may be bound for a third airport (SWA2816 "MCO→MDW" landed at RDU).
+      const listedBack = listedLeg(resolved.callsign, destination, origin);
+      const backReject = latest === 'D' && rev && !listedBack ? reverseLegReject(s, D, O, back.track.filter((q) => !q.onGround), { from: destination.elevationFt, to: origin.elevationFt }) : null;
       if (latest === 'O' && !fwd && rev) {
         // Round 4 B1: took off from O earlier but now flies back toward O — the landing at D and
         // the turnaround were not observed (a coverage gap), so neither direction is confirmed.
@@ -380,14 +409,13 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
           routeCheck = `departed ${codeO} but not observed on course for ${codeD} (${offKm} km off the great circle) — progress and ETA not shown`;
           sources.push({ name: 'progress', ok: false, detail: routeCheck });
         }
-      } else if (latest === 'D' && rev) {
+      } else if (latest === 'D' && rev && !backReject) {
         // Observed D→O: show the leg as flown, not the standing data's reversed direction.
         flownTrack = back.track;
         // A multi-stop VRS chain that flies D then O (AAL606 is KDFW-KJFK-KDFW) lists this leg:
         // then it is standing data, only the leg differs from the one the route lookup picked.
         const chain = resolved.callsign ? vrsIndex().chainOf.get(resolved.callsign) : undefined;
-        const [dIcao, oIcao] = [icaoOf(destination), icaoOf(origin)];
-        const listed = !!chain && chain.some((c, i) => c === dIcao && chain[i + 1] === oIcao);
+        const listed = listedBack;
         [origin, destination] = [destination, origin];
         routeBasis = listed ? 'standing-data' : 'observed-reverse';
         onRoute = true;
@@ -395,6 +423,11 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
           ? `observed departure ${codeD} and course toward ${codeO}: the ${codeD}→${codeO} leg of standing-data route ${chain!.join('→')}`
           : `observed departure ${codeD} and course toward ${codeO}: shown as flown ${codeD}→${codeO}; standing data lists ${sched}`;
         sources.push({ name: 'corroboration', ok: true, detail: routeCheck });
+      } else if (latest === 'D' && rev && backReject) {
+        // Departed D and broadly heading back toward O, but not consistently enough to say it flies
+        // D→O, a leg no source lists.
+        flownTrack = back.track;
+        withhold(`observed departure ${codeD}; ${reverseLegReason(backReject, codeO)} — ${codeD}→${codeO} is not listed by any source and is not confirmed (standing data lists ${sched})`);
       } else if (latest === 'D') {
         flownTrack = back.track;
         withhold(`observed departure ${codeD} contradicts standing data ${sched}, and the aircraft is not on course for ${codeO} — route not confirmed`);
