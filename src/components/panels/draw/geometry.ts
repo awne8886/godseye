@@ -40,6 +40,26 @@ export function measure(f: DrawFeature): Measurement {
   };
 }
 
+/**
+ * Vertices a line/polygon sketch needs before FINISH can commit it. Points and circles commit on
+ * the map click itself (a circle's second click sets the radius), so they have no FINISH step.
+ */
+export const FINISH_MIN_VERTICES: Partial<Record<DrawShape, number>> = { line: 2, polygon: 3 };
+
+/** Vertices still missing before FINISH can commit the sketch (0 = ready; null = no FINISH step for this tool). */
+export function verticesToFinish(mode: DrawShape | null, sketch: readonly unknown[]): number | null {
+  const min = mode ? FINISH_MIN_VERTICES[mode] : undefined;
+  return min === undefined ? null : Math.max(0, min - sketch.length);
+}
+
+/** The feature a finished line/polygon sketch becomes, or null when it cannot be one yet. */
+export function sketchFeature(mode: DrawShape | null, sketch: readonly [number, number][], id: (prefix: string) => string, n: number): DrawFeature | null {
+  if (verticesToFinish(mode, sketch) !== 0) return null;
+  const coords = sketch.map((p) => [p[0], p[1]] as [number, number]);
+  if (mode === 'line') return { type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: { id: id('line'), shape: 'line', name: `Line ${n}` } };
+  return { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...coords, coords[0]!]] }, properties: { id: id('poly'), shape: 'polygon', name: `Polygon ${n}` } };
+}
+
 /** Geodesic circle (64 segments) — never a screen-space disc on the globe. */
 export function circlePolygon(center: [number, number], radiusM: number, steps = 64): GeoJSON.Polygon {
   return turfCircle(center, radiusM / 1000, { steps, units: 'kilometers' }).geometry;

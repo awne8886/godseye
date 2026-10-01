@@ -2,19 +2,19 @@
 /**
  * Background map overlays for ROUTE, DRAW and ARCGIS (mounted once inside the map provider):
  * publishes deck layers (route casing + line with alternates, stops, drawn shapes and the live
- * sketch, imported ArcGIS layers) and, only while a DRAW tool is active, listens to map pointer
- * events to add vertices (double-click / Enter finishes, Esc cancels). Colours come from
- * `--map-directions*` tokens. Owner: panels-recon.
+ * sketch, imported ArcGIS layers) and, only while a DRAW tool is active, takes the canvas clicks
+ * to add vertices — entity selection is suppressed meanwhile (draw/map-capture.ts); FINISH,
+ * double-click or Enter finishes, CANCEL or Esc cancels. Colours come from `--map-directions*`
+ * tokens. Owner: panels-recon.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import type { LayersList } from '@deck.gl/core';
-import type { MapMouseEvent } from 'maplibre-gl';
 import { useDeckLayers, useMapInstance } from '@/lib/layer-host';
 import { getFarSideCamera, isFacing, type FarSideCamera } from '@/lib/map/far-side';
 import { readCssColor } from '@/lib/tokens';
-import { useOverlayStore, nextId } from './overlay-store';
-import { circlePolygon, distanceM, type DrawFeature } from '../draw/geometry';
+import { addDrawPoint, useOverlayStore } from './overlay-store';
+import { CLICK_TOLERANCE_PX, captureMapClicks, keyForSketch } from '../draw/map-capture';
 
 /** Above basemap-ish layers, below live entities. */
 const Z = 45;
@@ -23,59 +23,42 @@ const GLOBE = { cullMode: 'none' } as const;
 const POINTS = { cullMode: 'none', depthCompare: 'always' } as const;
 const facing = (pts: readonly [number, number][], cam: FarSideCamera | null) => pts.filter((p) => isFacing(p, cam));
 
+/**
+ * While a tool is armed, canvas clicks/taps go to DRAW only (captureMapClicks: entity selection is
+ * suppressed), double-click or Enter finishes, Esc cancels. Touch users finish with the panel's
+ * FINISH button (browsers do not report a double tap as dblclick).
+ */
 function useDrawInteraction() {
   const map = useMapInstance();
   const mode = useOverlayStore((s) => s.drawMode);
   useEffect(() => {
     if (!map || !mode) return;
     const st = useOverlayStore.getState;
-    const finish = () => {
-      const { sketch, drawMode, features } = st();
-      const n = features.length + 1;
-      let f: DrawFeature | null = null;
-      if (drawMode === 'line' && sketch.length >= 2) f = { type: 'Feature', geometry: { type: 'LineString', coordinates: sketch }, properties: { id: nextId('line'), shape: 'line', name: `Line ${n}` } };
-      if (drawMode === 'polygon' && sketch.length >= 3) f = { type: 'Feature', geometry: { type: 'Polygon', coordinates: [[...sketch, sketch[0]!]] }, properties: { id: nextId('poly'), shape: 'polygon', name: `Polygon ${n}` } };
-      if (f) st().addFeatures([f]);
-      st().setSketch([]);
-    };
-    const onClick = (e: MapMouseEvent) => {
-      const p: [number, number] = [e.lngLat.lng, e.lngLat.lat];
-      const { drawMode, sketch, features } = st();
-      const n = features.length + 1;
-      if (drawMode === 'point') {
-        st().addFeatures([{ type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: { id: nextId('pt'), shape: 'point', name: `Point ${n}` } }]);
-      } else if (drawMode === 'circle') {
-        if (!sketch.length) st().setSketch([p]);
-        else {
-          const c = sketch[0]!;
-          const r = distanceM(c, p);
-          if (r > 0) st().addFeatures([{ type: 'Feature', geometry: circlePolygon(c, r), properties: { id: nextId('circle'), shape: 'circle', name: `Circle ${n}`, center: c, radiusM: r } }]);
-          st().setSketch([]);
-        }
-      } else {
-        const last = sketch.at(-1);
-        if (!last || last[0] !== p[0] || last[1] !== p[1]) st().setSketch([...sketch, p]);
-      }
-    };
-    const onDbl = (e: MapMouseEvent) => {
-      e.preventDefault();
-      finish();
-    };
+    // The second click of a double-click lands on the vertex the first one added: not a new vertex.
+    let lastPx: [number, number] | null = null;
+    const release = captureMapClicks(map, {
+      onPoint: (p, px) => {
+        const repeat = lastPx && st().sketch.length > 0 && Math.hypot(px[0] - lastPx[0], px[1] - lastPx[1]) < CLICK_TOLERANCE_PX;
+        lastPx = px;
+        if (!repeat) addDrawPoint(p);
+      },
+      onDouble: () => {
+        lastPx = null;
+        st().finishSketch();
+      },
+    });
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') st().setSketch([]);
-      if (e.key === 'Enter') finish();
+      const k = keyForSketch(e);
+      if (k === 'finish') st().finishSketch();
+      if (k === 'cancel') st().cancelSketch();
+      if (k) lastPx = null;
     };
     const dblZoom = map.doubleClickZoom.isEnabled();
     map.doubleClickZoom.disable();
-    map.getCanvas().style.cursor = 'crosshair';
-    map.on('click', onClick);
-    map.on('dblclick', onDbl);
     window.addEventListener('keydown', onKey);
     return () => {
-      map.off('click', onClick);
-      map.off('dblclick', onDbl);
+      release();
       window.removeEventListener('keydown', onKey);
-      map.getCanvas().style.cursor = '';
       if (dblZoom) map.doubleClickZoom.enable();
     };
   }, [map, mode]);

@@ -3,34 +3,72 @@
  * DRAW: points, lines, polygons and geodesic circles with turf measurements in the visitor's
  * units; GeoJSON import/export; mark a polygon as the Area of Interest (AOI) and open the Region
  * Dossier at its centre or export its bounding box. Map clicks are captured only while a tool is
- * active (ReconOverlays). Owner: panels-recon.
+ * active (ReconOverlays), and then never select entities. Lines and polygons end with FINISH (the
+ * touch path; double-click and Enter also work), CANCEL discards the sketch, DONE stops the tool
+ * and keeps a finishable shape. Owner: panels-recon.
  */
-import { Circle, Download, FileUp, MapPin, Pentagon, Spline, Target, Trash2, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Check, Circle, Download, FileUp, MapPin, Pentagon, Spline, Target, Trash2, Undo2, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
+import { mediaQueryStore } from '@/lib/map/view';
 import { useUiStore } from '@/lib/store';
 import { HudButton, Prose, SectionTitle, downloadJson } from '../recon/ui';
 import { nextId, useOverlayStore, zoomForBbox } from '../recon/overlay-store';
-import { featureBbox, featureCentre, formatArea, formatDistance, measure, parseGeoJson, toFeatureCollection, type DrawShape } from './geometry';
+import { featureBbox, featureCentre, formatArea, formatDistance, measure, parseGeoJson, sketchFeature, toFeatureCollection, verticesToFinish, type DrawShape, type Units } from './geometry';
 
-const TOOLS: { id: DrawShape; label: string; Icon: typeof MapPin; hint: string }[] = [
-  { id: 'point', label: 'Point', Icon: MapPin, hint: 'Click the map to drop a point.' },
-  { id: 'line', label: 'Line', Icon: Spline, hint: 'Click to add vertices; double-click or Enter to finish; Esc clears.' },
-  { id: 'polygon', label: 'Polygon', Icon: Pentagon, hint: 'Click to add corners; double-click or Enter closes the shape; Esc clears.' },
-  { id: 'circle', label: 'Circle', Icon: Circle, hint: 'Click the centre, then click again at the radius.' },
+interface Tool {
+  id: DrawShape;
+  label: string;
+  Icon: typeof MapPin;
+  /** Mouse/keyboard wording. */
+  hint: string;
+  /** Touch wording (coarse pointer): no double-click or keys, FINISH instead. */
+  touch: string;
+}
+
+export const TOOLS: readonly Tool[] = [
+  { id: 'point', label: 'Point', Icon: MapPin, hint: 'Click the map to drop a point.', touch: 'Tap the map to drop a point.' },
+  { id: 'line', label: 'Line', Icon: Spline, hint: 'Click to add vertices; FINISH, double-click or Enter ends the line; CANCEL or Esc discards it.', touch: 'Tap to add vertices, then tap FINISH. CANCEL discards the line.' },
+  { id: 'polygon', label: 'Polygon', Icon: Pentagon, hint: 'Click to add corners; FINISH, double-click or Enter closes the shape; CANCEL or Esc discards it.', touch: 'Tap to add 3 or more corners, then tap FINISH to close the shape. CANCEL discards it.' },
+  { id: 'circle', label: 'Circle', Icon: Circle, hint: 'Click the centre, then click again at the radius.', touch: 'Tap the centre, then tap again at the radius.' },
 ];
+
+const coarsePointer = mediaQueryStore('(pointer: coarse)');
+/** Touch-first device (phones, tablets): hints say "tap" and point at FINISH. */
+export function useCoarsePointer(): boolean {
+  return useSyncExternalStore(coarsePointer.subscribe, coarsePointer.get, () => false);
+}
+
+/** Live readout of the shape in progress: vertex count, what FINISH still needs, and its measurement. */
+export function sketchStatus(mode: DrawShape | null, sketch: readonly [number, number][], units: Units): string | null {
+  if (!mode || !sketch.length) return null;
+  if (mode === 'circle') return 'Centre set: now the radius point';
+  const parts = [`${sketch.length} ${sketch.length === 1 ? 'vertex' : 'vertices'}`];
+  const need = verticesToFinish(mode, sketch);
+  if (need) parts.push(`${need} more to finish`);
+  const f = sketchFeature(mode, sketch, () => 'sketch', 0);
+  if (f) {
+    const m = measure(f);
+    if (m.lengthM !== null) parts.push(formatDistance(m.lengthM, units));
+    if (m.areaM2 !== null) parts.push(formatArea(m.areaM2, units));
+  }
+  return parts.join(' · ');
+}
 
 export default function DrawPanel(_: PanelProps) {
   const units = useUiStore((s) => s.settings.units);
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
   const openDossier = useUiStore((s) => s.openDossier);
-  const { drawMode, setDrawMode, features, removeFeature, toggleAoi, clearFeatures, addFeatures, sketch } = useOverlayStore();
+  const { drawMode, setDrawMode, features, removeFeature, toggleAoi, clearFeatures, addFeatures, sketch, finishSketch, cancelSketch, stopDrawing } = useOverlayStore();
+  const coarse = useCoarsePointer();
   const [msg, setMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   usePanelChip(drawMode ? 'PLOTTING' : features.length ? `${features.length} SHAPES` : 'STANDBY', drawMode ? 'busy' : features.length ? 'live' : 'idle');
-  // Closing the panel ends the drawing session: map clicks go back to normal selection.
-  useEffect(() => () => useOverlayStore.getState().setDrawMode(null), []);
+  // Closing the panel ends the drawing session (a finishable sketch is kept): map clicks go back to normal selection.
+  useEffect(() => () => useOverlayStore.getState().stopDrawing(), []);
+  const status = useMemo(() => sketchStatus(drawMode, sketch, units), [drawMode, sketch, units]);
+  const need = verticesToFinish(drawMode, sketch);
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
@@ -57,16 +95,37 @@ export default function DrawPanel(_: PanelProps) {
         ))}
       </div>
       {tool ? (
-        <div className="flex items-start gap-2">
-          <Prose className="flex-1">{tool.hint}</Prose>
-          <HudButton tone="muted" onClick={() => setDrawMode(null)} aria-label="Stop drawing">
-            <X size={14} aria-hidden /> Done
-          </HudButton>
+        <div className="flex flex-col gap-2">
+          <Prose>{coarse ? tool.touch : tool.hint}</Prose>
+          {status && (
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] tabular-nums text-[var(--cyan-primary)]" data-testid="draw-sketch" aria-live="polite">
+              {status}
+            </p>
+          )}
+          {/* FINISH commits, CANCEL discards, DONE stops the tool (keeping a finishable shape). 44 px on phones. */}
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Sketch actions">
+            {need !== null && (
+              <HudButton
+                tone="cyan"
+                data-testid="draw-finish"
+                disabled={need > 0}
+                title={need > 0 ? `Add ${need} more ${tool.id === 'polygon' ? (need === 1 ? 'corner' : 'corners') : need === 1 ? 'vertex' : 'vertices'} first` : undefined}
+                onClick={() => finishSketch()}
+              >
+                <Check size={14} aria-hidden /> Finish
+              </HudButton>
+            )}
+            <HudButton tone="muted" disabled={!sketch.length} onClick={cancelSketch} aria-label="Cancel the shape in progress">
+              <Undo2 size={14} aria-hidden /> Cancel
+            </HudButton>
+            <HudButton tone="muted" onClick={stopDrawing} aria-label="Stop drawing" title="Stop drawing (a finishable shape is kept)">
+              <X size={14} aria-hidden /> Done
+            </HudButton>
+          </div>
         </div>
       ) : (
-        <Prose>Pick a tool, then click the map. Distances and areas are geodesic (turf), in your unit setting.</Prose>
+        <Prose>Pick a tool, then {coarse ? 'tap' : 'click'} the map. Distances and areas are geodesic (turf), in your unit setting.</Prose>
       )}
-      {drawMode && sketch.length > 0 && <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--cyan-primary)]">{sketch.length} vertices</p>}
       <div className="flex flex-wrap gap-1.5">
         <HudButton tone="muted" onClick={() => fileRef.current?.click()}>
           <FileUp size={14} aria-hidden /> Import GeoJSON
