@@ -87,13 +87,25 @@ describe('flight view never shows another leg as the flown track (R4-M1)', () =>
     expect(legOfTrack(track, MEL, SFO).departure).toBe('unobserved');
   });
 
-  it('airborne in the corridor with a departure elsewhere: route kept, track dropped, corridor named honestly', async () => {
-    const rec = record({ lat: -10, lng: 170, altFt: 37_000, onGround: false, gsKt: 480 });
+  it('airborne on course in the corridor after a trace that ended at MEL: route kept, earlier leg dropped, departure "not observed"', async () => {
+    const rec = record({ lat: -10, lng: 170, altFt: 37_000, onGround: false, gsKt: 480, trackDeg: 50 });
     const d = (await flightDetail('UAL61', deps(rec, previousLeg), NOW))!;
     expect(d.status).toBe('airborne');
     expect(d.flownTrack).toEqual([]);
+    expect([d.origin?.iata, d.destination?.iata]).toEqual(['MEL', 'SFO']);
+    expect(d.sources.find((s) => s.name === 'flown track')?.detail).toMatch(/earlier leg not shown/);
     const corr = d.sources.find((s) => s.name === 'corroboration')!;
-    expect(corr.detail).toMatch(/departure not confirmed/);
+    expect(corr).toMatchObject({ ok: true });
+    expect(corr.detail).toMatch(/on course for SFO \(departure not observed\)/);
+    expect(d.progress).not.toBeNull();
+  });
+
+  it('same position heading back toward MEL: route not confirmed, no progress', async () => {
+    const rec = record({ lat: -10, lng: 170, altFt: 37_000, onGround: false, gsKt: 480, trackDeg: 230 });
+    const d = (await flightDetail('UAL61', deps(rec, previousLeg), NOW))!;
+    expect(d.origin).toBeNull();
+    expect(d.progress).toBeNull();
+    expect(d.routeCheck).toMatch(/heading toward MEL.*route not confirmed/);
   });
 
   it('a track that departed the origin is kept and corroborates the route', async () => {
@@ -101,6 +113,28 @@ describe('flight view never shows another leg as the flown track (R4-M1)', () =>
     const rec = record({ lat: -30, lng: 150, altFt: 35_000, onGround: false, gsKt: 480 });
     const d = (await flightDetail('UAL61', deps(rec, track), NOW))!;
     expect(d.flownTrack).toHaveLength(3);
-    expect(d.sources.find((s) => s.name === 'corroboration')).toMatchObject({ ok: true, detail: 'observed departure matches the route origin' });
+    expect(d.sources.find((s) => s.name === 'corroboration')).toMatchObject({ ok: true, detail: 'observed departure matches the route origin MEL' });
+  });
+});
+
+// R4 round 3 m1: a trace that begins in cruise on the previous leg (coverage starts over Austria),
+// lands at the origin without onGround rows (no ground coverage), then departs for D. Synthetic
+// geometry from the reviewer's repro; no live case was found.
+describe('legOfTrack with an unobserved start (round 3 m1)', () => {
+  const t0 = Date.parse('2026-10-01T00:00:00Z');
+  const p = (min: number, lat: number, lng: number, altFt: number): TrackPoint => ({ t: new Date(t0 + min * 60_000).toISOString(), lat, lng, altFt, onGround: false, gsKt: 400, trackDeg: 90 });
+  const LHR: LngLatTuple = [-0.4543, 51.47];
+  const JFK: LngLatTuple = [-73.7781, 40.6398];
+  const track = [
+    p(0, 47.5, 14.0, 37000), p(30, 49.5, 8.0, 36000), p(60, 51.0, 2.0, 20000), p(70, 51.45, 0.2, 6000),
+    p(75, 51.47, -0.3, 1200), p(76, 51.47, -0.45, 300),
+    p(160, 51.47, -0.5, 800), p(165, 51.6, -1.5, 9000), p(190, 52.5, -10.0, 35000), p(260, 54.0, -30.0, 37000),
+  ];
+  it('trims the previous DXB→LHR leg instead of drawing it as LHR→JFK', () => {
+    const leg = legOfTrack(track, LHR, JFK);
+    expect(leg.departure).toBe('origin');
+    expect(leg.trimmed).toBe(true);
+    expect(leg.track.every((q) => q.lng <= 0)).toBe(true);
+    expect(leg.track[0]!.altFt).toBe(800);
   });
 });

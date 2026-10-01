@@ -15,6 +15,7 @@ import { usePanelChip } from '@/components/hud/PanelChrome';
 import { useUiStore } from '@/lib/store';
 import { parseRouteParam } from '@/lib/url-state';
 import { draftMessage, setPathsDraft, usePathsDraft } from './draft';
+import { PARTIAL_FIT_TEXT, useFitNotice } from './fit';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
 import { FLT_TOKEN, PATH_TYPES, TWILIGHT_TOKEN, codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
@@ -379,13 +380,29 @@ export function LiveView({ live, error }: { live: Live | undefined; error: unkno
     return <Note tone="warn">Live feed offline{last ? ` — last snapshot ${fmtUtc(last)}` : ' — no snapshot yet'}.</Note>;
   }
   if (!live) return <Note>Loading live aircraft…</Note>;
-  if (!live.aircraft.length) return <Note>No aircraft on this pair in the current snapshot ({fmtUtc(live.snapshotAt)}).</Note>;
+  const partial = live.coverage && !live.coverage.complete ? live.coverage : null;
+  const partialNote = partial && (
+    <Note tone="warn">
+      PARTIAL SNAPSHOT — {partial.tilesRead} of {partial.tilesTotal} coverage tiles read so far; aircraft on this pair may be missing.
+    </Note>
+  );
+  if (!live.aircraft.length) {
+    return partialNote ? (
+      <div className="flex flex-col gap-2" data-testid="paths-live-partial">
+        {partialNote}
+        <Note>None found yet in the tiles read ({fmtUtc(live.snapshotAt)}).</Note>
+      </div>
+    ) : (
+      <Note>No aircraft on this pair in the current snapshot ({fmtUtc(live.snapshotAt)}).</Note>
+    );
+  }
   const anyInferred = live.aircraft.some((a) => a.basis === 'inferred');
   return (
     <div className="flex flex-col gap-2">
       <p className="hud-micro text-[var(--text-secondary)]" data-testid="paths-live-counts">
         {liveCounts(live.aircraft)}
       </p>
+      {partialNote}
       {anyInferred && <Note>~ INFERRED: no known route for the callsign; position, track and altitude fit the corridor only. Shown as a dotted ring (◌) on the map, without a progress chip.</Note>}
       <ul className="flex flex-col gap-2" aria-label="Live aircraft on the route">
         {live.aircraft.map((a) => (
@@ -431,12 +448,16 @@ export function FlightView({ flight }: { flight: Flight }) {
         <span className="hud-chip hud-micro ml-auto border border-[var(--border-active)] px-1.5 text-[var(--gold-light)]">{flight.status.toUpperCase()}</span>
       </div>
       {o && d ? (
-        <p className="font-sans text-[12px] text-[var(--text-secondary)]">
-          {codeOf(o)} {o.name} → {codeOf(d)} {d.name}
-          {flight.routeSource?.stale ? ' (stale route record)' : ''}
-        </p>
+        <>
+          <p className="font-sans text-[12px] text-[var(--text-secondary)]">
+            {flight.routeBasis === 'observed-reverse' && <span className="hud-micro mr-1 text-[var(--cyan-primary)]">AS FLOWN (OBSERVED)</span>}
+            {codeOf(o)} {o.name} → {codeOf(d)} {d.name}
+            {flight.routeSource?.stale ? ' (stale route record)' : ''}
+          </p>
+          {flight.routeCheck && <Note>{flight.routeCheck}</Note>}
+        </>
       ) : (
-        <Note>No corroborated route for this flight.</Note>
+        <Note>{flight.routeCheck ? `No corroborated route: ${flight.routeCheck}.` : 'No corroborated route for this flight.'}</Note>
       )}
       {flight.progress !== null && (
         <div className="h-1.5 w-full rounded-full bg-[var(--bg-tertiary)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(flight.progress * 100)} aria-label="Flight progress">
@@ -508,6 +529,7 @@ export default function PathsPanel(_props: PanelProps) {
     setMode('route');
   }
   const draftNotice = draft && draft.seq === seenDraft ? draftMessage(draft) : null;
+  const fitNotice = useFitNotice();
 
   const plan = usePlan(route);
   const live = useLive(route, mode === 'live');
@@ -665,6 +687,11 @@ export default function PathsPanel(_props: PanelProps) {
         </div>
       )}
 
+      {fitNotice && !fitNotice.fits && fitNotice.key.startsWith(route ? 'route:' : ident ? 'flight:' : '-') && (
+        <p role="status" data-testid="paths-fit-partial" className="font-sans text-[12px] text-[var(--text-secondary)]">
+          {PARTIAL_FIT_TEXT}
+        </p>
+      )}
       {mode === 'route' && route && (plan.data ? <PlanView plan={plan.data} /> : plan.error ? <Note tone="error">{failureText(plan.error)}</Note> : <Note>Plotting {route.from} → {route.to}…</Note>)}
       {mode === 'live' && (route ? <LiveView live={live.data} error={live.error} /> : <Note>Plot a route first to see aircraft flying it.</Note>)}
       {mode === 'flight' && ident && (flight.data ? <FlightView flight={flight.data} /> : flight.error ? <Note tone="error">{failureText(flight.error)}</Note> : <Note>Resolving {ident}…</Note>)}

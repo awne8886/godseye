@@ -319,6 +319,21 @@ test fixtures here — the live route endpoint never polls it (it reads aviation
 Both populated responses (airborne rows, fields trimmed) are the unit-test fixture
 `src/features/flight-paths/__fixtures__/adsblol-point-lhr-jfk-ends.json`. Licence: adsb.lol data ODbL 1.0.
 
+#### Re-probe 2026-10-01 03:35 UTC (Phase 3 round 3, B1/M1 direction checks)
+
+Honest UA (`GODSEYE/0.1 (open-source monitor; probe)`).
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/callsign/AAL606` | 200 | 0.55 s | none (server-side only) | 1 row: hex `ad049a` N938NN B738, `alt_baro 2675`, `baro_rate -832`, `track 180`, 33.02,-97.03 — on final into DFW (it departed JFK 00:31Z), confirming the observed JFK→DFW leg |
+| `https://vrs-standing-data.adsb.lol/routes/AA/AAL606.json` | 200 | 0.23 s | `*` | `airport_codes "KDFW-KJFK-KDFW"` — a multi-stop chain: JFK→DFW is its second leg. Aviation's `pickLeg` is direction-blind and picked DFW→JFK; FLIGHT mode now labels the observed leg "the JFK→DFW leg of standing-data route KDFW→KJFK→KDFW" |
+| `https://api.adsb.lol/v2/callsign/UAL374` | 200 | 0.48 s | none | live row present |
+| `https://vrs-standing-data.adsb.lol/routes/UA/UAL374.json` | 200 | 0.28 s | `*` | `airport_codes "KORD-KLAX"` only — the aircraft observed departing LAX eastbound is shown as flown LAX→ORD with `routeBasis: observed-reverse` |
+
+Recorded flight/trace JSON from this server at 03:11–03:13Z (adsb.lol trace via `/api/aircraft`) is
+the fixture set `src/features/flight-paths/__fixtures__/r3/` (AAL606, UAL374, AAL869, UAL1673; plans for
+the globe-framing tests at 03:15Z). Licence: adsb.lol ODbL 1.0; VRS standing data CC0.
+
 ### layers-aviation
 
 Probed 2026-09-30 18:07–18:20 UTC from the build sandbox with

@@ -581,11 +581,6 @@ export function framePadding(viewport: { width: number; height: number }, panel:
 
 const D2R = Math.PI / 180;
 const toVec = ([lng, lat]: LngLatTuple): [number, number, number] => [Math.cos(lat * D2R) * Math.cos(lng * D2R), Math.cos(lat * D2R) * Math.sin(lng * D2R), Math.sin(lat * D2R)];
-const angleDeg = (a: LngLatTuple, b: LngLatTuple) => {
-  const [x1, y1, z1] = toVec(a);
-  const [x2, y2, z2] = toVec(b);
-  return Math.acos(Math.max(-1, Math.min(1, x1 * x2 + y1 * y2 + z1 * z2))) / D2R;
-};
 
 /** Every point that must be on screen for a route/flight (arc, flown track, endpoints, matched aircraft). */
 export function framePoints(frame: RouteFrame): LngLatTuple[] {
@@ -594,27 +589,131 @@ export function framePoints(frame: RouteFrame): LngLatTuple[] {
   return pts;
 }
 
+/** MapLibre's default vertical field of view (degrees): `cameraToCenterDistance = 0.5 / tan(fov/2) · height`. */
+export const GLOBE_FOV_DEG = 36.87;
+
 /**
- * Globe framing (R2-M4). A lng/lat bounding box is meaningless for polar or antimeridian routes
- * (SVO→LAX's box spans 156° of longitude while the arc passes 80° N), so on the globe the camera
- * centres on the arc's midpoint (else the spherical centroid) and zooms so the farthest framed
- * point — at angular distance θ — fits the padded viewport: MapLibre's globe radius in px is
- * `512·2^z / 2π / cos(centre lat)` and a point θ from the centre sits `R·sin θ` from it.
+ * Perspective globe projection as MapLibre draws it at pitch 0 (round 3 M2): globe radius
+ * `512·2^z / 2π / cos(centre lat)` px, camera `0.5/tan(fov/2)·H` px above the surface point at the
+ * centre. Returns px offsets from the (padded) view centre, or null behind the horizon.
  */
-export function globeCamera(frame: RouteFrame, viewport: { width: number; height: number }, padding: Padding, maxZoom = 8): { center: LngLatTuple; zoom: number } | null {
+export function globeProjector(center: LngLatTuple, zoom: number, viewportHeight: number): Projector {
+  const lat0 = center[1] * D2R;
+  const lng0 = center[0] * D2R;
+  const R = (TILE_PX * 2 ** zoom) / (2 * Math.PI) / Math.max(0.05, Math.cos(lat0));
+  const camDist = (0.5 / Math.tan((GLOBE_FOV_DEG / 2) * D2R)) * viewportHeight;
+  const camZ = R + camDist;
+  const horizon = (R * R) / camZ;
+  const sinLat0 = Math.sin(lat0);
+  const cosLat0 = Math.cos(lat0);
+  return ([lng, lat]) => {
+    const φ = lat * D2R;
+    const dλ = lng * D2R - lng0;
+    const x = R * Math.cos(φ) * Math.sin(dλ);
+    const y = R * (cosLat0 * Math.sin(φ) - sinLat0 * Math.cos(φ) * Math.cos(dλ));
+    const z = R * (sinLat0 * Math.sin(φ) + cosLat0 * Math.cos(φ) * Math.cos(dλ));
+    if (z < horizon) return null;
+    const s = camDist / (camZ - z);
+    return [x * s, -y * s];
+  };
+}
+
+export interface GlobeFit {
+  center: LngLatTuple;
+  zoom: number;
+  /**
+   * True when every framed point is in front of the horizon and inside the padded viewport at
+   * `zoom`. False when the route cannot fit even at the map's minimum zoom: the camera then sits
+   * at the minimum zoom, centred where the most of the route (both ends first) is in view.
+   */
+  fits: boolean;
+}
+
+const normLng = (lng: number) => ((((lng + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * Globe framing (R2-M4, round 3 M2). A lng/lat bounding box is meaningless for polar or
+ * antimeridian routes, and the arc midpoint is not always the best centre either: MapLibre's globe
+ * radius grows with 1/cos(centre latitude), so a polar midpoint (SIN→JFK passes 70° N, HEL→ANC the
+ * pole) inflates the globe, and the map's minimum zoom (1.2) caps how small it can get. So the
+ * camera is solved, not guessed: candidate centres along the arc, each also pulled toward the
+ * equator, are tested with MapLibre's own perspective (`globeProjector`) and the one that allows
+ * the highest zoom ≥ `minZoom` with every framed point visible inside the padded viewport wins.
+ * If none fits at `minZoom`, `fits: false` and the centre that shows both ends and the most of
+ * the arc at `minZoom` is used.
+ */
+export function globeCamera(
+  frame: RouteFrame,
+  viewport: { width: number; height: number },
+  padding: Padding,
+  opts: { minZoom?: number; maxZoom?: number } = {},
+): GlobeFit | null {
+  const minZoom = opts.minZoom ?? 0;
+  const maxZoom = Math.max(minZoom, opts.maxZoom ?? 8);
   const pts = framePoints(frame);
   if (!pts.length) return null;
-  let center: LngLatTuple;
-  if (frame.arc.length > 1) center = pointAlong(frame.arc, 0.5)!;
+  const halfW = Math.max(30, (viewport.width - padding.left - padding.right) / 2);
+  const halfH = Math.max(30, (viewport.height - padding.top - padding.bottom) / 2);
+  const ends = frame.endpoints.map((e) => e.position);
+
+  // Candidate centres: points along the arc (or the spherical centroid), each with its latitude
+  // pulled toward the equator in steps.
+  const bases: LngLatTuple[] = [];
+  if (frame.arc.length > 1) for (let i = 0; i <= 20; i++) bases.push(pointAlong(frame.arc, 0.5 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.025)!);
   else {
     const s = pts.map(toVec).reduce((acc, v) => [acc[0] + v[0], acc[1] + v[1], acc[2] + v[2]] as [number, number, number], [0, 0, 0]);
     const n = Math.hypot(...s) || 1;
-    center = [Math.atan2(s[1], s[0]) / D2R, Math.asin(s[2] / n) / D2R];
+    bases.push([Math.atan2(s[1], s[0]) / D2R, Math.asin(s[2] / n) / D2R]);
   }
-  center = [((((center[0] + 180) % 360) + 360) % 360) - 180, center[1]];
-  const theta = Math.max(0.05, ...pts.map((p) => angleDeg(center, p)));
-  const avail = Math.max(60, Math.min(viewport.width - padding.left - padding.right, viewport.height - padding.top - padding.bottom) / 2);
-  const sinT = theta >= 90 ? 1 : Math.sin(theta * D2R);
-  const zoom = Math.log2((avail * 2 * Math.PI * Math.cos(center[1] * D2R)) / (TILE_PX * sinT));
-  return { center, zoom: Math.max(0, Math.min(maxZoom, zoom)) };
+  const candidates: LngLatTuple[] = [];
+  const SCALES = [1, 0.8, 0.6, 0.4, 0.2, 0];
+  for (const scale of SCALES) for (const [lng, lat] of bases) candidates.push([normLng(lng), lat * scale]);
+
+  const inView = (center: LngLatTuple, zoom: number, p: LngLatTuple) => {
+    const xy = globeProjector(center, zoom, viewport.height)(p);
+    return xy !== null && Math.abs(xy[0]) <= halfW && Math.abs(xy[1]) <= halfH;
+  };
+  const fitsAt = (center: LngLatTuple, zoom: number) => {
+    const project = globeProjector(center, zoom, viewport.height);
+    return pts.every((p) => {
+      const xy = project(p);
+      return xy !== null && Math.abs(xy[0]) <= halfW && Math.abs(xy[1]) <= halfH;
+    });
+  };
+
+  let best: (GlobeFit & { size: number }) | null = null;
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i]!;
+    if (fitsAt(c, minZoom)) {
+      // Fitting only gets easier as the globe shrinks: bisect the highest zoom that still fits.
+      let lo = minZoom;
+      let hi = maxZoom;
+      if (fitsAt(c, hi)) lo = hi;
+      else {
+        for (let k = 0; k < 14; k++) {
+          const mid = (lo + hi) / 2;
+          if (fitsAt(c, mid)) lo = mid;
+          else hi = mid;
+        }
+      }
+      // Rank by the globe's on-screen size (log2 of its px radius), not by the zoom number: a centre
+      // nearer the equator needs a higher zoom for the same size. Strictly better only (candidates
+      // are ordered midpoint-first).
+      const size = lo - Math.log2(Math.max(0.05, Math.cos(c[1] * D2R)));
+      if (!best || size > best.size + 0.01) best = { center: c, zoom: lo, fits: true, size };
+    }
+    // The least pulled-toward-the-equator latitude step that fits wins (the route stays centred in view).
+    if (best && (i + 1) % bases.length === 0) break;
+  }
+  if (best) return { center: best.center, zoom: best.zoom, fits: true };
+
+  // Cannot fit at the minimum zoom: keep the whole route on the visible hemisphere (both ends in
+  // front of the horizon), then show as much of it inside the padded viewport as possible.
+  let fallback: { c: LngLatTuple; score: number } | null = null;
+  for (const c of candidates) {
+    const project = globeProjector(c, minZoom, viewport.height);
+    const score = ends.filter((p) => project(p) !== null).length * 100_000 + pts.filter((p) => inView(c, minZoom, p)).length;
+    if (!fallback || score > fallback.score) fallback = { c, score };
+  }
+  return { center: fallback!.c, zoom: minZoom, fits: false };
 }

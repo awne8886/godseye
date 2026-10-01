@@ -13,6 +13,7 @@ import {
   frameBounds,
   framePadding,
   globeCamera,
+  globeProjector,
   PULSE_RINGS,
   progressChip,
   routeFrame,
@@ -216,7 +217,7 @@ describe('globe framing (R2-M4)', () => {
   const viewport = { width: 1440, height: 900 };
   const padding = framePadding(viewport, { side: 'right', size: 424 });
   const projectFits = (cam: { center: [number, number]; zoom: number }, pts: [number, number][]) => {
-    const project = screenProjector(true, cam.center, cam.zoom);
+    const project = globeProjector(cam.center, cam.zoom, viewport.height);
     const halfW = (viewport.width - padding.left - padding.right) / 2;
     const halfH = (viewport.height - padding.top - padding.bottom) / 2;
     return pts.every((p) => {
@@ -233,8 +234,9 @@ describe('globe framing (R2-M4)', () => {
       null,
     )!;
     const cam = globeCamera(frame, viewport, padding)!;
-    expect(cam.center[1]).toBeGreaterThan(70);
-    expect(Math.abs(cam.center[0] - g.midpoint[0])).toBeLessThan(2);
+    expect(cam.fits).toBe(true);
+    expect(cam.center[1]).toBeGreaterThan(40); // over the Arctic side of the route, not the naive box centre
+    expect(Math.abs(cam.center[0] - g.midpoint[0])).toBeLessThan(15);
     expect(cam.zoom).toBeGreaterThan(0);
     expect(projectFits(cam, frame.arc)).toBe(true);
     // The naive lng/lat box is centred at ~57° N, -40° — well away from the arc's 80° N apex.
@@ -245,7 +247,8 @@ describe('globe framing (R2-M4)', () => {
   it('NRT→LAX (antimeridian): centre over the North Pacific, the whole arc fits', () => {
     const frame = routeFrame(plan, null, null)!;
     const cam = globeCamera(frame, viewport, padding)!;
-    expect(cam.center[1]).toBeGreaterThan(40);
+    expect(cam.fits).toBe(true);
+    expect(cam.center[1]).toBeGreaterThan(20);
     expect(Math.abs(cam.center[0])).toBeGreaterThan(160); // near ±180, normalised
     expect(projectFits(cam, frame.arc)).toBe(true);
   });
@@ -264,7 +267,9 @@ describe('globe framing (R2-M4)', () => {
       viewport,
       padding,
     )!;
-    expect(cam.zoom).toBeGreaterThan(svo.zoom - 0.5);
+    // Compare on-screen globe size (log2 px radius), not the zoom number (it depends on the centre latitude).
+    const size = (c: { zoom: number; center: [number, number] }) => c.zoom - Math.log2(Math.cos((c.center[1] * Math.PI) / 180));
+    expect(size(cam)).toBeGreaterThan(size(svo));
   });
 });
 

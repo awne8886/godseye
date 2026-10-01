@@ -1,8 +1,10 @@
 /**
  * Live aircraft on an airport pair (GET /api/route/live, §8). Reads aviation's in-process flights
  * snapshot (never a second adsb.lol poller):
- *  - `matched`: the callsign is a VRS standing-data service for A→B (or B→A with reverse=1) and
- *    the aircraft is airborne inside the corridor (detour ≤ direct × 1.15 + 150 km);
+ *  - `matched`: the callsign is a VRS standing-data service on the pair (either way) and the
+ *    aircraft is airborne inside the corridor (detour ≤ direct × 1.15 + 150 km) with an observed
+ *    direction (`headingAlong`): flying A→B → forward; flying B→A → reverse, only with reverse=1
+ *    (round 3 M1: a DFW→JFK service seen inbound to DFW is never a forward DFW→JFK aircraft);
  *  - `inferred` (R2-M2): no callsign match AND no known route elsewhere (a VRS route for the
  *    callsign that is not this pair rejects it), not military / business / private / helicopter,
  *    not an all-cargo operator, not a short-range type on a long route; then the geometric
@@ -15,9 +17,10 @@ import type { z } from 'zod';
 import type { LngLatTuple } from '@/lib/geo';
 import type { LiveRouteAircraft } from '@/lib/schemas/flight-paths';
 import type { FlightRecord } from '@/features/aviation/adsb';
+import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { distanceKm } from '@/lib/geo';
 import { airlineCodeOf } from '@/features/aviation/classify';
-import { corridorReject, etaMs, onCorridor, progressOn } from '../lib/geometry';
+import { corridorReject, etaMs, flyingRoute, progressOn } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import type { AirportRecord, VrsIndex } from './data';
 import { icaoOf } from './plan';
@@ -82,9 +85,17 @@ export function aircraftOnRoute(
     const state = { lat: r.lat, lng: r.lng, altFt: r.altFt, gsKt: r.gsKt, trackDeg: r.trackDeg, vrFpm: r.vrFpm };
     let direction: LiveAircraft['direction'] | null = null;
     let basis: LiveAircraft['basis'] = 'matched';
-    if (r.callsign && fwd.has(r.callsign) && onCorridor(p, A, B)) direction = 'forward';
-    else if (r.callsign && rev.has(r.callsign) && onCorridor(p, B, A)) direction = 'reverse';
-    else {
+    // MATCHED needs the callsign AND the observed direction (M1): a forward service seen flying
+    // B→A is the reverse leg — counted there only when the reverse toggle is on, never forward.
+    const isFwd = !!r.callsign && fwd.has(r.callsign);
+    const isRev = !!r.callsign && rev.has(r.callsign);
+    if ((isFwd || isRev) && flyingRoute(state, A, B)) {
+      if (isFwd) direction = 'forward';
+    } else if ((isFwd || isRev) && opts.reverse && flyingRoute(state, B, A)) {
+      direction = 'reverse';
+    } else if (isFwd || isRev) {
+      continue;
+    } else {
       const known = r.callsign ? opts.vrs.chainOf.get(r.callsign) : undefined;
       if (inferReject(r, A, B, a, b, known) === null) [direction, basis] = ['forward', 'inferred'];
       else if (opts.reverse && inferReject(r, B, A, b, a, known) === null) [direction, basis] = ['reverse', 'inferred'];
@@ -114,4 +125,15 @@ export function aircraftOnRoute(
   return out
     .sort((x, y) => (x.direction === y.direction ? 0 : x.direction === 'forward' ? -1 : 1) || (x.basis === y.basis ? 0 : x.basis === 'matched' ? -1 : 1) || y.progress - x.progress)
     .slice(0, MAX_LIVE);
+}
+
+/**
+ * How much of the tile sweep the snapshot holds (round 3 m4: the first sweep after a start had
+ * 232 tiles of rows and was answered as a complete LIVE picture). Undefined without tile state.
+ */
+export function tileCoverage(snap: Pick<FlightsSnapshot, 'tiles'>): { tilesRead: number; tilesTotal: number; complete: boolean } | undefined {
+  const tiles = snap.tiles;
+  if (!Array.isArray(tiles) || !tiles.length) return undefined;
+  const tilesRead = tiles.filter((t) => t.ok && t.at !== null).length;
+  return { tilesRead, tilesTotal: tiles.length, complete: tilesRead === tiles.length };
 }

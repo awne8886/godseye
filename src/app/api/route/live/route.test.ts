@@ -116,6 +116,17 @@ describe('GET /api/route/live', () => {
     expect(dal).toMatchObject({ basis: 'matched', direction: 'reverse', etaTz: 'Europe/London' });
   });
 
+  it('reports partial tile coverage (first sweep after a start) instead of a complete picture', async () => {
+    const tiles = [{ at: Date.now(), ok: true, count: 3 }, { at: null, ok: false, count: 0 }, { at: Date.now(), ok: false, count: 0 }];
+    state.result = feed({ records: [], tiles } as unknown as FlightsSnapshot);
+    const body = RouteLiveResponse.parse(await (await call('?from=LHR&to=JFK')).json());
+    expect(body.aircraft).toEqual([]);
+    expect(body.coverage).toEqual({ tilesRead: 1, tilesTotal: 3, complete: false });
+    state.result = feed({ records, tiles: [{ at: Date.now(), ok: true, count: 9 }] } as unknown as FlightsSnapshot);
+    const full = RouteLiveResponse.parse(await (await call('?from=LHR&to=JFK')).json());
+    expect(full.coverage?.complete).toBe(true);
+  });
+
   it('503 SOURCE OFFLINE when the flights feed has no snapshot', async () => {
     state.result = feed(null);
     const res = await call('?from=LHR&to=JFK');
