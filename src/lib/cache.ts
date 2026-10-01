@@ -15,7 +15,7 @@
  * Owner: lead. Server-only.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { HttpError, errorReason } from './http';
 
@@ -152,13 +152,17 @@ export class FileStore implements SnapshotStore {
   readonly kind = 'filesystem' as const;
   private readonly locks = new LocalLocks();
   private writes = 0;
+  private sweeping: Promise<number> | null = null;
   /**
-   * Pinned feed snapshots live in `<dir>/pinned`; everything else (per-query caches) in `<dir>/lru`,
-   * swept every 200 writes: expired files deleted, then the oldest beyond `maxFiles`.
+   * Pinned feed snapshots live in `<dir>/pinned`; everything else (per-query caches) in `<dir>/lru`.
+   * A per-query file's mtime is set to its expiry, so a sweep (every 200 writes, never two at once)
+   * needs only `stat`: expired files go first, then the soonest-expiring beyond `maxFiles` or
+   * `maxBytes`. Entries larger than 1/16 of the byte budget are not cached on disk.
    */
   constructor(
     private readonly dir: string,
     private readonly maxFiles = Number(process.env.SNAPSHOT_MAX_FILES) || 20_000,
+    private readonly maxBytes = Number(process.env.SNAPSHOT_MAX_DISK_BYTES) || 1024 * 1024 * 1024,
   ) {}
 
   private file(key: string, pinned?: boolean) {
@@ -167,7 +171,14 @@ export class FileStore implements SnapshotStore {
   }
 
   /** Delete expired and excess per-query entries (never pinned feed snapshots). */
-  async sweep(now = Date.now()): Promise<number> {
+  sweep(now = Date.now()): Promise<number> {
+    this.sweeping ??= this.sweepOnce(now).finally(() => {
+      this.sweeping = null;
+    });
+    return this.sweeping;
+  }
+
+  private async sweepOnce(now: number): Promise<number> {
     const lru = path.join(this.dir, 'lru');
     let names: string[];
     try {
@@ -175,29 +186,29 @@ export class FileStore implements SnapshotStore {
     } catch {
       return 0;
     }
-    const live: { name: string; mtime: number }[] = [];
+    const live: { name: string; expires: number; size: number }[] = [];
     let removed = 0;
     for (const name of names) {
       const f = path.join(lru, name);
       try {
-        const raw = JSON.parse(await readFile(f, 'utf8')) as { expires: number };
-        if (raw.expires < now) {
+        const st = await stat(f);
+        if (st.mtimeMs < now) {
           await rm(f, { force: true });
           removed++;
-          continue;
-        }
-        live.push({ name, mtime: (await stat(f)).mtimeMs });
+        } else live.push({ name, expires: st.mtimeMs, size: st.size });
       } catch {
-        await rm(f, { force: true });
-        removed++;
+        /* removed concurrently */
       }
     }
-    if (live.length > this.maxFiles) {
-      live.sort((a, b) => a.mtime - b.mtime);
-      for (const { name } of live.slice(0, live.length - this.maxFiles)) {
-        await rm(path.join(lru, name), { force: true });
-        removed++;
-      }
+    live.sort((a, b) => a.expires - b.expires);
+    let bytes = live.reduce((n, e) => n + e.size, 0);
+    let count = live.length;
+    for (const e of live) {
+      if (count <= this.maxFiles && bytes <= this.maxBytes) break;
+      await rm(path.join(lru, e.name), { force: true });
+      count--;
+      bytes -= e.size;
+      removed++;
     }
     return removed;
   }
@@ -222,8 +233,12 @@ export class FileStore implements SnapshotStore {
     const pinned = !!opts.pinned;
     const target = this.file(key, pinned);
     await mkdir(path.dirname(target), { recursive: true });
+    const expires = Date.now() + retentionMs;
+    const body = JSON.stringify({ key, expires, v: value });
+    if (!pinned && body.length > this.maxBytes / 16) return; // too large for the per-query tier
     const tmp = `${target}.${randomUUID()}.tmp`;
-    await writeFile(tmp, JSON.stringify({ key, expires: Date.now() + retentionMs, v: value }));
+    await writeFile(tmp, body);
+    if (!pinned) await utimes(tmp, new Date(), new Date(expires)); // mtime = expiry (sweeps stat only)
     await rename(tmp, target);
     await rm(this.file(key, !pinned), { force: true });
     if (!pinned && ++this.writes % 200 === 0) void this.sweep().catch(() => undefined);

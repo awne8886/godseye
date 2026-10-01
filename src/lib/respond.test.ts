@@ -59,6 +59,16 @@ describe('response helpers', () => {
     expect(small.headers.get('content-encoding')).toBeNull();
   });
 
+  it('never serves a stale compressed body when per-request fields change within one ETag', async () => {
+    const mk = (age: number): FeedResult<number[]> => ({ data: Array.from({ length: 2000 }, (_, i) => i), meta: meta({ feed: 'cables-age' }), providers: { tg: { ok: true, count: 1, ms: 1, age_s: age } } });
+    const read = async (r: Response) => JSON.parse(zlib.brotliDecompressSync(Buffer.from(await r.arrayBuffer())).toString());
+    const h = { headers: { 'accept-encoding': 'br' } };
+    const a = await read(feedJson(new Request('http://x/', h), mk(0), (d) => ({ items: d })));
+    const b = await read(feedJson(new Request('http://x/', h), mk(308), (d) => ({ items: d })));
+    expect(a.providers.tg.age_s).toBe(0);
+    expect(b.providers.tg.age_s).toBe(308);
+  });
+
   it('shortens the edge TTL for stale snapshots', () => {
     const r = feedJson(new Request('http://x/'), { data: [1], meta: meta({ state: 'stale', stale: true, ttlSeconds: 900 }), providers: {} }, (d) => ({ items: d }));
     expect(r.headers.get('cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');

@@ -85,7 +85,7 @@ export default function ArcgisPanel(_: PanelProps) {
             <Import size={14} aria-hidden />
           </HudButton>
         </div>
-        <Prose>A public Feature/Map Server layer on an ArcGIS host (*.arcgis.com, *.arcgisonline.com, or a host the operator allows). Fetched by this server, up to 1000 features.</Prose>
+        <Prose>A public Feature/Map Server layer on an ArcGIS host (ArcGIS Online hosted services, *.arcgisonline.com, or a host the operator allows). Fetched by this server, up to 1000 features.</Prose>
       </form>
       {err && <ErrorLine error={err.error} detail={err.detail} />}
       {err?.providers && <ProviderChips providers={err.providers} />}

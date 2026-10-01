@@ -1,7 +1,7 @@
 /**
  * GET /api/arcgis?q= — search public Feature/Map Services on arcgis.com.
  * GET /api/arcgis?url=…/rest/services/…/(Feature|Map)Server[/n][&bbox=w,s,e,n] — import one layer
- * as GeoJSON from an allow-listed ArcGIS host (*.arcgis.com, *.arcgisonline.com, ARCGIS_ALLOWED_HOSTS);
+ * as GeoJSON from an allow-listed ArcGIS host (services[1-9].arcgis.com, *.arcgisonline.com, ARCGIS_ALLOWED_HOSTS);
  * URL rebuilt, allow-list + SSRF guard on every hop, FEATURE_CAP features. Owner: panels-recon.
  */
 import { z } from 'zod';
@@ -45,7 +45,7 @@ export const GET = withRoute('/api/arcgis', async (req: Request) => {
   try {
     ref = parseServiceUrl(q.data.url!);
     if (!isAllowedService(ref)) {
-      return apiError(403, 'host_not_allowed', `${new URL(ref.origin).host} is not an ArcGIS host this server imports from (*.arcgis.com, *.arcgisonline.com, or hosts the operator adds in ARCGIS_ALLOWED_HOSTS).`);
+      return apiError(403, 'host_not_allowed', `${new URL(ref.origin).host} is not an ArcGIS host this server imports from (ArcGIS Online hosted services, *.arcgisonline.com, or hosts the operator adds in ARCGIS_ALLOWED_HOSTS).`);
     }
     await assertPublicUrl(new URL(`${ref.origin}/`));
   } catch (e) {

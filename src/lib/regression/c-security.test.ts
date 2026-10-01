@@ -1,6 +1,6 @@
 // Phase 3 round 1 security audit regressions (cross-site POSTs, body caps, secret redaction,
 // IPv6 bucket keys, SSE and snapshot memory budgets).
-import { mkdtemp, readdir, rm, utimes } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -157,14 +157,13 @@ describe('snapshot store budgets', () => {
       const fs = new FileStore(dir, 3);
       await fs.set('feed', snap(10), 60_000, { pinned: true });
       await fs.set('old', snap(10), 1);
-      for (let i = 0; i < 5; i++) await fs.set(`q${i}`, snap(10), 60_000);
-      // Age the files so "oldest" is deterministic regardless of filesystem timestamp resolution.
-      const names = await readdir(path.join(dir, 'lru'));
-      let t = Date.now() / 1000 - 1000;
-      for (const n of names) await utimes(path.join(dir, 'lru', n), t, t++);
+      for (let i = 0; i < 5; i++) await fs.set(`q${i}`, snap(10), 60_000 + i * 1000);
+      await new Promise((r) => setTimeout(r, 5));
       const removed = await fs.sweep();
-      expect(removed).toBeGreaterThanOrEqual(3); // 'old' expired + 2 beyond maxFiles
+      expect(removed).toBe(3); // 'old' expired + the 2 soonest-expiring beyond maxFiles
       expect(await readdir(path.join(dir, 'lru'))).toHaveLength(3);
+      expect(await fs.get('q0')).toBeNull();
+      expect(await fs.get('q4')).not.toBeNull();
       expect(await fs.get('feed')).not.toBeNull();
       expect(await readdir(path.join(dir, 'pinned'))).toHaveLength(1);
       // Re-pinning a key moves it between tiers instead of leaving a stale twin behind.
@@ -172,6 +171,23 @@ describe('snapshot store budgets', () => {
       expect(await readdir(path.join(dir, 'pinned'))).toHaveLength(2);
       await fs.delete('q4');
       expect(await fs.get('q4')).toBeNull();
+    });
+
+    it('enforces a byte budget from stat alone, refuses oversized entries and never overlaps sweeps', async () => {
+      dir = await mkdtemp(path.join(os.tmpdir(), 'godseye-fs-'));
+      const fs = new FileStore(dir, 1000, 16 * 250); // per-entry cap 250 B; each entry is ~210 B
+      for (let i = 0; i < 20; i++) await fs.set(`q${i}`, snap(100), 60_000 + i * 1000);
+      await fs.set('huge', snap(5_000), 60_000); // > budget / 16: not cached on disk
+      expect(await fs.get('huge')).toBeNull();
+      const a = fs.sweep();
+      expect(fs.sweep()).toBe(a); // a second call joins the running sweep
+      await a;
+      const left = await readdir(path.join(dir, 'lru'));
+      let total = 0;
+      for (const n of left) total += (await stat(path.join(dir, 'lru', n))).size;
+      expect(total).toBeLessThanOrEqual(16 * 250);
+      expect(await fs.get('q19')).not.toBeNull();
+      expect(await fs.get('q0')).toBeNull();
     });
   });
 });

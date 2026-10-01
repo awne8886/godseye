@@ -1,7 +1,7 @@
 /**
  * ArcGIS catalogue search (www.arcgis.com, fixed host) and import of a public
  * …/rest/services/…/(Feature|Map)Server layer as GeoJSON from an ALLOW-LISTED ArcGIS host
- * (`*.arcgis.com`, `*.arcgisonline.com`, plus exact hosts the operator lists in
+ * (`services[1-9].arcgis.com`, `*.arcgisonline.com`, plus exact hosts the operator lists in
  * `ARCGIS_ALLOWED_HOSTS`). The user's URL is never proxied as is: it is parsed, checked against the
  * service-URL shape and the allow-list, and REBUILT to exactly
  * `<origin>/…/rest/services/<svc>/(Feature|Map)Server/<n>/query?…&f=geojson`, then fetched with
@@ -47,12 +47,14 @@ export function parseServiceUrl(raw: string): ServiceRef {
 
 /**
  * Built-in ArcGIS hosts. ArcGIS Online hosted services live at
- * `services<N>.arcgis.com/<orgId>/arcgis/rest/services/…` (the org id varies, so the directory prefix
+ * `services[1-9].arcgis.com/<orgId>/arcgis/rest/services/…` (the org id varies, so the directory prefix
  * is `/` and the service shape is enforced by SERVICE_RE on the rebuilt URL); Esri's own servers
  * (`services.arcgisonline.com`, `sampleserver6.arcgisonline.com`) serve `/arcgis/rest/services/…`.
  */
 export const BUILTIN_ARCGIS_RULES: readonly AllowRule[] = [
-  { host: '*.arcgis.com', pathPrefix: '/' },
+  // Explicit hosted-service hosts, not `*.arcgis.com`: utility.arcgis.com/usrsvcs is Esri's proxy to
+  // any origin an ArcGIS Online account registers, so a wildcard would reopen the SSRF path.
+  ...['services.arcgis.com', ...Array.from({ length: 9 }, (_, i) => `services${i + 1}.arcgis.com`)].map((host) => ({ host, pathPrefix: '/' })),
   { host: '*.arcgisonline.com', pathPrefix: '/arcgis/rest/services/' },
 ];
 

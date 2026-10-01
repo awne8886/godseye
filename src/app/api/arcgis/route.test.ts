@@ -4,7 +4,7 @@ import type * as RateLimitModule from '@/lib/ratelimit';
 import { ArcgisResponse } from '@/lib/schemas';
 import { fixture, upstream } from '@/components/panels/recon/__fixtures__/mock-http';
 import { error, freshState, get } from '@/components/panels/recon/__fixtures__/route-helpers';
-import { arcgisRules, FEATURE_CAP, isImportableUrl, parseServiceUrl, queryUrl } from '@/components/panels/recon/server/arcgis';
+import { arcgisRules, BUILTIN_ARCGIS_RULES, FEATURE_CAP, isImportableUrl, parseServiceUrl, queryUrl } from '@/components/panels/recon/server/arcgis';
 
 // Fixtures: arcgis.com search "earthquakes" and the USGS_Seismic_Data_v1 FeatureServer query, 2026-09-30.
 vi.mock('@/lib/http', async (orig) => (await import('@/components/panels/recon/__fixtures__/mock-http')).mockHttp(await orig<typeof HttpModule>()));
@@ -125,8 +125,10 @@ describe('GET /api/arcgis', () => {
 
   it('parses ARCGIS_ALLOWED_HOSTS as exact hosts (optional port), ignoring wildcards and junk', () => {
     const rules = arcgisRules({ ARCGIS_ALLOWED_HOSTS: 'GIS.Example.gov, maps.example.org:8443, *.evil.example, http://x.example, a' });
-    expect(rules.slice(2)).toEqual([{ host: 'gis.example.gov', pathPrefix: '/' }, { host: 'maps.example.org', pathPrefix: '/', port: '8443' }]);
+    expect(rules.slice(BUILTIN_ARCGIS_RULES.length)).toEqual([{ host: 'gis.example.gov', pathPrefix: '/' }, { host: 'maps.example.org', pathPrefix: '/', port: '8443' }]);
     expect(isImportableUrl(SVC, {})).toBe(true);
+    // Esri's per-account proxy is not a hosted-service host.
+    expect(isImportableUrl('https://utility.arcgis.com/usrsvcs/servers/abc/rest/services/x/FeatureServer/0', {})).toBe(false);
     expect(isImportableUrl('https://mapsdep.nj.gov/arcgis/rest/services/Features/Environmental_admin/MapServer', {})).toBe(false);
     expect(isImportableUrl('https://mapsdep.nj.gov/arcgis/rest/services/Features/Environmental_admin/MapServer', { ARCGIS_ALLOWED_HOSTS: 'mapsdep.nj.gov' })).toBe(true);
   });
