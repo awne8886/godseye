@@ -7,6 +7,7 @@ import type { Layer } from '@deck.gl/core';
 import { useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import { greatCircle } from '../lib/geometry';
+import { frameArea, globeProjector, mercatorProjector } from './framing';
 import RouteLayer from './RouteLayer';
 
 const gc = greatCircle([-0.461941, 51.4706], [-73.7781, 40.6413]);
@@ -34,10 +35,14 @@ type Handler = (e?: unknown) => void;
 function fakeMap(opts: { styleLoaded?: boolean; center?: [number, number] } = {}) {
   const handlers = new Map<string, Set<Handler>>();
   const on = (e: string, f: Handler) => void (handlers.get(e) ?? handlers.set(e, new Set()).get(e)!).add(f);
+  const container = document.createElement('div');
   const map = {
     style: { _loaded: opts.styleLoaded ?? true },
     getCenter: () => ({ lng: opts.center?.[0] ?? -30, lat: opts.center?.[1] ?? 50 }),
     getZoom: () => 2,
+    getContainer: () => container,
+    isMoving: () => false,
+    project: ([lng, lat]: [number, number]) => ({ x: lng, y: lat }),
     on,
     once: (e: string, f: Handler) => {
       const w: Handler = (x) => {
@@ -84,34 +89,57 @@ describe('RouteLayer', () => {
     await waitFor(() => expect(useDeckLayerStore.getState().entries['flight-paths']).toBeDefined());
     const layers = useDeckLayerStore.getState().entries['flight-paths']!.layers as Layer[];
     expect(layers.map((l) => l.id)).toContain('route-planned-arc');
-    await waitFor(() => expect(map.fitBounds).toHaveBeenCalledTimes(1));
-    const [bounds, opts] = map.fitBounds.mock.calls[0]! as [[[number, number], [number, number]], { padding: Record<string, number> }];
-    expect(bounds[0][0]).toBeCloseTo(-73.7781, 3); // west = JFK
-    expect(bounds[1][0]).toBeCloseTo(-0.461941, 3); // east = LHR
-    // Header row + margin on top, status bar + margin below, the 48 px left rail + margin (R2-M4).
-    expect(opts.padding).toMatchObject({ top: 104, left: 88, bottom: 68 });
-    expect(opts.padding.right).toBeGreaterThan(400); // docked PATHS panel
+    // Mercator is solved like the globe (round 4 m2): a north-up, pitch-0 camera whose padding puts
+    // the centre at the solved anchor (fitBounds kept the intro pitch and ignored the labels).
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(1));
+    expect(map.fitBounds).not.toHaveBeenCalled();
+    const [opts] = map.easeTo.mock.calls[0]! as [{ center: [number, number]; zoom: number; pitch: number; bearing: number; padding: Record<'top' | 'right' | 'bottom' | 'left', number> }];
+    expect(opts.pitch).toBe(0);
+    expect(opts.bearing).toBe(0);
+    // Header row + margin on top, status bar + margin below, the 48 px left rail + margin (R2-M4),
+    // the docked PATHS panel on the right: both ends land inside that box.
+    const area = frameArea({ width: window.innerWidth, height: window.innerHeight }, { side: 'right', size: 360 + 64 });
+    expect(area).toMatchObject({ top: 104, left: 88, bottom: window.innerHeight - 68 });
+    const anchor = [(opts.padding.left + window.innerWidth - opts.padding.right) / 2, (opts.padding.top + window.innerHeight - opts.padding.bottom) / 2];
+    const project = mercatorProjector(opts.center, opts.zoom);
+    for (const p of [planBody.origin, planBody.destination]) {
+      const [x, y] = project([p.lng, p.lat])!;
+      expect(anchor[0]! + x).toBeGreaterThanOrEqual(area.left);
+      expect(anchor[0]! + x).toBeLessThanOrEqual(area.right);
+      expect(anchor[1]! + y).toBeGreaterThanOrEqual(area.top);
+      expect(anchor[1]! + y).toBeLessThanOrEqual(area.bottom);
+    }
     // A rebuilt map (new instance) is framed again.
     const next = fakeMap({ center: [0, 0] });
     await act(async () => {
       useMapInstanceStore.setState({ map: next as never });
     });
-    await waitFor(() => expect(next.fitBounds).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(next.easeTo).toHaveBeenCalledTimes(1));
   });
 
-  it('on the globe a route is framed by its arc midpoint and angular extent, not a lng/lat box', async () => {
+  it('on the globe a route is framed by its arc through the perspective projection, not a lng/lat box', async () => {
     useUiStore.setState({ plannedRoute: { from: 'LHR', to: 'JFK' } });
     await act(async () => {
       mount();
     });
     await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(1));
     expect(map.fitBounds).not.toHaveBeenCalled();
-    const [opts] = map.easeTo.mock.calls[0]! as [{ center: [number, number]; zoom: number; padding: Record<string, number> }];
-    expect(opts.center[1]).toBeGreaterThan(50); // LHR–JFK arc bulges north of both ends
-    expect(opts.center[0]).toBeLessThan(-30);
-    expect(opts.center[0]).toBeGreaterThan(-45);
+    const [opts] = map.easeTo.mock.calls[0]! as [{ center: [number, number]; zoom: number; padding: Record<'top' | 'right' | 'bottom' | 'left', number> }];
+    // Centred over the North Atlantic, on the arc's side of both ends.
+    expect(opts.center[1]).toBeGreaterThan(40);
+    expect(opts.center[0]).toBeLessThan(-10);
+    expect(opts.center[0]).toBeGreaterThan(-70);
     expect(opts.zoom).toBeGreaterThan(0.5);
-    expect(opts.padding.right).toBeGreaterThan(400);
+    // Every arc vertex lands left of the docked panel and inside the HUD chrome.
+    const area = frameArea({ width: window.innerWidth, height: window.innerHeight }, { side: 'right', size: 360 + 64 });
+    const anchor = [(opts.padding.left + window.innerWidth - opts.padding.right) / 2, (opts.padding.top + window.innerHeight - opts.padding.bottom) / 2];
+    const project = globeProjector(opts.center, opts.zoom, window.innerHeight);
+    for (const p of gc.points) {
+      const xy = project(p as [number, number])!;
+      expect(xy).not.toBeNull();
+      expect(anchor[0]! + xy[0]).toBeLessThanOrEqual(area.right + 1);
+      expect(anchor[0]! + xy[0]).toBeGreaterThanOrEqual(area.left - 1);
+    }
   });
 
   it('the globe camera never asks for less than the map minimum zoom (round 3 M2)', async () => {
@@ -122,8 +150,9 @@ describe('RouteLayer', () => {
       mount();
     });
     await waitFor(() => expect(m.easeTo).toHaveBeenCalledTimes(1));
-    const [opts] = m.easeTo.mock.calls[0]! as [{ zoom: number }];
-    expect(opts.zoom).toBeGreaterThanOrEqual(1.2);
+    const [opts] = m.easeTo.mock.calls[0]! as [{ zoom: number; center: [number, number] }];
+    // MapLibre's globe minimum zoom is latitude-adjusted (the globe keeps its minimum size).
+    expect(opts.zoom).toBeGreaterThanOrEqual(1.2 + Math.log2(Math.cos((opts.center[1] * Math.PI) / 180)));
     await waitFor(() => expect(document.querySelector('[data-testid="flight-paths-status"]')?.getAttribute('data-fit')).toBe('full'));
   });
 

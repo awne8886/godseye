@@ -1,12 +1,14 @@
 // @vitest-environment node
 /**
- * Round 3b: compact live chip (R3-m3), endpoint label offsets (R3-m4) and fit padding around the
- * measured chrome — phone sheet (R3-m5) and the view-controls bar (R3-m9). Pure functions, no DOM.
+ * Round 3b: compact live chip (R3-m3), endpoint label offsets (R3-m4) and the framing area around
+ * the edge chrome — phone sheet (R3-m5) and the left rail / docked panel (R3-m9). Pure functions,
+ * no DOM. The overlay-aware placement (chips, attribution, view controls) is in framing.test.ts.
  */
 import { describe, expect, it } from 'vitest';
 import { liveChip, liveCounts } from './PathsPanel';
+import { frameArea, PHONE_FRAME_MARGIN_PX } from './framing';
 import { sheetOccupiedPx, sheetRect } from './insets';
-import { endpointLabelOffset, framePadding, LABEL_GAP_X_PX, LABEL_GAP_Y_PX, OBSTACLE_CLEAR_PX, padForObstacles } from './layers';
+import { endpointLabelOffset, LABEL_GAP_X_PX, LABEL_GAP_Y_PX } from './layers';
 
 const M = { basis: 'matched' as const };
 const I = { basis: 'inferred' as const };
@@ -42,46 +44,21 @@ describe('endpoint label offset (R3-m4)', () => {
   });
 });
 
-describe('fit padding around measured chrome (R3-m5, R3-m9)', () => {
-  it('raises the bottom padding over the desktop bottom-left view-controls bar', () => {
-    const vp = { width: 1600, height: 1000 };
-    const base = framePadding(vp, { side: 'right', size: 424 });
-    // ViewControls: md:bottom-[100px] md:left-[120px], ~375 × 42 px.
-    const controls = { left: 120, top: 858, right: 495, bottom: 900 };
-    const p = framePadding(vp, { side: 'right', size: 424 }, [controls]);
-    expect(p.bottom).toBe(1000 - 858 + OBSTACLE_CLEAR_PX);
-    expect({ ...p, bottom: base.bottom }).toEqual(base); // other edges untouched
+describe('framing area around the edge chrome (R3-m5, R3-m9)', () => {
+  it('desktop: header band, status bar and the 48 px left rail plus 40 px, the docked panel on the right', () => {
+    expect(frameArea({ width: 1600, height: 1000 }, { side: 'right', size: 424 })).toEqual({ left: 88, top: 104, right: 1600 - 464, bottom: 1000 - 68 });
   });
 
-  it('raises the top padding over the phone top-left controls and the bottom over the sheet + lifted attribution', () => {
+  it('phone: a 16 px margin and the sheet at its published height, else its 55vh CSS bound', () => {
     const vp = { width: 390, height: 844 };
     const occupied = sheetOccupiedPx('', vp.height); // not yet published → CSS bound 56 + 55vh
     expect(occupied).toBe(Math.round(56 + 844 * 0.55));
-    const sheet = sheetRect(vp, occupied);
-    const controls = { left: 12, top: 64, right: 320, bottom: 116 };
-    const attribution = { left: 40, top: sheet.top - 50, right: 390, bottom: sheet.top - 4 };
-    const p = framePadding(vp, null, [attribution, controls, sheet]);
-    expect(p.top).toBe(116 + OBSTACLE_CLEAR_PX);
-    // Sheet first (largest), then the attribution adds only its own height on the same edge.
-    const free = vp.height - p.top - p.bottom;
-    expect(free).toBeGreaterThanOrEqual(Math.floor(vp.height * 0.2));
-    expect(p.bottom).toBeGreaterThan(occupied);
-  });
-
-  it('uses the published sheet height when PanelHost has written it', () => {
+    const area = frameArea(vp, { side: 'bottom', size: occupied });
+    expect(area.top).toBe(64 + PHONE_FRAME_MARGIN_PX);
+    expect(area.left).toBe(PHONE_FRAME_MARGIN_PX);
+    expect(area.bottom).toBeLessThanOrEqual(sheetRect(vp, occupied).top - PHONE_FRAME_MARGIN_PX);
+    // The published value wins once PanelHost has written it.
     expect(sheetOccupiedPx('410px', 844)).toBe(410);
-    const vp = { width: 390, height: 844 };
-    const p = framePadding(vp, null, [sheetRect(vp, 410)]);
-    expect(p.bottom).toBe(410 + OBSTACLE_CLEAR_PX);
-  });
-
-  it('ignores chrome outside the free area and never over-pads an axis', () => {
-    const vp = { width: 1440, height: 900 };
-    const base = framePadding(vp, null);
-    // A box inside the status-bar strip is already clear.
-    expect(padForObstacles(vp, base, [{ left: 400, top: 880, right: 900, bottom: 900 }])).toEqual(base);
-    // A huge box cannot squeeze the free area below 20 %.
-    const p = padForObstacles(vp, base, [{ left: 0, top: 100, right: 1440, bottom: 900 }]);
-    expect(vp.height - p.top - p.bottom).toBeGreaterThanOrEqual(Math.floor(vp.height * 0.2) - 1);
+    expect(frameArea(vp, { side: 'bottom', size: 410 }).bottom).toBe(844 - 410 - PHONE_FRAME_MARGIN_PX);
   });
 });
