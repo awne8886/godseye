@@ -52,7 +52,7 @@ response carries that `providers` map. A provider whose capability or licence ga
 
 Backends: `MemoryStore` (default), `FileStore` (`SNAPSHOT_DIR`, survives restarts; pinned feed
 snapshots and per-query entries live apart, expired and excess per-query files are swept, bounded by
-`SNAPSHOT_MAX_FILES`; `MemoryStore` bounds per-query entries by `SNAPSHOT_MEMORY_MAX_BYTES`) and `RedisStore` (`REDIS_URL`; shares snapshots, locks and rate limits across instances).
+`SNAPSHOT_MAX_FILES` and `SNAPSHOT_MAX_DISK_BYTES`; `MemoryStore` bounds per-query entries by `SNAPSHOT_MEMORY_MAX_BYTES`) and `RedisStore` (`REDIS_URL`; shares snapshots, locks and rate limits across instances).
 `SNAPSHOT_STORE=memory|filesystem|redis` forces one. Snapshots are kept for 24 h or 20 × TTL by default, so
 a failing source is shown as stale with its last-good time rather than as empty.
 

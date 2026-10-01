@@ -1,7 +1,7 @@
 /**
  * ArcGIS catalogue search (www.arcgis.com, fixed host) and import of a public
  * …/rest/services/…/(Feature|Map)Server layer as GeoJSON from an ALLOW-LISTED ArcGIS host
- * (`services[1-9].arcgis.com`, `*.arcgisonline.com`, plus exact hosts the operator lists in
+ * (`services.arcgis.com`, `services[1-9].arcgis.com`, `*.arcgisonline.com`, plus exact hosts the operator lists in
  * `ARCGIS_ALLOWED_HOSTS`). The user's URL is never proxied as is: it is parsed, checked against the
  * service-URL shape and the allow-list, and REBUILT to exactly
  * `<origin>/…/rest/services/<svc>/(Feature|Map)Server/<n>/query?…&f=geojson`, then fetched with

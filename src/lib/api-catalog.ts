@@ -153,7 +153,7 @@ export const API_CATALOG = [
     forwardsUserInput: false, example: '?region=us-west', osiris: true, owner: 'layers-surveillance',
   },
   { method: 'GET', path: '/api/cctv/providers', group: 'surveillance', summary: 'Camera provider registry rows (operator, licence, attribution, terms)', params: [], ttlSeconds: 300, responseSchema: 'CameraProvidersResponse', upstreams: [], forwardsUserInput: false, osiris: false, owner: 'layers-surveillance' },
-  { method: 'GET', path: '/api/cctv/proxy', group: 'surveillance', summary: 'Stills-only frame proxy (exact-prefix allow-list, no storage)', params: [q('id', 'string', true, 'Camera id from the catalogue', 'hktd-H429F')], ttlSeconds: 5, responseSchema: 'image/*', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
+  { method: 'GET', path: '/api/cctv/proxy', group: 'surveillance', summary: 'Stills-only frame proxy (exact-prefix allow-list, no storage)', params: [q('id', 'string', true, 'Camera id from the catalogue', 'hktd-H429F')], ttlSeconds: 60, responseSchema: 'image/*', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
   { method: 'GET', path: '/api/cctv/resolve', group: 'surveillance', summary: 'Resolve a camera to its playable stream', params: [q('id', 'string', true, 'Camera id')], ttlSeconds: 300, responseSchema: 'CameraResolveResponse', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
   { method: 'GET', path: '/api/cctv/stream-status', group: 'surveillance', summary: 'Probe whether a camera stream is online', params: [q('id', 'string', true, 'Camera id')], ttlSeconds: 60, responseSchema: 'StreamStatusResponse', upstreams: ['(camera operators, allow-listed)'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
   { method: 'GET', path: '/api/cctv/texas/snapshot', group: 'surveillance', summary: 'TxDOT camera snapshot (stills)', params: [q('id', 'string', true, 'TxDOT camera id')], ttlSeconds: 60, responseSchema: 'image/*', upstreams: ['its.txdot.gov'], forwardsUserInput: false, osiris: true, owner: 'layers-surveillance' },
@@ -258,8 +258,8 @@ export const API_CATALOG = [
   },
   {
     method: 'GET', path: '/api/arcgis', group: 'geo', summary: 'ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/services/…/(Feature|Map)Server/<n>/query, SSRF-guarded)',
-    params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, '…/rest/services/…/(Feature|Map)Server[/n] on services[1-9].arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS'), q('bbox', 'string', false, 'west,south,east,north')],
-    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', 'services[1-9].arcgis.com', '*.arcgisonline.com', '(ARCGIS_ALLOWED_HOSTS)'], forwardsUserInput: true, osiris: true, rateLimit: { limit: 20, windowS: 60 }, owner: 'panels-recon',
+    params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, '…/rest/services/…/(Feature|Map)Server[/n] on services[1-9].arcgis.com, services.arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS'), q('bbox', 'string', false, 'west,south,east,north')],
+    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', 'services.arcgis.com', 'services[1-9].arcgis.com', '*.arcgisonline.com', '(ARCGIS_ALLOWED_HOSTS)'], forwardsUserInput: true, osiris: true, rateLimit: { limit: 20, windowS: 60 }, owner: 'panels-recon',
   },
 
   // ── flight paths ───────────────────────────────────────────────────────────────

@@ -56,6 +56,12 @@ a header comment naming the OSIRIS source file:
   src/lib/map/night-lights.ts               terrain-tiles.ts (fetch queue ideas)
   src/lib/map/view.ts                       map-projection.ts, OsirisMap.tsx
                                             (projection ease, context attempts)
+  src/features/aviation/adsb.ts             src/app/api/flights/route.ts (row rules)
+  src/features/aviation/server/route-lookup.ts
+                                            flight-route plausibility rules
+  src/features/flight-paths/lib/geometry.ts corridor rules
+  src/features/surveillance/server/live-news.ts
+                                            embed_allowed split
 
 Other bundled data with a notice requirement:
   public/data/airports*.json                time zones from mwgg/Airports

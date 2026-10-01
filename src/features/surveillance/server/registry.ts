@@ -373,7 +373,7 @@ export const NOT_WIRED_SOURCES: readonly { id: string; operator: string; region:
     operator: 'Ministry of Land, Infrastructure, Transport and Tourism (MLIT) river cameras',
     region: 'Japan',
     country: 'JP',
-    reason: 'No machine-readable camera catalogue (cam.river.go.jp publishes images only; OSIRIS hard-codes 51 entries). Hand-copied camera lists are not shipped.',
+    reason: 'No machine-readable camera catalogue (cam.river.go.jp publishes images only; other tools hard-code a list). Hand-copied camera lists are not shipped.',
     probedAt: '2026-10-01',
   },
 ];

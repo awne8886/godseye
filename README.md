@@ -108,7 +108,7 @@ variables.
 | `SNAPSHOT_MEMORY_MAX_BYTES`, `SNAPSHOT_MAX_FILES`, `SNAPSHOT_MAX_DISK_BYTES` | Bounds for per-query cache entries in the memory (default 256 MB) and filesystem (default 20000 files, 1 GB) stores; feed snapshots are never evicted. |
 | `PHOTON_URL`, `NOMINATIM_URL` | Self-hosted geocoders instead of the public demo servers. |
 | `VALHALLA_URL`, `OSRM_URL` | Self-hosted routing engines. |
-| `ARCGIS_ALLOWED_HOSTS` | Extra ArcGIS servers `/api/arcgis` may import from (exact hosts, https only); ArcGIS Online hosted services (`services[1-9].arcgis.com`) and `*.arcgisonline.com` are built in. |
+| `ARCGIS_ALLOWED_HOSTS` | Extra ArcGIS servers `/api/arcgis` may import from (exact hosts, https only); ArcGIS Online hosted services (`services.arcgis.com`, `services[1-9].arcgis.com`) and `*.arcgisonline.com` are built in. |
 
 ### Upgrades by capability
 
