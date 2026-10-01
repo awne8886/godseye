@@ -127,7 +127,7 @@ export function issLabelLayer(p: [number, number, number], color: Rgba): TextLay
     characterSet: ISS_LABEL_CHARSET,
     getPixelOffset: [0, -12],
     billboard: true,
-    parameters: { cullMode: 'none' },
+    parameters: { cullMode: 'none', depthCompare: 'always' },
     pickable: false,
   });
 }

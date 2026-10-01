@@ -54,7 +54,7 @@ function countLabelLayer<T>(id: string, groups: readonly Colocated<T>[], token: 
     getTextAnchor: 'middle',
     getAlignmentBaseline: 'center',
     billboard: true,
-    parameters: { cullMode: 'none' },
+    parameters: { cullMode: 'none', depthCompare: 'always' },
     pickable: false,
   });
 }

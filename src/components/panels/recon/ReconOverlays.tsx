@@ -6,11 +6,12 @@
  * events to add vertices (double-click / Enter finishes, Esc cancels). Colours come from
  * `--map-directions*` tokens. Owner: panels-recon.
  */
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import type { LayersList } from '@deck.gl/core';
 import type { MapMouseEvent } from 'maplibre-gl';
 import { useDeckLayers, useMapInstance } from '@/lib/layer-host';
+import { getFarSideCamera, isFacing, type FarSideCamera } from '@/lib/map/far-side';
 import { readCssColor } from '@/lib/tokens';
 import { useOverlayStore, nextId } from './overlay-store';
 import { circlePolygon, distanceM, type DrawFeature } from '../draw/geometry';
@@ -18,6 +19,9 @@ import { circlePolygon, distanceM, type DrawFeature } from '../draw/geometry';
 /** Above basemap-ish layers, below live entities. */
 const Z = 45;
 const GLOBE = { cullMode: 'none' } as const;
+/** Billboard points: never half-hidden by the globe's depth; the far-side filter hides the back side. */
+const POINTS = { cullMode: 'none', depthCompare: 'always' } as const;
+const facing = (pts: readonly [number, number][], cam: FarSideCamera | null) => pts.filter((p) => isFacing(p, cam));
 
 function useDrawInteraction() {
   const map = useMapInstance();
@@ -77,8 +81,24 @@ function useDrawInteraction() {
   }, [map, mode]);
 }
 
+/** Re-evaluates the far-side filter after each camera move. */
+function useMoveEndTick(): number {
+  const map = useMapInstance();
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!map) return;
+    const on = () => setTick((t) => t + 1);
+    map.on('moveend', on);
+    return () => {
+      map.off('moveend', on);
+    };
+  }, [map]);
+  return tick;
+}
+
 export default function ReconOverlays() {
   useDrawInteraction();
+  const tick = useMoveEndTick();
   const route = useOverlayStore((s) => s.route);
   const features = useOverlayStore((s) => s.features);
   const sketch = useOverlayStore((s) => s.sketch);
@@ -86,6 +106,8 @@ export default function ReconOverlays() {
   const arcgis = useOverlayStore((s) => s.arcgis);
 
   const layers = useMemo<LayersList | null>(() => {
+    // The camera as of the last moveend (`tick`), for the far-side filter on billboard points.
+    const cam = tick >= 0 ? getFarSideCamera() : null;
     const out: LayersList = [];
     for (const l of arcgis) {
       if (!l.visible) continue;
@@ -142,13 +164,13 @@ export default function ReconOverlays() {
         }),
         new ScatterplotLayer<[number, number]>({
           id: 'recon-sketch-vertices',
-          data: sketch,
+          data: facing(sketch, cam),
           getPosition: (d) => d,
           getRadius: 4,
           radiusUnits: 'pixels',
           billboard: true,
           getFillColor: readCssColor('--map-directions-active', 1),
-          parameters: GLOBE,
+          parameters: POINTS,
         }),
       );
     }
@@ -192,7 +214,7 @@ export default function ReconOverlays() {
         }),
         new ScatterplotLayer<[number, number]>({
           id: 'recon-route-stops',
-          data: route.stops,
+          data: facing(route.stops, cam),
           getPosition: (d) => d,
           getRadius: 6,
           radiusUnits: 'pixels',
@@ -202,12 +224,12 @@ export default function ReconOverlays() {
           getLineColor: readCssColor('--map-directions-casing', 1),
           lineWidthUnits: 'pixels',
           getLineWidth: 2,
-          parameters: GLOBE,
+          parameters: POINTS,
         }),
       );
     }
     return out.length ? out : null;
-  }, [route, features, sketch, mode, arcgis]);
+  }, [route, features, sketch, mode, arcgis, tick]);
 
   useDeckLayers('panels-recon', layers, Z);
   return null;
