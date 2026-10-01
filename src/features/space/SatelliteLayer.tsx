@@ -23,6 +23,7 @@ import { hitTestSatellites, latestLngLat } from './client/pick';
 import { registerDeckPick, registerHitTester, type DeckPickInfo } from '@/lib/map/picking';
 import { catalogue, fetchOrbit, indexOfId, orbitQueryKey, recordAt, selectionDataFor, setCatalogue, useSpaceStore, type SatelliteSelectionData } from './client/data';
 import type { SatCategory } from '@/lib/types';
+import { hudFontFamily } from '@/lib/tokens';
 
 const REFRESH_MS = 120 * 60_000;
 /** After a failed catalogue load (SOURCE OFFLINE), ask again after this long. */
@@ -287,7 +288,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
           getText: () => 'ISS',
           getColor: readCssColor('--map-sat-science', 1),
           getSize: 11,
-          fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+          fontFamily: hudFontFamily(),
           getPixelOffset: [0, -12],
           billboard: true,
           parameters: { cullMode: 'none' },

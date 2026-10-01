@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
 import { useSelectionStore } from '@/lib/layer-host';
+import { hudFontFamily } from '@/lib/tokens';
 import type { EntityGraphResponse } from '@/lib/types';
 import { FeedOfflineError, getJson, safeHref } from '../intel/client';
 import { seedPosition, step, type LayoutNode } from './layout';
@@ -102,7 +103,7 @@ export function GraphPanel(_: PanelProps) {
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
       }
-      ctx.font = '10px JetBrains Mono, monospace';
+      ctx.font = `10px ${hudFontFamily()}`;
       for (const n of nodes) {
         const p = pos.get(n.id);
         if (!p) continue;

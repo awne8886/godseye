@@ -6,6 +6,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { CandlestickSeries, createChart, type IChartApi, type UTCTimestamp } from 'lightweight-charts';
 import { useEffect, useRef, useState } from 'react';
+import { hudFontFamily } from '@/lib/tokens';
 import type { MarketHistoryResponse, MarketRange } from '@/lib/types';
 import { FeedOfflineError, getJson } from '../intel/client';
 
@@ -28,7 +29,7 @@ export default function MarketChart({ symbol, name }: { symbol: string; name: st
     if (!el || !q.data?.candles.length) return;
     const chart = createChart(el, {
       height: 180,
-      layout: { background: { color: 'transparent' }, textColor: cssVar('--text-secondary', el), fontFamily: 'JetBrains Mono, monospace', fontSize: 10 },
+      layout: { background: { color: 'transparent' }, textColor: cssVar('--text-secondary', el), fontFamily: hudFontFamily(el), fontSize: 10 },
       grid: { vertLines: { color: cssVar('--border-secondary', el) }, horzLines: { color: cssVar('--border-secondary', el) } },
       timeScale: { timeVisible: range === '24H' || range === '1W', borderColor: cssVar('--border-secondary', el) },
       rightPriceScale: { borderColor: cssVar('--border-secondary', el) },

@@ -159,6 +159,18 @@ export function readCssColor(token: MapToken, alpha = 1, el?: Element): Rgba {
   return parseCssColor(raw, alpha) ?? resolveViaCanvas(raw, alpha) ?? fallback;
 }
 
+const HUD_FONT_FALLBACK = "'JetBrains Mono', ui-monospace, monospace";
+
+/**
+ * The HUD monospace stack for canvas/deck text (`ctx.font`, TextLayer `fontFamily`). The bundled
+ * font is registered under a generated family name (next/font/local), so read the resolved
+ * `--font-hud` instead of naming "JetBrains Mono", which no @font-face declares.
+ */
+export function hudFontFamily(el?: Element): string {
+  if (typeof window === 'undefined') return HUD_FONT_FALLBACK;
+  return getComputedStyle(el ?? document.documentElement).getPropertyValue('--font-hud').trim() || HUD_FONT_FALLBACK;
+}
+
 /** Composite a translucent colour over an opaque background (for contrast checks on glass). */
 export function compositeOver(fg: Rgba, bgHex: string): string {
   const bg = hexToRgba(bgHex);

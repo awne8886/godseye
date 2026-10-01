@@ -18,7 +18,7 @@ import { LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/laye
 import type { LayersList } from '@deck.gl/core';
 import type { LngLatTuple } from '@/lib/geo';
 import { getFarSideCamera, isFacing } from '@/lib/map/far-side';
-import { hexToRgba, parseCssColor, readCssColor, UI_TOKENS, type MapToken, type Rgba } from '@/lib/tokens';
+import { hexToRgba, hudFontFamily, parseCssColor, readCssColor, UI_TOKENS, type MapToken, type Rgba } from '@/lib/tokens';
 import { dashPieces, intoFrame, nearLng, pathBounds, pathIntoFrame, pointAlong, unwrapPath } from '../lib/geometry';
 import type { Flight, Live, Plan } from './api';
 
@@ -273,7 +273,7 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
           getColor: filedColor,
           getSize: 10,
           getPixelOffset: [0, -11],
-          fontFamily: 'JetBrains Mono, monospace',
+          fontFamily: hudFontFamily(),
           billboard: true,
           parameters: { ...NO_CULL, depthCompare: 'always' },
           updateTriggers: trigger,
@@ -336,7 +336,7 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         getBorderColor: color('--map-airport-watch', 0.6),
         getBorderWidth: 1,
         backgroundPadding: [4, 2],
-        fontFamily: 'JetBrains Mono, monospace',
+        fontFamily: hudFontFamily(),
         fontWeight: 600,
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
@@ -426,7 +426,7 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
           backgroundPadding: [4, 2],
           getSize: 10,
           getPixelOffset: [0, 20],
-          fontFamily: 'JetBrains Mono, monospace',
+          fontFamily: hudFontFamily(),
           billboard: true,
           parameters: { ...NO_CULL, depthCompare: 'always' },
           updateTriggers: { ...trigger, getBackgroundColor: [o.theme], getBorderColor: [o.theme] },

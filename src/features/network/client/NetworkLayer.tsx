@@ -13,7 +13,7 @@ import type { LayerComponentProps } from '@/lib/feature-module';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
 import type { DeckPickInfo } from '@/lib/map/picking';
-import { readCssColor } from '@/lib/tokens';
+import { readCssColor, hudFontFamily } from '@/lib/tokens';
 import type { AttackOrigin, AttackOriginsResponse, C2Response, C2Server, CablesResponse, FeedEvent, FeedMeta, KevResponse, LandingPoint, MalwareHost, Outage, OutagesResponse, Providers, ThreatFoxResponse, ThreatIndicator } from '@/lib/types';
 import { countryByIso2 } from '../../threats/shared/country';
 import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
@@ -49,7 +49,7 @@ function countLabelLayer<T>(id: string, groups: readonly Colocated<T>[], token: 
     getText: (g) => String(g.items.length),
     getSize: 10,
     getColor: readCssColor(token, 1),
-    fontFamily: 'JetBrains Mono, ui-monospace, monospace',
+    fontFamily: hudFontFamily(),
     fontWeight: 600,
     getTextAnchor: 'middle',
     getAlignmentBaseline: 'center',
