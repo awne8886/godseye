@@ -43,6 +43,9 @@ describe('aviation frame', () => {
       selectedId: null, cells: [{ hex: '831f1dfffffffff', count: 3 }], toSelection: aircraftSelection,
     }) as { id: string }[];
     expect(layers.map((l) => l.id)).toEqual(['aviation-trails', 'aviation-h3', 'aviation-emergency', 'aviation-highlight']);
+    const trails = layers[0] as unknown as { props: { antialiasing?: boolean; parameters?: { cullMode?: string } } };
+    expect(trails.props.antialiasing).toBe(true);
+    expect(trails.props.parameters?.cullMode).toBe('none');
     expect(buildLayers({ frame: newFrame([]), view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 0, dataVersion: 0, colorMode: 'bucket', theme: 'HORUS', watched: [], tracks: new Map(), selectedId: null, cells: null, toSelection: aircraftSelection })).toBeNull();
   });
 

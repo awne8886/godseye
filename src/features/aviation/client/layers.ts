@@ -391,6 +391,8 @@ export function buildLayers(o: BuildOptions): LayersList | null {
         widthUnits: 'pixels',
         capRounded: true,
         jointRounded: true,
+        // Globe rules: no culling, analytic AA (MapLibre's context has antialias off; R1 m8).
+        antialiasing: true,
         parameters: { cullMode: 'none' },
         updateTriggers: { getPath: [o.tick], getColor: [o.theme] },
       }),

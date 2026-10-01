@@ -31,6 +31,12 @@ describe('pickLeg: weighted score, not a yes/no direction gate (R2 round 4 BLOCK
     expect(leg(get('DAL571'))).toBe('KSAN-KBOS');
   });
 
+  it('the same two aircraft probed again at 06:07Z (api.adsb.lol /v2/callsign) cruise east: legs confirmed', () => {
+    const at = (cs: string, lat: number, lng: number, tr: number) => pickLeg(get(cs).airports.map(ap), [lng, lat], tr).map((a) => a.icao).join('-');
+    expect(at('DAL709', 35.893172, -110.561673, 65.97)).toBe('KSAN-KJFK');
+    expect(at('DAL571', 35.917752, -111.019242, 65.1)).toBe('KSAN-KBOS');
+  });
+
   it('AFR832 (LFPG-DNAA-DXXX-LFPG) on final into CDG, track 265: DXXX→LFPG', () => {
     expect(leg(get('AFR832'))).toBe('DXXX-LFPG');
   });
