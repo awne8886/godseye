@@ -9,7 +9,7 @@ import { useOverlayStore } from '../recon/overlay-store';
 
 afterEach(() => {
   cleanup();
-  useOverlayStore.getState().setDrawMode(null);
+  useOverlayStore.setState({ drawMode: null, sketch: [], features: [] });
 });
 
 describe('DrawPanel tool buttons', () => {

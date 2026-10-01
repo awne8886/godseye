@@ -21,7 +21,7 @@ export function HudButton({ tone = 'gold', pressed, className, ...rest }: Button
       {...rest}
       style={{ color, borderColor: pressed ? color : undefined, ...rest.style }}
       className={cx(
-        'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md [&>svg]:shrink-0 border border-[var(--border-secondary)] px-2.5 font-mono text-[11px] uppercase tracking-[0.08em] tabular-nums hover:bg-[var(--bg-tertiary)] disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-11',
+        'inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md [&>svg]:shrink-0 border border-[var(--border-secondary)] px-2.5 font-mono text-[11px] uppercase tracking-[0.08em] tabular-nums hover:bg-[var(--bg-tertiary)] disabled:cursor-not-allowed disabled:opacity-50 max-md:min-h-11 [@media(max-height:499px)_and_(orientation:landscape)]:min-h-11',
         pressed && 'bg-[var(--bg-tertiary)]',
         FOCUS,
         className,
@@ -35,7 +35,7 @@ export function HudInput({ className, ...rest }: InputHTMLAttributes<HTMLInputEl
     <input
       {...rest}
       className={cx(
-        'min-h-9 w-full rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-2.5 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] max-md:min-h-11',
+        'min-h-9 w-full rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-2.5 font-mono text-[12px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] max-md:min-h-11 [@media(max-height:499px)_and_(orientation:landscape)]:min-h-11',
         FOCUS,
         className,
       )}

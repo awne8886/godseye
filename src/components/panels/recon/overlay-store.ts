@@ -6,7 +6,7 @@
  */
 import { create } from 'zustand';
 import type { DirectionsResponse } from '@/lib/types';
-import type { DrawFeature, DrawShape } from '../draw/geometry';
+import { circlePolygon, distanceM, sketchFeature, type DrawFeature, type DrawShape } from '../draw/geometry';
 
 export interface ArcgisLayer {
   id: string;
@@ -34,8 +34,18 @@ interface OverlayState {
   /** Vertices of the shape being drawn ([lng, lat]). */
   sketch: [number, number][];
   features: DrawFeature[];
+  /**
+   * Switch tool (null = stop). A line/polygon sketch that can be finished is kept as a shape
+   * first; work is only ever discarded by cancelSketch (CANCEL / Esc).
+   */
   setDrawMode: (m: DrawShape | null) => void;
   setSketch: (s: [number, number][]) => void;
+  /** FINISH (button, double-click, Enter): commit a line (≥ 2) / polygon (≥ 3) sketch; the tool stays armed. */
+  finishSketch: () => DrawFeature | null;
+  /** CANCEL / Esc: discard the shape in progress; the tool stays armed. */
+  cancelSketch: () => void;
+  /** DONE: keep a finishable sketch, then stop drawing (map taps select entities again). */
+  stopDrawing: () => void;
   addFeatures: (f: DrawFeature[]) => void;
   removeFeature: (id: string) => void;
   toggleAoi: (id: string) => void;
@@ -49,7 +59,7 @@ interface OverlayState {
 
 export const MAX_ARCGIS_LAYERS = 8;
 
-export const useOverlayStore = create<OverlayState>((set) => ({
+export const useOverlayStore = create<OverlayState>((set, get) => ({
   route: null,
   setRoute: (route) => set({ route }),
   setActiveRoute: (active) => set((s) => (s.route ? { route: { ...s.route, active } } : s)),
@@ -57,8 +67,20 @@ export const useOverlayStore = create<OverlayState>((set) => ({
   drawMode: null,
   sketch: [],
   features: [],
-  setDrawMode: (drawMode) => set({ drawMode, sketch: [] }),
+  setDrawMode: (drawMode) => {
+    get().finishSketch();
+    set({ drawMode, sketch: [] });
+  },
   setSketch: (sketch) => set({ sketch }),
+  finishSketch: () => {
+    const { drawMode, sketch, features } = get();
+    const f = sketchFeature(drawMode, sketch, nextId, features.length + 1);
+    if (f) set({ features: [...features, f], sketch: [] });
+    // A sketch that cannot become a shape yet stays, so a premature FINISH loses nothing.
+    return f;
+  },
+  cancelSketch: () => set({ sketch: [] }),
+  stopDrawing: () => get().setDrawMode(null),
   addFeatures: (f) => set((s) => ({ features: [...s.features, ...f] })),
   removeFeature: (id) => set((s) => ({ features: s.features.filter((f) => f.properties.id !== id) })),
   toggleAoi: (id) => set((s) => ({ features: s.features.map((f) => (f.properties.id === id ? { ...f, properties: { ...f.properties, aoi: !f.properties.aoi } } : f)) })),
@@ -73,6 +95,27 @@ export const useOverlayStore = create<OverlayState>((set) => ({
 let seq = 0;
 /** Deterministic, session-unique ids (no randomness). */
 export const nextId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(seq++).toString(36)}`;
+
+/** One map click/tap while a DRAW tool is armed: drop a point, set a circle, or add a vertex. */
+export function addDrawPoint(p: [number, number]): void {
+  const st = useOverlayStore.getState();
+  const { drawMode, sketch, features } = st;
+  const n = features.length + 1;
+  if (drawMode === 'point') {
+    st.addFeatures([{ type: 'Feature', geometry: { type: 'Point', coordinates: p }, properties: { id: nextId('pt'), shape: 'point', name: `Point ${n}` } }]);
+  } else if (drawMode === 'circle') {
+    if (!sketch.length) st.setSketch([p]);
+    else {
+      const c = sketch[0]!;
+      const r = distanceM(c, p);
+      if (r > 0) st.addFeatures([{ type: 'Feature', geometry: circlePolygon(c, r), properties: { id: nextId('circle'), shape: 'circle', name: `Circle ${n}`, center: c, radiusM: r } }]);
+      st.setSketch([]);
+    }
+  } else if (drawMode === 'line' || drawMode === 'polygon') {
+    const last = sketch.at(-1);
+    if (!last || last[0] !== p[0] || last[1] !== p[1]) st.setSketch([...sketch, p]);
+  }
+}
 
 /** Zoom that fits a [w, s, e, n] box in roughly a 900 px viewport. */
 export function zoomForBbox([w, s, e, n]: [number, number, number, number]): number {

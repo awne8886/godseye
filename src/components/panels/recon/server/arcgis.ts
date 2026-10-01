@@ -6,7 +6,10 @@
  * service-URL shape and the allow-list, and REBUILT to exactly
  * `<origin>/…/rest/services/<svc>/(Feature|Map)Server/<n>/query?…&f=geojson`, then fetched with
  * allowListedFetch() (allow-list AND SSRF guard on every hop, no credentials). Features are capped
- * (FEATURE_CAP) and the response says when it was truncated. Owner: panels-recon. Server-only.
+ * (FEATURE_CAP) and the response says when it was truncated. A service that refuses the request
+ * (HTTP 4xx, or an ArcGIS `{"error":{"code":4xx}}` body: unknown service, bad layer id, token
+ * required) is a `refusal`: the host answered, so it is not reported as an outage.
+ * Owner: panels-recon. Server-only.
  */
 import 'server-only';
 import { HttpError, httpJson } from '@/lib/http';
@@ -46,17 +49,35 @@ export function parseServiceUrl(raw: string): ServiceRef {
 }
 
 /**
+ * The layer-query shape every fetched path must keep, on the first request and on every redirect
+ * hop (AllowRule.pathPattern): a host allow-listed at `/` cannot be steered to another API on the
+ * same host (`/sharing/rest/…`, `/usrsvcs/…`, admin endpoints).
+ */
+// Case-insensitive like SERVICE_RE and like ArcGIS itself: the REST Services Directory form
+// `/<org>/ArcGIS/rest/services/…` keeps the user's casing and must not be refused as "host not allowed".
+const QUERY_TAIL = String.raw`rest\/services\/[^?#]*\/(?:Feature|Map)Server\/\d{1,4}\/query$`;
+/** ArcGIS Online hosted services: `/<orgId>/arcgis/rest/services/…/(Feature|Map)Server/<n>/query`. */
+export const HOSTED_QUERY_PATH = new RegExp(String.raw`^\/[A-Za-z0-9]{1,64}\/arcgis\/` + QUERY_TAIL, 'i');
+/** Esri's own servers: `/arcgis/rest/services/…/(Feature|Map)Server/<n>/query`. */
+export const ESRI_QUERY_PATH = new RegExp(String.raw`^\/arcgis\/` + QUERY_TAIL, 'i');
+/** Operator hosts (ArcGIS Server / Enterprise): any web-adaptor directory, then the same tail. */
+export const SERVER_QUERY_PATH = new RegExp(String.raw`^\/(?:[^/?#]+\/)*` + QUERY_TAIL, 'i');
+
+/** Exact ArcGIS Online hosted-service hosts (no wildcard; see BUILTIN_ARCGIS_RULES). */
+export const HOSTED_SERVICE_HOSTS: readonly string[] = ['services.arcgis.com', ...Array.from({ length: 9 }, (_, i) => `services${i + 1}.arcgis.com`), 'services-eu1.arcgis.com', 'services-ap1.arcgis.com'];
+
+/**
  * Built-in ArcGIS hosts. ArcGIS Online hosted services live at
  * `services[1-9].arcgis.com/<orgId>/arcgis/rest/services/…` (the org id varies, so the directory prefix
- * is `/` and the service shape is enforced by SERVICE_RE on the rebuilt URL); Esri's own servers
+ * is `/` and the layer-query shape is pinned by HOSTED_QUERY_PATH on every hop); Esri's own servers
  * (`services.arcgisonline.com`, `sampleserver6.arcgisonline.com`) serve `/arcgis/rest/services/…`.
  */
 export const BUILTIN_ARCGIS_RULES: readonly AllowRule[] = [
   // Explicit hosted-service hosts, not `*.arcgis.com`: utility.arcgis.com/usrsvcs is Esri's proxy to
   // any origin an ArcGIS Online account registers, so a wildcard would reopen the SSRF path.
   // services-eu1 / services-ap1 are the regional hosted-service hosts (both answered 2026-10-01).
-  ...['services.arcgis.com', ...Array.from({ length: 9 }, (_, i) => `services${i + 1}.arcgis.com`), 'services-eu1.arcgis.com', 'services-ap1.arcgis.com'].map((host) => ({ host, pathPrefix: '/' })),
-  { host: '*.arcgisonline.com', pathPrefix: '/arcgis/rest/services/' },
+  ...HOSTED_SERVICE_HOSTS.map((host) => ({ host, pathPrefix: '/', pathPattern: HOSTED_QUERY_PATH })),
+  { host: '*.arcgisonline.com', pathPrefix: '/arcgis/rest/services/', pathPattern: ESRI_QUERY_PATH },
 ];
 
 const HOST_ENTRY = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::(\d{2,5}))?$/;
@@ -71,7 +92,7 @@ export function arcgisRules(env: Record<string, string | undefined> = process.en
   for (const raw of (env.ARCGIS_ALLOWED_HOSTS ?? '').split(',')) {
     const m = raw.trim().toLowerCase().match(HOST_ENTRY);
     if (!m) continue;
-    extra.push({ host: m[1]!, pathPrefix: '/', ...(m[2] && m[2] !== '443' ? { port: m[2] } : {}) });
+    extra.push({ host: m[1]!, pathPrefix: '/', pathPattern: SERVER_QUERY_PATH, ...(m[2] && m[2] !== '443' ? { port: m[2] } : {}) });
   }
   return [...BUILTIN_ARCGIS_RULES, ...extra];
 }
@@ -118,12 +139,50 @@ export function queryUrl(ref: ServiceRef, bbox?: Bbox | null): URL {
 }
 
 type Primitive = string | number | boolean | null;
+
+/** What a service said when it refused the request (shown to the user as text, never as HTML). */
+export interface ServiceRefusal {
+  /** The HTTP status, or the `error.code` of an ArcGIS error body answered with HTTP 200. */
+  status: number;
+  /** ArcGIS `error.message` (+ first detail), control characters stripped, ≤ 240 chars; null for HTML/empty bodies. */
+  message: string | null;
+}
+
+/**
+ * 4xx statuses that mean "this URL/layer is wrong or not public" (the host answered). 408 (timeout)
+ * and 429 (rate limited) are transient upstream conditions and stay SOURCE OFFLINE.
+ */
+export const isRefusalStatus = (status: number) => status >= 400 && status <= 499 && status !== 408 && status !== 429;
+
+const CONTROL = /[\u0000-\u001f\u007f]+/g;
+const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(CONTROL, ' ').trim().slice(0, max) : '');
+
+/** The `{"error":{"code","message","details"}}` envelope ArcGIS REST answers with (often under HTTP 200). */
+export function arcgisError(body: unknown): { code: number | null; message: string | null } | null {
+  const e = (body as { error?: unknown } | null)?.error as { code?: unknown; message?: unknown; details?: unknown } | undefined;
+  if (!e || typeof e !== 'object') return null;
+  const code = typeof e.code === 'number' && Number.isInteger(e.code) && e.code >= 100 && e.code <= 599 ? e.code : null;
+  const msg = clean(e.message, 160);
+  const detail = Array.isArray(e.details) ? clean(e.details[0], 160) : '';
+  const message = [msg, detail !== msg ? detail : ''].filter(Boolean).join(' — ').slice(0, 240) || null;
+  return { code, message };
+}
+
+/** The ArcGIS message of a non-2xx answer when its body is JSON (ArcGIS Server also answers with HTML pages). */
+function errorBodyMessage(raw: Buffer): string | null {
+  try {
+    return arcgisError(JSON.parse(raw.toString('utf8')))?.message ?? null;
+  } catch {
+    return null;
+  }
+}
 const GEOMETRY_TYPES = new Set(['Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon']);
 
 /** Keep valid features with primitive properties only; cap the count. */
 export function sanitizeFeatures(body: unknown): { fc: GeoJSON.FeatureCollection; truncated: boolean } {
-  const b = body as { type?: string; features?: unknown[]; exceededTransferLimit?: boolean; properties?: { exceededTransferLimit?: boolean }; error?: { message?: string } };
-  if (b?.error) throw new HttpError(`ArcGIS error: ${String(b.error.message ?? 'unknown').slice(0, 200)}`, 'http', '');
+  const b = body as { type?: string; features?: unknown[]; exceededTransferLimit?: boolean; properties?: { exceededTransferLimit?: boolean } };
+  const err = arcgisError(body);
+  if (err) throw new HttpError(`ArcGIS error: ${err.message ?? 'unknown'}`, 'http', '', err.code ?? undefined);
   if (b?.type !== 'FeatureCollection' || !Array.isArray(b.features)) throw new HttpError('The service did not return GeoJSON (f=geojson unsupported?)', 'parse', '');
   const features: GeoJSON.Feature[] = [];
   for (const raw of b.features) {
@@ -141,21 +200,36 @@ export function sanitizeFeatures(body: unknown): { fc: GeoJSON.FeatureCollection
   return { fc: { type: 'FeatureCollection', features }, truncated };
 }
 
-export async function importLayer(ref: ServiceRef, bbox?: Bbox | null): Promise<{ fc: GeoJSON.FeatureCollection | null; truncated: boolean; status: ProviderStatus }> {
+export interface ImportResult {
+  fc: GeoJSON.FeatureCollection | null;
+  truncated: boolean;
+  status: ProviderStatus;
+  /** Set when the service answered but refused this URL (4xx); null for outages and successes. */
+  refusal: ServiceRefusal | null;
+}
+
+export async function importLayer(ref: ServiceRef, bbox?: Bbox | null): Promise<ImportResult> {
   const url = queryUrl(ref, bbox);
+  let refusal: ServiceRefusal | null = null;
   const p = await probe(`arcgis:layer:${url.toString()}`, 10 * 60_000, async () => {
     const rules = arcgisRules();
     const res = await allowListedFetch(url, rules, { ports: arcgisPorts(rules), maxBytes: ARCGIS_MAX_BYTES, timeoutMs: 10_000, deadlineMs: 20_000, headers: { accept: 'application/geo+json, application/json' } });
-    if (!res.ok) throw new HttpError(`HTTP ${res.status}`, 'http', url.origin, res.status);
+    if (!res.ok) {
+      if (isRefusalStatus(res.status)) refusal = { status: res.status, message: errorBodyMessage(res.body) };
+      throw new HttpError(`HTTP ${res.status}`, 'http', url.origin, res.status);
+    }
     let body: unknown;
     try {
       body = JSON.parse(res.body.toString('utf8'));
     } catch {
       throw new HttpError('Invalid JSON from the service', 'parse', url.origin);
     }
+    // ArcGIS often answers an error under HTTP 200: a 4xx code is the service refusing this URL.
+    const err = arcgisError(body);
+    if (err?.code && isRefusalStatus(err.code)) refusal = { status: err.code, message: err.message };
     return sanitizeFeatures(body);
   }, { count: (r) => r.fc.features.length, allowEmpty: true });
-  return { fc: p.value?.fc ?? null, truncated: p.value?.truncated ?? false, status: p.status };
+  return { fc: p.value?.fc ?? null, truncated: p.value?.truncated ?? false, status: p.status, refusal: p.value ? null : refusal };
 }
 
 interface ArcgisItem {
