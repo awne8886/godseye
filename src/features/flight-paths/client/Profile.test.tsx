@@ -2,15 +2,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { createElement } from 'react';
-import { Profile, profilePoints, typicalClimb } from './Profile';
+import { Profile, profilePoints, profileRuns, typicalClimb } from './Profile';
 import { FlightView } from './PathsPanel';
 import type { Flight } from './api';
 
 // Points from the recorded adsb.lol trace shape (aviation fixture trace-full-4cafc4, 2026-09-30).
 const track: Flight['flownTrack'] = [
   { t: '2026-09-30T18:00:00Z', lat: 41.2913, lng: 2.0693, altFt: null, onGround: true, gsKt: 17.5, trackDeg: 67.5 },
-  { t: '2026-09-30T18:10:00Z', lat: 41.5, lng: 2.5, altFt: 15000, onGround: false, gsKt: 320, trackDeg: 40 },
-  { t: '2026-09-30T18:30:00Z', lat: 43, lng: 3.5, altFt: 37000, onGround: false, gsKt: 460, trackDeg: 20 },
+  { t: '2026-09-30T18:05:00Z', lat: 41.5, lng: 2.5, altFt: 15000, onGround: false, gsKt: 320, trackDeg: 40 },
+  { t: '2026-09-30T18:09:00Z', lat: 43, lng: 3.5, altFt: 37000, onGround: false, gsKt: 460, trackDeg: 20 },
 ];
 
 describe('Profile', () => {
@@ -19,10 +19,18 @@ describe('Profile', () => {
   it('times from the first point; ground rows are 0 ft', () => {
     expect(profilePoints(track).map((p) => [p.tMin, p.altFt])).toEqual([
       [0, 0],
-      [10, 15000],
-      [30, 37000],
+      [5, 15000],
+      [9, 37000],
     ]);
     expect(profilePoints([])).toEqual([]);
+  });
+
+  it('an observation gap of 10 min or more splits the lines (drawn as a gap, R4-m1)', () => {
+    const gapped = [...track, { ...track[2]!, t: '2026-09-30T18:40:00Z', lat: 45 }, { ...track[2]!, t: '2026-09-30T18:45:00Z', lat: 46 }];
+    expect(profileRuns(profilePoints(gapped)).map((r) => r.length)).toEqual([3, 2]);
+    const { container } = render(createElement(Profile, { track: gapped }));
+    expect(container.querySelectorAll('polyline')).toHaveLength(5); // typical + 2 × (altitude, speed)
+    expect(screen.getByText(/1 coverage gap/)).toBeTruthy();
   });
 
   it('typical model climbs 2,000 ft/min to FL350 then cruises', () => {

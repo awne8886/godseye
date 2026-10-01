@@ -41,6 +41,22 @@ export function typicalClimb(spanMin: number): [number, number][] {
       ];
 }
 
+/** Split at observation gaps (≥ `gapMin` minutes between samples) so a gap is not drawn as a line. */
+export function profileRuns(pts: readonly ProfilePoint[], gapMin = 10): ProfilePoint[][] {
+  const runs: ProfilePoint[][] = [];
+  let cur: ProfilePoint[] = [];
+  for (const p of pts) {
+    const prev = cur[cur.length - 1];
+    if (prev && !(p.tMin - prev.tMin < gapMin)) {
+      runs.push(cur);
+      cur = [];
+    }
+    cur.push(p);
+  }
+  if (cur.length) runs.push(cur);
+  return runs;
+}
+
 export function Profile({ track }: { track: Flight['flownTrack'] }) {
   const pts = profilePoints(track);
   if (pts.length < 2) return null;
@@ -48,8 +64,10 @@ export function Profile({ track }: { track: Flight['flownTrack'] }) {
   const x = (t: number) => ((t / span) * W).toFixed(1);
   const yAlt = (a: number) => (H - (Math.min(a, MAX_FT) / MAX_FT) * H).toFixed(1);
   const yGs = (g: number) => (H - (Math.min(g, MAX_KT) / MAX_KT) * H).toFixed(1);
-  const alt = pts.filter((p) => p.altFt !== null).map((p) => `${x(p.tMin)},${yAlt(p.altFt!)}`).join(' ');
-  const gs = pts.filter((p) => p.gsKt !== null).map((p) => `${x(p.tMin)},${yGs(p.gsKt!)}`).join(' ');
+  const runs = profileRuns(pts);
+  const lines = runs.filter((r) => r.length > 1);
+  const alt = lines.map((r) => r.filter((p) => p.altFt !== null).map((p) => `${x(p.tMin)},${yAlt(p.altFt!)}`).join(' ')).filter(Boolean);
+  const gs = lines.map((r) => r.filter((p) => p.gsKt !== null).map((p) => `${x(p.tMin)},${yGs(p.gsKt!)}`).join(' ')).filter(Boolean);
   const typical = typicalClimb(span).map(([t, a]) => `${x(t)},${yAlt(a)}`).join(' ');
   return (
     <figure className="flex flex-col gap-1">
@@ -58,11 +76,15 @@ export function Profile({ track }: { track: Flight['flownTrack'] }) {
           <line key={a} x1={0} x2={W} y1={yAlt(a)} y2={yAlt(a)} stroke="var(--border-secondary)" strokeWidth={0.5} />
         ))}
         <polyline points={typical} fill="none" stroke="var(--text-muted)" strokeWidth={1} strokeDasharray="3 3" />
-        {gs && <polyline points={gs} fill="none" stroke="var(--cyan-primary)" strokeWidth={1} strokeOpacity={0.7} />}
-        {alt && <polyline points={alt} fill="none" stroke="var(--gold-primary)" strokeWidth={1.5} />}
+        {gs.map((g, i) => (
+          <polyline key={`gs${i}`} points={g} fill="none" stroke="var(--cyan-primary)" strokeWidth={1} strokeOpacity={0.7} />
+        ))}
+        {alt.map((a, i) => (
+          <polyline key={`alt${i}`} points={a} fill="none" stroke="var(--gold-primary)" strokeWidth={1.5} />
+        ))}
       </svg>
       <figcaption className="font-sans text-[12px] text-[var(--text-secondary)]">
-        Gold: observed altitude (0–45,000 ft). Cyan: ground speed (0–600 kt). Dashed: typical-profile model (2,000 ft/min climb to FL350), not data. {Math.round(span)} min of track.
+        Gold: observed altitude (0–45,000 ft). Cyan: ground speed (0–600 kt). Dashed: typical-profile model (2,000 ft/min climb to FL350), not data. {Math.round(span)} min of track{runs.length > 1 ? `; ${runs.length - 1} coverage gap${runs.length > 2 ? 's' : ''} (≥ 10 min without observations) left blank` : ''}.
       </figcaption>
     </figure>
   );

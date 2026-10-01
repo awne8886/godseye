@@ -213,4 +213,22 @@ describe('PATHS panel', () => {
     const calls = (fetch as unknown as { mock: { calls: [string][] } }).mock.calls.map((c) => String(c[0]));
     expect(calls.some((c) => c.includes('submit=1'))).toBe(true);
   });
+
+  it('a palette route whose name resolves no airport pre-fills FROM/TO and says so (R4-m6)', async () => {
+    const { setPathsDraft } = await import('./draft');
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      setPathsDraft({ from: 'Atlantis', to: 'New York', unresolved: ['Atlantis'] });
+    });
+    const [fromInput, toInput] = screen.getAllByRole('combobox');
+    expect((fromInput as HTMLInputElement).value).toBe('Atlantis');
+    expect((toInput as HTMLInputElement).value).toBe('New York');
+    expect(screen.getByRole('status').textContent).toMatch(/No airport found for "Atlantis"/);
+    await act(async () => {
+      setPathsDraft(null);
+    });
+    expect(screen.queryByText(/No airport found/)).toBeNull();
+  });
 });

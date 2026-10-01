@@ -120,6 +120,23 @@ export interface RouteFrame {
   aircraft: Aircraft[];
 }
 
+/** Observation gaps at least this long are left blank instead of being joined by a straight line. */
+export const TRACK_GAP_MS = 10 * 60_000;
+
+/**
+ * Consecutive flown-track points → altitude-coloured segments. A pair more than `TRACK_GAP_MS` apart
+ * (no coverage in between) is skipped, so the gap shows as a gap rather than an observed line.
+ */
+export function flownSegments(track: readonly LngLatTuple[], points: readonly { t: string; altFt: number | null }[], gapMs = TRACK_GAP_MS): FlownSegment[] {
+  const out: FlownSegment[] = [];
+  for (let i = 1; i < track.length && i < points.length; i++) {
+    const dt = Date.parse(points[i]!.t) - Date.parse(points[i - 1]!.t);
+    if (!(dt < gapMs)) continue;
+    out.push({ from: track[i - 1]!, to: track[i]!, alt: points[i]!.altFt });
+  }
+  return out;
+}
+
 const codeOf = (e: { iata: string | null; icao: string | null; ident: string }) => e.iata ?? e.icao ?? e.ident;
 
 /** Build the single-frame geometry for a planned route or a tracked flight (null when nothing to draw). */
@@ -129,7 +146,7 @@ export function routeFrame(plan: Plan | null, live: Live | null, flight: Flight 
 
   const trackRaw: LngLatTuple[] = (flight?.flownTrack ?? []).map((p) => [p.lng, p.lat]);
   const track = trackRaw.length ? unwrapPath(trackRaw, arc.length ? intoFrame(trackRaw[0]!, arc)[0] : undefined) : [];
-  const flown: FlownSegment[] = track.slice(1).map((to, i) => ({ from: track[i]!, to, alt: flight!.flownTrack[i + 1]!.altFt }));
+  const flown = flownSegments(track, flight?.flownTrack ?? []);
   // The frame for anything else: the arc, else the flown track (a flight without a known route).
   const ref = arc.length ? arc : track;
   const place = (p: LngLatTuple): LngLatTuple => (ref.length ? intoFrame(p, ref) : p);
