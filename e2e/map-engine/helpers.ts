@@ -19,6 +19,7 @@
  *    data-deck-classes (deck layer classes admitted so far, in order).
  * The wrapper `[data-testid=map-root]` carries data-projection (effective) and data-basemap.
  */
+import { inflateSync } from 'node:zlib';
 import { expect, type Page } from '@playwright/test';
 
 export interface CameraArg {
@@ -159,50 +160,209 @@ export interface TokenPixelOptions {
  * (Σ|Δ| ≤ 60 from the token), which only the route comet's 4 px head (≈ 60 px) could pass, and only
  * while its 6 s sweep happened to be inside the clip; under reduced motion that count stayed 0.
  * Measured with this rule on saved screenshots (desktop globe, default layers, day_night on): 0–2 px
- * before the arc is drawn, 538–1030 px once it is, with or without the comet.
+ * before the arc is drawn, 713–1043 px once it is (globe and mercator), with or without the comet;
+ * the same globe view without a route, every default layer drawn: 19–37 px.
  */
-export async function tokenPixels(page: Page, token: string, rect = { x0: 0.08, y0: 0.15, x1: 0.62, y1: 0.85 }, opts: TokenPixelOptions = {}): Promise<number> {
-  const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
+export async function tokenPixels(page: Page, token: string, rect: CanvasRect = DEFAULT_RECT, opts: TokenPixelOptions = {}): Promise<number> {
+  const rgb = await tokenRgb(page, token);
+  const box = await canvasBox(page);
   const clip = { x: box.x + box.width * rect.x0, y: box.y + box.height * rect.y0, width: box.width * (rect.x1 - rect.x0), height: box.height * (rect.y1 - rect.y0) };
-  const png = (await page.screenshot({ clip })).toString('base64');
-  return page.evaluate(
-    async ({ png, token, minAlpha, maxBase }) => {
-      const probe = document.createElement('i');
-      probe.style.color = `var(${token})`;
-      document.body.append(probe);
-      const rgb = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g)?.map(Number);
-      probe.remove();
-      if (!rgb || rgb.length < 3) return -1;
-      const img = new Image();
-      img.src = `data:image/png;base64,${png}`;
-      await img.decode();
-      const c = document.createElement('canvas');
-      c.width = img.width;
-      c.height = img.height;
-      const ctx = c.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      const px = ctx.getImageData(0, 0, c.width, c.height).data;
-      const TOL = 6;
-      let n = 0;
-      for (let p = 0; p < px.length; p += 4) {
-        // Intersect, over the three channels, the alphas a for which some base b ∈ [0, maxBase]
-        // gives v = a·t + (1 − a)·b (± TOL): v − a·t ≥ −TOL and v − a·t ≤ (1 − a)·maxBase + TOL.
-        let lo = minAlpha;
-        let hi = 1;
-        for (let k = 0; k < 3 && lo <= hi; k++) {
-          const v = px[p + k]!;
-          const t = rgb[k]!;
-          if (t > 0) hi = Math.min(hi, (v + TOL) / t);
-          const slope = t - maxBase;
-          const rhs = v - maxBase - TOL;
-          if (slope > 0) lo = Math.max(lo, rhs / slope);
-          else if (slope < 0) hi = Math.min(hi, rhs / slope);
-          else if (rhs > 0) hi = -1;
-        }
-        if (lo <= hi) n++;
+  // Decoded and counted here, not in the page: a page busy drawing the globe on a software GPU
+  // answered an in-page decode only after 5–6 s.
+  const img = decodePng(await page.screenshot({ clip }));
+  return countTokenPixels(img, rgb, { x: 0, y: 0, width: img.width, height: img.height }, opts);
+}
+
+/** Fractions of the map canvas (default: left of the docked panel, below the header). */
+export interface CanvasRect {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+export const DEFAULT_RECT: CanvasRect = { x0: 0.08, y0: 0.15, x1: 0.62, y1: 0.85 };
+
+/** A decoded 8-bit RGB(A) image. */
+export interface DecodedImage {
+  width: number;
+  height: number;
+  channels: 3 | 4;
+  data: Uint8Array;
+}
+
+/**
+ * Decode a PNG as Chromium writes them for screenshots and screencast frames: 8-bit RGB or RGBA,
+ * not interlaced (anything else throws). Pure Node (zlib), so counting never needs the page.
+ */
+export function decodePng(buf: Buffer): DecodedImage {
+  const SIGNATURE = '89504e470d0a1a0a';
+  if (buf.subarray(0, 8).toString('hex') !== SIGNATURE) throw new Error('not a PNG');
+  let off = 8;
+  let width = 0;
+  let height = 0;
+  let depth = 0;
+  let colour = 0;
+  let interlace = 0;
+  const idat: Buffer[] = [];
+  while (off + 8 <= buf.length) {
+    const len = buf.readUInt32BE(off);
+    const type = buf.toString('latin1', off + 4, off + 8);
+    const body = buf.subarray(off + 8, off + 8 + len);
+    if (type === 'IHDR') {
+      width = body.readUInt32BE(0);
+      height = body.readUInt32BE(4);
+      depth = body[8]!;
+      colour = body[9]!;
+      interlace = body[12]!;
+    } else if (type === 'IDAT') idat.push(body);
+    else if (type === 'IEND') break;
+    off += 12 + len;
+  }
+  if (depth !== 8 || (colour !== 2 && colour !== 6) || interlace !== 0) throw new Error(`unsupported PNG (depth ${depth}, colour type ${colour}, interlace ${interlace})`);
+  const channels = colour === 6 ? 4 : 3;
+  const stride = width * channels;
+  const raw = inflateSync(Buffer.concat(idat));
+  const data = new Uint8Array(height * stride);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)]!;
+    const src = y * (stride + 1) + 1;
+    const row = y * stride;
+    const up = row - stride;
+    for (let x = 0; x < stride; x++) {
+      const a = x >= channels ? data[row + x - channels]! : 0;
+      const b = y > 0 ? data[up + x]! : 0;
+      const c = x >= channels && y > 0 ? data[up + x - channels]! : 0;
+      let v = raw[src + x]!;
+      if (filter === 1) v += a;
+      else if (filter === 2) v += b;
+      else if (filter === 3) v += (a + b) >> 1;
+      else if (filter === 4) {
+        const p = a + b - c;
+        const pa = Math.abs(p - a);
+        const pb = Math.abs(p - b);
+        const pc = Math.abs(p - c);
+        v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      } else if (filter !== 0) throw new Error(`bad PNG filter ${filter}`);
+      data[row + x] = v & 0xff;
+    }
+  }
+  return { width, height, channels, data };
+}
+
+/**
+ * Pixels of `img` inside `box` (image pixels) that show `rgb` blended over a dark base at alpha ≥
+ * `minAlpha` (see `tokenPixels`).
+ */
+export function countTokenPixels(img: DecodedImage, rgb: readonly number[], box: { x: number; y: number; width: number; height: number }, opts: TokenPixelOptions = {}): number {
+  const minAlpha = opts.minAlpha ?? 0.4;
+  const maxBase = opts.maxBase ?? 48;
+  const TOL = 6;
+  const x0 = Math.max(0, Math.round(box.x));
+  const y0 = Math.max(0, Math.round(box.y));
+  const x1 = Math.min(img.width, Math.round(box.x + box.width));
+  const y1 = Math.min(img.height, Math.round(box.y + box.height));
+  let n = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const p = (y * img.width + x) * img.channels;
+      // Intersect, over the three channels, the alphas a for which some base b ∈ [0, maxBase]
+      // gives v = a·t + (1 − a)·b (± TOL): v − a·t ≥ −TOL and v − a·t ≤ (1 − a)·maxBase + TOL.
+      let lo = minAlpha;
+      let hi = 1;
+      for (let k = 0; k < 3 && lo <= hi; k++) {
+        const v = img.data[p + k]!;
+        const t = rgb[k]!;
+        if (t > 0) hi = Math.min(hi, (v + TOL) / t);
+        const slope = t - maxBase;
+        const rhs = v - maxBase - TOL;
+        if (slope > 0) lo = Math.max(lo, rhs / slope);
+        else if (slope < 0) hi = Math.min(hi, rhs / slope);
+        else if (rhs > 0) hi = -1;
       }
-      return n;
-    },
-    { png, token, minAlpha: opts.minAlpha ?? 0.4, maxBase: opts.maxBase ?? 48 },
-  );
+      if (lo <= hi) n++;
+    }
+  }
+  return n;
+}
+
+/** A CSS colour token resolved in the page, as [r, g, b]. */
+export async function tokenRgb(page: Page, token: string): Promise<number[]> {
+  const rgb = await page.evaluate((t) => {
+    const probe = document.createElement('i');
+    probe.style.color = `var(${t})`;
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c.match(/\d+(\.\d+)?/g)?.map(Number) ?? [];
+  }, token);
+  if (rgb.length < 3) throw new Error(`token ${token} did not resolve to a colour`);
+  return rgb.slice(0, 3);
+}
+
+async function canvasBox(page: Page): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await page.locator('canvas.maplibregl-canvas').boundingBox();
+  if (!box) throw new Error('map canvas not laid out');
+  return box;
+}
+
+export interface TokenFrame {
+  /** Wall-clock time the compositor produced the frame (ms since the epoch). */
+  epochMs: number;
+  /** Token pixels in the frame's rect. */
+  px: number;
+  /** Frames decoded until this one (diagnostics). */
+  frames: number;
+  /** Highest count seen in an earlier frame (diagnostics). */
+  maxBefore: number;
+}
+
+/**
+ * The first composited frame, from now on, that shows at least `minPx` pixels of `token` inside
+ * `rect` (`tokenPixels`' rule), with the time the compositor produced it — or null after
+ * `timeoutMs`. Frames come from a CDP screencast and are decoded here, so nothing waits for a
+ * page main thread that a software GPU keeps busy (a forced screenshot there took 4–22 s).
+ * Chromium only (every project in this suite).
+ */
+export async function firstTokenFrame(page: Page, token: string, o: { minPx: number; timeoutMs: number; rect?: CanvasRect; opts?: TokenPixelOptions }): Promise<TokenFrame | null> {
+  const rgb = await tokenRgb(page, token);
+  const box = await canvasBox(page);
+  const view = page.viewportSize();
+  const rect = o.rect ?? DEFAULT_RECT;
+  const cdp = await page.context().newCDPSession(page);
+  let frames = 0;
+  let maxBefore = 0;
+  try {
+    return await new Promise<TokenFrame | null>((resolve) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        done = true;
+        resolve(null);
+      }, o.timeoutMs);
+      cdp.on('Page.screencastFrame', (f) => {
+        if (done) return;
+        const receivedAt = Date.now();
+        try {
+          const img = decodePng(Buffer.from(f.data, 'base64'));
+          const s = view ? img.width / view.width : 1;
+          const area = { x: (box.x + box.width * rect.x0) * s, y: (box.y + box.height * rect.y0) * s, width: box.width * (rect.x1 - rect.x0) * s, height: box.height * (rect.y1 - rect.y0) * s };
+          const px = countTokenPixels(img, rgb, area, o.opts);
+          frames++;
+          if (px >= o.minPx) {
+            done = true;
+            clearTimeout(timer);
+            resolve({ epochMs: f.metadata.timestamp !== undefined ? f.metadata.timestamp * 1000 : receivedAt, px, frames, maxBefore });
+            return;
+          }
+          maxBefore = Math.max(maxBefore, px);
+        } finally {
+          // Acknowledged after counting, so frames never pile up faster than they are decoded.
+          cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => undefined);
+        }
+      });
+      cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 }).catch(() => undefined);
+    });
+  } finally {
+    await cdp.send('Page.stopScreencast').catch(() => undefined);
+    await cdp.detach().catch(() => undefined);
+  }
 }
