@@ -6,7 +6,8 @@
  * visible hemisphere on the globe, animates the endpoint pulse and the comet head (not under
  * reduced motion) and frames each new route/flight: fit-bounds in mercator, midpoint + angular
  * extent on the globe, padded by the HUD chrome (header, status bar, left rail) and the docked
- * panel. Every new route/flight (deep link, palette, card button) opens the PATHS panel.
+ * panel, plus measured chrome (phone sheet, lifted attribution, view controls). Every new
+ * route/flight (deep link, palette, card button) opens the PATHS panel.
  *
  * Framing (R4-B2): the fit is issued as soon as the style is parsed (camera moves need no tiles)
  * and issued once more at the map's first `idle` if the camera was moved by something other than
@@ -21,6 +22,7 @@ import { useUiStore } from '@/lib/store';
 import type { LngLatTuple } from '@/lib/geo';
 import { useFlight, useLive, usePlan } from './api';
 import { setFitNotice, useFitNotice } from './fit';
+import { measureObstacles, PHONE_MAX_WIDTH } from './insets';
 import { buildRouteAnimLayers, buildRouteLayers, frameBounds, framePadding, globeCamera, routeFrame } from './layers';
 
 /** Above aviation (80–83) so the route and its aircraft rings sit on top. */
@@ -29,14 +31,21 @@ const Z = 90;
 const ANIM_PERIOD_MS = 6_000;
 const ANIM_TICK_MS = 66;
 const FIT_DURATION_MS = 1_200;
+/** Re-frame this long after the phone sheet's published height last changed. */
+const SHEET_SETTLE_MS = 180;
+/** Watch the sheet height only right after a new route/flight is framed. */
+const SHEET_WATCH_MS = 4_000;
 const ANIM_KEY = 'flight-paths-anim';
 
 const prefersReducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** Docked panel geometry for the fit padding: right dock on desktop, bottom sheet on phones. */
+/**
+ * Docked panel geometry for the fit padding: the right dock on desktop. The phone sheet is an
+ * obstacle measured by `measureObstacles()` (its published `--sheet-occupied` height).
+ */
 function panelGeometry(open: boolean): { side: 'right' | 'bottom'; size: number } | null {
   if (!open || typeof window === 'undefined') return null;
-  if (window.innerWidth < 768) return { side: 'bottom', size: Math.round(window.innerHeight * 0.45) };
+  if (window.innerWidth < PHONE_MAX_WIDTH) return null;
   const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-width')) || 360;
   return { side: 'right', size: w + 64 }; // panel + its right-16 rail offset
 }
@@ -120,7 +129,7 @@ export default function RouteLayer() {
     const fit = (animate: boolean) => {
       if (done || viewerMoved) return;
       const viewport = { width: window.innerWidth, height: window.innerHeight };
-      const padding = framePadding(viewport, panelGeometry(true));
+      const padding = framePadding(viewport, panelGeometry(true), measureObstacles());
       const duration = animate && !reduced ? FIT_DURATION_MS : 0;
       // Globe (R2-M4): centre on the arc midpoint and zoom by angular extent — a lng/lat box cannot
       // frame polar or antimeridian routes. Mercator: fit the unwrapped bounds.
@@ -141,6 +150,22 @@ export default function RouteLayer() {
     else m.once('style.load', onStyle);
     // Re-issue at the first idle if the map was not ready yet (a fly-in served at `load` would
     // otherwise leave the route off-screen).
+    // Phones: the sheet slides in (and publishes `--sheet-occupied`) after the first fit may have
+    // run; re-frame once its height settles, unless the viewer has taken the camera.
+    let sheetTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastSheet = document.documentElement.style.getPropertyValue('--sheet-occupied');
+    const sheetObserver =
+      typeof MutationObserver === 'undefined' || window.innerWidth >= PHONE_MAX_WIDTH
+        ? null
+        : new MutationObserver(() => {
+            const v = document.documentElement.style.getPropertyValue('--sheet-occupied');
+            if (v === lastSheet || !v) return;
+            lastSheet = v;
+            if (sheetTimer) clearTimeout(sheetTimer);
+            sheetTimer = setTimeout(() => fit(true), SHEET_SETTLE_MS);
+          });
+    sheetObserver?.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+    const sheetWatchEnd = sheetObserver ? setTimeout(() => sheetObserver.disconnect(), SHEET_WATCH_MS) : null;
     let unsub: (() => void) | null = null;
     if (!useMapInstanceStore.getState().ready) {
       unsub = useMapInstanceStore.subscribe((s) => {
@@ -153,6 +178,9 @@ export default function RouteLayer() {
     return () => {
       done = true;
       unsub?.();
+      sheetObserver?.disconnect();
+      if (sheetTimer) clearTimeout(sheetTimer);
+      if (sheetWatchEnd) clearTimeout(sheetWatchEnd);
       m.off('movestart', onMoveStart);
       m.off('style.load', onStyle);
     };

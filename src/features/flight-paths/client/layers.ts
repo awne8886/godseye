@@ -96,6 +96,8 @@ interface Point {
   id: string;
   position: LngLatTuple;
   label: string;
+  /** Endpoints only: screen offset (px) of the label, on the side away from the arc. */
+  labelOffset?: [number, number];
 }
 interface Aircraft extends Point {
   matched: boolean;
@@ -169,7 +171,11 @@ export function routeFrame(plan: Plan | null, live: Live | null, flight: Flight 
     const raw: LngLatTuple = [e.lng, e.lat];
     // Origin in the copy of the arc's start, destination in the copy of its end.
     const anchor = arc.length ? (i === 0 ? arc[0]! : arc[arc.length - 1]!) : null;
-    return { id: e.ident, position: anchor ? [nearLng(raw[0], anchor[0]), raw[1]] : place(raw), label: codeOf(e) };
+    const position: LngLatTuple = anchor ? [nearLng(raw[0], anchor[0]), raw[1]] : place(raw);
+    // The arc vertex a few steps in from this end gives the direction the route leaves it.
+    const k = Math.min(arc.length - 1, 4);
+    const toward = arc.length > 1 ? (i === 0 ? arc[k]! : arc[arc.length - 1 - k]!) : null;
+    return { id: e.ident, position, label: codeOf(e), labelOffset: endpointLabelOffset(position, toward) };
   });
 
   const diversions: Point[] = (plan?.diversionAirports ?? [])
@@ -184,6 +190,28 @@ export function routeFrame(plan: Plan | null, live: Live | null, flight: Flight 
     .filter((f) => f.path.length > 1);
 
   return { arc, reverse: (live?.aircraft ?? []).some((a) => a.direction === 'reverse'), filed, flown, remaining, endpoints, diversions, aircraft };
+}
+
+/** Vertical gap (px) between an endpoint dot and its label when the label sits above/below it. */
+export const LABEL_GAP_Y_PX = 17;
+/** Horizontal gap (px) from the dot to the label centre (a 3–4 letter code is ~ 30 px wide). */
+export const LABEL_GAP_X_PX = 28;
+
+/**
+ * Screen offset for an endpoint label (R3-m4): opposite the direction the arc leaves the endpoint,
+ * so the label never sits on its own route and moves off the dense side where the route's country
+ * labels sit. Direction in local east/north (lng scaled by cos lat; screen y grows downward).
+ * Without an arc the label goes above the dot.
+ */
+export function endpointLabelOffset(end: LngLatTuple, toward: LngLatTuple | null): [number, number] {
+  if (!toward) return [0, -LABEL_GAP_Y_PX];
+  const east = (toward[0] - end[0]) * Math.cos(end[1] * (Math.PI / 180));
+  const north = toward[1] - end[1];
+  const n = Math.hypot(east, north);
+  if (n < 1e-9) return [0, -LABEL_GAP_Y_PX];
+  const ux = -east / n;
+  const uy = north / n; // away from the arc, in screen y (down = +)
+  return [Math.round(ux * LABEL_GAP_X_PX) + 0, Math.round(uy * LABEL_GAP_Y_PX) + 0]; // + 0: no -0
 }
 
 const facing = (globe: boolean) => (p: LngLatTuple) => !globe || isFacing(p, getFarSideCamera());
@@ -293,6 +321,8 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         parameters: { depthCompare: 'always' },
         updateTriggers: trigger,
       }),
+      // R3-m4: the code sits on the side away from the arc, on an opaque glass pill, so a basemap
+      // country/place label under it cannot blend in (gold on the pill keeps ≥ 4.5:1).
       new TextLayer<Point>({
         id: 'route-endpoint-labels',
         data: endpoints,
@@ -300,12 +330,17 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         getText: (d) => d.label,
         getColor: ring,
         getSize: 12,
-        getPixelOffset: [0, -16],
+        getPixelOffset: (d) => d.labelOffset ?? [0, -LABEL_GAP_Y_PX],
+        background: true,
+        getBackgroundColor: uiColor('--bg-primary', 0.92),
+        getBorderColor: color('--map-airport-watch', 0.6),
+        getBorderWidth: 1,
+        backgroundPadding: [4, 2],
         fontFamily: 'JetBrains Mono, monospace',
         fontWeight: 600,
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
-        updateTriggers: trigger,
+        updateTriggers: { ...trigger, getBackgroundColor: [o.theme], getBorderColor: [o.theme] },
       }),
     );
   }
@@ -570,13 +605,76 @@ export function hudChrome(viewport: { width: number }): { top: number; bottom: n
  * panel on the right (desktop) or the bottom sheet (phone); the panel share is capped so at least
  * a quarter of the viewport stays for the route.
  */
-export function framePadding(viewport: { width: number; height: number }, panel: { side: 'right' | 'bottom'; size: number } | null): Padding {
+export function framePadding(
+  viewport: { width: number; height: number },
+  panel: { side: 'right' | 'bottom'; size: number } | null,
+  obstacles: readonly Rect[] = [],
+): Padding {
   const c = hudChrome(viewport);
   const m = FRAME_MARGIN_PX;
   const p: Padding = { top: c.top + m, right: m, bottom: c.bottom + m, left: c.left + m };
   if (panel?.side === 'right') p.right = Math.max(m, Math.min(m + panel.size, viewport.width * 0.75 - p.left));
   if (panel?.side === 'bottom') p.bottom = Math.max(p.bottom, Math.min(m + panel.size, viewport.height * 0.75 - p.top));
-  return p;
+  return obstacles.length ? padForObstacles(viewport, p, obstacles) : p;
+}
+
+/** A viewport-space box (CSS px) of HUD chrome over the map. */
+export interface Rect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Clearance kept between the framed route (and its endpoint labels) and an obstacle. */
+export const OBSTACLE_CLEAR_PX = 24;
+/** The framed area never shrinks below this share of the viewport on either axis. */
+const MIN_FREE_SHARE = 0.2;
+
+/**
+ * Grow `padding` so the framed area clears every obstacle (round 3b, R3-m5/m9): the phone sheet
+ * (from the published `--sheet-occupied`), the lifted attribution, the view-controls bar. Each
+ * obstacle that still intersects the free area is pushed out through the edge that costs the
+ * smallest share of the viewport (a bottom-left bar on desktop raises `bottom`, a top-left bar on
+ * a phone raises `top`, a full-width sheet raises `bottom`). Obstacles are taken largest first, so
+ * the attribution chip lifted above the sheet only adds its own height. The free area never drops
+ * below 20 % of either axis (MapLibre ignores a fit whose padding exceeds the viewport).
+ */
+export function padForObstacles(viewport: { width: number; height: number }, padding: Padding, obstacles: readonly Rect[]): Padding {
+  const p = { ...padding };
+  const W = viewport.width;
+  const H = viewport.height;
+  const g = OBSTACLE_CLEAR_PX;
+  const area = (r: Rect) => Math.max(0, r.right - r.left) * Math.max(0, r.bottom - r.top);
+  const sorted = [...obstacles].filter((r) => area(r) > 0).sort((a, b) => area(b) - area(a));
+  for (const r of sorted) {
+    // Already outside the free area: nothing to do.
+    if (r.right <= p.left || r.left >= W - p.right || r.bottom <= p.top || r.top >= H - p.bottom) continue;
+    const options: { edge: keyof Padding; value: number; cost: number }[] = [
+      { edge: 'top', value: r.bottom + g, cost: (r.bottom + g - p.top) / H },
+      { edge: 'bottom', value: H - r.top + g, cost: (H - r.top + g - p.bottom) / H },
+      { edge: 'left', value: r.right + g, cost: (r.right + g - p.left) / W },
+      { edge: 'right', value: W - r.left + g, cost: (W - r.left + g - p.right) / W },
+    ];
+    const best = options.reduce((a, b) => (b.cost < a.cost ? b : a));
+    p[best.edge] = Math.max(p[best.edge], best.value);
+  }
+  // Keep a usable free area: trim the larger side of an over-padded axis first.
+  const clampAxis = (a: 'top' | 'left', b: 'bottom' | 'right', size: number) => {
+    const excess = p[a] + p[b] - size * (1 - MIN_FREE_SHARE);
+    if (excess <= 0) return;
+    const [big, small] = p[a] >= p[b] ? [a, b] : [b, a];
+    const cut = Math.min(excess, Math.max(0, p[big] - p[small]));
+    p[big] -= cut;
+    const rest = excess - cut;
+    if (rest > 0) {
+      p[a] -= rest / 2;
+      p[b] -= rest / 2;
+    }
+  };
+  clampAxis('top', 'bottom', H);
+  clampAxis('left', 'right', W);
+  return { top: Math.round(p.top), right: Math.round(p.right), bottom: Math.round(p.bottom), left: Math.round(p.left) };
 }
 
 const D2R = Math.PI / 180;
