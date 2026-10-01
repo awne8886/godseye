@@ -9,10 +9,9 @@
  *
  * `afterGpuDrain` inserts a WebGL2 fence and polls its status (non-blocking: Chrome answers from
  * a cached value updated between tasks) until the GPU has caught up, then runs `cb`. It never
- * waits longer than `timeoutMs` so the work it gates always happens. Owner: map-engine. Unit-tested.
+ * waits longer than `timeoutMs` so the work it gates always happens. Slots are handed out one unit
+ * at a time by the admission scheduler (`admission-scheduler.ts`). Owner: map-engine. Unit-tested.
  */
-import { useEffect, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { afterIdle } from './defer';
 
 /** The WebGL2 subset used here (a real context, or a test double). */
@@ -108,21 +107,6 @@ export function afterQuietSlot(getGl: () => FenceGL | null | undefined, cb: () =
     cancelIdle();
     cancelDrain?.();
   };
-}
-
-/**
- * True once `when` has held and a quiet slot (idle main thread, drained GPU) followed; stays true.
- * The flip is committed synchronously (`flushSync`, whose passive effects React also flushes
- * synchronously) so whatever it mounts does its GPU set-up inside the drained slot, before the
- * next map frame is queued.
- */
-export function useAfterQuietSlot(when: boolean, getGl: () => FenceGL | null | undefined, timeoutMs: number): boolean {
-  const [done, setDone] = useState(false);
-  useEffect(() => {
-    if (!when || done) return;
-    return afterQuietSlot(getGl, () => flushSync(() => setDone(true)), timeoutMs);
-  }, [when, done, getGl, timeoutMs]);
-  return done;
 }
 
 /** The map canvas's existing WebGL2 context (getContext returns the one already created). */

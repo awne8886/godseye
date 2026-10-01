@@ -2,12 +2,14 @@
 /**
  * Dated REFERENCE chips for the imagery on screen (Black Marble 2016, the GIBS mosaic day, Esri
  * World Imagery) and the terrain status line, stacked by MapLibre above the attribution control
- * (bottom-right) so they never overlap HUD chrome. Plain text only. Owner: map-engine.
+ * (bottom-right) so they never overlap HUD chrome. Plain text only. `data-tone` (hud chip-tone):
+ * a source that is down (BASEMAP OFFLINE, terrain unavailable) takes the alert tone. Owner: map-engine.
  */
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useControl } from 'react-map-gl/maplibre';
 import type { IControl } from 'maplibre-gl';
+import { imageryChipTone } from '@/components/hud/chip-tone';
 
 export interface ImageryChip {
   id: string;
@@ -38,6 +40,7 @@ export default function ImageryChips({ chips }: { chips: readonly ImageryChip[] 
         <li
           key={c.id}
           data-testid={`imagery-chip-${c.id}`}
+          data-tone={imageryChipTone(c)}
           className="hud-micro rounded-md border border-[var(--border-primary)] bg-[var(--bg-panel)] px-2 py-0.5 text-[var(--text-secondary)]"
         >
           {c.text}

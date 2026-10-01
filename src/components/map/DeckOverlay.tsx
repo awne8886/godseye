@@ -13,26 +13,23 @@
  * and is reused by the host's hover cursor instead of a second pick.
  *
  * Startup cost (perf B2): layers that were never visible are not instantiated and new layer
- * classes are admitted one per quiet slot (`admitLayers` + `afterQuietSlot`: idle main thread, then
- * a drained GPU queue), so each program link runs alone instead of blocking behind queued map
- * frames. Owner: map-engine.
+ * classes are admitted one per slot of the map's admission scheduler (`admitLayers` +
+ * `admission-scheduler.ts`: idle main thread, then a drained GPU queue, at most
+ * ADMISSION_MAX_WAIT_MS apart), so each program link runs alone. The admission is a transition
+ * render (time-sliced), never `flushSync`. Owner: map-engine.
  */
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useControl, useMap } from 'react-map-gl/maplibre';
 import { orderedDeckLayers, useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
 import { admitLayers, createAdmissionState, flattenLayers } from '@/lib/map/deck-admission';
-import { afterQuietSlot, canvasGl } from '@/lib/map/gpu-drain';
+import { useAdmissionStore } from '@/lib/map/admission-scheduler';
 import { type DeckLike, detachDeckPressPicking, initPendingLayers } from '@/lib/map/deck-events';
 import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
 /** `beforeId` is a MapLibreOverlay-specific layer prop (not in deck's LayerProps typings). */
 type WithBeforeId = { beforeId?: string };
-
-/** Longest wait (per phase) for a quiet slot before the next layer class is admitted anyway. */
-const ADMIT_IDLE_TIMEOUT_MS = 1500;
 
 function withBeforeId(layers: readonly Layer[], beforeId: string | undefined): LayersList {
   if (!beforeId) return [...layers];
@@ -71,26 +68,43 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     return box.overlay;
   });
   const layersRef = useRef(layers);
+  const beforeIdRef = useRef(beforeId);
   useEffect(() => {
     layersRef.current = layers;
+    beforeIdRef.current = beforeId;
     overlay.setProps({ layers });
-  }, [overlay, layers]);
-  // Admit the next waiting layer class in a quiet slot (one program link per slot, GPU drained).
-  const nextClass = waiting[0];
+  }, [overlay, layers, beforeId]);
+  // Waiting layer classes are admitted one per scheduler slot.
+  const scheduler = useAdmissionStore((s) => s.scheduler);
+  const waitingRef = useRef<string[]>([]);
   useEffect(() => {
-    if (!nextClass) return;
-    return afterQuietSlot(
-      () => canvasGl(mapRef?.getMap().getCanvas()),
-      () => {
-        admission.admitted.add(nextClass);
-        // Commit + effects (overlay.setProps) synchronously, then initialise the new layers here:
-        // their program link must not wait behind a map frame queued after the drain.
-        flushSync(() => setAdmittedVersion((v) => v + 1));
+    waitingRef.current = waiting;
+    scheduler?.kick();
+  }, [waiting, scheduler]);
+  useEffect(() => {
+    if (!scheduler) return;
+    return scheduler.register({
+      id: 'deck-classes',
+      priority: 2,
+      pending: () => waitingRef.current.length,
+      admitOne: () => {
+        const next = waitingRef.current[0];
+        if (!next) return;
+        admission.admitted.add(next);
+        waitingRef.current = waitingRef.current.slice(1);
+        // Hand deck the new class and initialise it here, inside the drained slot: only deck's own
+        // work for this one class (one program link) runs in this task — no React commit. A map
+        // frame queued before the link would make it wait for that frame on the GPU.
+        const all = flattenLayers<Layer>(orderedDeckLayers(useDeckLayerStore.getState().entries) as unknown[]);
+        const now = withBeforeId(admitLayers(all, admission).pass, beforeIdRef.current);
+        layersRef.current = now;
+        overlay.setProps({ layers: now });
         initPendingLayers(deckOf(overlay));
+        // React catches up in time slices (same layers by id: deck diffs them, nothing re-links).
+        startTransition(() => setAdmittedVersion((v) => v + 1));
       },
-      ADMIT_IDLE_TIMEOUT_MS,
-    );
-  }, [nextClass, admittedVersion, admission, mapRef, overlay]);
+    });
+  }, [scheduler, admission, overlay]);
 
   // After a WebGL context restore MapLibre rebuilds its style; hand deck its layers again.
   useEffect(() => {

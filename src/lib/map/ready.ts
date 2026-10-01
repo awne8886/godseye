@@ -45,3 +45,60 @@ export function styleParsed(map: unknown): boolean {
   const style = (map as { style?: { _loaded?: boolean } } | null)?.style;
   return !!style?._loaded;
 }
+
+type PaintEvent = { sourceId?: string; tile?: unknown };
+
+export interface PaintMap {
+  on(type: 'sourcedata' | 'render' | 'load', fn: (e?: PaintEvent) => void): unknown;
+  off(type: 'sourcedata' | 'render' | 'load', fn: (e?: PaintEvent) => void): unknown;
+  loaded(): boolean;
+}
+
+export interface PaintTimers {
+  setTimeout(cb: () => void, ms: number): unknown;
+  clearTimeout(id: unknown): void;
+}
+
+const realPaintTimers: PaintTimers = {
+  setTimeout: (f, ms) => setTimeout(f, ms),
+  clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+};
+
+/**
+ * Call `cb` once the basemap has been painted: the first frame rendered after a tile of
+ * `sourceId` arrived (or `load`), and never later than `capMs` (a hung tile host must not hold the
+ * data layers back). Feature start-up (fetch, parse, GPU set-up) waits for this so it does not
+ * starve the globe's first frame (visual-qa R2-M6). Returns cancel.
+ */
+export function onceBasemapPainted(map: PaintMap, sourceId: string, cb: () => void, capMs: number, timers: PaintTimers = realPaintTimers): () => void {
+  let done = false;
+  let tileSeen = false;
+  let timer: unknown = null;
+  const cancel = () => {
+    done = true;
+    if (timer !== null) timers.clearTimeout(timer);
+    map.off('sourcedata', onData);
+    map.off('render', onRender);
+    map.off('load', finish);
+  };
+  function finish() {
+    if (done) return;
+    cancel();
+    cb();
+  }
+  function onData(e?: PaintEvent) {
+    if (e?.sourceId === sourceId && e.tile) tileSeen = true;
+  }
+  function onRender() {
+    if (tileSeen) finish();
+  }
+  if (map.loaded()) {
+    finish();
+    return cancel;
+  }
+  timer = timers.setTimeout(finish, capMs);
+  map.on('sourcedata', onData);
+  map.on('render', onRender);
+  map.on('load', finish);
+  return cancel;
+}

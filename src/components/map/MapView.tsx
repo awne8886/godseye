@@ -30,10 +30,13 @@ import { basemapChipText, createBasemapHealth, type BasemapHealth } from '@/lib/
 import { fetchBasemapStyle } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
-import { onceStyleLoaded, styleParsed } from '@/lib/map/ready';
+import { onceBasemapPainted, onceStyleLoaded, type PaintMap, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { useSticky } from '@/lib/map/defer';
-import { canvasGl, useAfterQuietSlot } from '@/lib/map/gpu-drain';
+import { afterQuietSlot, canvasGl } from '@/lib/map/gpu-drain';
+import { ADMISSION_MAX_WAIT_MS, createAdmissionScheduler, useAdmissionStore } from '@/lib/map/admission-scheduler';
+import { installNativeAdmission, type NativeMapLike } from '@/lib/map/native-admission';
+import { useAdmission } from '@/lib/map/use-admission';
 import { installMissingImageResolver } from '@/lib/map/style-images';
 import {
   BASEMAP_ATTRIBUTION,
@@ -67,6 +70,10 @@ installNightProtocol(
 
 /** A lost WebGL context that is not restored within this window is rebuilt on the next ladder rung. */
 const CONTEXT_RESTORE_MS = 4000;
+/** Longest wait per quiet-slot phase (idle, then GPU drain); the scheduler caps the total. */
+const QUIET_SLOT_PHASE_MS = 1500;
+/** Feature start-up waits for the basemap's first painted frame, at most this long after style.load. */
+const BASEMAP_PAINT_CAP_MS = 4000;
 const DEFAULT_MAX_PITCH = 85;
 
 /**
@@ -426,11 +433,45 @@ export default function MapView() {
   // paint) in a quiet slot (idle main thread, drained GPU), so the first paint never waits for them
   // and a slow tile host (which delays `load`) never delays the data layers. The deck overlay
   // (whose device set-up queries the GPU synchronously) gets its own quiet slot once a layer exists.
+  // All of that start-up work goes through one admission queue (one unit per quiet slot, at least
+  // one unit every ADMISSION_MAX_WAIT_MS however busy the thread/GPU): feature mount, deck device,
+  // each new deck layer class and the first draw of each native layer type features add.
   const getGl = useCallback(() => canvasGl(mapRef.current?.getMap().getCanvas()), []);
-  const deferred = useAfterQuietSlot(loaded, getGl, 1500);
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !loaded) return;
+    const store = useAdmissionStore.getState();
+    const scheduler = createAdmissionScheduler({
+      slot: (cb) => afterQuietSlot(getGl, cb, QUIET_SLOT_PHASE_MS),
+      maxWaitMs: ADMISSION_MAX_WAIT_MS,
+      timers: { setTimeout: (cb, ms) => setTimeout(cb, ms), clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>) },
+      onPending: (n) => {
+        store.setPending(n);
+        map.getContainer().dataset.admissionPending = String(n);
+      },
+    });
+    const native = installNativeAdmission(map as unknown as NativeMapLike, () => scheduler.kick());
+    const unregister = scheduler.register({ id: 'native-types', priority: 2, pending: () => native.pendingTypes().length, admitOne: () => void native.admitNext() });
+    store.setScheduler(scheduler);
+    return () => {
+      unregister();
+      native.uninstall();
+      scheduler.dispose();
+      if (useAdmissionStore.getState().scheduler === scheduler) store.setScheduler(null);
+    };
+  }, [loaded, getGl]);
+  // Features start after the basemap's first painted frame (capped): their fetch/parse/GPU set-up
+  // must not starve the globe's first frame (visual-qa R2-M6).
+  const [basemapPainted, setBasemapPainted] = useState(false);
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !loaded) return;
+    return onceBasemapPainted(map as unknown as PaintMap, BASEMAP_SOURCE_ID, () => setBasemapPainted(true), BASEMAP_PAINT_CAP_MS);
+  }, [loaded]);
+  const deferred = useAdmission(loaded && basemapPainted, 'features', 0);
   // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
   const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
-  const deckSlot = useAfterQuietSlot(deferred && hasDeckLayers, getGl, 1500);
+  const deckSlot = useAdmission(deferred && hasDeckLayers, 'deck-device', 1);
 
   // Honest basemap state: repeated tile failures → BASEMAP OFFLINE (last observed tile) + backoff retry.
   const [basemapHealth, setBasemapHealth] = useState<BasemapHealth | null>(null);

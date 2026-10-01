@@ -19,11 +19,19 @@ const p = await ctx.newPage();
 if (process.env.NOBLUR) await p.addInitScript(() => { document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = '*,*::before,*::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}'; document.head.appendChild(st); }); });
 await p.addInitScript(() => {
   const P = WebGL2RenderingContext.prototype;
-  const st = (window.__st = { draws: 0, frames: 0, sync: 0, syncN: 0, long: [], marks: [], sec: [] });
+  const st = (window.__st = { draws: 0, frames: 0, sync: 0, syncN: 0, long: [], marks: [], sec: [], firstDraw: -1, firstInstanced: -1 });
   const t0 = performance.now();
+  // First draw = basemap on screen; first instanced draw = first deck entity layer (MapLibre does
+  // not draw instanced; every deck primitive layer does) → time-to-first-entity proxy.
   for (const k of ['drawElements', 'drawArrays', 'drawArraysInstanced', 'drawElementsInstanced']) {
     const o = P[k];
-    P[k] = function (...a) { st.draws++; return o.apply(this, a); };
+    const inst = k.endsWith('Instanced');
+    P[k] = function (...a) {
+      st.draws++;
+      if (st.firstDraw < 0) st.firstDraw = Math.round(performance.now());
+      if (inst && st.firstInstanced < 0) st.firstInstanced = Math.round(performance.now());
+      return o.apply(this, a);
+    };
   }
   for (const k of ['getProgramParameter', 'getError', 'getParameter', 'getExtension', 'getUniformBlockIndex', 'getShaderParameter', 'readPixels', 'getActiveUniform', 'getUniformLocation', 'getAttribLocation', 'clientWaitSync', 'getBufferSubData']) {
     const o = P[k];
@@ -47,5 +55,6 @@ const tbt = st.long.filter(([s]) => s >= fcp).reduce((a, [, d]) => a + Math.max(
 console.log('per-second [s, frames, draws, syncMs]:', JSON.stringify(st.sec));
 console.log('sync >5ms marks:', JSON.stringify(st.marks));
 console.log('long tasks:', JSON.stringify(st.long));
+console.log(`first-draw ${st.firstDraw} ms · first-entity(instanced) ${st.firstInstanced} ms · max long task ${Math.max(0, ...st.long.map(([, d]) => d))} ms`);
 console.log(`fcp ${Math.round(fcp)} TBT-proxy(0..${process.env.WAIT_MS ?? 25000}) ${tbt} frames ${st.frames} draws ${st.draws} sync ${Math.round(st.sync)} (${st.syncN})`);
 await b.close();
