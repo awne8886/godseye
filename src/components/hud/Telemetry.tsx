@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { APP_VERSION } from '@/lib/config';
 import { useLayerStatusStore } from '@/lib/layer-host';
+import { useDrawPending } from '@/lib/map/admission-scheduler';
 import { useUiStore } from '@/lib/store';
 import type { SpaceWeatherResponse } from '@/lib/types';
 import { useHealth, useVisibleLayers } from './hooks';
@@ -47,6 +48,8 @@ export default function Telemetry() {
   const visibleIds = useMemo(() => new Set(visible.map((l) => l.id)), [visible]);
   const shown = activeVisible(active, visibleIds);
   const entities = shown.reduce((n, id) => n + (status[id as keyof typeof status]?.count ?? 0), 0);
+  // Never claim entities the map has not drawn yet (layers waiting for their admission slot).
+  const drawPending = useDrawPending();
   const st = hudStatus({ active, visible: visibleIds, status, health: health.isError ? 'error' : health.data ? 'ok' : 'loading' });
   const sw = useSpaceWeather();
   const kp = sw.data?.kp.kp;
@@ -61,7 +64,7 @@ export default function Telemetry() {
         STATUS: {st}
       </span>
       <span className="hidden text-[var(--cyan-primary)] md:inline">{shown.length} LAYERS</span>
-      <span className="hidden text-[var(--alert-green)] md:inline">{entities.toLocaleString('en-US')} ENTITIES</span>
+      <span className="hidden text-[var(--alert-green)] md:inline">{drawPending ? 'ENTITIES LOADING' : `${entities.toLocaleString('en-US')} ENTITIES`}</span>
       <span className="hidden lg:inline" title={sw.data?.xray.observedAt ? `GOES X-ray observed ${sw.data.xray.observedAt}` : 'Space weather feed unavailable'}>
         SOLAR <span className="text-[var(--text-primary)]">{xray ?? '—'}</span>
       </span>
