@@ -14,8 +14,9 @@ import type { LayerComponentProps } from '@/lib/feature-module';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
 import { registerHitTester } from '@/lib/map/picking';
+import { cameraFromMap, getFarSideCamera } from '@/lib/map/far-side';
 import { useUiStore } from '@/lib/store';
-import type { FeedEvent } from '@/lib/types';
+import type { FeedEvent, FreshnessState } from '@/lib/types';
 import type { FlightRecord } from '../adsb';
 import type { Bucket } from '../classify';
 import type { TrackPoint } from '../trace';
@@ -24,7 +25,7 @@ import { AGGREGATE_ABOVE, AGGREGATE_BELOW_ZOOM, advanceFrame, aggregateH3, build
 import { BUCKET_LAYER, useAviationPrefs, useFlights } from './useFlights';
 import { EMERGENCY_LABEL } from './format';
 import { aircraftSelection, hitTestAircraft } from './select';
-import { countStaleByBucket, deriveLayerState, staleKey, type StaleCounts } from './stale';
+import { countStaleByBucket, deriveLayerState, staleKey, stalenessState, type StaleCounts } from './stale';
 
 const Z = getLayer('flights')?.z ?? 80;
 const TICK_MS = 1000;
@@ -86,13 +87,17 @@ export default function AviationLayer({ active }: LayerComponentProps) {
   /** Per-bucket aircraft past the cap (all positions in the bucket, matching the rail count). */
   const [staleBy, setStaleBy] = useState<StaleCounts | null>(null);
   const staleByKey = useRef('');
+  /** Last own staleness per bucket (hysteresis input for deriveLayerState). */
+  const ownState = useRef<Partial<Record<Bucket, FreshnessState>>>({});
 
   /** Advance positions to now, refilter, and republish the layers (called from effects only). */
   const rebuild = useCallback(
     (reaggregate: boolean) => {
       const f = frame.current;
       const globe = projection === 'globe';
-      advanceFrame(f, Date.now(), buckets, globe, view.current.center);
+      // The camera's ground point and altitude (pitch-aware), the same value the map host
+      // publishes for isFacing(); null in mercator. Hides AND unpicks aircraft behind the limb.
+      advanceFrame(f, Date.now(), buckets, globe ? (map ? cameraFromMap(map) : getFarSideCamera()) : null);
       const aggregate = globe && f.count > AGGREGATE_ABOVE && view.current.zoom < AGGREGATE_BELOW_ZOOM;
       if (!aggregate) cells.current = null;
       else if (reaggregate || !cells.current) cells.current = aggregateH3(f);
@@ -121,7 +126,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
         setStaleBy(by);
       }
     },
-    [projection, buckets, colorMode, theme, watched, tracks, selectedId],
+    [map, projection, buckets, colorMode, theme, watched, tracks, selectedId],
   );
 
   // New snapshot → fresh typed arrays (re-aggregate once per snapshot, not per tick).
@@ -178,8 +183,11 @@ export default function AviationLayer({ active }: LayerComponentProps) {
       }
       const total = data.offline ? 0 : data.counts[bucket];
       const staleCount = data.offline ? 0 : (staleBy?.[bucket] ?? 0);
+      // Hysteresis on the stale share so the LED does not flap around 50 % between polls.
+      const prevOwn = ownState.current[bucket] ?? null;
+      ownState.current[bucket] = stalenessState(total, staleCount, prevOwn);
       updateStatus(id, {
-        state: deriveLayerState(data.meta.state, total, staleCount),
+        state: deriveLayerState(data.meta.state, total, staleCount, prevOwn),
         staleCount,
         count: data.offline ? null : data.counts[bucket],
         fetchedAt: data.meta.fetchedAt,

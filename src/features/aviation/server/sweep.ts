@@ -14,7 +14,7 @@ import { skippedProvider } from '@/lib/feeds';
 import { mergeRecords, type FlightRecord, type NormalizedBatch } from '../adsb';
 import type { Tile } from '../tiles';
 import { RateLimitedError, type GlobalKey } from './providers';
-import type { TileResult } from './tile-sweeper';
+import { MAX_TILE_AGE_MS, type TileResult } from './tile-sweeper';
 
 /** Provider keys, in `src` column order. */
 export const FLIGHT_SOURCES = ['adsblol_tiles', 'adsblol_mil', 'adsblol_ladd', 'adsblol_pia', 'adsblol_reapi', 'opensky', 'adsbfi_mil'] as const;
@@ -166,33 +166,37 @@ export async function runSweep(prev: FlightsSnapshot | null, deps: SweepDeps, si
     const prevStatus = runs.adsblol_tiles?.status;
     let lastError: unknown = null;
     let latest = -1;
+    let readOk = 0;
     for (const r of await deps.drainTiles()) {
       const prevTile = snap.tiles[r.index];
       if (!prevTile) continue;
       if (r.batch) {
         batches.push(r.batch.records);
         snap.tiles[r.index] = { at: r.at, ok: true, count: r.batch.records.length };
+        readOk++;
       } else {
         snap.tiles[r.index] = { ...prevTile, ok: false };
       }
-      // The provider's state is that of the most recent response (an error, then a success = ok).
       if (r.at >= latest) {
         latest = r.at;
         lastError = r.batch ? null : r.error;
       }
     }
-    // Nothing arrived since the last run (the worker is backing off): the last error still stands.
-    const carried = latest < 0 && prevStatus && !prevStatus.ok && !prevStatus.skipped && prevStatus.error !== 'empty' ? prevStatus.error : undefined;
     const okTiles = snap.tiles.filter((t) => t.ok && t.at !== null);
     const oldest = okTiles.length ? Math.min(...okTiles.map((t) => t.at!)) : null;
+    const newest = okTiles.length ? Math.max(...okTiles.map((t) => t.at!)) : null;
+    // Hysteresis (R2 round 3/4 MINOR: the LED flapped on every 429). The sweep is healthy while it
+    // still reads tiles: any successful tile since the last run keeps it ok, and a run with only
+    // failures (a 429 burst) or nothing at all (the worker backing off) HOLDS a previously ok sweep
+    // for one sweep period after its newest successful tile — with the honest age of its oldest
+    // contributing tile. Past that, or when it was not ok before, the latest error stands.
+    const prevOk = prevStatus?.ok === true;
+    const held = readOk === 0 && prevOk && newest !== null && now() - newest <= MAX_TILE_AGE_MS;
+    const ok = okTiles.length > 0 && (readOk > 0 || held);
+    const carried = !ok && latest < 0 && prevStatus && !prevStatus.ok && !prevStatus.skipped && prevStatus.error !== 'empty' ? prevStatus.error : undefined;
+    const error = ok ? undefined : lastError !== null ? errorReason(lastError) : (carried ?? (okTiles.length ? 'no_tile_read' : 'empty'));
     runs.adsblol_tiles = {
-      status: {
-        ok: okTiles.length > 0 && lastError === null && carried === undefined,
-        count: 0,
-        ms: now() - t0,
-        age_s: null,
-        ...(lastError !== null ? { error: errorReason(lastError) } : carried !== undefined ? { error: carried } : okTiles.length ? {} : { error: 'empty' }),
-      },
+      status: { ok, count: 0, ms: now() - t0, age_s: null, ...(error !== undefined ? { error } : {}) },
       // Age of the OLDEST tile still contributing: the honest age of the sweep as a whole.
       okAt: oldest,
     };

@@ -7,18 +7,27 @@
  *     airport lookups; its records can be years old, so the answer carries `sourceUpdatedAt` and
  *     is labelled stale when older than 180 days.
  * With a current position, `basis`/`status`/`progress` come from the great circle; otherwise
- * `basis: 'schedule'`, `status: 'unknown'`. Server-only.
+ * `basis: 'schedule'`, `status: 'unknown'`. With `icao24`, the exact observed position of that
+ * aircraft in the flights snapshot judges the leg (the card's query is quantised), and its flown
+ * track corroborates a reverse leg. The observed direction beats the schedule: a leg the
+ * observed course contradicts is withheld with a reason (same rule as the FLIGHT view,
+ * src/features/flight-paths/server/flight.ts). Server-only.
  */
 import 'server-only';
 import type { z } from 'zod';
 import { httpJson, HttpError } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import { sourceCache } from '@/lib/cache';
-import { runProvider, type ProviderRun } from '@/lib/feeds';
-import { alongTrackKm, distanceKm, initialBearing, type LngLatTuple } from '@/lib/geo';
+import { getFeed, runProvider, type ProviderRun } from '@/lib/feeds';
+import type { LngLatTuple } from '@/lib/geo';
 import type { FlightRouteResponse, RouteAirport } from '@/lib/schemas/aviation';
 import type { Providers } from '@/lib/types';
-import { adsbdbBucket } from './aircraft';
+import type { FlightRecord } from '../adsb';
+import type { TrackPoint } from '../trace';
+import { directionConflict, isImplausible, lastLowEnd, pickLeg, routeProgress, type RoutePosition } from '../route-geometry';
+import { adsbdbBucket, aircraftDetail } from './aircraft';
+
+export { IMPLAUSIBLE_FACTOR, isImplausible, pickLeg, routeProgress } from '../route-geometry';
 
 export type FlightRoute = z.infer<typeof FlightRouteResponse>;
 type Airport = z.infer<typeof RouteAirport>;
@@ -41,12 +50,13 @@ export interface RouteCandidate {
 const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
-function airport(a: { icao?: unknown; iata?: unknown; name?: unknown; city?: unknown; country?: unknown; lat?: unknown; lng?: unknown }): Airport | null {
+function airport(a: { icao?: unknown; iata?: unknown; name?: unknown; city?: unknown; country?: unknown; lat?: unknown; lng?: unknown; elevationFt?: unknown }): Airport | null {
   const lat = num(a.lat);
   const lng = num(a.lng);
   const name = text(a.name) ?? text(a.icao) ?? text(a.iata);
   if (lat === null || lng === null || !name || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { icao: text(a.icao), iata: text(a.iata), name, city: text(a.city), country: text(a.country), lat, lng };
+  const elev = num(a.elevationFt);
+  return { icao: text(a.icao), iata: text(a.iata), name, city: text(a.city), country: text(a.country), lat, lng, ...(elev !== null ? { elevationFt: Math.round(elev) } : {}) };
 }
 
 async function getJson<T>(url: string, limiter: { take(): Promise<void> }, timeoutMs: number): Promise<{ data: T; lastModified: string | null } | null> {
@@ -61,13 +71,15 @@ async function getJson<T>(url: string, limiter: { take(): Promise<void> }, timeo
 
 interface VrsRoute {
   airport_codes?: string;
-  _airports?: { name?: string; icao?: string; iata?: string; location?: string; countryiso2?: string; lat?: number; lon?: number }[];
+  _airports?: { name?: string; icao?: string; iata?: string; location?: string; countryiso2?: string; lat?: number; lon?: number; alt_feet?: number }[];
 }
 
 export async function vrsRoute(cs: string): Promise<RouteCandidate | null> {
   const r = await getJson<VrsRoute>(VRS_URL(cs), vrsBucket(), 6_000);
   const list = r?.data._airports ?? [];
-  const airports = list.map((a) => airport({ icao: a.icao, iata: a.iata, name: a.name, city: a.location, country: a.countryiso2, lat: a.lat, lng: a.lon })).filter((a): a is Airport => a !== null);
+  const airports = list
+    .map((a) => airport({ icao: a.icao, iata: a.iata, name: a.name, city: a.location, country: a.countryiso2, lat: a.lat, lng: a.lon, elevationFt: a.alt_feet }))
+    .filter((a): a is Airport => a !== null);
   if (airports.length < 2) return null;
   const lm = r?.lastModified ? Date.parse(r.lastModified) : NaN;
   return { airports, source: 'vrs', updatedAt: Number.isFinite(lm) ? lm : null };
@@ -75,6 +87,7 @@ export async function vrsRoute(cs: string): Promise<RouteCandidate | null> {
 
 interface AdsbdbAirport {
   country_iso_name?: string;
+  elevation?: number;
   iata_code?: string;
   icao_code?: string;
   latitude?: number;
@@ -88,7 +101,7 @@ export async function adsbdbRoute(cs: string): Promise<RouteCandidate | null> {
   const fr = r && typeof r.data.response === 'object' ? r.data.response.flightroute : undefined;
   if (!fr) return null;
   const map = (a: AdsbdbAirport | undefined) =>
-    a ? airport({ icao: a.icao_code, iata: a.iata_code, name: a.name, city: a.municipality, country: a.country_iso_name, lat: a.latitude, lng: a.longitude }) : null;
+    a ? airport({ icao: a.icao_code, iata: a.iata_code, name: a.name, city: a.municipality, country: a.country_iso_name, lat: a.latitude, lng: a.longitude, elevationFt: a.elevation }) : null;
   const o = map(fr.origin);
   const d = map(fr.destination);
   return o && d ? { airports: [o, d], source: 'adsbdb', updatedAt: null } : null;
@@ -120,74 +133,31 @@ export async function hexdbRoute(cs: string): Promise<RouteCandidate | null> {
   return { airports, source: 'hexdb', updatedAt: t !== null ? t * 1000 : null };
 }
 
-/** For a multi-stop VRS route, the leg whose corridor the aircraft is on (else first → last). */
-export function pickLeg(airports: readonly Airport[], here: LngLatTuple | null, trackDeg: number | null = null): [Airport, Airport] {
-  const first = airports[0]!;
-  const last = airports[airports.length - 1]!;
-  if (!here || airports.length === 2) return [first, last];
-  let best: [Airport, Airport] = [first, last];
-  let bestExcess = Infinity;
-  for (let i = 0; i < airports.length - 1; i++) {
-    const a = airports[i]!;
-    const b = airports[i + 1]!;
-    // A round trip (DFW–JFK–DFW) has two legs on the same corridor: the observed track decides which
-    // one is being flown (heading away from b means it is the other leg).
-    const away = trackDeg !== null && angleDiff(initialBearing(here, [b.lng, b.lat]), trackDeg) > 100 ? 1e6 : 0;
-    const excess = away + distanceKm([a.lng, a.lat], here) + distanceKm(here, [b.lng, b.lat]) - distanceKm([a.lng, a.lat], [b.lng, b.lat]);
-    if (excess < bestExcess) {
-      bestExcess = excess;
-      best = [a, b];
-    }
-  }
-  return best;
-}
-
-export interface Position {
-  lat: number;
-  lng: number;
-  speedKt: number | null;
-  /** Observed track, degrees true (picks the leg of a multi-leg route). */
-  trackDeg?: number | null;
-}
-
-const angleDiff = (a: number, b: number) => {
-  const d = Math.abs(a - b) % 360;
-  return d > 180 ? 360 - d : d;
-};
-
-/** Progress along the great circle when the aircraft is on the corridor (OSIRIS onCorridor rule). */
-export function routeProgress(o: Airport, d: Airport, pos: Position | null): Pick<FlightRoute, 'basis' | 'status' | 'progress' | 'distanceKm'> {
-  const A: LngLatTuple = [o.lng, o.lat];
-  const B: LngLatTuple = [d.lng, d.lat];
-  const total = distanceKm(A, B);
-  const distance = Math.round(total);
-  if (!pos) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
-  const here: LngLatTuple = [pos.lng, pos.lat];
-  const onCorridor = distanceKm(A, here) + distanceKm(here, B) <= total * 1.15 + 150;
-  if (!onCorridor || total < 30) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
-  const along = Math.min(total, Math.max(0, alongTrackKm(here, A, B)));
-  const moving = pos.speedKt !== null && pos.speedKt > 50;
-  return { basis: 'corridor', status: moving ? 'airborne' : 'unknown', progress: moving ? Math.round((along / total) * 1000) / 1000 : null, distanceKm: distance };
-}
-
-/** OSIRIS: a route is rejected when the aircraft is farther than this × route length from both ends. */
-export const IMPLAUSIBLE_FACTOR = 1.5;
-
-/** True when `pos` is > 1.5 × the o→d great-circle length from both endpoints (docs/reference/03 §5). */
-export function isImplausible(o: Airport, d: Airport, pos: Pick<Position, 'lat' | 'lng'> | null): boolean {
-  if (!pos) return false;
-  const here: LngLatTuple = [pos.lng, pos.lat];
-  const limit = distanceKm([o.lng, o.lat], [d.lng, d.lat]) * IMPLAUSIBLE_FACTOR;
-  return distanceKm([o.lng, o.lat], here) > limit && distanceKm([d.lng, d.lat], here) > limit;
-}
+export type Position = RoutePosition;
 
 export interface RouteDeps {
   vrs: (cs: string) => Promise<RouteCandidate | null>;
   adsbdb: (cs: string) => Promise<RouteCandidate | null>;
   hexdb: (cs: string) => Promise<RouteCandidate | null>;
+  /** The aircraft's record in the flights snapshot (exact observed position); default reads the feed. */
+  live?: (hex: string) => FlightRecord | null;
+  /** The aircraft's flown track (current leg, oldest first); default: the cached /api/aircraft lookup. */
+  track?: (hex: string) => Promise<readonly TrackPoint[] | null>;
 }
 
-const defaultDeps: RouteDeps = { vrs: vrsRoute, adsbdb: adsbdbRoute, hexdb: hexdbRoute };
+function snapshotRecord(hex: string): FlightRecord | null {
+  const snap = getFeed('flights')?.peek();
+  const records = (snap?.data as { records?: FlightRecord[] } | null | undefined)?.records;
+  return records?.find((r) => r.id === hex) ?? null;
+}
+
+async function flownTrack(hex: string): Promise<readonly TrackPoint[] | null> {
+  // Non-ICAO addresses (`~` prefix, TIS-B) have no readsb trace file.
+  if (!/^[0-9a-f]{6}$/.test(hex)) return null;
+  return (await aircraftDetail(hex))?.track ?? null;
+}
+
+const defaultDeps: RouteDeps = { vrs: vrsRoute, adsbdb: adsbdbRoute, hexdb: hexdbRoute, live: snapshotRecord, track: flownTrack };
 
 interface StoredRoute {
   candidate: RouteCandidate | null;
@@ -209,8 +179,28 @@ function providersAt(runs: Record<string, ProviderRun>, now: number): Providers 
   return Object.fromEntries(Object.entries(runs).map(([k, r]) => [k, { ...r.status, age_s: r.okAt ? Math.round((now - r.okAt) / 1000) : null }]));
 }
 
+const code = (a: Airport) => a.iata ?? a.icao ?? a.name;
+
+export interface RouteOptions {
+  /** ICAO 24-bit hex of the aircraft: exact snapshot position + flown-track corroboration. */
+  icao24?: string | null;
+}
+
+/** The exact observed state of `icao24` when the snapshot has it airborne under this callsign. */
+function exactPosition(cs: string, icao24: string | null | undefined, deps: RouteDeps): Position | null {
+  if (!icao24) return null;
+  let rec: FlightRecord | null = null;
+  try {
+    rec = (deps.live ?? snapshotRecord)(icao24);
+  } catch {
+    rec = null;
+  }
+  if (!rec || rec.onGround || (rec.callsign ?? '').replace(/\s+/g, '').toUpperCase() !== cs) return null;
+  return { lat: rec.lat, lng: rec.lng, speedKt: rec.gsKt, trackDeg: rec.trackDeg };
+}
+
 /** Cached per callsign for 10 min (hits and misses). Null when every source errored. */
-export async function flightRoute(cs: string, pos: Position | null, deps: RouteDeps = defaultDeps): Promise<FlightRoute | null> {
+export async function flightRoute(cs: string, pos: Position | null, deps: RouteDeps = defaultDeps, opts: RouteOptions = {}): Promise<FlightRoute | null> {
   const cache = sourceCache<StoredRoute>(`flight-route:${cs}`, async () => ({ data: await resolveRoute(cs, deps) }), { ttlMs: 10 * 60_000, retryAfterErrorMs: 60_000, deadlineMs: 20_000 });
   const r = await cache.get();
   const s = r.data;
@@ -218,23 +208,57 @@ export async function flightRoute(cs: string, pos: Position | null, deps: RouteD
   if (!s || !Object.values(s.providers).some((p) => p.status.ok)) return null;
   const base = { callsign: cs, providers: providersAt(s.providers, now), timestamp: new Date(now).toISOString() };
   if (!s.candidate) return { ...base, found: false, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: null };
-  const here: LngLatTuple | null = pos ? [pos.lng, pos.lat] : null;
-  const [o, d] = pickLeg(s.candidate.airports, here, pos?.trackDeg ?? null);
+  // R2 round 4 MINOR-6: the card's query position is quantised (0.5°, 50 kt, 45°); the snapshot has the exact one.
+  const exact = exactPosition(cs, opts.icao24, deps);
+  const p = exact ?? pos;
+  const positionSource: FlightRoute['positionSource'] = exact ? 'snapshot' : pos ? 'query' : null;
+  const here: LngLatTuple | null = p ? [p.lng, p.lat] : null;
+  const [o, d] = pickLeg(s.candidate.airports, here, p?.trackDeg ?? null);
   const updated = s.candidate.updatedAt;
   // Judge the whole listed route (first → last stop), not just the nearest leg.
   const first = s.candidate.airports[0]!;
   const last = s.candidate.airports[s.candidate.airports.length - 1]!;
-  if (isImplausible(first, last, pos) && isImplausible(o, d, pos)) {
-    return { ...base, found: false, implausible: true, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: s.candidate.source };
+  if (isImplausible(first, last, p) && isImplausible(o, d, p)) {
+    return { ...base, found: false, implausible: true, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: s.candidate.source, positionSource };
   }
-  return {
-    ...base,
-    found: true,
-    origin: o,
-    destination: d,
-    ...routeProgress(o, d, pos),
+  const listed = {
     source: s.candidate.source,
     sourceUpdatedAt: updated !== null ? new Date(updated).toISOString() : null,
     stale: s.candidate.source === 'hexdb' && (updated === null || now - updated > STALE_AFTER_MS),
+    positionSource,
   };
+  if (directionConflict(o, d, p)) {
+    // The observed course heads back toward the listed origin: the listed leg is contradicted.
+    // Show the reverse only when the flown track saw this aircraft take off from the listed
+    // destination; otherwise withhold, with the reason (the FLIGHT view's rule).
+    const sched = `${code(o)}→${code(d)}`;
+    let track: readonly TrackPoint[] | null = null;
+    if (opts.icao24) {
+      try {
+        track = await (deps.track ?? flownTrack)(opts.icao24);
+      } catch {
+        track = null;
+      }
+    }
+    const lastLow = track?.length ? lastLowEnd(track, o, d) : null;
+    if (lastLow === 'd') {
+      return {
+        ...base,
+        found: true,
+        origin: d,
+        destination: o,
+        ...routeProgress(d, o, p),
+        basis: 'observed',
+        reversed: true,
+        routeCheck: `observed departure ${code(d)} and course toward ${code(o)}: shown as flown ${code(d)}→${code(o)}; standing data lists ${sched}`,
+        ...listed,
+      };
+    }
+    const routeCheck =
+      lastLow === 'o'
+        ? `departed ${code(o)} earlier, now on course back toward ${code(o)} — return leg or turnaround not observed; route not confirmed`
+        : `airborne inside the corridor but heading toward ${code(o)}, opposite to standing data ${sched}; departure not observed — route not confirmed`;
+    return { ...base, found: true, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, directionConflict: true, routeCheck, ...listed };
+  }
+  return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed };
 }

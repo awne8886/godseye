@@ -12,7 +12,7 @@ import type { FeedResult } from '@/lib/feeds';
 import { F } from '../codec';
 import { flightsFeed } from '../feeds';
 import type { FlightsSnapshot } from './sweep';
-import { flightsBody } from './view';
+import { flightsBody, honestFlights } from './view';
 
 const TICK_MS = 5_000;
 
@@ -64,7 +64,8 @@ function tick(hub: SseHub) {
     return;
   }
   // Reading keeps the feed's poll loop alive while anyone is subscribed.
-  void flightsFeed.get().then((result) => {
+  void flightsFeed.get().then((raw) => {
+    const result = honestFlights(raw);
     const version = `${result.meta.fetchedAt}|${result.meta.state}`;
     if (version === state.version) return;
     state.version = version;
@@ -95,9 +96,9 @@ export function streamBufferBytes(aircraft: number): number {
 }
 
 export function flightsHub(): SseHub {
-  const hub = getHub('flights', () => snapshotPayload(flightsFeed.peek()));
+  const hub = getHub('flights', () => snapshotPayload(honestFlights(flightsFeed.peek())));
   if (!state.timer) {
-    const peek = flightsFeed.peek();
+    const peek = honestFlights(flightsFeed.peek());
     state.version = `${peek.meta.fetchedAt}|${peek.meta.state}`;
     state.seen = new Map(peek.data?.records.map((r) => [r.id, r.seenAt]) ?? []);
     state.timer = setInterval(() => tick(hub), TICK_MS);

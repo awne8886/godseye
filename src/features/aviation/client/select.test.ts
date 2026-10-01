@@ -31,7 +31,7 @@ describe('aircraft selection (unchanged shape)', () => {
 
 describe('aircraft CPU hit-test', () => {
   const f = newFrame([rec('near', 0.05, 0), rec('far', 0.5, 0), rec('jet', 0.02, 0.02, { bucket: 'jet' })]);
-  advanceFrame(f, 1_000_000, new Set(['commercial', 'jet']), false, [0, 0]);
+  advanceFrame(f, 1_000_000, new Set(['commercial', 'jet']), null);
 
   it('returns the single nearest drawn aircraft within HIT_PX, with its distance', () => {
     const c = hitTestAircraft(f, { x: 504, y: 500 }, map);
@@ -48,7 +48,7 @@ describe('aircraft CPU hit-test', () => {
 
   it('only considers visible aircraft (inactive buckets are not hit)', () => {
     const g = newFrame([rec('mil', 0, 0, { bucket: 'military' })]);
-    advanceFrame(g, 1_000_000, new Set(['commercial']), false, [0, 0]);
+    advanceFrame(g, 1_000_000, new Set(['commercial']), null);
     expect(hitTestAircraft(g, { x: 500, y: 500 }, map)).toEqual([]);
   });
 });
