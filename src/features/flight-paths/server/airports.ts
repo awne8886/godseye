@@ -69,8 +69,8 @@ export function boost(a: AirportRecord, q: string): number {
 }
 
 const match = (a: AirportRecord, score: number, matchedBy: MatchedBy): AirportMatch => {
-  const { gps: _g, keywords: _k, longestRunwayM: _r, ...rest } = a;
-  return { ...rest, score: Math.round(score * 100) / 100, matchedBy };
+  const { gps: _g, keywords, longestRunwayM: _r, ...rest } = a;
+  return { ...rest, keywords: keywords || null, score: Math.round(score * 100) / 100, matchedBy };
 };
 
 /** Exact code matches in resolve order (IATA → ICAO → gps_code/ident), default index then all. */

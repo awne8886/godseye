@@ -110,10 +110,21 @@ describe('flight view never shows another leg as the flown track (R4-M1)', () =>
 
   it('a track that departed the origin is kept and corroborates the route', async () => {
     const track = [pt(0, MEL[0], MEL[1], null), pt(1, 145.5, -37, 15_000), pt(2, 150, -30, 35_000)];
-    const rec = record({ lat: -30, lng: 150, altFt: 35_000, onGround: false, gsKt: 480 });
+    const rec = record({ lat: -30, lng: 150, altFt: 35_000, onGround: false, gsKt: 480, trackDeg: 60 });
     const d = (await flightDetail('UAL61', deps(rec, track), NOW))!;
     expect(d.flownTrack).toHaveLength(3);
     expect(d.sources.find((s) => s.name === 'corroboration')).toMatchObject({ ok: true, detail: 'observed departure matches the route origin MEL' });
+    expect(d.progress).not.toBeNull();
+  });
+
+  it('departed the origin but now tracking back toward it (round 4 B1): route withheld, track kept', async () => {
+    const track = [pt(0, MEL[0], MEL[1], null), pt(1, 145.5, -37, 15_000), pt(2, 150, -30, 35_000)];
+    const rec = record({ lat: -30, lng: 150, altFt: 35_000, onGround: false, gsKt: 480, trackDeg: 230 });
+    const d = (await flightDetail('UAL61', deps(rec, track), NOW))!;
+    expect(d.origin).toBeNull();
+    expect(d.progress).toBeNull();
+    expect(d.flownTrack).toHaveLength(3);
+    expect(d.routeCheck).toBe('departed MEL earlier, now on course back toward MEL — return leg or turnaround not observed; route not confirmed');
   });
 });
 

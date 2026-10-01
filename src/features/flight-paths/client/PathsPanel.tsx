@@ -14,7 +14,10 @@ import type { PanelProps } from '@/lib/feature-module';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import { useUiStore } from '@/lib/store';
 import { parseRouteParam } from '@/lib/url-state';
-import { draftMessage, setPathsDraft, usePathsDraft } from './draft';
+import { entityFreshness } from '@/lib/freshness';
+import { OBSERVATION_CADENCE_MS } from '@/lib/layer-registry';
+import type { FreshnessState } from '@/lib/types';
+import { draftMessage, pendingSides, setPathsDraft, usePathsDraft, type DraftSuggestion } from './draft';
 import { PARTIAL_FIT_TEXT, useFitNotice } from './fit';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
@@ -396,10 +399,19 @@ export function LiveView({ live, error }: { live: Live | undefined; error: unkno
   }
   if (!live) return <Note>Loading live aircraft…</Note>;
   const partial = live.coverage && !live.coverage.complete ? live.coverage : null;
-  const partialNote = partial && (
-    <Note tone="warn">
-      PARTIAL SNAPSHOT — {partial.tilesRead} of {partial.tilesTotal} coverage tiles read so far; aircraft on this pair may be missing.
-    </Note>
+  // Round 4 #8: the server never says live while the tile sweep fails; say what that means here.
+  const staleNote = (live.meta?.state === 'stale' || live.meta?.state === 'offline') && (
+    <Note tone="warn">LIVE FEED STALE — the adsb.lol coverage sweep is not updating right now; positions are the last observed ones (see each OBS time).</Note>
+  );
+  const partialNote = (partial || staleNote) && (
+    <>
+      {staleNote}
+      {partial && (
+        <Note tone="warn">
+          PARTIAL SNAPSHOT — {partial.tilesRead} of {partial.tilesTotal} coverage tiles read so far; aircraft on this pair may be missing.
+        </Note>
+      )}
+    </>
   );
   if (!live.aircraft.length) {
     return partialNote ? (
@@ -514,6 +526,37 @@ export function FlightView({ flight }: { flight: Flight }) {
   );
 }
 
+/**
+ * Header chip for a tracked flight (round 4 M3: "LIVE" was shown for any airborne answer, even a
+ * position 143 s old): airborne → the position's own freshness via `entityFreshness()` with the
+ * flights observation cadence and the supplying feed's state — LIVE / RECENT / STALE; otherwise
+ * the status. `feedState` missing (an older server) is treated as RECENT, never LIVE.
+ */
+export function flightChip(flight: Pick<Flight, 'status' | 'position' | 'feedState'>, now: number): [string, 'idle' | 'live' | 'warn'] {
+  if (flight.status !== 'airborne' || !flight.position) return [flight.status.toUpperCase(), 'idle'];
+  const state: FreshnessState = entityFreshness({
+    kind: 'live',
+    at: Date.parse(flight.position.observedAt),
+    observationCadenceMs: OBSERVATION_CADENCE_MS.flights,
+    feedState: flight.feedState ?? 'recent',
+    now,
+  });
+  if (state === 'live') return ['LIVE', 'live'];
+  if (state === 'recent') return ['RECENT', 'idle'];
+  return ['STALE', 'warn'];
+}
+
+/** Wall clock that advances every `ms` while `enabled` (re-evaluates freshness between refetches). */
+function useClock(ms: number, enabled: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!enabled) return;
+    const t = setInterval(() => setNow(Date.now()), ms);
+    return () => clearInterval(t);
+  }, [ms, enabled]);
+  return now;
+}
+
 function failureText(e: unknown): string {
   if (e instanceof ApiFailure) {
     if (e.status === 404) return `${(e.detail ?? 'Unknown airport').replace(/\.$/, '')} — check the code.`;
@@ -537,25 +580,38 @@ export default function PathsPanel(_props: PanelProps) {
   // A typed route the palette could not resolve: pre-fill FROM/TO and say so (R4-m6).
   const draft = usePathsDraft();
   const [seenDraft, setSeenDraft] = useState(0);
+  // Sides whose "Did you mean …?" suggestion was accepted (round 4 M2).
+  const [acceptedSides, setAcceptedSides] = useState<DraftSuggestion['side'][]>([]);
   if (draft && draft.seq !== seenDraft) {
     setSeenDraft(draft.seq);
     setFrom(draft.from);
     setTo(draft.to);
+    setAcceptedSides([]);
     setMode('route');
   }
-  const draftNotice = draft && draft.seq === seenDraft ? draftMessage(draft) : null;
+  const activeDraft = draft && draft.seq === seenDraft ? draft : null;
+  const openSuggestions = (activeDraft?.suggestions ?? []).filter((x) => !acceptedSides.includes(x.side));
+  const draftNotice = activeDraft
+    ? draftMessage({
+        ...activeDraft,
+        unresolved: activeDraft.unresolved.filter((n) => !(activeDraft.suggestions ?? []).some((x) => x.text === n && acceptedSides.includes(x.side))),
+        suggestions: openSuggestions,
+      })
+    : null;
   const fitNotice = useFitNotice();
 
   const plan = usePlan(route);
   const live = useLive(route, mode === 'live');
   const flight = useFlight(mode === 'flight' ? ident : null);
+  // Never older than the answer itself (the clock only ticks while an airborne flight is shown).
+  const now = Math.max(useClock(5_000, mode === 'flight' && flight.data?.status === 'airborne'), flight.dataUpdatedAt);
 
   const chip: [string, 'idle' | 'busy' | 'live' | 'warn' | 'error'] =
     mode === 'flight'
       ? flight.isFetching
         ? ['PLOTTING', 'busy']
         : flight.data
-          ? [flight.data.status === 'airborne' ? 'LIVE' : flight.data.status.toUpperCase(), flight.data.status === 'airborne' ? 'live' : 'idle']
+          ? flightChip(flight.data, now)
           : flight.error
             ? ['ERROR', 'error']
             : ['STANDBY', 'idle']
@@ -563,7 +619,7 @@ export default function PathsPanel(_props: PanelProps) {
         ? ['PLOTTING', 'busy']
         : plan.data
           ? mode === 'live' && live.data
-            ? [liveChip(live.data.aircraft), live.data.aircraft.length ? 'live' : 'idle']
+            ? [liveChip(live.data.aircraft), !live.data.aircraft.length ? 'idle' : live.data.meta?.state === 'live' ? 'live' : live.data.meta?.state === 'recent' ? 'idle' : 'warn']
             : [`${Math.round(plan.data.greatCircle.distanceKm).toLocaleString('en-US')} KM`, 'idle']
           : plan.error
             ? ['ERROR', 'error']
@@ -578,6 +634,16 @@ export default function PathsPanel(_props: PanelProps) {
     setFlightIdent(null);
     setPlannedRoute(r);
     setMode('route');
+  };
+  // One-click accept of a suggestion: fills that end; plots once no other end is still unresolved.
+  const accept = (sg: DraftSuggestion) => {
+    const a = sg.side === 'from' ? sg.code : from;
+    const b = sg.side === 'to' ? sg.code : to;
+    if (sg.side === 'from') setFrom(sg.code);
+    else setTo(sg.code);
+    const done = [...acceptedSides, sg.side];
+    setAcceptedSides(done);
+    if (activeDraft && [...pendingSides(activeDraft)].every((side) => done.includes(side))) plot(a, b);
   };
   const track = (v = identText) => {
     const id = v.trim().toUpperCase().replace(/\s+/g, '');
@@ -649,6 +715,21 @@ export default function PathsPanel(_props: PanelProps) {
             <p role="status" className="font-sans text-[12px] text-[var(--alert-orange)]">
               {draftNotice}
             </p>
+          )}
+          {openSuggestions.length > 0 && (
+            <div className="flex flex-wrap gap-1" data-testid="paths-draft-suggestions">
+              {openSuggestions.map((sg) => (
+                <button
+                  key={sg.side}
+                  type="button"
+                  onClick={() => accept(sg)}
+                  aria-label={`Use ${sg.code} (${sg.label}) as ${sg.side === 'from' ? 'origin' : 'destination'}`}
+                  className="hud-chip hud-text hud-control min-h-8 border border-[var(--border-active)] px-2 py-0.5 text-[11px] text-[var(--gold-light)]"
+                >
+                  USE {sg.code} ({sg.label}) AS {sg.side === 'from' ? 'FROM' : 'TO'}
+                </button>
+              ))}
+            </div>
           )}
         </form>
       )}

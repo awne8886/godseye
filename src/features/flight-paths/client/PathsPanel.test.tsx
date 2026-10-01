@@ -231,4 +231,37 @@ describe('PATHS panel', () => {
     });
     expect(screen.queryByText(/No airport found/)).toBeNull();
   });
+
+  it('a palette name that only fuzzy-matched offers "Did you mean ACY (Atlantic City)?" and one click plans it (round 4 M2)', async () => {
+    const { setPathsDraft } = await import('./draft');
+    useUiStore.setState({ plannedRoute: null, flightIdent: null });
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      setPathsDraft({ from: 'Atlantis', to: 'LHR', unresolved: ['Atlantis'], failed: [], same: null, suggestions: [{ side: 'from', text: 'Atlantis', code: 'ACY', label: 'Atlantic City' }] });
+    });
+    expect(screen.getByRole('status').textContent).toBe('No airport named "Atlantis". Did you mean ACY (Atlantic City)?');
+    expect(useUiStore.getState().plannedRoute).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Use ACY (Atlantic City) as origin' }));
+    });
+    expect(useUiStore.getState().plannedRoute).toEqual({ from: 'ACY', to: 'LHR' });
+    expect(screen.queryByText(/Did you mean/)).toBeNull();
+  });
+});
+
+describe('FLIGHT chip freshness (round 4 M3)', () => {
+  const NOW = Date.parse('2026-10-01T05:31:00Z');
+  const at = (ageS: number) => ({ lat: 40, lng: -74, altFt: 35000, gsKt: 450, trackDeg: 90, observedAt: new Date(NOW - ageS * 1000).toISOString() });
+  it('LIVE only within 1.5x the 60 s flights cadence, RECENT after, STALE when old; never LIVE from a stale feed', async () => {
+    const { flightChip } = await import('./PathsPanel');
+    expect(flightChip({ status: 'airborne', position: at(13), feedState: 'live' }, NOW)).toEqual(['LIVE', 'live']);
+    expect(flightChip({ status: 'airborne', position: at(135), feedState: 'live' }, NOW)).toEqual(['RECENT', 'idle']);
+    expect(flightChip({ status: 'airborne', position: at(143), feedState: 'live' }, NOW)).toEqual(['RECENT', 'idle']);
+    expect(flightChip({ status: 'airborne', position: at(400), feedState: 'live' }, NOW)).toEqual(['STALE', 'warn']);
+    expect(flightChip({ status: 'airborne', position: at(5), feedState: 'stale' }, NOW)).toEqual(['STALE', 'warn']);
+    expect(flightChip({ status: 'airborne', position: at(5) }, NOW)).toEqual(['RECENT', 'idle']);
+    expect(flightChip({ status: 'landed', position: null, feedState: null }, NOW)).toEqual(['LANDED', 'idle']);
+  });
 });

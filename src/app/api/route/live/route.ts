@@ -2,14 +2,16 @@
  * GET /api/route/live?from=&to=&reverse=1 — aircraft on an airport pair from aviation's in-process
  * flights snapshot: VRS-matched callsigns plus corridor-inferred aircraft (each flagged), with
  * progress, remaining km and ETA in the destination's local time. When the flights feed has no
- * snapshot the answer is 503 SOURCE OFFLINE with its last-good time. Owner: feature-flight-paths.
+ * snapshot the answer is 503 SOURCE OFFLINE with its last-good time; `meta.state` is never `live`
+ * while the adsb.lol tile sweep is failing or the snapshot is stale (`liveRouteMeta`).
+ * Owner: feature-flight-paths.
  */
 import { z } from 'zod';
 import { apiError, feedJson, parseQuery, withRoute } from '@/lib/respond';
 import { flightsFeed } from '@/features/aviation/feeds';
 import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { findAirport, vrsIndex } from '@/features/flight-paths/server/data';
-import { aircraftOnRoute, tileCoverage } from '@/features/flight-paths/server/live';
+import { aircraftOnRoute, liveRouteMeta, tileCoverage } from '@/features/flight-paths/server/live';
 import { AIRPORT_CODE_RE } from '@/features/flight-paths/lib/idents';
 
 export const dynamic = 'force-dynamic';
@@ -40,6 +42,8 @@ export const GET = withRoute('/api/route/live', async (req: Request) => {
   const generated = Date.parse(vrs.generatedAt);
   const withVrs = {
     ...result,
+    // Never LIVE while the tile sweep behind these positions is failing or the snapshot is past its TTL.
+    meta: liveRouteMeta(result.meta, result.providers.adsblol_tiles),
     providers: { ...result.providers, vrs_routes: { ok: true, count: vrs.size, ms: 0, age_s: Number.isFinite(generated) ? Math.round((now - generated) / 1000) : null } },
   };
   return feedJson(req, withVrs, (snap: FlightsSnapshot) => ({

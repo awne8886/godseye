@@ -3,7 +3,7 @@
  * Response shapes follow the build prompt §8 field-for-field; units are explicit.
  */
 import { z } from 'zod';
-import { IsoTime, Lat, Lng, LngLat, LocalTime, Providers } from './common';
+import { FreshnessState, IsoTime, Lat, Lng, LngLat, LocalTime, Providers } from './common';
 import { AircraftIdentity, TrackPoint } from './aviation';
 
 export const AirportType = z.enum(['large_airport', 'medium_airport', 'small_airport', 'heliport', 'seaplane_base', 'closed', 'balloonport']);
@@ -31,6 +31,8 @@ export const Airport = z.object({
 export const AirportMatch = Airport.extend({
   score: z.number(),
   matchedBy: z.enum(['iata', 'icao', 'ident', 'fuzzy', 'metro', 'photon', 'nominatim']),
+  /** OurAirports search keywords (alternative names, e.g. "LON, Londres"); lets a client tell a name match from a fuzzy guess. */
+  keywords: z.string().nullable().optional(),
 });
 
 /** GET /api/airports/search?q=&all=0|1 */
@@ -234,6 +236,12 @@ export const FlightDetailResponse = z.object({
   position: z
     .object({ lat: Lat, lng: Lng, altFt: z.number().nullable(), gsKt: z.number().nullable(), trackDeg: z.number().nullable(), observedAt: IsoTime })
     .nullable(),
+  /**
+   * Freshness state of the feed that supplied `position` (the flights snapshot's `meta.state`, or
+   * `live` for a direct adsb.lol lookup that just answered); null without a position. Clients
+   * badge the position with `entityFreshness()` and `OBSERVATION_CADENCE_MS.flights` (round 4 M3).
+   */
+  feedState: FreshnessState.nullable().optional(),
   progress: z.number().min(0).max(1).nullable(),
   eta: IsoTime.nullable(),
   /** ETA as destination-local wall-clock time with its UTC offset. */

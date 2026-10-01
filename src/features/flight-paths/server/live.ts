@@ -16,6 +16,7 @@ import 'server-only';
 import type { z } from 'zod';
 import type { LngLatTuple } from '@/lib/geo';
 import type { LiveRouteAircraft } from '@/lib/schemas/flight-paths';
+import type { FeedMeta, ProviderStatus } from '@/lib/types';
 import type { FlightRecord } from '@/features/aviation/adsb';
 import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { distanceKm } from '@/lib/geo';
@@ -103,7 +104,8 @@ export function aircraftOnRoute(
     if (!direction) continue;
     const [from, to, dest] = direction === 'forward' ? [A, B, d] : [B, A, o];
     const { progress, remainingKm } = progressOn(p, from, to);
-    const eta = etaMs(remainingKm, state, opts.now);
+    // From the observation time, not the request (round 4 m1).
+    const eta = etaMs(remainingKm, state, r.seenAt * 1000);
     out.push({
       hex: r.id,
       callsign: r.callsign,
@@ -136,4 +138,21 @@ export function tileCoverage(snap: Pick<FlightsSnapshot, 'tiles'>): { tilesRead:
   if (!Array.isArray(tiles) || !tiles.length) return undefined;
   const tilesRead = tiles.filter((t) => t.ok && t.at !== null).length;
   return { tilesRead, tilesTotal: tiles.length, complete: tilesRead === tiles.length };
+}
+
+/**
+ * The feed meta /api/route/live reports (round 4 #8: it said `state: "live"` with `stale: true`
+ * while the adsb.lol tile sweep that supplies these positions answered 429). The flights feed's
+ * state, made consistent with what it serves:
+ *  - the tile sweep failing (its latest response an error, not a skip) → at most `stale`: the rows
+ *    are last-good positions, each with its own `observedAt`;
+ *  - the snapshot served past its TTL (`stale: true`) → never `live`;
+ *  - `stale` is true whenever the state is `stale` or `offline`.
+ */
+export function liveRouteMeta(meta: FeedMeta, tiles: ProviderStatus | undefined): FeedMeta {
+  const failing = !!tiles && !tiles.ok && !tiles.skipped;
+  let state = meta.state;
+  if (failing && (state === 'live' || state === 'recent')) state = 'stale';
+  else if (meta.stale && state === 'live') state = 'recent';
+  return { ...meta, state, stale: meta.stale || state === 'stale' || state === 'offline' };
 }

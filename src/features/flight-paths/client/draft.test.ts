@@ -6,7 +6,7 @@ const reply = (status: number, body: unknown) => (async () => new Response(JSON.
 describe('palette place resolution (round 3 m5)', () => {
   it('metro group first, else the best match, else none', async () => {
     expect(await resolvePlace('London', reply(200, { results: [{ iata: 'LCY', icao: 'EGLC', ident: 'EGLC' }], metro: { codes: ['LHR', 'LGW'] } }))).toEqual({ kind: 'found', code: 'LHR' });
-    expect(await resolvePlace('Heathrow', reply(200, { results: [{ iata: 'LHR', icao: 'EGLL', ident: 'EGLL' }], metro: null }))).toEqual({ kind: 'found', code: 'LHR' });
+    expect(await resolvePlace('Heathrow', reply(200, { results: [{ iata: 'LHR', icao: 'EGLL', ident: 'EGLL', name: 'London Heathrow Airport', municipality: 'London', matchedBy: 'fuzzy' }], metro: null }))).toEqual({ kind: 'found', code: 'LHR' });
     expect(await resolvePlace('Qwxz', reply(200, { results: [], metro: null }))).toEqual({ kind: 'none' });
   });
 
@@ -33,7 +33,7 @@ describe('palette place resolution (round 3 m5)', () => {
 
   it('unresolved names keep the old wording', () => {
     const d = routeOrDraft('Atlantis', 'New York', { kind: 'none' }, { kind: 'found', code: 'JFK' });
-    expect(d.draft).toMatchObject({ from: 'Atlantis', to: 'JFK', unresolved: ['Atlantis'], failed: [], same: null });
+    expect(d.draft).toMatchObject({ from: 'Atlantis', to: 'JFK', unresolved: ['Atlantis'], failed: [], same: null, suggestions: [] });
     expect(draftMessage(d.draft!)).toMatch(/^No airport found for "Atlantis"/);
   });
 });
