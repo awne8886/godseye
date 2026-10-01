@@ -1,5 +1,5 @@
 /**
- * GET /api/flight-route?callsign=&lat=&lng=&speed= — callsign → origin/destination from VRS
+ * GET /api/flight-route?callsign=&lat=&lng=&speed=&track= — callsign → origin/destination from VRS
  * standing data (adsb.lol), then adsbdb, then hexdb `/route/icao/` (labelled stale with its update
  * time). With a position, progress along the great circle when the aircraft is on the corridor.
  * Owner: layers-aviation.
@@ -22,14 +22,15 @@ const Query = z
     lat: coord(-90, 90).optional(),
     lng: coord(-180, 180).optional(),
     speed: z.coerce.number().min(0).max(2000).optional(),
+    track: z.coerce.number().min(0).max(360).optional(),
   })
   .refine((q) => (q.lat === undefined) === (q.lng === undefined), { message: 'lat and lng go together', path: ['lat'] });
 
 export const GET = withRoute('/api/flight-route', async (req: Request) => {
   const q = parseQuery(req, Query);
   if (!q.ok) return q.response;
-  const { callsign, lat, lng, speed } = q.data;
-  const pos = lat !== undefined && lng !== undefined ? { lat, lng, speedKt: speed ?? null } : null;
+  const { callsign, lat, lng, speed, track } = q.data;
+  const pos = lat !== undefined && lng !== undefined ? { lat, lng, speedKt: speed ?? null, trackDeg: track ?? null } : null;
   const route = await flightRoute(callsign, pos);
   if (!route) return apiError(503, 'source_offline', 'No route source answered (VRS standing data, adsbdb, hexdb).', { retryAfter: 60, headers: { 'Retry-After': '60' } });
   return json(route, { ttl: route.found ? 600 : 120 });

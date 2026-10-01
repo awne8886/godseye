@@ -15,7 +15,7 @@ import { httpJson, HttpError } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import { sourceCache } from '@/lib/cache';
 import { runProvider, type ProviderRun } from '@/lib/feeds';
-import { alongTrackKm, distanceKm, type LngLatTuple } from '@/lib/geo';
+import { alongTrackKm, distanceKm, initialBearing, type LngLatTuple } from '@/lib/geo';
 import type { FlightRouteResponse, RouteAirport } from '@/lib/schemas/aviation';
 import type { Providers } from '@/lib/types';
 import { adsbdbBucket } from './aircraft';
@@ -121,7 +121,7 @@ export async function hexdbRoute(cs: string): Promise<RouteCandidate | null> {
 }
 
 /** For a multi-stop VRS route, the leg whose corridor the aircraft is on (else first → last). */
-export function pickLeg(airports: readonly Airport[], here: LngLatTuple | null): [Airport, Airport] {
+export function pickLeg(airports: readonly Airport[], here: LngLatTuple | null, trackDeg: number | null = null): [Airport, Airport] {
   const first = airports[0]!;
   const last = airports[airports.length - 1]!;
   if (!here || airports.length === 2) return [first, last];
@@ -130,7 +130,10 @@ export function pickLeg(airports: readonly Airport[], here: LngLatTuple | null):
   for (let i = 0; i < airports.length - 1; i++) {
     const a = airports[i]!;
     const b = airports[i + 1]!;
-    const excess = distanceKm([a.lng, a.lat], here) + distanceKm(here, [b.lng, b.lat]) - distanceKm([a.lng, a.lat], [b.lng, b.lat]);
+    // A round trip (DFW–JFK–DFW) has two legs on the same corridor: the observed track decides which
+    // one is being flown (heading away from b means it is the other leg).
+    const away = trackDeg !== null && angleDiff(initialBearing(here, [b.lng, b.lat]), trackDeg) > 100 ? 1e6 : 0;
+    const excess = away + distanceKm([a.lng, a.lat], here) + distanceKm(here, [b.lng, b.lat]) - distanceKm([a.lng, a.lat], [b.lng, b.lat]);
     if (excess < bestExcess) {
       bestExcess = excess;
       best = [a, b];
@@ -143,7 +146,14 @@ export interface Position {
   lat: number;
   lng: number;
   speedKt: number | null;
+  /** Observed track, degrees true (picks the leg of a multi-leg route). */
+  trackDeg?: number | null;
 }
+
+const angleDiff = (a: number, b: number) => {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+};
 
 /** Progress along the great circle when the aircraft is on the corridor (OSIRIS onCorridor rule). */
 export function routeProgress(o: Airport, d: Airport, pos: Position | null): Pick<FlightRoute, 'basis' | 'status' | 'progress' | 'distanceKm'> {
@@ -209,7 +219,7 @@ export async function flightRoute(cs: string, pos: Position | null, deps: RouteD
   const base = { callsign: cs, providers: providersAt(s.providers, now), timestamp: new Date(now).toISOString() };
   if (!s.candidate) return { ...base, found: false, origin: null, destination: null, basis: null, status: 'unknown', progress: null, distanceKm: null, source: null };
   const here: LngLatTuple | null = pos ? [pos.lng, pos.lat] : null;
-  const [o, d] = pickLeg(s.candidate.airports, here);
+  const [o, d] = pickLeg(s.candidate.airports, here, pos?.trackDeg ?? null);
   const updated = s.candidate.updatedAt;
   // Judge the whole listed route (first → last stop), not just the nearest leg.
   const first = s.candidate.airports[0]!;

@@ -142,6 +142,7 @@ Callsign → origin/destination with observed-track corroboration
 | `lat` | query | number | no | current latitude |
 | `lng` | query | number | no | current longitude |
 | `speed` | query | number | no | ground speed kt |
+| `track` | query | number | no | observed track in degrees (picks the leg of a multi-leg route) |
 
 ## Space
 

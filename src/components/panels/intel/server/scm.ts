@@ -88,8 +88,10 @@ export function assess(quakes: readonly Pick<Earthquake, 'magnitude' | 'place' |
 /** Provider run from another feed's result (ok when it has data; age from its fetchedAt). */
 export function runFromFeed(meta: { fetchedAt: string | null; state: string } | null, count: number, hasData: boolean): ProviderRun {
   const at = meta?.fetchedAt ? Date.parse(meta.fetchedAt) : null;
+  // Last-good data from a source that is currently failing is not a success (state stale/offline).
+  const fresh = hasData && (meta?.state === 'live' || meta?.state === 'recent' || meta?.state === 'reference');
   return {
-    status: { ok: hasData, count, ms: 0, age_s: null, ...(hasData ? {} : { error: meta ? meta.state : 'not-available' }) },
+    status: { ok: fresh, count, ms: 0, age_s: null, ...(fresh ? {} : { error: meta ? meta.state : 'not-available' }) },
     okAt: hasData ? at : null,
   };
 }

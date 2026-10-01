@@ -51,7 +51,7 @@ const quantise = (v: number, step: number) => Math.round(v / step) * step || 0;
  * the speed to 50 kt bands so the key does not change on every poll (each change is a request to a
  * rate-limited route); the server's plausibility gate still sees a position within ~40 km.
  */
-export function flightRouteQuery(callsign: string, pos: { lat: number; lng: number; gsKt: number | null } | null): { key: readonly unknown[]; url: string } {
+export function flightRouteQuery(callsign: string, pos: { lat: number; lng: number; gsKt: number | null; trackDeg?: number | null } | null): { key: readonly unknown[]; url: string } {
   const lat = pos ? Math.max(-90, Math.min(90, quantise(pos.lat, ROUTE_POS_STEP_DEG))) : null;
   let lng = pos ? quantise(pos.lng, ROUTE_POS_STEP_DEG) : null;
   if (lng !== null && (lng > 180 || lng <= -180)) lng = lng > 0 ? lng - 360 : lng + 360;
@@ -62,10 +62,13 @@ export function flightRouteQuery(callsign: string, pos: { lat: number; lng: numb
     q.set('lng', String(lng));
   }
   if (speed !== null) q.set('speed', String(speed));
-  return { key: ['flight-route', callsign, lat, lng, speed], url: `/api/flight-route?${q}` };
+  // Track to 45° sectors: enough to tell the legs of a round trip apart without refetching per poll.
+  const track = pos?.trackDeg != null ? (Math.round(pos.trackDeg / 45) * 45) % 360 : null;
+  if (track !== null) q.set('track', String(track));
+  return { key: track === null ? ['flight-route', callsign, lat, lng, speed] : ['flight-route', callsign, lat, lng, speed, track], url: `/api/flight-route?${q}` };
 }
 
-export function useFlightRoute(callsign: string | null, pos: { lat: number; lng: number; gsKt: number | null } | null) {
+export function useFlightRoute(callsign: string | null, pos: { lat: number; lng: number; gsKt: number | null; trackDeg?: number | null } | null) {
   const { key, url } = callsign ? flightRouteQuery(callsign, pos) : { key: ['flight-route', null] as const, url: '' };
   return useQuery({
     queryKey: key,
@@ -125,7 +128,7 @@ export default function AircraftCard({ selection }: CardProps) {
   const state = entityFreshness({ kind: 'live', at: observedMs, observationCadenceMs: OBSERVATION_CADENCE_MS[layer], feedState, now });
   const reckoned = deadReckon(r, now);
   const detail = useAircraftDetail(/^[0-9a-f]{6}$/.test(r.id) ? r.id : null);
-  const route = useFlightRoute(r.callsign, r.onGround ? null : { lat: r.lat, lng: r.lng, gsKt: r.gsKt });
+  const route = useFlightRoute(r.callsign, r.onGround ? null : { lat: r.lat, lng: r.lng, gsKt: r.gsKt, trackDeg: r.trackDeg });
   const watched = useUiStore((s) => s.watchedFlights.includes(r.id));
   const watchCount = useUiStore((s) => s.watchedFlights.length);
   const watchFlight = useUiStore((s) => s.watchFlight);

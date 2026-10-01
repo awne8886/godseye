@@ -98,7 +98,7 @@ export const API_CATALOG = [
   },
   {
     method: 'GET', path: '/api/flight-route', group: 'aviation', summary: 'Callsign → origin/destination with observed-track corroboration',
-    params: [q('callsign', 'string', true, 'ICAO callsign', 'BAW117'), q('icao24', 'string', false, 'hex for trace corroboration'), q('lat', 'number', false, 'current latitude'), q('lng', 'number', false, 'current longitude'), q('speed', 'number', false, 'ground speed kt')],
+    params: [q('callsign', 'string', true, 'ICAO callsign', 'BAW117'), q('icao24', 'string', false, 'hex for trace corroboration'), q('lat', 'number', false, 'current latitude'), q('lng', 'number', false, 'current longitude'), q('speed', 'number', false, 'ground speed kt'), q('track', 'number', false, 'observed track in degrees (picks the leg of a multi-leg route)')],
     ttlSeconds: 600, responseSchema: 'FlightRouteResponse', upstreams: ['vrs-standing-data.adsb.lol', 'api.adsbdb.com', 'hexdb.io'], forwardsUserInput: true, example: '?callsign=BAW117', osiris: true, owner: 'layers-aviation',
   },
 

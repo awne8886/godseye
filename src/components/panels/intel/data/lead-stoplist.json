@@ -4,32 +4,153 @@
   "reviewed": "2026-10-01",
   "match": "Case-insensitive. 'word': the whole word, optionally with a plural/case ending listed in 'endings'. 'prefix': any word starting with the term.",
   "terms": [
-    { "term": "pajeet", "match": "prefix" },
-    { "term": "kike", "match": "word", "endings": ["s"] },
-    { "term": "nigger", "match": "prefix" },
-    { "term": "nigga", "match": "word", "endings": ["s", "z"] },
-    { "term": "sandnigger", "match": "prefix" },
-    { "term": "wetback", "match": "prefix" },
-    { "term": "raghead", "match": "prefix" },
-    { "term": "towelhead", "match": "prefix" },
-    { "term": "gook", "match": "word", "endings": ["s"] },
-    { "term": "spic", "match": "word", "endings": ["s"] },
-    { "term": "paki", "match": "word", "endings": ["s"] },
-    { "term": "untermensch", "match": "prefix" },
-    { "term": "khokhol", "match": "prefix" },
-    { "term": "khokhly", "match": "word" },
-    { "term": "katsap", "match": "prefix" },
-    { "term": "moskal", "match": "word", "endings": ["s", "i", "y"] },
-    { "term": "хохол", "match": "word" },
-    { "term": "хохл", "match": "word", "endings": ["ы", "ов", "ам", "ами", "ах"] },
-    { "term": "кацап", "match": "prefix" },
-    { "term": "москаль", "match": "word" },
-    { "term": "москали", "match": "word" },
-    { "term": "москалей", "match": "word" },
-    { "term": "жиды", "match": "word" },
-    { "term": "жидов", "match": "word" },
-    { "term": "faggot", "match": "prefix" },
-    { "term": "tranny", "match": "word" },
-    { "term": "trannies", "match": "word" }
+    {
+      "term": "pajeet",
+      "match": "prefix"
+    },
+    {
+      "term": "kike",
+      "match": "word",
+      "endings": [
+        "s"
+      ]
+    },
+    {
+      "term": "nigger",
+      "match": "prefix"
+    },
+    {
+      "term": "nigga",
+      "match": "word",
+      "endings": [
+        "s",
+        "z"
+      ]
+    },
+    {
+      "term": "sandnigger",
+      "match": "prefix"
+    },
+    {
+      "term": "wetback",
+      "match": "prefix"
+    },
+    {
+      "term": "raghead",
+      "match": "prefix"
+    },
+    {
+      "term": "towelhead",
+      "match": "prefix"
+    },
+    {
+      "term": "gook",
+      "match": "word",
+      "endings": [
+        "s"
+      ]
+    },
+    {
+      "term": "spic",
+      "match": "word",
+      "endings": [
+        "s"
+      ]
+    },
+    {
+      "term": "paki",
+      "match": "word",
+      "endings": [
+        "s"
+      ]
+    },
+    {
+      "term": "untermensch",
+      "match": "prefix"
+    },
+    {
+      "term": "khokhol",
+      "match": "prefix"
+    },
+    {
+      "term": "khokhly",
+      "match": "word"
+    },
+    {
+      "term": "katsap",
+      "match": "prefix"
+    },
+    {
+      "term": "moskal",
+      "match": "word",
+      "endings": [
+        "s",
+        "i",
+        "y"
+      ]
+    },
+    {
+      "term": "хохол",
+      "match": "word"
+    },
+    {
+      "term": "хохл",
+      "match": "word",
+      "endings": [
+        "ы",
+        "ов",
+        "ам",
+        "ами",
+        "ах"
+      ]
+    },
+    {
+      "term": "кацап",
+      "match": "prefix"
+    },
+    {
+      "term": "москаль",
+      "match": "word"
+    },
+    {
+      "term": "москали",
+      "match": "word"
+    },
+    {
+      "term": "москалей",
+      "match": "word"
+    },
+    {
+      "term": "жиды",
+      "match": "word"
+    },
+    {
+      "term": "жидов",
+      "match": "word"
+    },
+    {
+      "term": "faggot",
+      "match": "prefix"
+    },
+    {
+      "term": "tranny",
+      "match": "word"
+    },
+    {
+      "term": "trannies",
+      "match": "word"
+    },
+    {
+      "term": "москал",
+      "match": "prefix"
+    },
+    {
+      "term": "укры",
+      "match": "word"
+    },
+    {
+      "term": "русня",
+      "match": "prefix"
+    }
   ]
 }

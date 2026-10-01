@@ -102,6 +102,8 @@ export const conflictsFeed = defineFeed<ConflictsData>({
   key: 'conflicts',
   ttlMs: 15 * 60_000,
   pollMs: 5 * 60_000,
+  // GDELT publishes every 15 min: events older than an hour mean the live part is not live.
+  maxObservationAgeMs: 60 * 60_000,
   kind: 'mixed',
   attribution: [
     { text: 'Zone polygons: Natural Earth (public domain); zone list curated (REFERENCE)', url: 'https://www.naturalearthdata.com/' },
@@ -114,7 +116,8 @@ export const conflictsFeed = defineFeed<ConflictsData>({
   run: async () => {
     const zones = loadZones();
     const g = await gdeltFeed.get();
-    const gdeltOk = g.data !== null;
+    // Last-good GDELT data while GDELT is failing is not a success: only a fresh snapshot counts.
+    const gdeltOk = g.data !== null && (g.meta.state === 'live' || g.meta.state === 'recent');
     if (g.data) {
       const from = Date.parse(g.data.window.from);
       if (!G.__godseyeConflictSince || from < G.__godseyeConflictSince) G.__godseyeConflictSince = Math.max(from, Date.now() - DAY_MS);
@@ -126,8 +129,8 @@ export const conflictsFeed = defineFeed<ConflictsData>({
       providers: {
         zones: { status: { ok: true, count: zones.length, ms: 0, age_s: 0 }, okAt: Date.now() },
         gdelt: {
-          status: { ok: gdeltOk, count: built.events.length, ms: 0, age_s: 0, ...(gdeltOk ? {} : { error: g.providers.export?.error ?? g.providers.lastupdate?.error ?? 'offline' }) },
-          okAt: gdeltOk && g.meta.fetchedAt ? Date.parse(g.meta.fetchedAt) : null,
+          status: { ok: gdeltOk, count: built.events.length, ms: 0, age_s: 0, ...(gdeltOk ? {} : { error: g.providers.export?.error ?? g.providers.lastupdate?.error ?? g.meta.state }) },
+          okAt: g.data !== null && g.meta.fetchedAt ? Date.parse(g.meta.fetchedAt) : null,
         },
       },
       observedAt: newest,
