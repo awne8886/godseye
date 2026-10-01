@@ -31,6 +31,16 @@ from the API, and weak security and licensing. The rules are enforced in code an
 - **One catalogue, no drift.** `src/lib/api-catalog.ts` generates `/docs`, `docs/API.md`, the Privacy
   page's list of third parties and the per-route rate limits; tests fail when they disagree.
 
+## Screenshots
+
+Captured from a production build with live keyless feeds (software WebGL; see
+[docs/screenshots](docs/screenshots/README.md) for the full set and how to re-capture).
+
+| | |
+|---|---|
+| ![Flight Paths: LHR → JFK great circle on the globe with METAR for both ends](docs/screenshots/flight-paths/lhr-jfk-route-globe-desktop.webp) | ![Entity card: a USGS earthquake with its source and observed time](docs/screenshots/cards/earthquake-desktop.webp) |
+| ![Markets panel: exchange sessions and delayed quotes](docs/screenshots/panels/markets-desktop.webp) | ![Sources & Licences register](docs/screenshots/panels/sources-licences-desktop.webp) |
+
 ## Quick start (no keys needed)
 
 Requirements: Node.js ≥ 22.12 and pnpm 10 (via Corepack).
