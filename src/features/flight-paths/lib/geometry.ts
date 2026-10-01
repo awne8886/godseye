@@ -248,6 +248,45 @@ export function corridorReject(s: LiveState, a: LngLatTuple, b: LngLatTuple): Co
   return onCorridor(p, a, b) ? null : 'detour';
 }
 
+/** Direction test thresholds (R4 round 3, B1/M1). */
+export const DIRECTION = {
+  /** Track within this of the local great-circle bearing toward b (airways and oceanic tracks are not great circles). */
+  maxTrackDiffDeg: 60,
+  /** Within this of an endpoint the heading says nothing (SIDs, holds, downwind legs): the vertical rate decides. */
+  terminalKm: 150,
+  /** Climbing faster than this near b is a departure from b; descending faster than this near a is an arrival at a. */
+  vrFpm: 500,
+} as const;
+
+/**
+ * Is an airborne aircraft flying a→b (true), not (false), or is that unknown from what was observed
+ * (null: no track; near an endpoint without a vertical rate)? En route: the observed track within
+ * ±60° of the local great-circle bearing toward b. Near b: not climbing out of it. Near a: not
+ * descending into it. Says nothing about the corridor (see `onCorridor`).
+ */
+export function headingAlong(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean | null {
+  if (s.trackDeg === null) return null;
+  const p: LngLatTuple = [s.lng, s.lat];
+  const total = distanceKm(a, b);
+  const nearB = distanceKm(p, b) <= DIRECTION.terminalKm;
+  const nearA = distanceKm(p, a) <= DIRECTION.terminalKm;
+  if (nearB || nearA) {
+    if (s.vrFpm === null) return null;
+    if (nearB && s.vrFpm > DIRECTION.vrFpm) return false;
+    if (nearA && !nearB && s.vrFpm < -DIRECTION.vrFpm) return false;
+    return true;
+  }
+  const f = total > 0 ? alongTrackKm(p, a, b) / total : 0;
+  // Abeam the path: its local bearing; before a or past b: straight toward b.
+  const local = f > 0 && f < 1 ? initialBearing(interpolate(a, b, f), b) : initialBearing(p, b);
+  return angleDiff(s.trackDeg, local) <= DIRECTION.maxTrackDiffDeg;
+}
+
+/** On a→b: inside the corridor AND heading toward b (an observed direction, never assumed). */
+export function flyingRoute(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean {
+  return onCorridor([s.lng, s.lat], a, b) && headingAlong(s, a, b) === true;
+}
+
 export function corridorMatch(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean {
   return corridorReject(s, a, b) === null;
 }

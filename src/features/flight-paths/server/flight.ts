@@ -21,7 +21,7 @@ import { aircraftDetail, adsbdbBucket } from '@/features/aviation/server/aircraf
 import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
-import { etaMs, onCorridor, pathIntoFrame, progressOn } from '../lib/geometry';
+import { etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progressOn } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { findAirport, openFlights, vrsIndex, type AirportRecord } from './data';
@@ -170,25 +170,33 @@ export interface LegOfTrack {
 const isLow = (p: TrackPoint) => p.onGround || (p.altFt !== null && p.altFt < DEPARTURE_ALT_FT);
 
 /**
- * Is this trace the O→D leg? The first point, when on the ground or low, is the observed departure; a
- * track that starts near the destination is the inbound leg. A departure elsewhere is trimmed to the
- * last low point at the origin followed by flight away from it (a take-off, not an approach), when there is one.
+ * Is this trace the O→D leg? The trace is searched for the LAST take-off from the origin (a low
+ * point within 60 km of O followed by flight away from it): when there is one, the leg starts
+ * there and earlier legs are trimmed (round 3 m1: also when the trace begins in cruise on the
+ * previous leg). Otherwise a first point on the ground or low near O is a departure not yet
+ * flown; a first point low elsewhere (or near D) is a departure elsewhere; else it is unobserved.
  */
 export function legOfTrack(track: readonly TrackPoint[], O: LngLatTuple, D: LngLatTuple): LegOfTrack {
   const first = track[0];
   if (!first) return { departure: 'none', track: [], trimmed: false };
   const near = (p: TrackPoint, at: LngLatTuple, km: number) => distanceKm([p.lng, p.lat], at) <= km;
   const farApart = distanceKm(O, D) > 2 * DEPARTURE_KM;
+  // Walk back to the last take-off from O: the latest low point at O with flight away from O after it.
+  let awayAfter = false;
+  for (let i = track.length - 1; i >= 0; i--) {
+    const p = track[i]!;
+    if (awayAfter && isLow(p) && near(p, O, DEPARTURE_KM)) return { departure: 'origin', track: track.slice(i), trimmed: i > 0 };
+    if (!p.onGround && !near(p, O, DEPARTURE_KM)) awayAfter = true;
+  }
   if (isLow(first) && near(first, O, DEPARTURE_KM)) return { departure: 'origin', track: [...track], trimmed: false };
   const fromElsewhere = isLow(first) || (farApart && near(first, D, DEPARTURE_KM));
-  if (!fromElsewhere) return { departure: 'unobserved', track: [...track], trimmed: false };
-  for (let i = track.length - 1; i > 0; i--) {
-    const p = track[i]!;
-    if (isLow(p) && near(p, O, DEPARTURE_KM) && track.slice(i + 1).some((q) => !q.onGround && !near(q, O, DEPARTURE_KM))) {
-      return { departure: 'origin', track: track.slice(i), trimmed: true };
-    }
-  }
-  return { departure: 'elsewhere', track: [...track], trimmed: false };
+  return { departure: fromElsewhere ? 'elsewhere' : 'unobserved', track: [...track], trimmed: false };
+}
+
+/** The trace from its last low point (the latest observed take-off) on; the whole trace when it never was low. */
+export function sinceLastTakeoff(track: readonly TrackPoint[]): TrackPoint[] {
+  for (let i = track.length - 1; i >= 0; i--) if (isLow(track[i]!)) return track.slice(i);
+  return [...track];
 }
 
 const toRun = (p: Providers[string]): ProviderRun => ({ status: p, okAt: p.ok && p.age_s !== null ? Date.now() - p.age_s * 1000 : null });
@@ -236,35 +244,91 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
 
   const airborne = live !== null && !live.onGround && (live.gsKt ?? 0) > 50;
   let groundAtOrigin = false;
-  // Corroboration (OSIRIS): the observed departure beats the schedule. The flown track is shown only
-  // when it is this leg's: a track that departed elsewhere is the aircraft's previous leg (R4-M1).
+  // Progress/ETA only for a route the aircraft is observed flying, in the observed direction.
+  let onRoute = false;
+  let routeBasis: FlightDetail['routeBasis'] = origin && destination ? 'standing-data' : null;
+  let routeCheck: string | null = null;
+  // Corroboration (OSIRIS): the observed departure and course beat the schedule (round 3 B1). The
+  // flown track is shown only when it is this leg's: a track that departed elsewhere and ended on
+  // the ground at the origin is the aircraft's previous leg (R4-M1).
   if (origin && destination) {
-    const code = origin.iata ?? origin.ident;
+    const codeO = origin.iata ?? origin.ident;
+    const codeD = destination.iata ?? destination.ident;
+    const sched = `${codeO}→${codeD}`;
     const O: LngLatTuple = [origin.lng, origin.lat];
     const D: LngLatTuple = [destination.lng, destination.lat];
     groundAtOrigin = live !== null && !airborne && distanceKm([live.lng, live.lat], O) <= AT_AIRPORT_KM;
     const leg = legOfTrack(flownTrack, O, D);
-    const inCorridor = live && airborne ? onCorridor([live.lng, live.lat], O, D) : null;
+    const withhold = (detail: string) => {
+      sources.push({ name: 'corroboration', ok: false, detail });
+      routeCheck = detail;
+      routeBasis = null;
+      origin = null;
+      destination = null;
+    };
     if (groundAtOrigin) {
       // Not departed yet: any airborne part of the track belongs to an earlier flight.
       if (flownTrack.some((p) => !p.onGround)) {
         flownTrack = [];
-        sources.push({ name: 'flown track', ok: false, detail: `previous leg of this aircraft, not this flight — not shown (aircraft is on the ground at ${code})` });
+        sources.push({ name: 'flown track', ok: false, detail: `previous leg of this aircraft, not this flight — not shown (aircraft is on the ground at ${codeO})` });
       }
-      sources.push({ name: 'corroboration', ok: false, detail: `not yet possible: aircraft on the ground at ${code}, no departure observed` });
-    } else if (leg.departure === 'elsewhere' && inCorridor !== true) {
-      sources.push({ name: 'corroboration', ok: false, detail: `observed departure is not ${code}; route withheld` });
-      origin = null;
-      destination = null;
+      sources.push({ name: 'corroboration', ok: false, detail: `not yet possible: aircraft on the ground at ${codeO}, no departure observed` });
+    } else if (live && airborne) {
+      // An airborne aircraft's current leg IS this flight: its observed departure and course decide
+      // the direction; the standing data only names the pair.
+      const s = { lat: live.lat, lng: live.lng, altFt: live.altFt, gsKt: live.gsKt, trackDeg: live.trackDeg, vrFpm: live.vrFpm };
+      const fwd = flyingRoute(s, O, D);
+      const rev = flyingRoute(s, D, O);
+      // A trace that ends on the ground away from where the aircraft now flies is an earlier leg:
+      // this leg's departure and track were not observed.
+      const end = flownTrack[flownTrack.length - 1];
+      const traceEnded = end !== undefined && isLow(end) && distanceKm([end.lng, end.lat], [live.lng, live.lat]) > DEPARTURE_KM;
+      if (traceEnded) {
+        flownTrack = [];
+        sources.push({ name: 'flown track', ok: false, detail: 'the trace ends with a landing before this leg — earlier leg not shown; this leg was not observed yet' });
+      }
+      const back = legOfTrack(flownTrack, D, O);
+      const departedO = !traceEnded && leg.departure === 'origin';
+      const departedD = !traceEnded && back.departure === 'origin';
+      // Both take-offs in the trace: the later one (shorter remainder) is this leg.
+      const latest = departedO && departedD ? (leg.track.length <= back.track.length ? 'O' : 'D') : departedO ? 'O' : departedD ? 'D' : null;
+      const offKm = Math.round(positionOnPath([live.lng, live.lat], O, D).offKm);
+      if (latest === 'O') {
+        flownTrack = leg.track;
+        sources.push({ name: 'corroboration', ok: true, detail: `observed departure matches the route origin ${codeO}${leg.trimmed ? ' (earlier legs trimmed from the trace)' : ''}` });
+        if (fwd) onRoute = true;
+        else {
+          routeCheck = `departed ${codeO} but not observed on course for ${codeD} (${offKm} km off the great circle) — progress and ETA not shown`;
+          sources.push({ name: 'progress', ok: false, detail: routeCheck });
+        }
+      } else if (latest === 'D' && rev) {
+        // Observed D→O: show the leg as flown, not the standing data's reversed direction.
+        flownTrack = back.track;
+        [origin, destination] = [destination, origin];
+        routeBasis = 'observed-reverse';
+        onRoute = true;
+        routeCheck = `observed departure ${codeD} and course toward ${codeO}: shown as flown ${codeD}→${codeO}; standing data lists ${sched}`;
+        sources.push({ name: 'corroboration', ok: true, detail: routeCheck });
+      } else if (latest === 'D') {
+        flownTrack = back.track;
+        withhold(`observed departure ${codeD} contradicts standing data ${sched}, and the aircraft is not on course for ${codeO} — route not confirmed`);
+      } else if (!traceEnded && leg.departure === 'elsewhere') {
+        flownTrack = sinceLastTakeoff(flownTrack);
+        withhold(`observed departure is not ${codeO} — contradicts standing data ${sched}; route not confirmed`);
+      } else if (fwd) {
+        onRoute = true;
+        sources.push({ name: 'corroboration', ok: true, detail: `airborne inside the ${sched} corridor on course for ${codeD} (departure not observed)` });
+      } else if (rev) {
+        withhold(`airborne inside the corridor but heading toward ${codeO}, opposite to standing data ${sched}; departure not observed — route not confirmed`);
+      } else {
+        const why = onCorridor([live.lng, live.lat], O, D) ? (live.trackDeg === null ? 'no observed track' : `not on course for ${codeD}`) : `${offKm} km off the great circle`;
+        withhold(`aircraft is not on standing-data route ${sched} (${why}) — route not confirmed`);
+      }
     } else if (leg.departure === 'elsewhere') {
-      flownTrack = [];
-      sources.push({ name: 'flown track', ok: false, detail: `observed departure is not ${code} — track belongs to another leg, not shown` });
-      sources.push({ name: 'corroboration', ok: true, detail: 'aircraft is airborne inside the route corridor (departure not confirmed)' });
+      withhold(`observed departure is not ${codeO}; route withheld`);
     } else if (leg.departure === 'origin') {
       flownTrack = leg.track;
       sources.push({ name: 'corroboration', ok: true, detail: `observed departure matches the route origin${leg.trimmed ? ' (earlier legs trimmed from the trace)' : ''}` });
-    } else if (inCorridor) {
-      sources.push({ name: 'corroboration', ok: true, detail: 'aircraft is airborne inside the route corridor (departure not observed)' });
     }
   }
 
@@ -274,7 +338,7 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
   let progress: number | null = null;
   let eta: number | null = null;
   let remainingLeg: [number, number][] = [];
-  if (live && O && D && airborne) {
+  if (live && O && D && airborne && onRoute) {
     const here: LngLatTuple = [live.lng, live.lat];
     const pr = progressOn(here, O, D);
     progress = pr.progress;
@@ -306,6 +370,8 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     eta: eta !== null ? new Date(eta).toISOString() : null,
     etaLocal: eta !== null && destination ? localTimeIso(destination.tz, eta) : null,
     etaTz: destination?.tz ?? null,
+    routeBasis,
+    routeCheck,
     routeSource: route?.found ? { name: route.source, stale: route.stale ?? false, updatedAt: route.sourceUpdatedAt ?? null } : null,
     identity: detail?.identity ?? null,
     weather: {
