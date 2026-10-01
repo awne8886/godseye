@@ -568,7 +568,8 @@ export default function PathsPanel(_props: PanelProps) {
           : plan.error
             ? ['ERROR', 'error']
             : ['STANDBY', 'idle'];
-  usePanelChip(chip[0], chip[1]);
+  // The abbreviated LIVE chip ('1 M · 2 I') carries the full wording as its tooltip.
+  usePanelChip(chip[0], chip[1], mode === 'live' && live.data && plan.data ? liveCounts(live.data.aircraft) : undefined);
 
   const plot = (a = from, b = to) => {
     const r = parseRouteParam(`${a.trim()}~${b.trim()}`);

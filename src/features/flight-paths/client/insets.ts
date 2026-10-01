@@ -38,9 +38,8 @@ export function measureObstacles(): Rect[] {
     const published = document.documentElement.style.getPropertyValue('--sheet-occupied');
     out.push(sheetRect(viewport, sheetOccupiedPx(published, viewport.height)));
   }
-  // The view-controls bar is the glass panel holding the Projection toggle.
-  const controls = document.querySelector('[role="group"][aria-label="Projection"]')?.closest('.glass-panel');
-  const boxes = [controls, ...document.querySelectorAll('.maplibregl-ctrl-bottom-left > *, .maplibregl-ctrl-bottom-right > *')];
+  // Map chrome that marks itself as an inset (the view-controls bar) plus MapLibre's bottom controls.
+  const boxes = [...document.querySelectorAll('[data-map-inset]'), ...document.querySelectorAll('.maplibregl-ctrl-bottom-left > *, .maplibregl-ctrl-bottom-right > *')];
   for (const el of boxes) {
     if (!(el instanceof HTMLElement)) continue;
     const r = el.getBoundingClientRect();
