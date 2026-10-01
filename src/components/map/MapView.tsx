@@ -27,6 +27,7 @@ import { geometryClient } from '@/lib/map/geometry-client';
 import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
 import { collectCandidates, routePick, setHoverPointer, type PickMap } from '@/lib/map/picking';
 import { basemapChipText, createBasemapHealth, type BasemapHealth } from '@/lib/map/basemap-health';
+import { fetchBasemapStyle } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
 import { onceStyleLoaded, styleParsed } from '@/lib/map/ready';
@@ -37,14 +38,10 @@ import { installMissingImageResolver } from '@/lib/map/style-images';
 import {
   BASEMAP_ATTRIBUTION,
   BASEMAP_SOURCE_ID,
-  BASEMAP_STYLE_URL,
   IMAGERY_BEFORE_ID,
   firstLabelLayerId,
-  inlineTileJson,
   paintDiff,
-  parseTileJson,
   themedBasemap,
-  tileJsonUrl,
   transformStyle,
 } from '@/lib/map/style-transform';
 import { attachTerrain, TERRAIN_MAX_PITCH, TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
@@ -84,16 +81,8 @@ function hasWebGL2(): boolean {
 const cssVar = (name: string) => (typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name));
 
 async function loadBasemap(signal: AbortSignal): Promise<StyleSpecification> {
-  const res = await fetch(BASEMAP_STYLE_URL, { signal, credentials: 'omit' });
-  if (!res.ok) throw new Error(`basemap style HTTP ${res.status}`);
-  let raw = (await res.json()) as StyleSpecification;
-  // Inline the vector TileJSON so its failure is retried with the style (no blank globe).
-  const tj = tileJsonUrl(raw);
-  if (tj) {
-    const r = await fetch(tj, { signal, credentials: 'omit' });
-    if (!r.ok) throw new Error(`basemap TileJSON HTTP ${r.status}`);
-    raw = inlineTileJson(raw, parseTileJson(await r.json(), tj));
-  }
+  // Style and vector TileJSON (inlined, so its failure is retried with the style: no blank globe).
+  const raw = await fetchBasemapStyle(signal);
   rawBasemap = raw;
   return transformStyle(raw, themedBasemap(cssVar));
 }
