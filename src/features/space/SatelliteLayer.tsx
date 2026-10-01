@@ -19,8 +19,10 @@ import type { LayerId } from '@/lib/layer-registry';
 import { CATEGORY_TOKEN, LAYER_CATEGORY, SAT_CATEGORIES } from './lib/catalog';
 import { ISS_NORAD_ID, displayAltM } from './lib/orbit-math';
 import type { WorkerIn, WorkerOut } from './lib/propagator';
-import { hitTestSatellites, latestLngLat } from './client/pick';
+import type { BatchResult } from './lib/propagate-batch';
+import { hitTestSatellites, latestPosition } from './client/pick';
 import { registerDeckPick, registerHitTester, type DeckPickInfo } from '@/lib/map/picking';
+import { cameraFromMap, getFarSideCamera, isFacing } from '@/lib/map/far-side';
 import { catalogue, fetchOrbit, indexOfId, orbitQueryKey, recordAt, selectionDataFor, setCatalogue, useSpaceStore, type SatelliteSelectionData } from './client/data';
 import type { Attribution, SatCategory } from '@/lib/types';
 import { hudFontFamily } from '@/lib/tokens';
@@ -46,18 +48,20 @@ export const ISS_LABEL_CHARSET = [...new Set(ISS_LABEL)];
 const DECK_Z = 90;
 const DOTS_ID = 'space-satellites';
 const ORBIT_REANCHOR_MS = 10 * 60_000;
+/** While the map moves, the far-side camera reaches the worker at most this often (and on moveend). */
+const CAMERA_POST_MS = 100;
 
-interface Frame {
-  version: string;
-  at: number;
-  count: number;
-  positions: Float32Array;
-  colors: Uint8Array;
-  radii: Float32Array;
-  index: Uint32Array;
-  hidden: number;
-  failed: number;
-  selected: { noradId: number; lng: number; lat: number; altKm: number; velocityKmS: number; shadow: boolean } | null;
+/** A propagated frame from the worker (far-side filtered with `camera`). */
+type Frame = { version: string } & BatchResult;
+
+/**
+ * Diagnostics for e2e (hidden): the frame on screen — catalogue version, propagation time, drawn
+ * and hidden counts and the far-side camera it was filtered with — so a spec can re-propagate the
+ * same catalogue and check that exactly the camera-facing satellites are drawn.
+ */
+export function frameDiagnostics(f: Frame | null): string {
+  if (!f) return '';
+  return JSON.stringify({ version: f.version, at: f.at, count: f.count, hidden: f.hidden, failed: f.failed, camera: f.camera });
 }
 
 /**
@@ -71,6 +75,49 @@ class SatelliteDotsLayer extends ScatterplotLayer<unknown, { drawnFrame: Frame }
     if (info.index >= 0 && (info.object === undefined || info.object === null)) info.object = { drawIndex: info.index };
     return info;
   }
+}
+
+/** Per-frame update trigger: a camera re-filter keeps `at` but changes the drawn set. */
+const frameSeq = new WeakMap<Frame, number>();
+let nextSeq = 0;
+function seqOf(f: Frame): number {
+  let s = frameSeq.get(f);
+  if (s === undefined) {
+    s = ++nextSeq;
+    frameSeq.set(f, s);
+  }
+  return s;
+}
+
+/**
+ * The satellites: binary attributes straight from the worker frame (already far-side filtered).
+ * Never culled (MapLibre leaves face culling on after the globe pass). The depth test stays on:
+ * the far-side filter drops satellites behind the globe, and depth hides the few a fast drag can
+ * carry past the limb before the next re-filter (≤ 100 ms, or ≤ 250 ms ahead of a tick).
+ */
+export function satelliteDotsLayer(frame: Frame): SatelliteDotsLayer {
+  const seq = seqOf(frame);
+  return new SatelliteDotsLayer({
+    id: DOTS_ID,
+    data: {
+      length: frame.count,
+      attributes: {
+        getPosition: { value: frame.positions, size: 3 },
+        getFillColor: { value: frame.colors, size: 4, type: 'unorm8' },
+        getRadius: { value: frame.radii, size: 1 },
+      },
+    },
+    radiusUnits: 'pixels',
+    radiusMinPixels: 1,
+    billboard: true,
+    stroked: false,
+    pickable: true,
+    parameters: { cullMode: 'none' },
+    // Read by the map's single click/hover router (src/lib/map/picking.ts), which arbitrates
+    // with every other module (aircraft and cameras outrank satellites) and opens one card.
+    drawnFrame: frame,
+    updateTriggers: { getPosition: seq, getFillColor: seq, getRadius: seq },
+  });
 }
 
 /** Selection for catalogue row `catIndex` drawn at `lngLat` in the frame propagated for `at`. */
@@ -204,10 +251,15 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     };
     updateStatus('satellites', { state: 'loading' });
     w.postMessage({ type: 'load', url } satisfies WorkerIn);
-    // Frames are propagated for the next wall-clock second and published at that second.
+    // Frames are propagated for the next wall-clock second and published at that second. A
+    // camera re-filter of the same propagation does not touch the card's telemetry store.
+    let telemetryKey = '';
     const publisher = createBoundaryPublisher<Frame>((f) => {
       latestFrame.current = f;
       setFrameState(f);
+      const key = `${f.at}|${f.selected?.noradId ?? ''}`;
+      if (key === telemetryKey) return;
+      telemetryKey = key;
       setFrame(f.at, f.selected ? { ...f.selected, at: f.at } : null);
     });
     w.onmessage = (e: MessageEvent<WorkerOut>) => {
@@ -239,11 +291,12 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     };
   }, [setFrame, updateStatus]);
 
-  // CPU hit-test on the newest frame (reliable on a moving marker and where GPU picking is unavailable).
+  // CPU hit-test on the newest frame (reliable on a moving marker and where GPU picking is
+  // unavailable). Satellites behind the globe for the CURRENT camera are never hit.
   useEffect(
     () =>
       registerHitTester('space', (point, m) =>
-        hitTestSatellites(latestFrame.current, point, m, globeRef.current, (catIndex, lngLat) => {
+        hitTestSatellites(latestFrame.current, point, m, { globe: globeRef.current, camera: globeRef.current ? (getFarSideCamera() ?? cameraFromMap(m)) : null }, (catIndex, lngLat) => {
           const s = selectionFor(catIndex, lngLat, latestFrame.current?.at ?? Date.now(), activeRef.current);
           return s ? { layer: s.layer ?? 'satellites', selection: s } : null;
         }),
@@ -261,27 +314,56 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
         const i = info.index ?? -1;
         if (!f || i < 0 || i >= f.count) return null;
         const catIndex = f.index[i]!;
-        const lngLat = latestLngLat(latestFrame.current, catIndex) ?? [f.positions[i * 3]!, f.positions[i * 3 + 1]!];
-        return selectionFor(catIndex, lngLat, latestFrame.current?.at ?? f.at, activeRef.current);
+        const p = latestPosition(latestFrame.current, catIndex) ?? [f.positions[i * 3]!, f.positions[i * 3 + 1]!, f.positions[i * 3 + 2]!];
+        // GPU picking draws its own buffer without the globe's depth: re-check the far side.
+        if (globeRef.current && !isFacing([p[0], p[1]], getFarSideCamera(), p[2])) return null;
+        return selectionFor(catIndex, [p[0], p[1]], latestFrame.current?.at ?? f.at, activeRef.current);
       }),
     [],
   );
 
-  // View (centre for the far-side filter, visible categories, palette, selection) → worker.
+  // View (far-side camera, visible categories, palette, selection) → worker.
   useEffect(() => {
     const w = workerRef.current;
     if (!w) return;
-    const post = () => {
-      const c = map?.getCenter();
-      w.postMessage({ type: 'view', center: projection === 'globe' && c ? [c.lng, c.lat] : null, visible, palette: palette(), selectedId });
-    };
-    post();
-    if (!map) return;
-    map.on('moveend', post);
-    return () => {
-      map.off('moveend', post);
-    };
+    const camera = projection === 'globe' ? (map ? cameraFromMap(map) : getFarSideCamera()) : null;
+    w.postMessage({ type: 'view', camera, visible, palette: palette(), selectedId } satisfies WorkerIn);
   }, [map, projection, visible, selectedId, theme, catalogueVersion]);
+
+  // Far-side camera → worker while the map moves (at most every CAMERA_POST_MS, and once when it
+  // settles). The worker re-filters its newest propagation at once, so satellites that turn
+  // behind the globe stop drawing (and picking) without waiting for the next 1 Hz tick.
+  useEffect(() => {
+    if (!map || projection !== 'globe') return;
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    let last = 0;
+    const send = () => {
+      last = Date.now();
+      workerRef.current?.postMessage({ type: 'camera', camera: cameraFromMap(map) } satisfies WorkerIn);
+    };
+    const onMove = () => {
+      if (pending) return;
+      pending = setTimeout(
+        () => {
+          pending = undefined;
+          send();
+        },
+        Math.max(0, CAMERA_POST_MS - (Date.now() - last)),
+      );
+    };
+    const onEnd = () => {
+      if (pending) clearTimeout(pending);
+      pending = undefined;
+      send();
+    };
+    map.on('move', onMove);
+    map.on('moveend', onEnd);
+    return () => {
+      map.off('move', onMove);
+      map.off('moveend', onEnd);
+      if (pending) clearTimeout(pending);
+    };
+  }, [map, projection]);
 
   // 1 Hz propagation clock (0.5 Hz with reduced motion) on wall-clock second boundaries; paused
   // while the tab is hidden. The first frame is propagated for "now" so nothing waits a second.
@@ -314,28 +396,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     if (orbit.data && selData && orbit.data.noradId === selData.noradId) {
       out.push(orbitLayer(orbit.data.segments, readCssColor(CATEGORY_TOKEN[selData.category], 0.85)));
     }
-    out.push(
-      new SatelliteDotsLayer({
-        id: DOTS_ID,
-        data: {
-          length: frame.count,
-          attributes: {
-            getPosition: { value: frame.positions, size: 3 },
-            getFillColor: { value: frame.colors, size: 4, type: 'unorm8' },
-            getRadius: { value: frame.radii, size: 1 },
-          },
-        },
-        radiusUnits: 'pixels',
-        radiusMinPixels: 1,
-        billboard: true,
-        stroked: false,
-        pickable: true,
-        // Read by the map's single click/hover router (src/lib/map/picking.ts), which arbitrates
-        // with every other module (aircraft and cameras outrank satellites) and opens one card.
-        drawnFrame: frame,
-        updateTriggers: { getPosition: frame.at, getFillColor: frame.at, getRadius: frame.at },
-      }),
-    );
+    out.push(satelliteDotsLayer(frame));
     // ISS highlight: a label beside its (enlarged) marker when it is on the visible hemisphere.
     const issIdx = indexOfId(ISS_NORAD_ID);
     const k = issIdx === undefined ? -1 : frame.index.indexOf(issIdx);
@@ -346,5 +407,6 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
   }, [frame, orbit.data, selData]);
 
   useDeckLayers('space', layers, DECK_Z);
-  return null;
+  const diagnostics = useMemo(() => frameDiagnostics(frame), [frame]);
+  return <p hidden data-testid="space-status" data-frame={diagnostics} />;
 }

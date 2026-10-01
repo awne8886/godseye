@@ -7,23 +7,26 @@
  *
  * Protocol (main → worker):
  *   {type:'load', url}                       fetch + parse + build (initial load and every refresh)
- *   {type:'view', center, visible, palette, selectedId}
+ *   {type:'view', camera, visible, palette, selectedId}   re-filters the newest propagation at once
+ *   {type:'camera', camera}                  far-side camera only (throttled while the map moves);
+ *                                            re-filters the newest propagation (no SGP4) and posts it
  *   {type:'tick', at}                        propagate for `at` (ms) and post one frame
  * (worker → main):
  *   {type:'catalogue', version, summary, packed | null}   packed null = same version, nothing rebuilt
  *   {type:'catalogue-error', status, meta, providers}      503 = SOURCE OFFLINE with last-good meta
- *   {type:'frame', version, at, count, positions, colors, radii, index, hidden, failed, selected}
+ *   {type:'frame', version, at, count, positions, colors, radii, index, hidden, failed, selected, camera}
  */
 import type { SatRec } from 'satellite.js';
 import type { FeedMeta, Mission, Providers, SatCategory } from '@/lib/types';
 import { recordToOmm, rowToRecord } from './catalog';
 import { satrecFromOmm } from './orbit';
 import { packRows, packedTransferables, type PackedCatalogue } from './packed';
-import { propagateBatch, type BatchOptions, type BatchResult } from './propagate-batch';
+import { compactFrame, propagateVisible, type BatchOptions, type BatchResult, type FarSideCamera, type Propagated } from './propagate-batch';
 
 export type WorkerIn =
   | { type: 'load'; url: string }
-  | { type: 'view'; center: [number, number] | null; visible: number[]; palette: [number, number, number, number][]; selectedId: number | null }
+  | { type: 'view'; camera: FarSideCamera | null; visible: number[]; palette: [number, number, number, number][]; selectedId: number | null }
+  | { type: 'camera'; camera: FarSideCamera | null }
   | { type: 'tick'; at: number };
 
 /** Everything the main thread needs about the catalogue except the rows themselves. */
@@ -66,8 +69,16 @@ interface SatellitesBody {
 
 export function createPropagator(post: Post, fetchImpl: FetchLike) {
   let loaded: Loaded | null = null;
-  let view: Omit<BatchOptions, 'at'> = { palette: [], visible: new Set(), center: null, selectedId: null };
+  let view: Omit<BatchOptions, 'at'> = { palette: [], visible: new Set(), camera: null, selectedId: null };
+  /** The newest propagation of `loaded` (re-filtered on camera moves without running SGP4 again). */
+  let last: Propagated | null = null;
   let loading: Promise<void> | null = null;
+
+  function postFrame(prop: Propagated): void {
+    if (!loaded) return;
+    const r = compactFrame(loaded, prop, view);
+    post({ type: 'frame', version: loaded.version, ...r }, [r.positions.buffer, r.colors.buffer, r.radii.buffer, r.index.buffer] as ArrayBuffer[]);
+  }
 
   async function load(url: string): Promise<void> {
     let res: Awaited<ReturnType<FetchLike>>;
@@ -113,6 +124,7 @@ export function createPropagator(post: Post, fetchImpl: FetchLike) {
     }
     // The worker keeps its own copies of the arrays it propagates from; the packed ones are transferred.
     loaded = { version, satrecs, noradIds: packed.noradIds.slice(), categories: packed.categories.slice() };
+    last = null; // its rows index the previous catalogue
     post({ type: 'catalogue', version, summary: { ...summaryBase, unusable }, packed }, packedTransferables(packed));
   }
 
@@ -126,13 +138,17 @@ export function createPropagator(post: Post, fetchImpl: FetchLike) {
         });
         return run;
       }
-      if (msg.type === 'view') {
-        view = { center: msg.center, visible: new Set(msg.visible), palette: msg.palette, selectedId: msg.selectedId };
+      if (msg.type === 'view' || msg.type === 'camera') {
+        view = msg.type === 'view' ? { camera: msg.camera, visible: new Set(msg.visible), palette: msg.palette, selectedId: msg.selectedId } : { ...view, camera: msg.camera };
+        // The camera moved (or the view changed): nothing behind the globe may stay drawn until the
+        // next tick, so the newest propagation is re-filtered now. A category switched on appears
+        // with the next tick (its satellites were not propagated).
+        if (last) postFrame(last);
         return;
       }
       if (msg.type === 'tick' && loaded) {
-        const r = propagateBatch(loaded, { ...view, at: msg.at });
-        post({ type: 'frame', version: loaded.version, ...r }, [r.positions.buffer, r.colors.buffer, r.radii.buffer, r.index.buffer] as ArrayBuffer[]);
+        last = propagateVisible(loaded, { ...view, at: msg.at });
+        postFrame(last);
       }
     },
     /** Test hook. */

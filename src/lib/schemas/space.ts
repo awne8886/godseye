@@ -5,6 +5,7 @@
  * NORAD ids are therefore plain integers that may exceed 99999.
  */
 import { z } from 'zod';
+import { SATELLITE_FIELDS } from './space-fields';
 import { Envelope, IsoTime, Lat, Lng, Providers, columnarResponse } from './common';
 
 export const SatCategory = z.enum(['comms', 'military', 'navigation', 'earth_obs', 'science', 'other']);
@@ -31,31 +32,12 @@ export const Omm = z.object({
 });
 
 /**
- * Columnar layout of GET /api/satellites (OMM elements + GODSEYE classification). `epoch` is the
- * element-set epoch as integer ms since the Unix epoch, UTC (`epochUnit: 'ms'`); responses built from
- * snapshots older than 2026-10-01 may still carry the ISO-8601 string. An epoch is when the element
- * set is valid, not an observation, and CelesTrak publishes a few in the future (e.g. CXO).
+ * Columnar layout of GET /api/satellites (OMM elements + GODSEYE classification). The field list
+ * lives in a zod-free module so clients and the propagation worker can read rows without loading
+ * zod (perf round 5 m-k); it is re-exported here as part of the contract. `epoch` is the element-set
+ * epoch as integer ms since the Unix epoch, UTC (`epochUnit: 'ms'`).
  */
-export const SATELLITE_FIELDS = [
-  'noradId',
-  'name',
-  'objectId',
-  'epoch',
-  'meanMotion',
-  'eccentricity',
-  'inclination',
-  'raan',
-  'argOfPericenter',
-  'meanAnomaly',
-  'bstar',
-  'meanMotionDot',
-  'meanMotionDdot',
-  'elementSetNo',
-  'revAtEpoch',
-  'category',
-  'missionIndex',
-  'group',
-] as const;
+export { SATELLITE_FIELDS };
 
 export const Mission = z.object({
   name: z.string(),
