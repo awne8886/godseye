@@ -88,7 +88,7 @@ export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T)
   // Stale/failed snapshots get a short edge TTL so a CDN never pins an outage.
   const edgeTtl = result.meta.state === 'live' || result.meta.state === 'reference' || result.meta.state === 'recent' ? ttl : Math.min(ttl, 15);
   const etag = weakEtag(result.meta.feed, result.meta.fetchedAt, result.meta.state, variant);
-  const headers = { 'Cache-Control': cacheControl(edgeTtl), ...cdnCacheControl(edgeTtl), ETag: etag };
+  const headers = { 'Cache-Control': cacheControl(edgeTtl), ...cdnCacheControl(edgeTtl), ETag: etag, Vary: 'Accept-Encoding' };
   const nm = notModified(req, etag, headers);
   if (nm) return nm;
   const raw = Buffer.from(JSON.stringify({ ...body(result.data), meta: result.meta, providers: result.providers }));

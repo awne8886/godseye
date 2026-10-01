@@ -106,7 +106,7 @@ export function renderApiMarkdown(input: ApiDocsInput): string {
     '- Feed responses carry `meta` (feed, kind, state, fetchedAt, observedAt, lastGoodAt, stale) and `providers`, one `{ok, count, ms, age_s}` entry per upstream. Observation time and fetch time are separate fields.',
     '- A feed that has never produced data answers `503 source_offline` with `Retry-After: 30` and its provider status, never an empty list pretending to be current.',
     '- Errors are `{error, detail}`: `400 invalid_request`, `429 rate_limited` (with `Retry-After` and `X-RateLimit-Limit`), `500 internal_error` without stack traces.',
-    '- GET responses send `Cache-Control: public, s-maxage=TTL, stale-while-revalidate=2×TTL` and weak ETags; `If-None-Match` returns 304. Snapshots served after a failed refresh get an edge TTL of at most 15 s.',
+    '- GET responses send `Cache-Control: public, max-age=0, must-revalidate, s-maxage=TTL` (browsers revalidate every poll) and `CDN-Cache-Control: public, s-maxage=TTL, stale-while-revalidate=2×TTL` for CDNs. Feed and bulk responses carry weak ETags and answer `If-None-Match` with 304. Snapshots served after a failed refresh get an edge TTL of at most 15 s.',
     '- Bulk layers (aircraft, satellites, cameras) are columnar `{fields, rows}`, precompressed with brotli or gzip, and every default response stays under 4 MB.',
     '- Rate limits are per route and per client IP as verified by the deployment\'s proxy; AI routes share one bucket. Timestamps are ISO-8601 UTC.',
     '',

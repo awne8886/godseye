@@ -201,8 +201,14 @@ export default function PrivacyPage() {
             <li>
               <Code>{THEME_STORAGE_KEY}</Code>: the selected theme.
             </li>
+            <li>
+              <Code>godseye:style-studio</Code>: your Style Studio colour and knob edits.
+            </li>
+            <li>
+              <Code>godseye:panel-width</Code>: the width you dragged a docked panel to.
+            </li>
           </ul>
-          <p className={prose}>Clearing this site&apos;s data in your browser removes both. The map view is kept in the URL, not in storage.</p>
+          <p className={prose}>Clearing this site&apos;s data in your browser removes all four. The map view is kept in the URL, not in storage.</p>
         </section>
 
         <section aria-labelledby="retention" className="mt-12">

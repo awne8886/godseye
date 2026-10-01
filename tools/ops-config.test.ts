@@ -356,7 +356,7 @@ describe('shipped docs carry no placeholders', () => {
   it('agrees with the CI grep where GNU grep -P is available', () => {
     let out = '';
     try {
-      out = execFileSync('grep', ['-rnP', PLACEHOLDER_PCRE, 'LICENSE', 'README.md', 'docs', '--exclude-dir=reference', '--exclude=OPUS_5_5_BUILD_PROMPT.md'], { cwd: root, encoding: 'utf8' });
+      out = execFileSync('grep', ['-rnIP', PLACEHOLDER_PCRE, 'LICENSE', 'README.md', 'docs', '--exclude-dir=reference', '--exclude=OPUS_5_5_BUILD_PROMPT.md'], { cwd: root, encoding: 'utf8' });
     } catch (e) {
       // Exit 1 = no match (pass); 2 = grep without PCRE support (the in-process check above still ran).
       if ((e as { status?: number }).status !== 1) return;

@@ -57,8 +57,9 @@ a header comment naming the OSIRIS source file:
   src/lib/map/view.ts                       map-projection.ts, OsirisMap.tsx
                                             (projection ease, context attempts)
   src/features/aviation/adsb.ts             src/app/api/flights/route.ts (row rules)
+  src/features/aviation/route-geometry.ts   flight-route plausibility rules
   src/features/aviation/server/route-lookup.ts
-                                            flight-route plausibility rules
+                                            (applies those rules)
   src/features/flight-paths/lib/geometry.ts corridor rules
   src/features/surveillance/server/live-news.ts
                                             embed_allowed split
@@ -66,6 +67,8 @@ a header comment naming the OSIRIS source file:
 Other bundled data with a notice requirement:
   public/data/airports*.json                time zones from mwgg/Airports
                                             (© mwgg, MIT License)
+  public/data/routes-openflights.json.gz    OpenFlights route data (June 2014),
+                                            Open Database License (ODbL) 1.0
 
 Bundled fonts (SIL Open Font License 1.1, https://openfontlicense.org; from the
 @fontsource npm packages, served from this server):

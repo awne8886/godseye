@@ -48,7 +48,7 @@ describe('formatCache', () => {
       expect(header).toMatch(/max-age=0, must-revalidate/);
       const [, s] = /s-maxage=(\d+)/.exec(header)!;
       const [, swr] = /stale-while-revalidate=(\d+)/.exec(cdn)!;
-      expect(formatCache(e)).toBe(`Browser revalidates every request (ETag); shared caches s-maxage ${formatDuration(Number(s))}, CDN stale-while-revalidate ${formatDuration(Number(swr))}`);
+      expect(formatCache(e)).toBe(`Browsers revalidate every request; shared caches s-maxage ${formatDuration(Number(s))}, CDN stale-while-revalidate ${formatDuration(Number(swr))}`);
     }
   });
   it('labels streams and POSTs as not cached', () => {

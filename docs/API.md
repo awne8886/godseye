@@ -11,7 +11,7 @@ Regenerate after changing the catalogue: `node --experimental-transform-types --
 - Feed responses carry `meta` (feed, kind, state, fetchedAt, observedAt, lastGoodAt, stale) and `providers`, one `{ok, count, ms, age_s}` entry per upstream. Observation time and fetch time are separate fields.
 - A feed that has never produced data answers `503 source_offline` with `Retry-After: 30` and its provider status, never an empty list pretending to be current.
 - Errors are `{error, detail}`: `400 invalid_request`, `429 rate_limited` (with `Retry-After` and `X-RateLimit-Limit`), `500 internal_error` without stack traces.
-- GET responses send `Cache-Control: public, s-maxage=TTL, stale-while-revalidate=2×TTL` and weak ETags; `If-None-Match` returns 304. Snapshots served after a failed refresh get an edge TTL of at most 15 s.
+- GET responses send `Cache-Control: public, max-age=0, must-revalidate, s-maxage=TTL` (browsers revalidate every poll) and `CDN-Cache-Control: public, s-maxage=TTL, stale-while-revalidate=2×TTL` for CDNs. Feed and bulk responses carry weak ETags and answer `If-None-Match` with 304. Snapshots served after a failed refresh get an edge TTL of at most 15 s.
 - Bulk layers (aircraft, satellites, cameras) are columnar `{fields, rows}`, precompressed with brotli or gzip, and every default response stays under 4 MB.
 - Rate limits are per route and per client IP as verified by the deployment's proxy; AI routes share one bucket. Timestamps are ISO-8601 UTC.
 
@@ -44,7 +44,7 @@ Capability flags, per-feed/per-upstream status and geocoder queue stats
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 s, CDN stale-while-revalidate 20 s |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 s, CDN stale-while-revalidate 20 s |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `HealthResponse` |
 | Upstreams | None: served from this server only |
@@ -59,7 +59,7 @@ Entity counts per feed (counts only)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 30 s, CDN stale-while-revalidate 1 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 30 s, CDN stale-while-revalidate 1 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `StatsResponse` |
 | Upstreams | None: served from this server only |
@@ -78,7 +78,7 @@ Live aircraft (columnar), classified into commercial/private/jet/military
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 15 s, CDN stale-while-revalidate 30 s |
+| Cache | Browsers revalidate every request; shared caches s-maxage 15 s, CDN stale-while-revalidate 30 s |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FlightsResponse` |
 | Upstreams | `api.adsb.lol`, `re-api.adsb.lol`, `opensky-network.org`, `auth.opensky-network.org`, `opendata.adsb.fi` |
@@ -111,7 +111,7 @@ Aircraft identity + current-leg flown track
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 2 min, CDN stale-while-revalidate 4 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 2 min, CDN stale-while-revalidate 4 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `AircraftDetailResponse` |
 | Upstreams | `adsb.lol`, `api.adsbdb.com` |
@@ -128,7 +128,7 @@ Callsign → origin/destination with observed-track corroboration
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FlightRouteResponse` |
 | Upstreams | `vrs-standing-data.adsb.lol`, `api.adsbdb.com`, `hexdb.io`, `adsb.lol` |
@@ -154,7 +154,7 @@ CelesTrak OMM catalogue (columnar; epoch column in integer ms, epochUnit) with m
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 2 h, CDN stale-while-revalidate 4 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 2 h, CDN stale-while-revalidate 4 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `SatellitesResponse` |
 | Upstreams | `celestrak.org`, `db.satnogs.org` |
@@ -172,7 +172,7 @@ Orbit track ±½ period around t, split at the antimeridian
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `OrbitResponse` |
 | Upstreams | None: served from this server only |
@@ -191,7 +191,7 @@ NOAA SWPC Kp, scales, X-ray flux, solar wind (rtsw_wind_1m + rtsw_mag_1m), alert
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `SpaceWeatherResponse` |
 | Upstreams | `services.swpc.noaa.gov` |
@@ -206,7 +206,7 @@ ISS position (wheretheiss.at)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 s, CDN stale-while-revalidate 10 s |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 s, CDN stale-while-revalidate 10 s |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `IssResponse` |
 | Upstreams | `api.wheretheiss.at` |
@@ -225,7 +225,7 @@ USGS earthquakes
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `EarthquakesResponse` |
 | Upstreams | `earthquake.usgs.gov` |
@@ -242,7 +242,7 @@ NASA FIRMS VIIRS/MODIS 24 h fire pixels sampled by FRP/confidence
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FiresResponse` |
 | Upstreams | `firms.modaps.eosdis.nasa.gov`, `eonet.gsfc.nasa.gov` |
@@ -257,7 +257,7 @@ Severe weather/natural events: EONET, NWS, GDACS, NHC, GVP
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `WeatherResponse` |
 | Upstreams | `eonet.gsfc.nasa.gov`, `api.weather.gov`, `www.gdacs.org`, `www.nhc.noaa.gov`, `mapservices.weather.noaa.gov`, `volcano.si.edu` |
@@ -272,7 +272,7 @@ PM2.5 / US AQI (Open-Meteo)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 30 min, CDN stale-while-revalidate 1 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 30 min, CDN stale-while-revalidate 1 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `AirQualityResponse` |
 | Upstreams | `air-quality-api.open-meteo.com` |
@@ -289,7 +289,7 @@ GPS interference H3 cells (gpsjam daily + live NACp binning)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `GpsInterferenceResponse` |
 | Upstreams | `gpsjam.org` |
@@ -306,7 +306,7 @@ Recent Sentinel-2 scenes around a point (CDSE STAC)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `SentinelResponse` |
 | Upstreams | `stac.dataspace.copernicus.eu` |
@@ -326,7 +326,7 @@ RainViewer past radar frames (z ≤ 7)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RadarFramesResponse` |
 | Upstreams | `api.rainviewer.com` |
@@ -345,10 +345,10 @@ Public camera catalogue by region (columnar, < 4 MB per response)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CctvResponse` |
-| Upstreams | `api.tfl.gov.uk`, `cwwp2.dot.ca.gov`, `caltrans-gis.dot.ca.gov`, `wsdot.wa.gov`, `its.txdot.gov`, `tdcctv.data.one.gov.hk`, `api.data.gov.sg`, `tie.digitraffic.fi`, `api.trafikinfo.trafikverket.se`, `(other public camera operators per the provider registry)` |
+| Upstreams | `api.tfl.gov.uk`, `cwwp2.dot.ca.gov`, `wsdot.wa.gov`, `its.txdot.gov`, `tdcctv.data.one.gov.hk`, `api.data.gov.sg`, `tie.digitraffic.fi`, `api.trafikinfo.trafikverket.se`, `(other public camera operators per the provider registry)` |
 | Forwards user input upstream | No |
 | Example | `GET /api/cctv?region=us-west` |
 
@@ -360,11 +360,11 @@ Public camera catalogue by region (columnar, < 4 MB per response)
 
 ### `GET /api/cctv/providers`
 
-Camera provider registry rows (operator, licence, attribution, terms)
+Camera provider registry rows (operator, licence, attribution, terms) and each proxied operator's frame availability over the last 10 min (`frames`)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CameraProvidersResponse` |
 | Upstreams | None: served from this server only |
@@ -379,7 +379,7 @@ Stills-only frame proxy (exact-prefix allow-list, no storage); Cache-Control fol
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `image/*` |
 | Upstreams | `(camera operators, allow-listed)` |
@@ -396,7 +396,7 @@ Resolve a camera to its playable stream
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CameraResolveResponse` |
 | Upstreams | `(camera operators, allow-listed)` |
@@ -412,7 +412,7 @@ Probe whether a camera stream is online
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `StreamStatusResponse` |
 | Upstreams | `(camera operators, allow-listed)` |
@@ -428,7 +428,7 @@ TxDOT camera snapshot (stills)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `image/*` |
 | Upstreams | `its.txdot.gov` |
@@ -444,7 +444,7 @@ TxDOT camera snapshot (stills)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `LiveNewsResponse` |
 | Upstreams | `www.youtube.com` |
@@ -463,7 +463,7 @@ Ports + chokepoints (reference) and AIS vessels (keyed relay)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 s, CDN stale-while-revalidate 20 s |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 s, CDN stale-while-revalidate 20 s |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MaritimeResponse` |
 | Upstreams | `stream.aisstream.io` |
@@ -484,7 +484,7 @@ Nuclear facilities (Wikidata + curated), with seismic/conflict context flags
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 30 min, CDN stale-while-revalidate 1 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 30 min, CDN stale-while-revalidate 1 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `InfrastructureResponse` |
 | Upstreams | `query.wikidata.org`, `earthquake.usgs.gov` |
@@ -499,7 +499,7 @@ GDACS disaster alerts (Global Incidents layer)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `GdacsResponse` |
 | Upstreams | `www.gdacs.org` |
@@ -515,7 +515,7 @@ GDELT 2.0 15-minute export events (geocoded, CAMEO QuadClass)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `GdeltEventsResponse` |
 | Upstreams | `data.gdeltproject.org` |
@@ -533,7 +533,7 @@ Conflict zones (REFERENCE polygons) with live event counts from GDELT/alerts
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ConflictsResponse` |
 | Upstreams | `data.gdeltproject.org` |
@@ -548,7 +548,7 @@ DeepStateMap frontlines (non-commercial, attributed)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FrontlinesResponse` |
 | Capability | `deepstate`: On when NONCOMMERCIAL=true, COMMERCIAL_DEPLOYMENT is not "true". DeepStateMap frontlines (non-commercial, attribution; commercial API use needs DeepState's prior approval). |
@@ -564,7 +564,7 @@ Country risk (INFORM + World Bank WGI) with method
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CountryRiskResponse` |
 | Upstreams | `drmkc.jrc.ec.europa.eu`, `api.worldbank.org` |
@@ -583,7 +583,7 @@ URLhaus malware hosts (geolocated IPs, precision labelled)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MalwareResponse` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
@@ -615,7 +615,7 @@ Feodo Tracker botnet C2 indicators
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `C2Response` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
@@ -631,7 +631,7 @@ ThreatFox recent IOCs (list; IP IOCs geolocated as INDICATOR points)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ThreatFoxResponse` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
@@ -647,7 +647,7 @@ CISA Known Exploited Vulnerabilities
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `KevResponse` |
 | Upstreams | `www.cisa.gov`, `services.nvd.nist.gov` |
@@ -664,7 +664,7 @@ Internet outages: IODA (keyless) + Cloudflare Radar (keyed)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `OutagesResponse` |
 | Upstreams | `api.ioda.inetintel.cc.gatech.edu`, `api.cloudflare.com` |
@@ -680,7 +680,7 @@ Cloudflare Radar outages + L3 attack origins
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `AttackOriginsResponse` |
 | Capability | `cloudflare`: On when CLOUDFLARE_API_TOKEN set, COMMERCIAL_DEPLOYMENT is not "true". Cloudflare Radar (Radar: Read; data CC BY-NC). |
@@ -698,7 +698,7 @@ Submarine cables + landing points (TeleGeography, CC BY-NC-SA, bundled)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CablesResponse` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
@@ -751,7 +751,7 @@ Live Alerts: Telegram previews + wire RSS, deduped, geoparsed
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 2 min, CDN stale-while-revalidate 4 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 2 min, CDN stale-while-revalidate 4 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `NewsResponse` |
 | Upstreams | `t.me`, `feeds.bbci.co.uk`, `www.theguardian.com`, `www.aljazeera.com`, `www.france24.com`, `rss.dw.com`, `rss.nytimes.com`, `www.timesofisrael.com`, `tass.com`, `www.aa.com.tr`, `www.scmp.com`, `www.channelnewsasia.com`, `www.africanews.com`, `nominatim.openstreetmap.org` |
@@ -769,7 +769,7 @@ Region Dossier: reverse geocode, Wikipedia, Wikidata facts, head of state, live 
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RegionDossierResponse` |
 | Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org`, `en.wikipedia.org`, `query.wikidata.org`, `api.open-meteo.com` |
@@ -787,7 +787,7 @@ Entity Graph expansion (Wikidata + OpenSanctions + RIPEstat)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `EntityGraphResponse` |
 | Upstreams | `query.wikidata.org`, `www.wikidata.org`, `api.opensanctions.org`, `stat.ripe.net` |
@@ -809,7 +809,7 @@ Indices, defense, energy, commodities, crypto, FX quotes + breadth
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 2 min, CDN stale-while-revalidate 4 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 2 min, CDN stale-while-revalidate 4 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MarketsResponse` |
 | Upstreams | `query1.finance.yahoo.com`, `api.coingecko.com`, `data-api.binance.vision`, `api.exchange.coinbase.com`, `api.kraken.com` |
@@ -824,7 +824,7 @@ OHLC candles for one symbol
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MarketHistoryResponse` |
 | Upstreams | `query1.finance.yahoo.com` |
@@ -842,7 +842,7 @@ BTC/ETH/SOL spot prices (Binance → Coinbase → Kraken; CoinGecko only with a 
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CryptoResponse` |
 | Upstreams | `data-api.binance.vision`, `api.exchange.coinbase.com`, `api.kraken.com`, `api.coingecko.com` |
@@ -857,7 +857,7 @@ Daily chain brief: exploits, crypto CVEs, sanctioned wallets
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 30 min, CDN stale-while-revalidate 1 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 30 min, CDN stale-while-revalidate 1 h |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ChainBriefResponse` |
 | Upstreams | `api.llama.fi`, `services.nvd.nist.gov`, `api.opensanctions.org` |
@@ -874,7 +874,7 @@ Status-bar ticker (BTC/ETH/SOL + five latest M4.0+ quakes from USGS 2.5_day), se
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `TickerResponse` |
 | Upstreams | `data-api.binance.vision`, `api.exchange.coinbase.com`, `api.kraken.com`, `earthquake.usgs.gov` |
@@ -889,7 +889,7 @@ Supply-chain sites with hazard proximity checks (method stated)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ScmSuppliersResponse` |
 | Upstreams | `earthquake.usgs.gov` |
@@ -981,7 +981,7 @@ DNS records via DNS-over-HTTPS
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `dns.google` |
@@ -999,7 +999,7 @@ RDAP registration data
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `rdap.org` |
@@ -1016,7 +1016,7 @@ Security headers grade for a public URL (SSRF-guarded, proxied through this serv
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `(user-supplied public host)` |
@@ -1033,7 +1033,7 @@ Certificate transparency + subdomains
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `crt.sh` |
@@ -1050,7 +1050,7 @@ IP intel: geolocation, ASN, hosting/proxy flags, OFAC cross-check
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `ipwho.is`, `ip-api.com`, `stat.ripe.net`, `free.freeipapi.com` |
@@ -1067,7 +1067,7 @@ BGP/ASN: prefixes, peers, holder (RIPEstat)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `stat.ripe.net` |
@@ -1084,7 +1084,7 @@ Shodan InternetDB (ports, CPEs, vulns; non-commercial)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
@@ -1102,7 +1102,7 @@ Passive network sweep of a small public prefix via InternetDB (no packets sent t
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 5 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
@@ -1121,7 +1121,7 @@ MAC vendor lookup
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `api.maclookup.app` |
@@ -1138,7 +1138,7 @@ CVE detail (MITRE, CIRCL, NVD) with KEV flag
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `cveawg.mitre.org`, `cve.circl.lu`, `services.nvd.nist.gov` |
@@ -1155,7 +1155,7 @@ Threat intel for an IP/domain/hash (abuse.ch, OTX, Tor exit exact match)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `threatfox-api.abuse.ch`, `otx.alienvault.com`, `check.torproject.org`, `feodotracker.abuse.ch` |
@@ -1172,7 +1172,7 @@ OFAC SDN search (OpenSanctions bulk, CC BY-NC)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
@@ -1190,7 +1190,7 @@ Wallet trace BTC/ETH/SOL with transparent risk factors
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `mempool.space`, `eth.blockscout.com`, `api.mainnet-beta.solana.com` |
@@ -1208,7 +1208,7 @@ Known breaches of an organisation domain (no personal email lookups)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
 | Upstreams | `api.xposedornot.com` |
@@ -1263,7 +1263,7 @@ Reverse geocode (Photon, then queued Nominatim; cached 30 days)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `GeoResponse` |
 | Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org` |
@@ -1281,7 +1281,7 @@ Place search: Photon type-ahead; Nominatim only on explicit submit
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `GeoResponse` |
 | Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org` |
@@ -1301,7 +1301,7 @@ Turn-by-turn routing (Valhalla, OSRM fallback) with elevation profile; 422 no_ro
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `DirectionsResponse` |
 | Upstreams | `valhalla1.openstreetmap.de`, `router.project-osrm.org`, `routing.openstreetmap.de` |
@@ -1322,7 +1322,7 @@ ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `ArcgisResponse` |
 | Upstreams | `www.arcgis.com`, `services.arcgis.com`, `services[1-9].arcgis.com`, `services-eu1.arcgis.com`, `services-ap1.arcgis.com`, `*.arcgisonline.com`, `(ARCGIS_ALLOWED_HOSTS)` |
@@ -1345,7 +1345,7 @@ Airport resolution: IATA → ICAO → ident → fuzzy → metro → Photon → N
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `AirportSearchResponse` |
 | Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org` |
@@ -1364,7 +1364,7 @@ Airport record + runways + METAR/TAF + local time
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `AirportDetailResponse` |
 | Upstreams | `aviationweather.gov` |
@@ -1381,7 +1381,7 @@ Planned route between two airports: great circle, estimates, services, weather, 
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RoutePlanResponse` |
 | Upstreams | `aviationweather.gov`, `api.open-meteo.com`, `api.flightplandatabase.com` |
@@ -1399,7 +1399,7 @@ Live aircraft on an airport pair (matched + corridor-inferred)
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 15 s, CDN stale-while-revalidate 30 s |
+| Cache | Browsers revalidate every request; shared caches s-maxage 15 s, CDN stale-while-revalidate 30 s |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RouteLiveResponse` |
 | Upstreams | None: served from this server only |
@@ -1418,7 +1418,7 @@ A specific flight by callsign, IATA flight number, registration or hex
 
 | | |
 |---|---|
-| Cache | Browser revalidates every request (ETag); shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
+| Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FlightDetailResponse` |
 | Upstreams | `vrs-standing-data.adsb.lol`, `api.adsbdb.com`, `hexdb.io`, `api.adsb.lol`, `adsb.lol`, `aviationweather.gov` |
