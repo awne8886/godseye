@@ -47,3 +47,35 @@ describe('live: every row served by /api/cctv is inside its allow-list', () => {
     expect(misses.slice(0, 5)).toEqual([]);
   });
 });
+
+// Round 4: one official still per provider type through the real relay (2 s apart).
+describe('live: frame time and refusals through fetchFrame', () => {
+  const still = (providerId: string, id: string, url: string) => ({
+    id, lat: 0, lng: 0, name: id, providerId, city: null, country: null, streamType: 'jpg' as const, stillUrl: url, streamUrl: null, externalUrl: null, headingDeg: null, observedAt: null, source: providerId,
+  });
+  it.runIf(live)('HK TD / Caltrans / Fintraffic frames carry the operator time; NSW HTML is refused, never relayed', { timeout: 90_000 }, async () => {
+    const { fetchFrame } = await import('./frames');
+    const cases = [
+      still('hktd', 'hktd-H429F', 'https://tdcctv.data.one.gov.hk/H429F.JPG'),
+      still('caltrans', 'caltrans-d7-live', 'https://cwwp2.dot.ca.gov/data/d7/cctv/image/i110196avenue26offramp/i110196avenue26offramp.jpg'),
+      still('digitraffic', 'digitraffic-C0150301', 'https://weathercam.digitraffic.fi/C0150301.jpg'),
+      still('nsw', 'nsw-5-ways-miranda', 'https://webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/5_ways_miranda.jpeg'),
+    ];
+    let relayed = 0;
+    for (const c of cases) {
+      const r = await fetchFrame(c, providerDef(c.providerId)!);
+      console.info(c.id, r.ok ? { ok: true, type: r.contentType, observedAt: r.observedAt, timeSource: r.timeSource, fetchedAt: r.fetchedAt } : { ok: false, error: r.error, upstreamType: r.upstreamType ?? null });
+      if (r.ok) {
+        relayed++;
+        expect(r.contentType, c.id).toMatch(/^image\//);
+        expect(['operator', 'last-modified', 'none']).toContain(r.timeSource);
+        if (r.observedAt) expect(Date.parse(r.observedAt)).toBeLessThanOrEqual(Date.parse(r.fetchedAt) + 60_000);
+      } else {
+        // Only an outage may fail, and an HTML page must be classified as one.
+        expect(['not_an_image', 'timeout', 'network'], `${c.id}: ${r.error}`).toContain(r.error);
+      }
+      await new Promise((res) => setTimeout(res, 2_000));
+    }
+    expect(relayed, 'no operator reachable: the check proved nothing').toBeGreaterThan(0);
+  });
+});
