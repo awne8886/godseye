@@ -85,7 +85,8 @@ describe('exampleHref', () => {
   it('never links POSTs, streams or endpoints missing an example', () => {
     expect(exampleHref(byPath('/api/ai/overview', 'POST'))).toBeNull();
     expect(exampleHref(byPath('/api/malware/stream'))).toBeNull();
-    expect(exampleHref(byPath('/api/cctv/resolve'))).toBeNull();
+    expect(exampleHref(byPath('/api/cctv/resolve'))).toBe('/api/cctv/resolve?id=caltrans-d1-134');
+    expect(exampleHref({ method: 'GET', path: '/api/x', params: [{ name: 'id', in: 'query', type: 'string', required: true, description: '' }] })).toBeNull();
     expect(exampleHref({ method: 'GET', path: '/api/x/{a}/{b}', params: [{ name: 'a', in: 'path', type: 'string', required: true, description: '', example: '1' }, { name: 'b', in: 'path', type: 'string', required: true, description: '' }] })).toBeNull();
   });
   it('only produces same-origin /api paths', () => {

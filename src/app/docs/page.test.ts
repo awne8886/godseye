@@ -33,7 +33,7 @@ describe('/docs', () => {
   it('links examples same-origin and never links a POST or stream', () => {
     const hrefs = [...html.matchAll(/href="(\/api\/[^"]*)"/g)].map((m) => m[1]!.replace(/&amp;/g, '&'));
     expect(hrefs.length).toBeGreaterThan(20);
-    expect(hrefs.some((h) => h.includes('/stream'))).toBe(false);
+    expect(hrefs.some((h) => /\/stream(?:\?|$)/.test(h))).toBe(false);
     expect(hrefs.some((h) => h.startsWith('/api/ai/'))).toBe(false);
   });
 

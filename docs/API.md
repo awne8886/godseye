@@ -401,10 +401,11 @@ Resolve a camera to its playable stream
 | Response | `CameraResolveResponse` |
 | Upstreams | `(camera operators, allow-listed)` |
 | Forwards user input upstream | No |
+| Example | `GET /api/cctv/resolve?id=caltrans-d1-134` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `id` | query | string | yes | Camera id |
+| `id` | query | string | yes | Camera id (e.g. `caltrans-d1-134`) |
 
 ### `GET /api/cctv/stream-status`
 
@@ -417,10 +418,11 @@ Probe whether a camera stream is online
 | Response | `StreamStatusResponse` |
 | Upstreams | `(camera operators, allow-listed)` |
 | Forwards user input upstream | No |
+| Example | `GET /api/cctv/stream-status?id=caltrans-d1-134` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `id` | query | string | yes | Camera id |
+| `id` | query | string | yes | Camera id (e.g. `caltrans-d1-134`) |
 
 ### `GET /api/cctv/texas/snapshot`
 
@@ -433,10 +435,11 @@ TxDOT camera snapshot (stills)
 | Response | `image/*` |
 | Upstreams | `its.txdot.gov` |
 | Forwards user input upstream | No |
+| Example | `GET /api/cctv/texas/snapshot?id=txdot-ABL-ABL-FM707%20%40%20SH89` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `id` | query | string | yes | TxDOT camera id |
+| `id` | query | string | yes | TxDOT camera id (txdot-<district>-<icd id>) (e.g. `txdot-ABL-ABL-FM707 @ SH89`) |
 
 ### `GET /api/live-news`
 
