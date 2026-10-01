@@ -5,7 +5,7 @@
  * 1.04 over 0.7 s. The wordmark is server-rendered and painted from the first frame (it is the LCP
  * element): letters rise into place but never start transparent. Owner: design-system-hud.
  */
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { APP_NAME, APP_SUBTITLE } from '@/lib/config';
 import { useLayerStatusStore, useMapInstanceStore } from '@/lib/layer-host';
@@ -45,7 +45,7 @@ export default function Splash() {
   return (
     <AnimatePresence onExitComplete={setSplashDone}>
       {visible && (
-        <motion.div
+        <m.div
           key="splash"
           role="status"
           aria-live="polite"
@@ -60,7 +60,7 @@ export default function Splash() {
                 { inset: 18, dur: 12, dir: -1, color: 'rgba(var(--cyan-rgb),0.15)' },
                 { inset: 40, dur: 7, dir: 1, color: 'rgba(var(--gold-rgb),0.25)' },
               ].map((r, i) => (
-                <motion.div
+                <m.div
                   key={i}
                   className="absolute rounded-full border"
                   style={{ inset: r.inset, borderColor: r.color }}
@@ -68,7 +68,7 @@ export default function Splash() {
                   transition={{ duration: r.dur, repeat: Infinity, ease: 'linear' }}
                 >
                   <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full" style={{ background: i === 1 ? 'var(--cyan-primary)' : 'var(--gold-primary)' }} />
-                </motion.div>
+                </m.div>
               ))}
               <div className="absolute inset-0 grid place-items-center">
                 <GodseyeMark size={56} />
@@ -83,7 +83,7 @@ export default function Splash() {
             </p>
             <p className="hud-micro mt-3 tracking-[0.5em] text-[var(--gold-light)]">{APP_SUBTITLE}</p>
             <div className="mt-6 h-0.5 w-64 overflow-hidden bg-[rgba(var(--gold-rgb),0.1)]">
-              <motion.div
+              <m.div
                 className="h-full bg-gradient-to-r from-[var(--gold-primary)] via-[var(--cyan-primary)] to-[var(--gold-primary)]"
                 initial={false}
                 animate={{ width: WIDTHS[stage] }}
@@ -93,7 +93,7 @@ export default function Splash() {
             </div>
             <p className={`hud-micro mt-3 tracking-[0.25em] ${stage === 3 ? 'text-[var(--cyan-primary)]' : 'text-[var(--text-secondary)]'}`}>{SPLASH_STAGES[stage]}</p>
           </div>
-        </motion.div>
+        </m.div>
       )}
     </AnimatePresence>
   );

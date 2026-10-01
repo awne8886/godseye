@@ -5,7 +5,7 @@
  * Settings → motion overrides the system preference here (REDUCED / FULL); SYSTEM defers to the
  * lead's <MotionConfig reducedMotion="user">. Owner: design-system-hud.
  */
-import { MotionConfig } from 'motion/react';
+import { LazyMotion, MotionConfig } from 'motion/react';
 import CardHost from '@/components/cards/CardHost';
 import { useUiStore } from '@/lib/store';
 import Boot from './Boot';
@@ -22,11 +22,15 @@ import ThemeSync from './ThemeSync';
 import ToolStrip from './ToolStrip';
 import ViewControls from './ViewControls';
 
+/** motion's feature bundle loads after first paint (perf m4); HUD components use the light `m.` elements. */
+const loadMotionFeatures = () => import('./motion-features').then((mod) => mod.default);
+
 export default function HudRoot() {
   const motionPref = useUiStore((s) => s.settings.motion);
   const reducedMotion = motionPref === 'reduced' ? 'always' : motionPref === 'full' ? 'never' : 'user';
   return (
     <MotionConfig reducedMotion={reducedMotion}>
+      <LazyMotion features={loadMotionFeatures}>
       <ThemeSync />
       <KeyHandler />
       <Boot />
@@ -41,6 +45,7 @@ export default function HudRoot() {
       <StatusBar />
       <MobileNav />
       <Splash />
+      </LazyMotion>
     </MotionConfig>
   );
 }

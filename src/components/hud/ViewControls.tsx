@@ -7,7 +7,7 @@
  * straight into DOM refs, with reverse geocoding (/api/geo/reverse, 3 s debounce, 0.1° cache;
  * coordinates only while the geocoder does not answer). Owner: design-system-hud.
  */
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import { Globe, Layers2, LocateFixed, MapPinned, Maximize, Minimize, Mountain, Navigation2, Satellite } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLayerStatus, useMapInstanceStore } from '@/lib/layer-host';
@@ -34,7 +34,7 @@ function Segmented<T extends string>({ label, value, options, onChange, group }:
             className={`hud-micro hud-control relative flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 px-2 md:min-h-[32px] md:min-w-0 md:px-2.5 ${on ? 'text-[var(--gold-light)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
           >
             {on && (
-              <motion.span
+              <m.span
                 layoutId={`seg-${group}`}
                 transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                 className="hud-control absolute inset-0 border border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.1)]"
@@ -103,7 +103,11 @@ export function Readout({ units, geocode = true }: { units: Settings['units']; g
       if (place.current) place.current.textContent = text ?? '';
     };
     const writeCursor = (c: MapPoint | null) => {
-      if (coords.current) coords.current.textContent = c ? formatLatLng(c.lat, c.lng) : '';
+      if (coords.current) {
+        coords.current.textContent = c ? formatLatLng(c.lat, c.lng) : '';
+        // The hint line gives way while a position is shown (R2-M5): no re-render, a data flag.
+        coords.current.closest('[data-readout-row]')?.toggleAttribute('data-cursor', c !== null);
+      }
       const next = c ? geoCell(c.lat, c.lng) : null;
       if (next === cell) return;
       cell = next;
@@ -137,7 +141,7 @@ export function Readout({ units, geocode = true }: { units: Settings['units']; g
         <span ref={scaleLabel} />
         <span ref={scaleLine} aria-hidden className="block h-1.5 border-x border-b border-[var(--text-secondary)]" style={{ width: 0, visibility: 'hidden' }} />
       </span>
-      <span className="flex min-w-0 tabular-nums" data-testid="cursor-readout">
+      <span className="flex min-w-0 overflow-hidden whitespace-nowrap tabular-nums" data-testid="cursor-readout">
         <span ref={coords} className="shrink-0" />
         <span ref={place} className="ml-2 min-w-0 max-w-[360px] truncate normal-case text-[var(--text-primary)]" />
       </span>
@@ -320,9 +324,15 @@ export default function ViewControls() {
         </p>
       )}
       {/* Ends 44rem short of the right edge so it never runs under the attribution / imagery chips. */}
-      <div className="hud-micro pointer-events-none fixed bottom-8 left-72 right-[44rem] z-[var(--z-hud)] hidden min-w-0 items-end gap-4 overflow-hidden text-[var(--text-secondary)] xl:flex">
+      {/* One row: scale bar, readout (clipped at the row edge, never overprinting) and the hint, which
+          is hidden while a cursor position is shown (R2-M5). */}
+      <div
+        data-readout-row
+        data-testid="readout-row"
+        className="group hud-micro pointer-events-none fixed bottom-8 left-72 right-[44rem] z-[var(--z-hud)] hidden min-w-0 items-end gap-6 overflow-hidden text-[var(--text-secondary)] xl:flex"
+      >
         <Readout units={units} geocode={geocodeRoute} />
-        <span className="hidden min-w-0 truncate text-[var(--text-muted)] 2xl:inline">DRAG TO PAN · RIGHT-DRAG TO TILT · DOUBLE RIGHT-CLICK FOR DOSSIER · ⌘K COMMANDS · ? SHORTCUTS</span>
+        <span data-testid="view-hint" className="hidden min-w-0 truncate text-[var(--text-muted)] group-data-[cursor]:!hidden 2xl:inline">DRAG TO PAN · RIGHT-DRAG TO TILT · DOUBLE RIGHT-CLICK FOR DOSSIER · ⌘K COMMANDS · ? SHORTCUTS</span>
       </div>
     </>
   );

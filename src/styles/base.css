@@ -351,14 +351,42 @@
 .maplibregl-ctrl-attrib.maplibregl-attrib-empty {
   display: none;
 }
-.maplibregl-ctrl.maplibregl-ctrl-attrib {
-  /* ≥ .85 so secondary text keeps 4.5:1 over bright satellite imagery. */
-  background: rgba(4, 4, 10, 0.88);
+/*
+ * Attribution on dark glass (R2-M1). Scoped under .maplibregl-map so it beats maplibre-gl.css's
+ * white-50 % background whatever the chunk order. --glass-3 is the panel colour at .96 whatever the
+ * Style Studio panel-opacity knob says, so secondary text keeps ≥ 4.5:1 over bright imagery.
+ */
+.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  background: var(--glass-3);
   color: var(--text-secondary);
-  font: 10px/1.4 var(--font-body);
+  font: 10px/14px var(--font-hud);
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-primary);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 6px 0 0 0;
+  padding: 2px 6px;
+  margin: 0;
 }
-.maplibregl-ctrl-attrib a {
+.maplibregl-map .maplibregl-ctrl-attrib a {
   color: var(--text-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-primary);
+  text-underline-offset: 2px;
+}
+.maplibregl-map .maplibregl-ctrl-attrib a:hover,
+.maplibregl-map .maplibregl-ctrl-attrib a:focus-visible {
+  color: var(--gold-light);
+}
+
+/*
+ * BASEMAP OFFLINE / terrain failure chips stand out from the grey REFERENCE imagery chips (m3):
+ * alert-orange text and outline. Unlayered so it wins over the chip's utility classes.
+ */
+.godseye-imagery-chips [data-testid='imagery-chip-basemap'],
+.godseye-imagery-chips [data-tone='offline'] {
+  color: var(--alert-orange);
+  border-color: var(--alert-orange);
 }
 /* HUD text drawn straight on the map (header): a void-coloured halo keeps basemap labels from
    running through it. */
@@ -389,8 +417,25 @@
   .maplibregl-map .maplibregl-ctrl-bottom-left {
     bottom: calc(57px + env(safe-area-inset-bottom));
   }
+  /* An open phone sheet or entity card publishes the height it covers (useBottomReserve); the
+     credits ride above it instead of disappearing under it (m2). */
   .maplibregl-map .maplibregl-ctrl-bottom-right {
     right: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    bottom: max(calc(57px + env(safe-area-inset-bottom)), calc(var(--sheet-occupied, 0px) + 4px), calc(var(--card-occupied, 0px) + 4px));
+  }
+  /* Phones: the credits wrap inside the viewport (never clipped, never collapsed behind a button). */
+  .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+    max-width: calc(100vw - 12px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+  .maplibregl-map .maplibregl-ctrl-attrib-inner {
+    white-space: normal;
   }
 }
 /* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome (z ≥ 40). The map wrapper
