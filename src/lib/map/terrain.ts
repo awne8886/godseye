@@ -130,10 +130,18 @@ export function attachTerrain(map: TerrainMap, { onStatus, onEngagedChange, isHi
   const onData = (e: MapSourceDataEvent) => {
     // The first DEM tile that arrives means terrain is drawing (R1-m2: `isSourceLoaded` can stay
     // false for a long time while the pitched view keeps requesting more tiles).
-    if (active && !failed && e.sourceId === TERRAIN_SOURCE_ID && (e.tile || (e.isSourceLoaded && e.sourceDataType === 'idle'))) report('ready');
+    if (active && !failed && e.sourceId === TERRAIN_SOURCE_ID && (e.tile || (e.isSourceLoaded && e.sourceDataType === 'idle'))) {
+      demTileArrived = true;
+      report('ready');
+    }
   };
+  // One failed elevation tile is not a failed terrain source: give up only when no tile has drawn
+  // and several requests have failed (the source itself is unreachable).
+  let demTileArrived = false;
+  let tileErrors = 0;
   const onError = (e: ErrorEvent & { sourceId?: string }) => {
     if (!active || e.sourceId !== TERRAIN_SOURCE_ID) return;
+    if (demTileArrived || ++tileErrors < 3) return;
     failed = true;
     report('error');
     // Let MapLibre finish its source callback before removing the source.

@@ -219,6 +219,23 @@ export default function MapView() {
       : initialCamera(new Date().getTimezoneOffset());
   }, [hasStyle, attempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Publish the map to feature modules once its style is parsed — not on `load`, which waits for every
+  // initial tile, so one hung basemap tile would hold back native layers, cards and the compass.
+  const published = useRef<object | null>(null);
+  const publishMap = useCallback(() => {
+    const map = mapRef.current?.getMap() ?? null;
+    if (!map || published.current === map) return; // once per map instance (a WebGL retry remounts it)
+    published.current = map;
+    setMap(map);
+    setLoaded(true);
+    // Not the first `idle`: a permanently failing tile or a 1 Hz animated layer can postpone it forever.
+    onceStyleLoaded(map, () => {
+      setReady(true);
+      map.getContainer().dataset.mapReady = 'true';
+    });
+  }, [setMap, setReady]);
+  const onLoad = publishMap;
+
   // Runs as soon as react-map-gl has constructed the map (before any tile asks for sprite images).
   const attachMapRef = useCallback((r: MapRef | null) => {
     mapRef.current = r;
@@ -233,24 +250,14 @@ export default function MapView() {
     const styleReady = () => {
       el.dataset.styleReady = 'true';
       setLoaded(true);
+      publishMap();
     };
     // `style.load` may already have fired before React handed us the map.
     if (styleParsed(map)) styleReady();
     map.once('style.load', styleReady);
     map.once('load', styleReady);
-  }, []);
+  }, [publishMap]);
 
-  const onLoad = useCallback(() => {
-    const map = mapRef.current?.getMap() ?? null;
-    if (!map) return;
-    setMap(map);
-    setLoaded(true);
-    // Not the first `idle`: a permanently failing tile or a 1 Hz animated layer can postpone it forever.
-    onceStyleLoaded(map, () => {
-      setReady(true);
-      map.getContainer().dataset.mapReady = 'true';
-    });
-  }, [setMap, setReady]);
 
   // Style Studio / Ghost Protocol: recolour the basemap in place from the live CSS tokens.
   const styleVersion = useStyleVersion();

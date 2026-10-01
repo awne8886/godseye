@@ -113,6 +113,16 @@ describe('terrain engage/release state machine', () => {
     expect(statuses.at(-1)).toBe('idle');
   });
 
+  it('keeps terrain drawing when a tile fails after elevation tiles have arrived', () => {
+    const { map, statuses } = setup(12);
+    vi.advanceTimersByTime(TERRAIN_SETTLE_MS);
+    map.emit('sourcedata', { sourceId: TERRAIN_SOURCE_ID, tile: {} });
+    expect(statuses.at(-1)).toBe('ready');
+    for (let i = 0; i < 5; i++) map.emit('error', { sourceId: TERRAIN_SOURCE_ID });
+    expect(statuses.at(-1)).toBe('ready');
+    expect(map.removeSource).not.toHaveBeenCalled();
+  });
+
   it('cancels a pending engage when zooming back out, and stops on a source error', async () => {
     const { map, statuses } = setup(10.2);
     map.state.zoom = 9;
@@ -122,6 +132,9 @@ describe('terrain engage/release state machine', () => {
     map.state.zoom = 12;
     map.emit('moveend');
     vi.advanceTimersByTime(TERRAIN_SETTLE_MS);
+    map.emit('error', { sourceId: TERRAIN_SOURCE_ID });
+    map.emit('error', { sourceId: TERRAIN_SOURCE_ID });
+    expect(statuses.at(-1)).not.toBe('error'); // one or two tile failures are not a dead source
     map.emit('error', { sourceId: TERRAIN_SOURCE_ID });
     await Promise.resolve();
     expect(statuses.at(-1)).toBe('error');
