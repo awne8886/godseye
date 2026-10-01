@@ -16,7 +16,7 @@ import type { DeckPickInfo } from '@/lib/map/picking';
 import { readCssColor, hudFontFamily } from '@/lib/tokens';
 import type { AttackOrigin, AttackOriginsResponse, C2Response, C2Server, CablesResponse, FeedEvent, FeedMeta, KevResponse, LandingPoint, MalwareHost, Outage, OutagesResponse, Providers, ThreatFoxResponse, ThreatIndicator } from '@/lib/types';
 import { countryByIso2 } from '../../threats/shared/country';
-import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
+import { FEED_FETCH_INIT, rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
 import { colocatedRadiusPx, countLabels, groupColocated, useMoveEndTick, type Colocated } from './colocate';
 import { KEV_FEED_LIMIT, kevEvents } from './kev-events';
 import { malwareCount, needsResync, reduceMalware, type MalwareStreamEvent } from './malware-state';
@@ -414,7 +414,7 @@ function KevFeed() {
   const q = useQuery({
     queryKey: ['threats-network', 'kev-feed'],
     queryFn: async ({ signal }) => {
-      const res = await fetch(`/api/cyber-threats?limit=${KEV_FEED_LIMIT}`, { signal, headers: { accept: 'application/json' } });
+      const res = await fetch(`/api/cyber-threats?limit=${KEV_FEED_LIMIT}`, { ...FEED_FETCH_INIT, signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return (await res.json()) as KevResponse;
     },

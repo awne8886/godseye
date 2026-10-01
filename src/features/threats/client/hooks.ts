@@ -24,22 +24,47 @@ export function refreshMsFor(layer: LayerId): number | null {
   return LAYERS.find((l) => l.id === layer)?.refreshMs ?? null;
 }
 
+/**
+ * Request options for every feed poll. Feed routes send `Cache-Control: public, s-maxage=N,
+ * stale-while-revalidate=2N` for shared caches, and Chrome applies that stale-while-revalidate
+ * too: each poll was answered from disk with the previous snapshot while a second, background
+ * request revalidated it (two requests per poll and data one interval behind; perf r4 m-g, the
+ * "second requester"). `no-cache` revalidates on every poll instead: one request, a 304 when the
+ * snapshot is unchanged (ETag), never an outdated body.
+ */
+export const FEED_FETCH_INIT = { cache: 'no-cache', headers: { accept: 'application/json' } } as const satisfies RequestInit;
+
 async function load<T>(url: string, signal: AbortSignal): Promise<Result<T>> {
-  const res = await fetch(url, { signal, headers: { accept: 'application/json' } });
+  const res = await fetch(url, { ...FEED_FETCH_INIT, signal });
   const body = (await res.json().catch(() => ({}))) as T & Enveloped;
   if (res.status === 503 || res.status === 403) return { ok: false, status: res.status, body };
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return { ok: true, body };
 }
 
-/** Poll a route (registry refreshMs; react-query pauses while the tab is hidden) and report status. */
-export function useFeedData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null, refreshMs: number | null = refreshMsFor(layer)) {
+/**
+ * How often a layer re-fetches: a fixed interval (the registry's refreshMs), null to fetch once, or
+ * a function of the last good body (null before one arrived or while the feed is offline). A
+ * function also sets the query's staleTime to the same interval, so a layer toggled off and on
+ * within it reuses what it has (maritime: REFERENCE-only answers refresh on an hours-long TTL).
+ */
+export type PollPolicy<T> = number | null | ((body: (T & Enveloped) | null) => number | null);
+
+/** The interval a policy picks for the current query result (false = no polling). */
+export function pollInterval<T>(policy: PollPolicy<T>, data: Result<T> | undefined): number | false {
+  const ms = typeof policy === 'function' ? policy(data?.ok ? data.body : null) : policy;
+  return ms ?? false;
+}
+
+/** Poll a route (registry refreshMs or a PollPolicy; react-query pauses while the tab is hidden) and report status. */
+export function useFeedData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null, refreshMs: PollPolicy<T> = refreshMsFor(layer)) {
   const update = useLayerStatusStore((s) => s.update);
   const q = useQuery({
     queryKey: ['threats-network', url],
     queryFn: ({ signal }) => load<T>(url!, signal),
     enabled: url !== null,
-    refetchInterval: refreshMs ?? false,
+    refetchInterval: (query) => pollInterval(refreshMs, query.state.data),
+    ...(typeof refreshMs === 'function' ? { staleTime: (query: { state: { data: Result<T> | undefined } }) => pollInterval(refreshMs, query.state.data) || 0 } : {}),
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
   });
