@@ -30,7 +30,7 @@ import { basemapChipText, createBasemapHealth, type BasemapHealth } from '@/lib/
 import { fetchBasemapStyle } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
-import { onceBasemapPainted, onceStyleLoaded, type PaintMap, styleParsed } from '@/lib/map/ready';
+import { onceBasemapPainted, type PaintMap, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { useSticky } from '@/lib/map/defer';
 import { afterQuietSlot, canvasGl } from '@/lib/map/gpu-drain';
@@ -235,11 +235,11 @@ export default function MapView() {
     published.current = map;
     setMap(map);
     setLoaded(true);
-    // Not the first `idle`: a permanently failing tile or a 1 Hz animated layer can postpone it forever.
-    onceStyleLoaded(map, () => {
-      setReady(true);
-      map.getContainer().dataset.mapReady = 'true';
-    });
+    // Ready as soon as the style is parsed: `isStyleLoaded()` stays false while any visible tile is
+    // loading, so one hung tile would keep every native layer out and the header counting undrawn
+    // entities.
+    setReady(true);
+    map.getContainer().dataset.mapReady = 'true';
   }, [setMap, setReady]);
   const onLoad = publishMap;
 

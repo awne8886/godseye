@@ -98,6 +98,18 @@ describe('admission scheduler (perf B2 / visual-qa R2-M6)', () => {
     expect(q.r.admitOne).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps admitting other work when one unit throws', () => {
+    const h = harness();
+    const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    h.s.register({ id: 'bad', priority: 2, pending: () => 1, admitOne: () => { throw new Error('boom'); } });
+    const good = queue('good', 2);
+    h.s.register(good.r);
+    for (let i = 0; i < 4; i++) h.grantSlot();
+    expect(good.r.admitOne).toHaveBeenCalledTimes(2);
+    expect(err).toHaveBeenCalled();
+    err.mockRestore();
+  });
+
   it('serves lower priority first, and alternates between equal priorities', () => {
     const h = harness();
     const order: string[] = [];

@@ -113,6 +113,21 @@ describe('terrain engage/release state machine', () => {
     expect(statuses.at(-1)).toBe('idle');
   });
 
+  it('forgets a failure after leaving terrain zoom, so the next zoom-in tries again', async () => {
+    const { map, statuses } = setup(12);
+    vi.advanceTimersByTime(TERRAIN_SETTLE_MS);
+    for (let i = 0; i < 3; i++) map.emit('error', { sourceId: TERRAIN_SOURCE_ID });
+    await Promise.resolve();
+    expect(statuses.at(-1)).toBe('error');
+    map.state.zoom = 5;
+    map.emit('zoom');
+    expect(statuses.at(-1)).toBe('idle');
+    map.state.zoom = 12;
+    map.emit('moveend');
+    vi.advanceTimersByTime(TERRAIN_SETTLE_MS);
+    expect(map.addSource).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps terrain drawing when a tile fails after elevation tiles have arrived', () => {
     const { map, statuses } = setup(12);
     vi.advanceTimersByTime(TERRAIN_SETTLE_MS);

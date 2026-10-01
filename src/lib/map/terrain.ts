@@ -119,7 +119,13 @@ export function attachTerrain(map: TerrainMap, { onStatus, onEngagedChange, isHi
     const z = map.getZoom();
     if (!active && z < TERRAIN_MIN_ZOOM) {
       cancel();
-      if (!failed) report('idle');
+      // Leaving terrain zoom forgets earlier tile failures: the next zoom-in tries again (user-paced).
+      if (failed) {
+        failed = false;
+        tileErrors = 0;
+        demTileArrived = false;
+      }
+      report('idle');
     }
     // Stop terrain requests during the zoom-out, before the globe comes back.
     if (active && z < TERRAIN_RELEASE_ZOOM) {

@@ -90,7 +90,12 @@ export function createAdmissionScheduler(o: SchedulerOptions): AdmissionSchedule
     const r = pick();
     if (r) {
       lastServed.set(r.id, ++serial);
-      r.admitOne();
+      try {
+        r.admitOne();
+      } catch (e) {
+        // One failing unit must not stall the queue (and leave the header on ENTITIES LOADING).
+        console.error('[godseye] admission unit failed', e);
+      }
     }
     publish();
     kick();

@@ -241,7 +241,7 @@ describe('palette query items (Flight Path Planner shortcuts)', () => {
 
   it('does not treat navigation phrases or areas as routes (m6)', async () => {
     const { parseRouteQuery, queryItems, looksLikePlace } = await import('./palette-items');
-    for (const q of ['go to paris', 'fly to europe', 'zoom to kyiv', 'take me to rome', 'switch to satellite', 'Go To Paris', 'pan to 3d', 'paris to 12345!'])
+    for (const q of ['go to paris', 'fly to europe', 'zoom to kyiv', 'take me to rome', 'switch to satellite', 'Go To Paris', 'pan to 3d', 'paris to 12345!', 'zoom in to paris', 'please go to rome', 'can you fly to tokyo'])
       expect(parseRouteQuery(q), q).toBeNull();
     expect(queryItems('go to paris', () => true)).toEqual([]);
     expect(parseRouteQuery('São Paulo to Zürich')).toEqual({ kind: 'names', from: 'São Paulo', to: 'Zürich' });

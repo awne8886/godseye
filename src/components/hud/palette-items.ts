@@ -41,6 +41,8 @@ const NOT_A_PLACE = new Set([
   'set', 'toggle', 'turn', 'head', 'travel', 'goto', 'centre', 'center', 'scroll', 'rotate', 'tilt', 'back', 'return', 'snap', 'route',
   'plan', 'directions', 'from', 'me', 'up', 'down', 'how', 'way', 'path', 'next', 'add', 'map', 'globe', 'view', 'camera',
 ]);
+/** Filler words that only occur in commands, never in a place name on the left of "to". */
+const COMMAND_FILLERS = new Set(['please', 'in', 'out', 'let', 'lets', "let's", 'now', 'can', 'you', 'i', 'want']);
 /** Continents and other areas that never resolve to one airport. */
 const AREAS = new Set(['europe', 'asia', 'africa', 'america', 'north america', 'south america', 'oceania', 'antarctica', 'arctic', 'the world', 'world', 'middle east', 'pacific', 'atlantic', 'globe', 'satellite', 'satellites', 'map', 'mercator', '2d', '3d']);
 
@@ -75,7 +77,9 @@ export function parseRouteQuery(query: string): RouteQuery | null {
     const from = words[1]!.trim();
     const to = words[2]!.trim();
     if (from.toLowerCase() === to.toLowerCase()) return null;
-    if (NOT_A_PLACE.has(from.toLowerCase().replace(/\s+/g, ' '))) return null;
+    const fromKey = from.toLowerCase().replace(/\s+/g, ' ');
+    // "zoom in to paris", "please go to rome": any command word on the left makes it a command.
+    if (NOT_A_PLACE.has(fromKey) || fromKey.split(' ').some((w) => NOT_A_PLACE.has(w) || COMMAND_FILLERS.has(w))) return null;
     const F = from.toUpperCase();
     const T = to.toUpperCase();
     if (typedCode(from) && typedCode(to)) return { kind: 'codes', from: F, to: T };
