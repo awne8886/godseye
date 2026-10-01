@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { apiError, feedJson, parseQuery, withRoute } from '@/lib/respond';
 import { flightsFeed } from '@/features/aviation/feeds';
+import { honestFlights } from '@/features/aviation/server/view';
 import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { findAirport, vrsIndex } from '@/features/flight-paths/server/data';
 import { aircraftOnRoute, liveRouteMeta, tileCoverage } from '@/features/flight-paths/server/live';
@@ -36,7 +37,7 @@ export const GET = withRoute('/api/route/live', async (req: Request) => {
   const o = findAirport(q.data.from);
   const d = findAirport(q.data.to);
   if (!o || !d) return apiError(404, 'not_found', `Unknown airport: ${[!o && q.data.from, !d && q.data.to].filter(Boolean).join(', ')}`);
-  const result = await flightsFeed.get();
+  const result = honestFlights(await flightsFeed.get());
   const vrs = vrsIndex();
   const now = Date.now();
   const generated = Date.parse(vrs.generatedAt);

@@ -131,14 +131,14 @@ Callsign → origin/destination with observed-track corroboration
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FlightRouteResponse` |
-| Upstreams | `vrs-standing-data.adsb.lol`, `api.adsbdb.com`, `hexdb.io` |
+| Upstreams | `vrs-standing-data.adsb.lol`, `api.adsbdb.com`, `hexdb.io`, `adsb.lol` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/flight-route?callsign=BAW117` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `callsign` | query | string | yes | ICAO callsign (e.g. `BAW117`) |
-| `icao24` | query | string | no | hex for trace corroboration |
+| `icao24` | query | string | no | hex: exact snapshot position + flown-track corroboration of a reversed leg |
 | `lat` | query | number | no | current latitude |
 | `lng` | query | number | no | current longitude |
 | `speed` | query | number | no | ground speed kt |

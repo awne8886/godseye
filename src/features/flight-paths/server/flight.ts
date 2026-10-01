@@ -20,6 +20,7 @@ import type { TrackPoint } from '@/features/aviation/trace';
 import { aircraftDetail, adsbdbBucket } from '@/features/aviation/server/aircraft';
 import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
+import { honestFlights } from '@/features/aviation/server/view';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
 import { angleDiff, etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progressOn } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
@@ -53,7 +54,8 @@ export interface FlightDeps {
 async function snapshotRecords(): Promise<{ records: FlightRecord[] | null; run: ProviderRun; state?: FreshnessState }> {
   const feed = getFeed('flights');
   if (!feed) return { records: null, run: { status: { ok: false, count: 0, ms: 0, age_s: null, error: 'no_flights_feed' }, okAt: null } };
-  const snap = feed.peek();
+  // The same honesty cap as /api/flights: never LIVE while the position provider is failing.
+  const snap = honestFlights(feed.peek());
   const records = (snap.data as { records?: FlightRecord[] } | null)?.records ?? null;
   const at = snap.meta.fetchedAt ? Date.parse(snap.meta.fetchedAt) : null;
   return records
