@@ -20,7 +20,7 @@ async function liveFlights(request: APIRequestContext): Promise<Flights | null> 
 }
 
 /** An aircraft that will not move before we click it: on the ground, else the slowest one. */
-function pickTarget(f: Flights): { lat: number; lng: number; id: string } {
+function pickTarget(f: Flights): { lat: number; lng: number; id: string; bucket: number } {
   const i = (k: string) => f.fields.indexOf(k);
   const rows = [...f.rows].sort((a, b) => {
     const ga = (a[i('onGround')] === 1 ? -1 : 0) + ((a[i('gsKt')] as number | null) ?? 0) / 1e4;
@@ -28,11 +28,11 @@ function pickTarget(f: Flights): { lat: number; lng: number; id: string } {
     return ga - gb;
   });
   const r = rows[0]!;
-  return { lat: r[i('lat')] as number, lng: r[i('lng')] as number, id: r[i('id')] as string };
+  return { lat: r[i('lat')] as number, lng: r[i('lng')] as number, id: r[i('id')] as string, bucket: r[i('bucket')] as number };
 }
 
 async function openAt(page: Page, t: { lat: number; lng: number }) {
-  // 2D: SwiftShader in CI/sandboxes does not draw the MapLibre globe reliably; the layer is the same.
+  // 2D for the click/card flow; the globe draw + pick is covered by the per-projection test below.
   await page.goto(`/?proj=mercator&layers=flights,private,jets,military&c=${t.lat.toFixed(5)},${t.lng.toFixed(5)},11`);
   await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 20_000 });
@@ -81,3 +81,66 @@ test('clicking an aircraft opens its card with source, observed time and freshne
   await expect(card.getByTestId('freshness-badge')).toHaveText(/LIVE|STALE|OFFLINE|\d+[smhd]/);
   await expect(card.getByRole('button', { name: /watch/i })).toBeVisible();
 });
+
+/** Colour token per bucket index (AircraftBucket order: commercial, private, jet, military). */
+const BUCKET_TOKENS = ['--map-flight-civil', '--map-flight-private', '--map-flight-gov', '--map-flight-military'];
+
+/**
+ * Pixels within `radius` px of the canvas centre whose colour is the aircraft's bucket colour (full,
+ * or dimmed ×0.55 when past the dead-reckoning cap). Decoded in the page from a screenshot, so it
+ * counts what was composited on screen, not what the layer claims.
+ */
+async function iconPixelsAtCentre(page: Page, token: string, radius = 24): Promise<number> {
+  const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
+  const clip = { x: box.x + box.width / 2 - radius, y: box.y + box.height / 2 - radius, width: radius * 2, height: radius * 2 };
+  const png = (await page.screenshot({ clip })).toString('base64');
+  return page.evaluate(
+    async ({ png, token }) => {
+      // Resolve the token through `color` (the CSS minifier rewrites #ff0000 as `red`).
+      const probe = document.createElement('i');
+      probe.style.color = `var(${token})`;
+      document.body.append(probe);
+      const rgb = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g)?.map(Number);
+      probe.remove();
+      if (!rgb || rgb.length < 3) return -1;
+      const full = rgb.slice(0, 3);
+      const dim = full.map((c) => Math.round(c * 0.55));
+      const img = new Image();
+      img.src = `data:image/png;base64,${png}`;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const px = ctx.getImageData(0, 0, c.width, c.height).data;
+      const near = (p: number, ref: number[]) => Math.abs(px[p]! - ref[0]!) + Math.abs(px[p + 1]! - ref[1]!) + Math.abs(px[p + 2]! - ref[2]!) <= 60;
+      let n = 0;
+      for (let p = 0; p < px.length; p += 4) if (near(p, full) || near(p, dim)) n++;
+      return n;
+    },
+    { png, token },
+  );
+}
+
+for (const proj of ['globe', 'mercator'] as const) {
+  test(`aircraft icons are drawn on the ${proj} (pixels at a known aircraft)`, async ({ page, request }, info) => {
+    test.skip(info.project.name === 'mobile', 'desktop draw check');
+    test.setTimeout(150_000);
+    const flights = await liveFlights(request);
+    test.skip(flights === null, 'adsb.lol is SOURCE OFFLINE right now: nothing live to draw');
+    const t = pickTarget(flights!);
+    await page.goto(`/?proj=${proj}&layers=flights,private,jets,military&c=${t.lat.toFixed(5)},${t.lng.toFixed(5)},8`);
+    await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-projection', proj, { timeout: 30_000 });
+    await expect(page.getByTestId('aviation-status')).toHaveAttribute('data-drawn', /^[1-9]\d*$/, { timeout: 45_000 });
+    // A 24 px icon has well over 12 body pixels in its own colour; the basemap has none.
+    await expect.poll(() => iconPixelsAtCentre(page, BUCKET_TOKENS[t.bucket]!), { timeout: 30_000 }).toBeGreaterThanOrEqual(12);
+    // Picking works on this projection too: the drawn aircraft at the centre selects on click.
+    const status = page.getByTestId('aviation-status');
+    await expect(status).toHaveAttribute('data-map-ready', '1', { timeout: 60_000 });
+    await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 20_000 });
+    await clickCentre(page);
+    await expect(status).toContainText('Selected aircraft', { timeout: 10_000 });
+  });
+}

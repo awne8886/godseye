@@ -405,6 +405,22 @@ The spacing stays at the contract's 1.2 s (faster would only invite more 429s). 
 rail reports it honestly: each aviation layer publishes `staleCount` ("N OLDER THAN 60 S") and reads
 RECENT when more than half its positions are past the cap, STALE at ≥ 90 % (`client/stale.ts`).
 
+Re-probed 2026-10-01 ~04:44–05:10 UTC (Phase 3 round 3b), same UA, `Origin: https://example.org`:
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/point/51.47/-0.45/50` ×2 | 200 ×2 | 0.62–0.78 s | none (no ACAO) | server-side only, as before; no new fixture needed |
+| local `/api/flights` (built app) | 200 | ~10 s cold sweep | same-origin | ~1–4k aircraft rows; used by the globe/mercator draw e2e |
+
+Round 3b globe fix (no upstream change): aircraft billboards drew nothing on the globe because
+MapLibre leaves back-face culling enabled after the globe tiles and the interleaved deck layers
+inherit it; IconLayer flips its quad in Y, so its triangles wind backwards and were culled
+(mercator draws no culled geometry, so it was fine). `ICON_PARAMETERS = {cullMode: 'none',
+depthCompare: 'always'}` on the icons and rings. Evidence (SwiftShader, z5 over the Channel): plain
+IconLayer billboard 0 aircraft drawn; plain IconLayer non-billboard + `cullMode: 'none'` draws;
+billboard + `cullMode: 'none'` draws (half-clipped by the globe depth without `depthCompare:
+'always'`); SDF + both draws with its outline. The SDF `fs:#main-end` injection was not the cause.
+
 ### layers-hazards
 
 Probed **2026-09-30 18:06–18:25 UTC** from the build sandbox with
@@ -762,6 +778,18 @@ surface as a `BASEMAP OFFLINE · [LAST TILE hh:mm UTC ·] RETRYING` chip and
 
 Browser requests now use `credentials: 'same-origin'` (sends nothing cross-origin, same as `omit`)
 so an app-shell `<link rel="preload" as="fetch" crossorigin>` for the two URLs above can be reused.
+
+### Re-probe 2026-10-01 (round 3b, honest UA)
+
+| URL | Status | Latency | Size | CORS | Notes |
+|---|---|---|---|---|---|
+| `https://tiles.openfreemap.org/styles/dark` | 200 | 0.28 s | 20,959 B | `*` | unchanged |
+| `https://tiles.openfreemap.org/planet` | 200 | 0.12 s | 19,254 B | `*` | unchanged; Cloudflare HIT, `max-age=86400`; tiles now under `planet/20260927_080001_pt/` |
+
+In the sandbox the browser's tile requests intermittently fail at the egress proxy
+(`net::ERR_TOO_MANY_RETRIES`), not at OpenFreeMap: curl from the same host gets 200. Those failed
+tiles are what left holes ("black wedge") in the globe; the map now reports them as
+BASEMAP INCOMPLETE · N TILES MISSING · RETRYING.
 
 ## pages-docs-privacy-ops — link and licence verification
 
