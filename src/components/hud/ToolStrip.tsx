@@ -2,19 +2,28 @@
 /**
  * Right tool strip (desktop): one button per TOOLS entry whose panel is registered, tooltips
  * verbatim from the registry, accent token when open, separators, World Remote only with Web
- * Bluetooth. Owner: design-system-hud.
+ * Bluetooth. Panel code is warmed on hover/focus and, after boot, on idle (preload.ts), so a first
+ * open never waits for its chunk (R1 m9). Owner: design-system-hud.
  */
-import { TOOLS } from '@/lib/tool-registry';
+import { useEffect } from 'react';
+import { panelFor } from '@/features/registry';
+import { TOOLS, type PanelId } from '@/lib/tool-registry';
 import { useUiStore } from '@/lib/store';
 import { isPanelAvailable, useHasBluetooth } from './hooks';
 import { iconFor } from './icons';
+import { preloadComponent, preloadWhenIdle } from './preload';
+
+/** Panels opened from the strip, the rail bottom and the palette shortcut: warmed after boot. */
+const WARM_AFTER_BOOT: readonly PanelId[] = [...TOOLS.map((t) => t.id), 'layers', 'settings', 'style-studio', 'palette'];
 
 export default function ToolStrip() {
   const openPanel = useUiStore((s) => s.openPanel);
   const pinned = useUiStore((s) => s.pinnedPanels);
   const togglePanel = useUiStore((s) => s.togglePanel);
+  const splashDone = useUiStore((s) => s.splashDone);
   const bt = useHasBluetooth();
   const tools = TOOLS.filter((t) => isPanelAvailable(t.id, bt));
+  useEffect(() => (splashDone ? preloadWhenIdle(WARM_AFTER_BOOT.map((id) => panelFor(id))) : undefined), [splashDone]);
   if (!tools.length) return null;
   return (
     <nav
@@ -34,6 +43,8 @@ export default function ToolStrip() {
               aria-pressed={on}
               title={t.tooltip}
               onClick={() => togglePanel(t.id)}
+              onPointerEnter={() => preloadComponent(panelFor(t.id))}
+              onFocus={() => preloadComponent(panelFor(t.id))}
               className="group hud-control relative grid h-11 w-11 place-items-center transition-colors"
               style={{
                 color: on ? `var(${t.accentToken})` : 'var(--text-secondary)',

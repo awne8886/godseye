@@ -33,18 +33,126 @@ export type RouteQuery = { kind: 'codes'; from: string; to: string } | { kind: '
 const looksLikeCode = (s: string) => /^[A-Z0-9]{3,4}$/.test(s) || (/\d/.test(s) && /^[A-Z0-9]{3,8}$/.test(s));
 
 /**
- * Words that make "X to Y" a navigation or command phrase rather than a city pair: "go to paris",
- * "fly to europe", "zoom to kyiv", "switch to satellite", "take me to rome".
+ * Whole-phrase non-places: a side of "X to Y" that is exactly one of these is never a city
+ * ("me to paris", "map to 3d", "from to rome").
  */
 const NOT_A_PLACE = new Set([
   'go', 'fly', 'zoom', 'pan', 'jump', 'move', 'navigate', 'take', 'take me', 'bring', 'bring me', 'show', 'show me', 'switch', 'change',
   'set', 'toggle', 'turn', 'head', 'travel', 'goto', 'centre', 'center', 'scroll', 'rotate', 'tilt', 'back', 'return', 'snap', 'route',
-  'plan', 'directions', 'from', 'me', 'up', 'down', 'how', 'way', 'path', 'next', 'add', 'map', 'globe', 'view', 'camera',
+  'plan', 'directions', 'from', 'me', 'up', 'down', 'how', 'way', 'path', 'next', 'add', 'map', 'globe', 'view', 'camera', 'here', 'there',
 ]);
-/** Filler words that only occur in commands, never in a place name on the left of "to". */
-const COMMAND_FILLERS = new Set(['please', 'in', 'out', 'let', 'lets', "let's", 'now', 'can', 'you', 'i', 'want']);
 /** Continents and other areas that never resolve to one airport. */
 const AREAS = new Set(['europe', 'asia', 'africa', 'america', 'north america', 'south america', 'oceania', 'antarctica', 'arctic', 'the world', 'world', 'middle east', 'pacific', 'atlantic', 'globe', 'satellite', 'satellites', 'map', 'mercator', '2d', '3d']);
+
+type Phrase = readonly string[];
+const phrases = (...p: string[]): Phrase[] => p.map((s) => s.split(' '));
+
+/**
+ * Politeness that only ever opens a command, stripped as whole leading phrases ("please …",
+ * "can you …", "I want to …"). Never a single word that also starts a place name: "Can Tho" and
+ * "In Salah" keep their first word because "can" and "in" alone are not fillers (round 4 m4).
+ */
+const LEAD_FILLERS = phrases(
+  'please', 'pls', 'kindly', 'can you', 'could you', 'would you', 'will you', 'can i', 'could i', 'i want to', 'i wanna',
+  "i'd like to", 'i would like to', "let's", 'lets', 'let me', 'let us',
+);
+/** Politeness at the very end of the destination ("London to Paris please"). */
+const TRAIL_FILLERS = phrases('please', 'pls', 'thanks', 'thank you');
+
+/** Verbs that ask for a flight route; "from" may follow ("fly from Can Tho to Hanoi"). */
+const FLIGHT_VERBS = phrases(
+  'fly', 'flight', 'flights', 'route', 'plan', 'plan route', 'plan a route', 'plan the route', 'plan flight', 'plan a flight',
+  'flight path', 'flight route', 'find flights', 'find a flight',
+);
+/**
+ * Navigation, UI and ground-travel verbs: as the FIRST word they make the phrase a command, never a
+ * flight ("drive to paris" must not plan Brive → Paris, "zoom in to kyiv" moves the camera).
+ */
+const COMMAND_VERBS = phrases(
+  'go', 'goto', 'show', 'head', 'pan', 'centre', 'center', 'back', 'view', 'look', 'turn', 'travel',
+  'zoom', 'jump', 'move', 'navigate', 'take', 'bring', 'get', 'send', 'switch', 'change', 'set', 'toggle', 'open', 'close',
+  'scroll', 'rotate', 'tilt', 'return', 'snap', 'teleport', 'focus', 'directions',
+  'drive', 'walk', 'ride', 'cycle', 'bike', 'hike', 'run', 'sail', 'swim', 'commute', 'cruise',
+);
+/**
+ * Command verbs that also begin real place names: followed directly by another word they are part
+ * of the name ("Show Low" — SOW, Arizona), not a command. Alone or followed only by particles
+ * ("show me", "head over", "go back") they are still commands.
+ */
+const PLACE_PREFIX_VERBS = new Set(['go', 'show', 'head', 'pan', 'centre', 'center', 'back', 'view', 'look', 'turn', 'travel']);
+/** Words that may follow a command verb without naming a place ("zoom in", "take me", "head over"). */
+const PARTICLES = new Set([
+  'me', 'us', 'in', 'out', 'over', 'back', 'up', 'down', 'around', 'along', 'on', 'off', 'there', 'now', 'please', 'straight',
+  'right', 'again', 'quickly', 'ahead', 'across', 'away', 'the', 'a',
+]);
+
+/** Lower-case, apostrophe-folded word for phrase matching (the original word is what gets kept). */
+const norm = (w: string) => w.toLowerCase().replace(/[’`]/g, "'");
+
+/** Length of the longest phrase that starts at word `i`, else 0. */
+function phraseAt(words: readonly string[], i: number, list: readonly Phrase[]): number {
+  let best = 0;
+  for (const p of list) if (p.length > best && p.every((w, k) => words[i + k] === w)) best = p.length;
+  return best;
+}
+
+/** Index of the first word at or after `i` that is not in `set`. */
+function skipWords(words: readonly string[], i: number, set: ReadonlySet<string>): number {
+  while (i < words.length && set.has(words[i]!)) i++;
+  return i;
+}
+
+/** The query without leading politeness phrases (whole words only). */
+function stripLeadFillers(q: string): string {
+  const raw = q.split(/\s+/);
+  const w = raw.map(norm);
+  let i = 0;
+  for (let n = phraseAt(w, 0, LEAD_FILLERS); n && i + n < w.length; n = phraseAt(w, i, LEAD_FILLERS)) i += n;
+  return raw.slice(i).join(' ');
+}
+
+/** The destination without trailing politeness ("Paris please" → "Paris"). */
+function stripTrailFillers(s: string): string {
+  const raw = s.split(/\s+/);
+  const w = raw.map(norm);
+  for (const p of TRAIL_FILLERS) {
+    const at = w.length - p.length;
+    if (at > 0 && phraseAt(w, at, [p]) === p.length) return raw.slice(0, at).join(' ');
+  }
+  return s;
+}
+
+/**
+ * The origin named by the left side of "X to Y", or null when the left side is a command.
+ * Position-aware (round 4 m4): a command verb counts only as the first word, particles only right
+ * after it, and words are never removed from inside a name — "fly from Can Tho" → "Can Tho",
+ * "Show Low" → "Show Low", "drive" / "zoom in" / "head over" / "show me" → null.
+ */
+export function originOf(left: string): string | null {
+  const raw = left.trim().split(/\s+/).filter(Boolean);
+  const w = raw.map(norm);
+  let i = 0;
+  const verb = phraseAt(w, 0, COMMAND_VERBS);
+  if (verb) {
+    const j = skipWords(w, verb, PARTICLES);
+    if (j === w.length) return null; // "go", "zoom in", "head over", "get me", "drive"
+    if (!phraseAt(w, j, FLIGHT_VERBS)) {
+      // "Show Low": the verb is the first word of the name. "drive from…", "show me rome" are commands.
+      const prefix = PLACE_PREFIX_VERBS.has(w.slice(0, verb).join(' ')) && j === verb && w[j] !== 'from';
+      return prefix ? raw.join(' ') : null;
+    }
+    i = j; // "show me flights from …"
+  }
+  const flight = phraseAt(w, i, FLIGHT_VERBS);
+  if (flight) {
+    i = skipWords(w, i + flight, new Set(['me', 'us']));
+    if (w[i] === 'from') i++;
+    // "fly to paris", "plan a route to rome": a destination without an origin is navigation.
+    return i < w.length ? raw.slice(i).join(' ') : null;
+  }
+  if (w[0] === 'from') i = 1;
+  return i < w.length ? raw.slice(i).join(' ') : null;
+}
 
 /**
  * A code as typed: 3-character codes in any case ("lhr"), but a 4-letter word only when typed in
@@ -65,24 +173,20 @@ export function looksLikePlace(s: string): boolean {
 }
 
 /**
- * "LHR JFK", "EGLL→KJFK", "LHR-JFK", "LHR to JFK" → codes; "London to New York", "Paris → Tokyo"
- * → names, only when both sides look like places (m6: "go to paris", "fly to europe" are not
- * routes). Anything else (a single word, "satellites") → null.
+ * "LHR JFK", "EGLL→KJFK", "LHR-JFK", "LHR to JFK" → codes; "London to New York", "Paris → Tokyo",
+ * "fly from Can Tho to Hanoi" → names, only when both sides look like places and the left side is
+ * not a command (m6: "go to paris", "fly to europe"; round 4 m4: "drive to paris"). Anything else
+ * (a single word, "satellites") → null.
  */
 export function parseRouteQuery(query: string): RouteQuery | null {
-  const q = query.trim();
+  const q = stripLeadFillers(query.trim());
   if (!q) return null;
   const words = q.match(/^(.+?)\s+(?:to|→|->|>)\s+(.+)$/i) ?? q.match(/^(.+?)\s*(?:→|->)\s*(.+)$/);
   if (words) {
-    const from = words[1]!.trim();
-    const to = words[2]!.trim();
-    if (from.toLowerCase() === to.toLowerCase()) return null;
-    const fromKey = from.toLowerCase().replace(/\s+/g, ' ');
-    // "zoom in to paris", "please go to rome": any command word on the left makes it a command.
-    if (NOT_A_PLACE.has(fromKey) || fromKey.split(' ').some((w) => NOT_A_PLACE.has(w) || COMMAND_FILLERS.has(w))) return null;
-    const F = from.toUpperCase();
-    const T = to.toUpperCase();
-    if (typedCode(from) && typedCode(to)) return { kind: 'codes', from: F, to: T };
+    const from = originOf(words[1]!);
+    const to = stripTrailFillers(words[2]!.trim());
+    if (!from || from.toLowerCase() === to.toLowerCase()) return null;
+    if (typedCode(from) && typedCode(to)) return { kind: 'codes', from: from.toUpperCase(), to: to.toUpperCase() };
     if (from.length > 60 || to.length > 60) return null;
     const fromOk = typedCode(from) || looksLikePlace(from);
     const toOk = typedCode(to) || looksLikePlace(to);

@@ -6,6 +6,8 @@ import { getLayer } from '@/lib/layer-registry';
 
 export const SPLASH_MIN_MS = 2200;
 export const SPLASH_CAP_MS = 7000;
+/** Exit: opacity 0 + scale 1.04 (base.css `.splash-screen[data-exiting]`). */
+export const SPLASH_EXIT_MS = 700;
 export const SPLASH_STAGES = ['ESTABLISHING UPLINK…', 'INITIALIZING FEEDS…', 'CALIBRATING SENSORS…', 'SYSTEM READY'] as const;
 
 /** Active layers that fetch a feed (a route), whose first answer counts toward readiness. */

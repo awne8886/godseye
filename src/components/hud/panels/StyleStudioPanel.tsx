@@ -14,6 +14,7 @@ import { useUiStore } from '@/lib/store';
 import { useStudioStore } from '../hud-store';
 import { useIsMobile } from '../hooks';
 import ModalShell from '../ModalShell';
+import { PanelHeaderTools } from '../PanelChrome';
 import {
   GHOST, KNOBS, PRESETS, PRESET_IDS, SIGNAL_DEFAULTS, effectivePalette, exportStudioJson, isPresetId, paletteContrast, parseStudioJson,
   type ColourKey, type KnobKey, type PresetId, type StudioSettings,
@@ -336,11 +337,12 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
   );
 
   // Phones: the bottom sheet (PanelHost) supplies the title, close button and scroll area, like
-  // every other phone panel, so the studio never floats over the header controls (R3-m2).
+  // every other phone panel, so the studio never floats over the header controls (R3-m2). Its
+  // tools join the sheet's one header row, beside the close button (round 4 visual m4).
   if (embedded) {
     return (
       <div className="space-y-4" data-testid="style-studio-sheet">
-        <div className="flex items-center justify-end gap-1">{tools}</div>
+        <PanelHeaderTools>{tools}</PanelHeaderTools>
         {status}
         {sections}
       </div>

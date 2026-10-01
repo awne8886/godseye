@@ -1,10 +1,9 @@
 'use client';
 /**
- * Layer toggle rows shared by the rail flyouts and the LAYERS panel: 28×14 spring toggle
+ * Layer toggle rows shared by the rail flyouts and the LAYERS panel: 28×14 sliding toggle
  * (aria-pressed), count badge, refresh interval, freshness LED + label, and the feed's source
  * line (providers / attribution; SOURCE OFFLINE with last-good time). Owner: design-system-hud.
  */
-import { m } from 'motion/react';
 import { useId } from 'react';
 import { freshnessLabel, FRESHNESS_COLOR_TOKEN } from '@/lib/freshness';
 import type { LayerDef, LayerId } from '@/lib/layer-registry';
@@ -13,15 +12,11 @@ import { useUiStore } from '@/lib/store';
 import type { Attribution } from '@/lib/types';
 import { refreshLabel, zoomGateLabel } from './status-logic';
 
+/** The knob slides with a CSS transition (base.css), so this module stays free of motion (perf m-d). */
 export function Toggle({ on }: { on: boolean }) {
   return (
     <span aria-hidden className="hud-toggle" data-on={on}>
-      <m.span
-        layout
-        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        className="block h-[10px] w-[10px] rounded-full"
-        style={{ background: on ? 'var(--gold-light)' : 'rgba(255,255,255,0.4)' }}
-      />
+      <span className="hud-toggle-knob" />
     </span>
   );
 }

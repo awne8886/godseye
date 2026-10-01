@@ -7,8 +7,8 @@ import { TOOLS } from '../../src/lib/tool-registry';
  * focus traps, focus-visible ring, accessible names, sensor modes, mobile nav + sheets.
  */
 
-async function boot(page: Page) {
-  await page.goto('/');
+async function boot(page: Page, path = '/') {
+  await page.goto(path);
   await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 30_000 });
 }
 
@@ -96,7 +96,12 @@ test.describe('desktop HUD', () => {
   });
 
   test('every registered tool in the strip toggles its panel', async ({ page }) => {
-    await boot(page);
+    // R1 m9: a HUD test, so it boots without data layers. The toggle itself renders its panel in
+    // 30–150 ms (measured in the page), but with the default ~40k entities SwiftShader draws one
+    // frame every 1–3 s and each click waits for Playwright's stable-frame checks (2–11 s per
+    // click in round 4). The checks are unchanged: real pointer clicks, aria-pressed, the named
+    // region, close again.
+    await boot(page, '/?layers=');
     for (const t of TOOLS) {
       const btn = page.getByRole('navigation', { name: 'Tools' }).getByRole('button', { name: t.label, exact: true });
       if ((await btn.count()) === 0) continue; // panel not registered in this build
@@ -110,7 +115,8 @@ test.describe('desktop HUD', () => {
   });
 
   test('Style Studio switches presets, persists them and applies Ghost last', async ({ page }) => {
-    await boot(page);
+    // HUD-only: no data layers, so a click does not wait seconds for stable frames (R1 m9).
+    await boot(page, '/?layers=');
     await page.getByRole('button', { name: 'Style Studio' }).click();
     const studio = page.getByRole('dialog', { name: 'Style Studio' });
     await expect(studio).toBeVisible();
@@ -128,7 +134,7 @@ test.describe('desktop HUD', () => {
     await page.keyboard.press('Escape');
     await expect(studio).toBeHidden();
     // The pre-paint boot script restores the saved preset on a fresh URL (localStorage only)
-    await page.goto('/');
+    await page.goto('/?layers=');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'EMBER');
     await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 30_000 });
     await page.getByRole('button', { name: 'Style Studio' }).click();
@@ -183,7 +189,9 @@ test.describe('mobile HUD', () => {
   test.skip(({ isMobile }) => !isMobile, 'phone layout');
 
   test('bottom nav reaches every sheet with 44 px targets', async ({ page }) => {
-    await boot(page);
+    // HUD-only, so no data layers (R1 m9): with the default layers a phone-sized SwiftShader page
+    // draws a frame every few seconds and each tab click waits for two stable frames.
+    await boot(page, '/?layers=');
     const nav = page.getByRole('navigation', { name: 'Main' });
     await expect(nav).toBeVisible();
     const buttons = nav.getByRole('button');
