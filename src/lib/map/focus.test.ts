@@ -63,8 +63,7 @@ describe('focus layers (the user’s route/flight/drawing) go first', () => {
     expect(deckClassPriority('IconLayer', focus)).toBe(ADMISSION_PRIORITY.ambient);
     expect(deckClassPriority(undefined, focus)).toBe(ADMISSION_PRIORITY.ambient);
     expect(ADMISSION_PRIORITY.focusFirst).toBeLessThan(ADMISSION_PRIORITY.deckDevice);
-    expect(ADMISSION_PRIORITY.deckDevice).toBeLessThan(ADMISSION_PRIORITY.features);
-    expect(ADMISSION_PRIORITY.features).toBeLessThan(ADMISSION_PRIORITY.focus);
+    expect(ADMISSION_PRIORITY.deckDevice).toBeLessThan(ADMISSION_PRIORITY.focus);
     expect(ADMISSION_PRIORITY.focus).toBeLessThan(ADMISSION_PRIORITY.ambient);
   });
 

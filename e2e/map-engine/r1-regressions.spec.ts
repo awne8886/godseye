@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { gotoMap, waitForMapStyle } from './helpers';
+import { gotoMap, waitForAdmissionDrained, waitForMapStyle } from './helpers';
 
 /** Phase 3 round-1 regressions owned by map-engine (R1-B1/B1b attribution, R1-M1 right-click pair). */
 test.describe('map engine · round-1 regressions', () => {
@@ -37,14 +37,19 @@ test.describe('map engine · round-1 regressions', () => {
     });
     await gotoMap(page, { camera: { lat: 48.85, lng: 2.35, zoom: 6 } });
     await waitForMapStyle(page);
-    // Let the default data layers publish (the deck overlay mounts after the first idle slot).
-    await page.waitForTimeout(8000);
+    // Let the default data layers publish and their GPU start-up drain (R1r5-m3): a shader link
+    // (1.7–7.5 s on SwiftShader) landing between the two clicks would stretch the pair.
+    await waitForAdmissionDrained(page);
     const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
+    // The pointer arrives first (its hover pick runs now, not inside the pair).
+    await page.mouse.move(x, y);
+    await page.waitForTimeout(1000);
     await page.mouse.click(x, y, { button: 'right' });
     await page.mouse.click(x + 4, y + 2, { button: 'right' });
     const [a, b] = await page.evaluate(() => (window as unknown as { __cm: number[] }).__cm.slice(-2));
+    // The dispatch gap (event timestamps, as the product's detector reads them) stays < 500 ms.
     expect(b! - a!).toBeLessThan(500);
     await expect(page).toHaveURL(/dossier=4[6-9]\.\d+(%2C|,)[0-4]\.\d+/, { timeout: 10_000 });
   });

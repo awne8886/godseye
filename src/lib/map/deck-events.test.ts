@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { DECK_GESTURE_EVENTS, detachDeckPressPicking, hoverAllowed, isPrimaryClick, LINK_DRAW_FEATURES, primeLinkDrawFeatures } from './deck-events';
+import {
+  DECK_GESTURE_EVENTS,
+  type DeckLike,
+  detachDeckInput,
+  hoverAllowed,
+  isPrimaryClick,
+  LINK_DRAW_FEATURES,
+  primeLinkDrawFeatures,
+  runDeckHoverLeave,
+  runDeckHoverPick,
+} from './deck-events';
 import { collectCandidates, resetPicking, setDeckHoverInfo, setPickOverlay, type PickMap } from './picking';
 
 type Handler = (e: never) => void;
@@ -22,18 +32,33 @@ class FakeEventManager {
   }
 }
 
-/** A deck stand-in wired like Deck._createEventManager: every press and click picks on the GPU. */
+/**
+ * A deck stand-in wired like Deck._createEventManager: every press picks on the GPU, a pointer move
+ * queues a hover pick that `_pickAndCallback` (deck's per-frame step) runs.
+ */
 function fakeDeck() {
   const picks: string[] = [];
+  let queued: { type: string; offsetCenter: { x: number; y: number } | null } | null = null;
   const deck = {
+    isInitialized: true,
     _onPointerDown: (() => picks.push('pointerdown')) as Handler,
-    _onPointerMove: (() => picks.push('hover')) as Handler,
+    _onPointerMove: ((e: { type: string; offsetCenter: { x: number; y: number } | null }) => void (queued = e)) as unknown as Handler,
     _onEvent: ((e: { type: string }) => picks.push(e.type)) as unknown as Handler,
+    _pickAndCallback: () => {
+      if (!queued) return;
+      picks.push(queued.type === 'pointerleave' ? 'leave' : `hover@${queued.offsetCenter!.x},${queued.offsetCenter!.y}`);
+      queued = null;
+    },
     eventManager: null as FakeEventManager | null,
   };
-  deck.eventManager = new FakeEventManager({ pointerdown: deck._onPointerDown, pointermove: deck._onPointerMove, pointerleave: deck._onPointerMove });
-  for (const t of DECK_GESTURE_EVENTS) deck.eventManager.on(t, deck._onEvent);
-  return { deck, picks };
+  const createEventManager = () => {
+    deck.eventManager = new FakeEventManager({ pointerdown: deck._onPointerDown, pointermove: deck._onPointerMove, pointerleave: deck._onPointerMove });
+    for (const t of DECK_GESTURE_EVENTS) deck.eventManager.on(t, deck._onEvent);
+  };
+  createEventManager();
+  /** deck's animation frame. */
+  const frame = () => deck._pickAndCallback();
+  return { deck, picks, frame, createEventManager };
 }
 
 const MAP: PickMap = {
@@ -55,29 +80,82 @@ describe('deck press picking (R1-M1)', () => {
   });
 
   it('after detaching, right-clicks, middle-clicks, presses and drags produce zero deck picks', () => {
-    const { deck, picks } = fakeDeck();
-    expect(detachDeckPressPicking(deck)).toBe(true);
+    const { deck, picks, frame } = fakeDeck();
+    expect(detachDeckInput(deck)).toBe(true);
     for (const button of [0, 1, 2]) {
       deck.eventManager!.dispatch('pointerdown', { srcEvent: { button } });
       deck.eventManager!.dispatch('click', { type: 'click', srcEvent: { button } });
     }
     for (const t of ['panstart', 'panmove', 'panend', 'dblclick']) deck.eventManager!.dispatch(t, { type: t });
+    frame();
     expect(picks).toEqual([]);
   });
 
-  it('keeps deck hover (autoHighlight) wired', () => {
-    const { deck, picks } = fakeDeck();
-    detachDeckPressPicking(deck);
-    deck.eventManager!.dispatch('pointermove', {});
-    expect(picks).toEqual(['hover']);
+  it('is idempotent and waits for the EventManager (called again from onLoad)', () => {
+    expect(detachDeckInput({ eventManager: null })).toBe(false);
+    expect(detachDeckInput(undefined)).toBe(false);
+    const { deck } = fakeDeck();
+    expect(detachDeckInput(deck)).toBe(true);
+    expect(detachDeckInput(deck)).toBe(true);
+  });
+});
+
+describe('deck hover picking is the host’s (perf round-5 m-h)', () => {
+  it('without the fix every pointer move queues a GPU hover pick for the next frame (the regression this guards)', () => {
+    const { deck, picks, frame } = fakeDeck();
+    for (let i = 0; i < 5; i++) {
+      deck.eventManager!.dispatch('pointermove', { type: 'pointermove', offsetCenter: { x: i, y: i } });
+      frame();
+    }
+    expect(picks.length).toBe(5);
   });
 
-  it('is idempotent and waits for the EventManager (called again from onLoad)', () => {
-    expect(detachDeckPressPicking({ eventManager: null })).toBe(false);
-    expect(detachDeckPressPicking(undefined)).toBe(false);
-    const { deck } = fakeDeck();
-    expect(detachDeckPressPicking(deck)).toBe(true);
-    expect(detachDeckPressPicking(deck)).toBe(true);
+  it('after detaching, pointer moves (and leaves) queue nothing; frames pick nothing', () => {
+    const { deck, picks, frame } = fakeDeck();
+    detachDeckInput(deck);
+    for (let i = 0; i < 5; i++) {
+      deck.eventManager!.dispatch('pointermove', { type: 'pointermove', offsetCenter: { x: i, y: i } });
+      frame();
+    }
+    deck.eventManager!.dispatch('pointerleave', { type: 'pointerleave', offsetCenter: null });
+    frame();
+    expect(picks).toEqual([]);
+  });
+
+  it('an EventManager deck re-creates later registers the no-ops (detached before it existed, or re-created)', () => {
+    const { deck, picks, frame, createEventManager } = fakeDeck();
+    detachDeckInput(deck);
+    createEventManager();
+    deck.eventManager!.dispatch('pointerdown', { srcEvent: { button: 2 } });
+    deck.eventManager!.dispatch('pointermove', { type: 'pointermove', offsetCenter: { x: 1, y: 1 } });
+    deck.eventManager!.dispatch('click', { type: 'click' });
+    frame();
+    expect(picks).toEqual([]);
+  });
+
+  it('runDeckHoverPick drives deck’s own hover handler and runs the pick now, timed', () => {
+    const { deck, picks, frame } = fakeDeck();
+    detachDeckInput(deck);
+    expect(runDeckHoverPick(deck, 12, 34)).toBeGreaterThanOrEqual(0);
+    expect(picks).toEqual(['hover@12,34']);
+    frame(); // deck's next frame finds nothing queued: one pick, not two
+    expect(picks).toEqual(['hover@12,34']);
+    runDeckHoverLeave(deck);
+    expect(picks).toEqual(['hover@12,34', 'leave']);
+  });
+
+  it('does nothing before deck is initialised, after a failed pick, or without a deck', () => {
+    const { deck, picks } = fakeDeck();
+    detachDeckInput(deck);
+    deck.isInitialized = false;
+    expect(runDeckHoverPick(deck, 1, 1)).toBe(0);
+    runDeckHoverLeave(deck);
+    expect(picks).toEqual([]);
+    expect(runDeckHoverPick(null, 1, 1)).toBe(0);
+    const throwing: DeckLike = { isInitialized: true, _onPointerMove: () => undefined, _pickAndCallback: () => { throw new Error('context lost'); } };
+    detachDeckInput(throwing);
+    expect(() => runDeckHoverPick(throwing, 1, 1)).not.toThrow();
+    expect(() => runDeckHoverLeave(throwing)).not.toThrow();
   });
 });
 

@@ -963,6 +963,25 @@ BASEMAP INCOMPLETE · N TILES MISSING · RETRYING.
 
 Auth: none. Licences unchanged (OpenFreeMap/OpenMapTiles/OSM ODbL attribution; Terrarium: Mapzen/AWS Open Data with its attribution).
 
+### Re-probe 2026-10-01 19:15Z (round 5, curl, honest UA, `Origin: https://example.org`)
+
+| Upstream | Status | Latency | Size | CORS | Cache | Notes |
+|---|---|---|---|---|---|---|
+| OpenFreeMap `styles/dark` | 200 `application/json` | 0.35 s | 20,959 B | `*` | `public, max-age=86400`, Cloudflare HIT | version 8, 47 layers, sources `ne2_shaded`, `openmaptiles` (`url` = `https://tiles.openfreemap.org/planet`); unchanged vs the 2026-09-30 fixture |
+| OpenFreeMap `planet` TileJSON | 200 `application/json` | 0.39 s | 19,254 B | `*` | `public, max-age=86400`, Cloudflare HIT | tiles `planet/20260927_080001_pt/{z}/{x}/{y}.pbf`, minzoom 0, maxzoom 14, bounds ±180/±85.05113 |
+
+Changes in how the browser uses them (no new hosts, no keys):
+- The style and the TileJSON are memoised per URL across retry attempts (`createBasemapStyleLoader`):
+  a retry asks again only for the document that failed (the sandbox proxy failed one of the two
+  per attempt for > 90 s in round 5). Only validated documents are kept (a v8 style; a TileJSON with
+  same-host https tiles); a failed, timed-out or invalid one is fetched again.
+- Tile failures of the imagery overlays (Esri World Imagery, GIBS true colour, GIBS Black Marble) are
+  now reported like the basemap's: `· N TILES MISSING` / `· SOURCE OFFLINE · LAST TILE hh:mm UTC` on
+  their dated REFERENCE chips, failed tiles retried by id with backoff (2 s × 2ⁿ, ≤ 60 s). MapLibre
+  does not report 404s (it over-zooms the parent tile), so only real failures count.
+- BASEMAP LOADING shows from the moment the map area mounts (before the style arrives) until the
+  first frame with basemap tiles has been painted.
+
 ## pages-docs-privacy-ops — link and licence verification
 
 pages-docs-privacy-ops wires no upstream. This log records every external URL that the README, the

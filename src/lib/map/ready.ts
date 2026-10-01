@@ -6,7 +6,8 @@
  * finished before we subscribed): sources and layers can be added from then on. That is what
  * `useMapInstance()`, `data-map-ready` and `data-style-ready` mean; tiles may still be loading
  * (the basemap health chip reports that). `onceBasemapPainted` is the separate, capped "first
- * frame with basemap tiles" signal that gates feature start-up; `onceFirstFrame` ("a globe frame
+ * frame with basemap tiles" signal that gates the data layers' GPU start-up (their fetches start
+ * at style parse, perf m-l); `onceFirstFrame` ("a globe frame
  * has been drawn") gates the user's own focus layers (`focus.ts`). Owner: map-engine. Unit-tested
  * with a fake map.
  */
@@ -72,8 +73,8 @@ const realPaintTimers: PaintTimers = {
 /**
  * Call `cb` once the basemap has been painted: the first frame rendered after a tile of
  * `sourceId` arrived (or `load`), and never later than `capMs` (a hung tile host must not hold the
- * data layers back). Feature start-up (fetch, parse, GPU set-up) waits for this so it does not
- * starve the globe's first frame (visual-qa R2-M6). Returns cancel.
+ * data layers back). The data layers' GPU set-up (deck device, native layer types) waits for this
+ * so it does not starve the globe's first frame (visual-qa R2-M6). Returns cancel.
  */
 export function onceBasemapPainted(map: PaintMap, sourceId: string, cb: () => void, capMs: number, timers: PaintTimers = realPaintTimers): () => void {
   let done = false;

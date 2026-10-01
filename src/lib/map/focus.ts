@@ -9,8 +9,9 @@
  *  - the deck device is created as soon as a focus layer exists and the globe has drawn its first
  *    frame (ambient data layers still wait for the first painted basemap frame);
  *  - the first class of the focus layers in drawing order (a route's arc: PathLayer) is admitted
- *    before the data modules mount; further focus classes go after that mount but ahead of ambient
- *    classes and native layer types.
+ *    first; further focus classes go ahead of ambient classes and native layer types.
+ * (The data modules are not queued since perf m-l: they mount at style parse and fetch at once;
+ * only their GPU work is queued, behind the basemap's first painted frame.)
  * Measured on SwiftShader before this ordering: the arc's PathLayer came fourth (deck device,
  * feature mount, ScatterplotLayer first because the ambient earthquake layer was seen first), one
  * 2 s deadline each — first draw 16–23 s after style parse.
@@ -33,11 +34,9 @@ type Entries = Readonly<Record<string, EntryLike>>;
 export const ADMISSION_PRIORITY = {
   /** The deck device while focus layers exist, and the first focus class. */
   focusFirst: -2,
-  /** The deck device while only Background layers exist and the data modules have not mounted. */
+  /** The deck device otherwise (every deck class needs it first). */
   deckDevice: -1,
-  /** Mounting the data modules (their fetch, parse and publish). */
-  features: 0,
-  /** Further focus classes; the deck device once the data modules have mounted. */
+  /** Further focus classes. */
   focus: 1,
   /** Ambient deck layer classes and native layer types. */
   ambient: 2,

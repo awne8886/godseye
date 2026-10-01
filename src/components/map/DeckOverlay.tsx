@@ -7,10 +7,12 @@
  * (`orderedDeckLayers`). The overlay's picking API is published for the click router
  * (src/lib/map/picking.ts).
  *
- * Input (R1-M1): deck's own pointerdown/click/drag picking is detached (`detachDeckPressPicking`);
- * clicks are routed by the map host only (primary button), so right-clicks and drags never run a
- * GPU pick. deck's hover pick (≤ 1 per frame, skipped while a button is held) feeds autoHighlight
- * and is reused by the host's hover cursor instead of a second pick.
+ * Input (R1-M1, perf round-5 m-h): deck's own pointer input (press pick, per-frame hover pick,
+ * click/drag dispatch) is detached (`detachDeckInput`); clicks are routed by the map host only
+ * (primary button), so right-clicks and drags never run a GPU pick. Hover picks are requested here
+ * through a budget (`createHoverPickGate`: none while a button is held or the camera moves, ≤ 10 Hz
+ * and ≤ 25 % of the main thread while the pointer moves, one more where it comes to rest); their
+ * result feeds autoHighlight and is reused by the host's hover cursor instead of a second pick.
  *
  * Startup cost (perf B2): layers that were never visible are not instantiated and new layer
  * classes are admitted one per slot of the map's admission scheduler (`admitLayers` +
@@ -48,8 +50,18 @@ import { FEATURE_MODULES } from '@/features/registry';
 import { admitLayers, createAdmissionState, createStableLists, flattenLayers, focusFirst } from '@/lib/map/deck-admission';
 import { useAdmissionStore } from '@/lib/map/admission-scheduler';
 import { type ApplyMap, missingDeckGroups, withParsedStyle } from '@/lib/map/deck-apply';
-import { type DeckLike, detachDeckPressPicking, type FeatureDevice, initPendingLayers, primeLinkDrawFeatures } from '@/lib/map/deck-events';
+import {
+  type DeckLike,
+  detachDeckInput,
+  type FeatureDevice,
+  hoverAllowed,
+  initPendingLayers,
+  primeLinkDrawFeatures,
+  runDeckHoverLeave,
+  runDeckHoverPick,
+} from '@/lib/map/deck-events';
 import { deckClassMaxWait, deckClassPriority, focusClassOrder, focusKeysOf, registerFocusKeys } from '@/lib/map/focus';
+import { createHoverPickGate } from '@/lib/map/hover-pick';
 import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
 /** `beforeId` is a MapLibreOverlay-specific layer prop (not in deck's LayerProps typings). */
@@ -87,6 +99,8 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     // `admittedVersion` re-runs admission when a class was admitted.
   }, [entries, admittedVersion, beforeId]); // eslint-disable-line react-hooks/exhaustive-deps
   const { current: mapRef } = useMap();
+  /** The last hover pick found something (its highlight must be cleared when the pointer leaves). */
+  const hoverHit = useRef(false);
 
   const overlay = useControl(() => {
     const box: { overlay?: MapLibreOverlay } = {};
@@ -98,9 +112,12 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
       onDeviceInitialized: (device) => primeLinkDrawFeatures(device as unknown as FeatureDevice),
       // deck writes the canvas cursor every frame: follow the host's hover verdict, else MapLibre's.
       getCursor: hoverCursor,
-      onHover: (info: PickingInfo) => setDeckHoverInfo(info as unknown as DeckPickInfo),
-      // The EventManager exists from onLoad on: detach deck's press/click/drag picking there.
-      onLoad: () => detachDeckPressPicking(deckOf(box.overlay)),
+      onHover: (info: PickingInfo) => {
+        hoverHit.current = info.object !== undefined && info.object !== null;
+        setDeckHoverInfo(info as unknown as DeckPickInfo);
+      },
+      // The EventManager exists from onLoad on: detach deck's own pointer input there (again).
+      onLoad: () => detachDeckInput(deckOf(box.overlay)),
     });
     return box.overlay;
   });
@@ -210,10 +227,52 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   }, [mapRef, overlay]);
   useEffect(() => {
     // A deck already initialised (StrictMode re-run, device reuse) has its EventManager now.
-    detachDeckPressPicking(deckOf(overlay));
+    detachDeckInput(deckOf(overlay));
     setPickOverlay(overlay as unknown as PickOverlay);
+    // The hover feed is ours from now on: the host's per-frame hover reuses its result and never
+    // runs a GPU pick of its own, even before the first budgeted pick.
+    setDeckHoverInfo(null);
     return () => setPickOverlay(null);
   }, [overlay]);
+  // Budgeted hover picks (perf round-5 m-h) from the map's pointer events.
+  useEffect(() => {
+    const map = mapRef?.getMap();
+    if (!map) return;
+    const gate = createHoverPickGate({
+      pick: (x, y) => runDeckHoverPick(deckOf(overlay), x, y),
+      leave: () => {
+        if (!hoverHit.current) return; // nothing highlighted: no pick needed to clear it
+        runDeckHoverLeave(deckOf(overlay));
+      },
+      timers: {
+        setTimeout: (cb, ms) => setTimeout(cb, ms),
+        clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+        now: () => performance.now(),
+      },
+    });
+    const move = (e: { point: { x: number; y: number }; originalEvent?: MouseEvent }) =>
+      gate.move(e.point.x, e.point.y, !hoverAllowed(e.originalEvent) || map.isMoving());
+    const leave = () => gate.leave();
+    // Hover yields to clicks: no pick lands between the two clicks of a double (right-)click.
+    const press = () => gate.press();
+    // A drag or camera move starting under a resting pointer: no trailing pick at the old position.
+    const blocked = () => gate.move(Number.NaN, Number.NaN, true);
+    map.on('mousemove', move);
+    map.on('mouseout', leave);
+    map.on('mousedown', press);
+    map.on('mouseup', press);
+    map.on('contextmenu', press);
+    map.on('movestart', blocked);
+    return () => {
+      gate.dispose();
+      map.off('mousemove', move);
+      map.off('mouseout', leave);
+      map.off('mousedown', press);
+      map.off('mouseup', press);
+      map.off('contextmenu', press);
+      map.off('movestart', blocked);
+    };
+  }, [mapRef, overlay]);
   useEffect(() => {
     if (ready) applyRef.current(layersRef.current); // #10733: re-apply once the style is parsed
   }, [ready, overlay]);

@@ -5,7 +5,9 @@
  * (never a fabricated time) and a retry schedule with exponential backoff. The host shows the
  * chip, sets `data-basemap-state` and, when a retry is due, asks MapLibre again for the failed tiles
  * only (`retryTargets`: `map.refreshTiles(source, ids)`), never the whole viewport: OpenFreeMap is
- * a donation-funded host (R1r4-m2). Owner: map-engine. Pure and unit-tested.
+ * a donation-funded host (R1r4-m2). The same tracker reports holes in the imagery overlays and,
+ * for the basemap, BASEMAP LOADING until its first painted frame (`tile-watch.ts` wires the map
+ * events). Owner: map-engine. Pure and unit-tested.
  */
 
 /** Consecutive tile failures (no tile in between) before the basemap is reported offline. */
@@ -17,9 +19,11 @@ export const BASEMAP_RETRY_MAX_MS = 60_000;
  * - `offline`: consecutive failures with no tile in between (the host is down);
  * - `incomplete`: some tiles in view failed while others loaded (holes in the globe: R3-m8);
  * - `stalled`: the tiles in view have not finished loading for `BASEMAP_STALL_MS` (nothing failed,
- *   nothing painted: R3-M2). Never an empty globe without a chip.
+ *   nothing painted: R3-M2). Never an empty globe without a chip;
+ * - `loading`: no frame with basemap tiles has been painted yet since the map container mounted
+ *   (round-4 m7 / round-5 visual-qa m3: BASEMAP LOADING from the first frame, not after 10 s).
  */
-export type BasemapState = 'ok' | 'offline' | 'incomplete' | 'stalled';
+export type BasemapState = 'ok' | 'offline' | 'incomplete' | 'stalled' | 'loading';
 
 /** Tiles in view still loading after this long → BASEMAP LOADING chip. */
 export const BASEMAP_STALL_MS = 10_000;
@@ -54,14 +58,28 @@ export interface BasemapHealth {
   missing: number;
 }
 
-export function createBasemapHealth() {
+export interface HealthOptions {
+  /**
+   * Whether a frame with this source's tiles is already on screen (default true). The basemap
+   * starts false and reads `loading` until `markPainted()`; imagery overlays only report failures.
+   */
+  painted?: boolean;
+}
+
+/**
+ * Tile health of one raster/vector source: the basemap, and (R1r5 visual-qa m10) the imagery
+ * overlays (Esri, GIBS true colour, Black Marble), whose holes were silent.
+ */
+export function createBasemapHealth(opts: HealthOptions = {}) {
   let failures = 0;
   let retries = 0;
   let lastGoodAt: number | null = null;
   let stalled = false;
+  let painted = opts.painted ?? true;
   const failed = new Set<string>();
   const snapshot = (): BasemapHealth => {
-    const state: BasemapState = failures >= BASEMAP_OFFLINE_AFTER ? 'offline' : failed.size ? 'incomplete' : stalled ? 'stalled' : 'ok';
+    const state: BasemapState =
+      failures >= BASEMAP_OFFLINE_AFTER ? 'offline' : failed.size ? 'incomplete' : stalled ? 'stalled' : painted ? 'ok' : 'loading';
     return {
       state,
       lastGoodAt,
@@ -84,6 +102,13 @@ export function createBasemapHealth() {
       lastGoodAt = now;
       return snapshot();
     },
+    /** A frame with this source's tiles has been painted (ends `loading`). */
+    markPainted(): BasemapHealth {
+      painted = true;
+      return snapshot();
+    },
+    /** Whether a frame with this source's tiles has been painted yet. */
+    isPainted: () => painted,
     /** Whether the tiles in view have been loading for longer than BASEMAP_STALL_MS. */
     setStalled(on: boolean): BasemapHealth {
       stalled = on;
@@ -146,17 +171,39 @@ export function heldTileKeys(map: unknown, sourceId: string): Set<string> | null
 
 const hhmm = (ms: number) => new Date(ms).toISOString().slice(11, 16);
 
+const lastTile = (h: BasemapHealth) => (h.lastGoodAt === null ? '' : ` · LAST TILE ${hhmm(h.lastGoodAt)} UTC`);
+const missingText = (n: number) => `${n} TILE${n === 1 ? '' : 'S'} MISSING`;
+
 /** Chip text: SOURCE OFFLINE wording with the last observed tile time, never a guessed one. */
 export function basemapChipText(h: BasemapHealth): string | null {
-  const last = h.lastGoodAt === null ? '' : ` · LAST TILE ${hhmm(h.lastGoodAt)} UTC`;
+  const last = lastTile(h);
   switch (h.state) {
     case 'offline':
       return `BASEMAP OFFLINE${last} · RETRYING`;
     case 'incomplete':
-      return `BASEMAP INCOMPLETE · ${h.missing} TILE${h.missing === 1 ? '' : 'S'} MISSING · RETRYING`;
+      return `BASEMAP INCOMPLETE · ${missingText(h.missing)} · RETRYING`;
     case 'stalled':
       return `BASEMAP LOADING${last}`;
+    case 'loading':
+      return 'BASEMAP LOADING';
     default:
       return null;
   }
+}
+
+/**
+ * An imagery overlay's dated REFERENCE label with its holes announced (visual-qa m10): failed tiles
+ * still in view read `· N TILES MISSING`; a host that keeps failing reads `· SOURCE OFFLINE` with
+ * the last tile that actually arrived. A healthy (or still loading) overlay keeps its plain label.
+ */
+export function imageryChipText(label: string, h: BasemapHealth | null | undefined): string {
+  if (!h) return label;
+  if (h.state === 'offline') return `${label} · SOURCE OFFLINE${lastTile(h)}`;
+  if (h.state === 'incomplete') return `${label} · ${missingText(h.missing)}`;
+  return label;
+}
+
+/** Whether a source's chip should take the alert tone (offline or with holes). */
+export function tilesDegraded(h: BasemapHealth | null | undefined): boolean {
+  return h?.state === 'offline' || h?.state === 'incomplete';
 }
