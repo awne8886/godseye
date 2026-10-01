@@ -25,7 +25,7 @@ import { etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progress
 import { localTimeIso } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { findAirport, openFlights, vrsIndex, type AirportRecord } from './data';
-import { endpoint } from './plan';
+import { endpoint, icaoOf } from './plan';
 import { stationFor, stationWeather } from './weather';
 
 export type FlightDetail = z.infer<typeof FlightDetailResponse>;
@@ -304,10 +304,17 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
       } else if (latest === 'D' && rev) {
         // Observed D→O: show the leg as flown, not the standing data's reversed direction.
         flownTrack = back.track;
+        // A multi-stop VRS chain that flies D then O (AAL606 is KDFW-KJFK-KDFW) lists this leg:
+        // then it is standing data, only the leg differs from the one the route lookup picked.
+        const chain = resolved.callsign ? vrsIndex().chainOf.get(resolved.callsign) : undefined;
+        const [dIcao, oIcao] = [icaoOf(destination), icaoOf(origin)];
+        const listed = !!chain && chain.some((c, i) => c === dIcao && chain[i + 1] === oIcao);
         [origin, destination] = [destination, origin];
-        routeBasis = 'observed-reverse';
+        routeBasis = listed ? 'standing-data' : 'observed-reverse';
         onRoute = true;
-        routeCheck = `observed departure ${codeD} and course toward ${codeO}: shown as flown ${codeD}→${codeO}; standing data lists ${sched}`;
+        routeCheck = listed
+          ? `observed departure ${codeD} and course toward ${codeO}: the ${codeD}→${codeO} leg of standing-data route ${chain!.join('→')}`
+          : `observed departure ${codeD} and course toward ${codeO}: shown as flown ${codeD}→${codeO}; standing data lists ${sched}`;
         sources.push({ name: 'corroboration', ok: true, detail: routeCheck });
       } else if (latest === 'D') {
         flownTrack = back.track;

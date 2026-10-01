@@ -72,8 +72,10 @@ describe('observed departure and course beat the schedule (round 3 B1)', () => {
     const d = (await flightDetail('AAL606', deps(aal606, traceAd049a.track), NOW))!;
     expect(d.origin?.iata).toBe('JFK');
     expect(d.destination?.iata).toBe('DFW');
-    expect(d.routeBasis).toBe('observed-reverse');
-    expect(d.routeCheck).toMatch(/standing data lists DFW→JFK/);
+    // VRS lists AAL606 as KDFW-KJFK-KDFW (probed 2026-10-01): JFK→DFW is its second leg; the route
+    // lookup picked the first leg (direction-blind), the observed departure picks the right one.
+    expect(d.routeBasis).toBe('standing-data');
+    expect(d.routeCheck).toMatch(/the JFK→DFW leg of standing-data route KDFW→KJFK→KDFW/);
     expect(d.etaTz).toBe('America/Chicago');
     expect(d.progress).toBeGreaterThan(0.8); // ~170 km east of DFW on a 2,200 km leg
     // The real JFK→DFW track is shown (it is this flight), starting on the ground at JFK.
@@ -86,7 +88,8 @@ describe('observed departure and course beat the schedule (round 3 B1)', () => {
   it('UAL374 departed LAX eastbound: LAX→ORD as flown, progress from LAX', async () => {
     const d = (await flightDetail('UAL374', deps(ual374, traceA5d31d.track), NOW))!;
     expect([d.origin?.iata, d.destination?.iata]).toEqual(['LAX', 'ORD']);
-    expect(d.routeBasis).toBe('observed-reverse');
+    expect(d.routeBasis).toBe('observed-reverse'); // VRS: ORD-LAX only
+    expect(d.routeCheck).toMatch(/standing data lists ORD→LAX/);
     expect(d.progress).toBeLessThan(0.3);
   });
 
