@@ -68,17 +68,12 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     return box.overlay;
   });
   const layersRef = useRef(layers);
-  const initialisedVersion = useRef(0);
+  const beforeIdRef = useRef(beforeId);
   useEffect(() => {
     layersRef.current = layers;
+    beforeIdRef.current = beforeId;
     overlay.setProps({ layers });
-    // A class was just admitted: initialise its layers now, in this commit's task, rather than
-    // inside the next map frame (one program link per admission, alone in its task).
-    if (initialisedVersion.current !== admittedVersion) {
-      initialisedVersion.current = admittedVersion;
-      initPendingLayers(deckOf(overlay));
-    }
-  }, [overlay, layers, admittedVersion]);
+  }, [overlay, layers, beforeId]);
   // Waiting layer classes are admitted one per scheduler slot.
   const scheduler = useAdmissionStore((s) => s.scheduler);
   const waitingRef = useRef<string[]>([]);
@@ -97,10 +92,19 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
         if (!next) return;
         admission.admitted.add(next);
         waitingRef.current = waitingRef.current.slice(1);
+        // Hand deck the new class and initialise it here, inside the drained slot: only deck's own
+        // work for this one class (one program link) runs in this task — no React commit. A map
+        // frame queued before the link would make it wait for that frame on the GPU.
+        const all = flattenLayers<Layer>(orderedDeckLayers(useDeckLayerStore.getState().entries) as unknown[]);
+        const now = withBeforeId(admitLayers(all, admission).pass, beforeIdRef.current);
+        layersRef.current = now;
+        overlay.setProps({ layers: now });
+        initPendingLayers(deckOf(overlay));
+        // React catches up in time slices (same layers by id: deck diffs them, nothing re-links).
         startTransition(() => setAdmittedVersion((v) => v + 1));
       },
     });
-  }, [scheduler, admission]);
+  }, [scheduler, admission, overlay]);
 
   // After a WebGL context restore MapLibre rebuilds its style; hand deck its layers again.
   useEffect(() => {
