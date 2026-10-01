@@ -7,7 +7,7 @@
  */
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, type Selection } from '@/lib/layer-host';
@@ -15,6 +15,7 @@ import { readCssColor } from '@/lib/tokens';
 import type { ConflictEvent, ConflictsResponse, CountryRiskResponse, FeedEvent, FrontlinesResponse, GdacsIncident, GdacsResponse, GdeltEvent, GdeltEventsResponse, InfrastructureResponse, NuclearSite } from '@/lib/types';
 import { gdeltTitle, QUAD_TOKEN } from '../shared/gdelt';
 import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from './hooks';
+import { buildRiskGeometry } from './risk-geometry';
 
 const zOf = (id: string) => LAYERS.find((l) => l.id === id)!.z;
 const css = (token: Parameters<typeof readCssColor>[0], alpha = 1) => rgbaCss(readCssColor(token, alpha));
@@ -256,39 +257,42 @@ function FrontlinesLayer() {
 }
 
 // ── Country risk choropleth (REFERENCE) ─────────────────────────────────────────
+// Every row with an INFORM score is drawn (outline, or label point for states too small for the
+// 1:110m outlines); WGI-only rows have nothing to shade. The rail counts what is drawn.
+const RISK_OPACITY = ['interpolate', ['linear'], ['get', 'score'], 0, 0.02, 3.5, 0.12, 5, 0.25, 6.5, 0.42, 9, 0.6] as unknown as number;
+const RISK_POINT_OPACITY = ['interpolate', ['linear'], ['get', 'score'], 0, 0.3, 3.5, 0.45, 5, 0.6, 6.5, 0.75, 9, 0.9] as unknown as number;
+
 function CountryRiskLayer() {
-  const data = useFeedData<CountryRiskResponse>('country_risk', '/api/country-risk', (b) => b.items.length);
   const shapes = useQuery({
     queryKey: ['zones-countries'],
     queryFn: async () => (await (await fetch('/data/zones-countries.json')).json()) as GeoJSON.FeatureCollection,
     staleTime: Infinity,
   }).data;
+  const countDrawn = useCallback((b: CountryRiskResponse) => (shapes ? buildRiskGeometry(b.items, shapes).drawn : null), [shapes]);
+  const data = useFeedData<CountryRiskResponse>('country_risk', '/api/country-risk', countDrawn);
   const items = data?.items;
   const byIso = useMemo(() => new Map((items ?? []).map((r) => [r.iso3, r])), [items]);
-  const fc = useMemo<GeoJSON.FeatureCollection | null>(() => {
-    if (!shapes || !items) return null;
-    return {
-      type: 'FeatureCollection',
-      features: shapes.features.flatMap((f) => {
-        const iso3 = String(f.properties?.iso3 ?? '');
-        const r = byIso.get(iso3);
-        return r && r.score !== null ? [{ ...f, properties: { id: iso3, score: r.score } }] : [];
-      }),
-    };
-  }, [shapes, items, byIso]);
+  const geo = useMemo(() => (shapes && items ? buildRiskGeometry(items, shapes) : null), [shapes, items]);
   const layers = useMemo(
     () => [
-      {
-        id: 'tn-risk-fill',
-        type: 'fill' as const,
-        paint: { 'fill-color': css('--map-risk'), 'fill-opacity': ['interpolate', ['linear'], ['get', 'score'], 0, 0.02, 3.5, 0.12, 5, 0.25, 6.5, 0.42, 9, 0.6] as unknown as number },
-      },
+      { id: 'tn-risk-fill', type: 'fill' as const, paint: { 'fill-color': css('--map-risk'), 'fill-opacity': RISK_OPACITY } },
       { id: 'tn-risk-line', type: 'line' as const, paint: { 'line-color': css('--map-risk', 0.35), 'line-width': 0.5 } },
     ],
     [],
   );
-  useNativeLayers('tn-risk', fc, layers);
-  useNativePick(['tn-risk-fill'], (id) => {
+  const pointLayers = useMemo(
+    () => [
+      {
+        id: 'tn-risk-pt',
+        type: 'circle' as const,
+        paint: { 'circle-color': css('--map-risk'), 'circle-opacity': RISK_POINT_OPACITY, 'circle-radius': 4.5, 'circle-stroke-color': css('--map-risk', 0.6), 'circle-stroke-width': 0.75 },
+      },
+    ],
+    [],
+  );
+  useNativeLayers('tn-risk', geo?.polygons ?? null, layers);
+  useNativeLayers('tn-risk-pts', geo?.points ?? null, pointLayers);
+  useNativePick(['tn-risk-fill', 'tn-risk-pt'], (id) => {
     const r = byIso.get(id);
     return r ? { kind: 'country_risk', id: r.iso3, layer: 'country_risk', source: 'inform', observedAt: null, data: r as unknown as Record<string, unknown>, lngLat: null } : null;
   });

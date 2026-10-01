@@ -68,6 +68,10 @@ export function mapIoda(events: readonly IodaEvent[], untilS: number): Outage[] 
       ongoing,
       provider: 'IODA',
       url: `https://ioda.inetintel.cc.gatech.edu/country/${m[1]}`,
+      // The newest moment IODA's signal is known to have shown this event: the recovery for an
+      // ended event; the onset for an ongoing one (IODA clips its duration to our query time, which
+      // is not an observation — probed 2026-10-01: end == until).
+      lastSignalAt: ongoing || end === null ? startedAt : new Date(Math.min(end, untilS) * 1000).toISOString(),
     });
   }
   return out;
@@ -108,11 +112,26 @@ export function mapCloudflareOutages(anns: readonly CfAnnotation[]): Outage[] {
         endedAt: end,
         ongoing: end === null,
         provider: 'Cloudflare Radar',
+        lastSignalAt: end ?? start,
         url: a.linkedUrl && /^https?:\/\//.test(a.linkedUrl) ? a.linkedUrl : `https://radar.cloudflare.com/outage-center`,
       });
     }
   }
   return out;
+}
+
+/**
+ * meta.observedAt for the outages feed: the newest outage signal time the providers reported
+ * (lastSignalAt, else the start), never later than now and never the fetch time. Null when no
+ * outage was reported (R3 round-4 MINOR-6). Pure; exported for tests.
+ */
+export function newestSignal(items: readonly Outage[], now = Date.now()): number | null {
+  let best: number | null = null;
+  for (const o of items) {
+    const t = Date.parse(o.lastSignalAt ?? o.startedAt);
+    if (Number.isFinite(t) && (best === null || t > best)) best = t;
+  }
+  return best === null ? null : Math.min(best, now);
 }
 
 const cfHeaders = () => ({ authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN ?? ''}` });
@@ -156,7 +175,7 @@ export const outagesFeed = defineFeed<{ items: Outage[] }>({
     const items = [...(ioda.result ?? []), ...cf].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
     // Only a real answer (possibly "none") is served; if every provider failed the feed is OFFLINE.
     if (!answered) throw new Error(providers.ioda.status.error ?? 'offline');
-    return { data: { items }, providers };
+    return { data: { items }, providers, observedAt: newestSignal(items) };
   },
 });
 

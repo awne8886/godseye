@@ -108,6 +108,19 @@ export const KevResponse = Envelope.extend({
   enriched: z.number().int().nonnegative().optional(),
   /** Full catalogue size (`items` may be the `?limit=` newest additions only). */
   total: z.number().int().nonnegative().optional(),
+  /**
+   * NVD enrichment progress at response time: lookups waiting for a rate-limit slot, the estimated
+   * wait at the bucket's pace, the last successful lookup, and CVEs NVD has not scored yet.
+   */
+  nvd: z
+    .object({
+      queued: z.number().int().nonnegative(),
+      etaS: z.number().int().nonnegative().nullable(),
+      ratePer30s: z.number().positive(),
+      lastLookupAt: IsoTime.nullable(),
+      awaitingAnalysis: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 
 export const Outage = EntityBase.extend({
@@ -121,6 +134,12 @@ export const Outage = EntityBase.extend({
   ongoing: z.boolean(),
   provider: z.enum(['IODA', 'Cloudflare Radar']),
   url: z.url().nullable(),
+  /**
+   * Newest time the provider's signal is known to have shown this outage (IODA: the end of an
+   * ended event, the start of an ongoing one; Cloudflare: end, else start). Feeds meta.observedAt;
+   * never the fetch or query time.
+   */
+  lastSignalAt: IsoTime.nullable().optional(),
 });
 
 export const OutagesResponse = Envelope.extend({ items: z.array(Outage) });

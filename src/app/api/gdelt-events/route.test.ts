@@ -31,14 +31,38 @@ describe('GET /api/gdelt-events', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(GdeltEventsResponse.safeParse(body).success).toBe(true);
-    expect(body.window).toEqual({ from: '2026-09-30T20:00:00.000Z', to: '2026-09-30T20:15:00.000Z', batches: 1 });
+    // The recorded zip answers Last-Modified 19:55:39 for batch label 20:00: the window ends at the
+    // observed publish time, not at the (later) label.
+    expect(body.window).toEqual({ from: '2026-09-30T19:40:39.000Z', to: '2026-09-30T19:55:39.000Z', batches: 1, latestLabel: '2026-09-30T20:00:00.000Z' });
     expect(body.scanned).toBe(1233);
     expect(body.items.length).toBeGreaterThan(1100);
     expect(body.providers.export).toMatchObject({ ok: true });
-    expect(body.meta).toMatchObject({ feed: 'gdelt-events', observedAt: '2026-09-30T20:00:00.000Z' });
+    expect(body.meta).toMatchObject({ feed: 'gdelt-events', observedAt: '2026-09-30T19:55:39.000Z' });
     const zipCalls = state.calls.filter((c) => c.url.includes('.export.CSV.zip'));
     expect(zipCalls.length).toBe(4);
     expect(zipCalls.every((c) => c.url.startsWith('https://data.gdeltproject.org/gdeltv2/'))).toBe(true);
+  });
+
+  // R3 round-4 MINOR-4: live, meta.observedAt read 05:30:00 on a snapshot fetched at 05:28:55
+  // (GDELT labels a batch ~10 min ahead of publishing it).
+  it('never stamps an observation after the fetch, even when GDELT’s label is in the future', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-09-30T19:52:00Z'), toFake: ['Date'] });
+    try {
+      state.routes = [['lastupdate.txt', FX.gdeltLast], ['20260930200000.export', FX.gdeltZip], ['.export.CSV.zip', 404]];
+      const body = await (await GET(req('/api/gdelt-events?limit=2000'), undefined)).json();
+      expect(GdeltEventsResponse.safeParse(body).success).toBe(true);
+      const fetchedAt = Date.parse(body.meta.fetchedAt);
+      expect(fetchedAt).toBe(Date.parse('2026-09-30T19:52:00Z'));
+      expect(Date.parse(body.meta.observedAt)).toBeLessThanOrEqual(fetchedAt);
+      expect(Date.parse(body.window.to)).toBeLessThanOrEqual(fetchedAt);
+      expect(body.window.latestLabel).toBe('2026-09-30T20:00:00.000Z');
+      expect(body.items.every((e: { dateAdded: string }) => Date.parse(e.dateAdded) <= fetchedAt)).toBe(true);
+      expect(body.providers.lastupdate).toMatchObject({ ok: true });
+      expect(body.providers.export).toMatchObject({ ok: true });
+      expect(body.meta.state).toBe('live');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('filters by QuadClass and limit, and validates the query', async () => {
