@@ -14,7 +14,13 @@
  * It is issued as soon as the style is parsed (camera moves need no tiles) and once more when the
  * map is published if that came later (R4-B2). For 30 s afterwards the chrome is watched (sheet
  * height, chips appearing, attribution moving, resize): if an endpoint mark ends up under an
- * overlay the route is framed again. A viewer drag/zoom cancels all of it. Client-only.
+ * overlay the route is framed again; when no clear framing exists (a long route on a small phone)
+ * PATHS names the endpoints the chrome covers. The framing's own camera moves are tagged
+ * (`routeFraming` event data); any other camera move — a drag/zoom, a fly the viewer asked for
+ * (palette, presets, search, alerts, intel, reset view), PATHS closing — ends all of it; MapLibre's
+ * own resize moves (rotation, window resize) do not. The padding the framing set is released when
+ * PATHS closes or the route/flight is cleared, so later flies land at the screen centre and `?c=`
+ * is the centre on screen. Client-only.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Map as MapLibreMap } from 'maplibre-gl';
@@ -24,8 +30,8 @@ import { styleParsed } from '@/lib/map/ready';
 import { useUiStore } from '@/lib/store';
 import type { LngLatTuple } from '@/lib/geo';
 import { useFlight, useLive, usePlan } from './api';
-import { setFitNotice, useFitNotice } from './fit';
-import { frameArea, intersects, markBoxes, solveFrame } from './framing';
+import { fitState, getFitNotice, setFitNotice, useFitNotice } from './fit';
+import { frameArea, type FrameFit, intersects, markBoxes, solveFrame } from './framing';
 import { isPhoneLayout, measureObstacles, overlayElements, publishedSheet, sheetOccupiedPx } from './insets';
 import { buildRouteAnimLayers, buildRouteLayers, frameBounds, routeFrame, type RouteFrame } from './layers';
 
@@ -41,19 +47,54 @@ const CHROME_WATCH_MS = 30_000;
 const CHROME_SETTLE_MS = 250;
 /** At most this many automatic re-framings per route/flight. */
 const MAX_REFITS = 4;
+/**
+ * Untagged camera moves this soon after a window resize are MapLibre's own (its throttled resize,
+ * a layout minimum-zoom change), not the viewer's.
+ */
+const LAYOUT_MOVE_MS = 1_000;
+/** Padding release glide (the framed picture slides to the screen centre). */
+const RELEASE_DURATION_MS = 600;
+/** Event data on the framing's own camera moves (MapLibre copies it onto movestart/moveend). */
+const FRAMING_EVENT = { routeFraming: true } as const;
 const ANIM_KEY = 'flight-paths-anim';
 
 const prefersReducedMotion = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** A camera event as MapLibre fires it: `originalEvent` for gestures, the caller's event data otherwise. */
+interface CameraEvent {
+  originalEvent?: unknown;
+  routeFraming?: unknown;
+}
+
 /**
  * The panel over the map: the right dock on desktop (its `--panel-width` plus the right-16 rail
- * offset), the bottom sheet on phones (its published `--sheet-occupied`, else its CSS bound).
+ * offset), the bottom sheet on phones (its published `--sheet-occupied`, else its CSS bound); none
+ * while no panel is open.
  */
-function panelGeometry(): { side: 'right' | 'bottom'; size: number } | null {
-  if (typeof window === 'undefined') return null;
-  if (isPhoneLayout()) return { side: 'bottom', size: sheetOccupiedPx(publishedSheet(), window.innerHeight) };
+function panelGeometry(phone: boolean, open: boolean): { side: 'right' | 'bottom'; size: number } | null {
+  if (typeof window === 'undefined' || !open) return null;
+  if (phone) return { side: 'bottom', size: sheetOccupiedPx(publishedSheet(), window.innerHeight) };
   const w = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-width')) || 360;
   return { side: 'right', size: w + 64 };
+}
+
+/**
+ * Drop the padding a framing left on the camera (round 4 fix pass): ease to zero padding, keeping
+ * the centre, so the framed picture slides to the screen centre — after the move in progress, if
+ * any. Returns a canceller for a release still waiting on that move.
+ */
+function releaseFramePadding(m: MapLibreMap, reduced: boolean): () => void {
+  const run = () => {
+    const p = typeof m.getPadding === 'function' ? m.getPadding() : null;
+    if (!p || (!p.top && !p.right && !p.bottom && !p.left)) return;
+    m.easeTo({ padding: { top: 0, right: 0, bottom: 0, left: 0 }, duration: reduced ? 0 : RELEASE_DURATION_MS, essential: false });
+  };
+  if (m.isMoving()) {
+    m.once('moveend', run);
+    return () => void m.off('moveend', run);
+  }
+  run();
+  return () => {};
 }
 
 /**
@@ -150,31 +191,139 @@ export default function RouteLayer() {
     if (!frameBounds(fr)) return;
     framed.current = { key: frameKey, map };
     const m = map as MapLibreMap;
-    let viewerMoved = false;
-    let done = false;
+    // `halted`: the viewer has the camera (gesture, a fly they asked for, PATHS closed) or the
+    // effect ended — nothing here moves the camera any more.
+    let halted = false;
     let refits = 0;
     let lastClear = false;
     let framedOnce = false;
+    let layoutAt = -Infinity;
+    let mapResized = false;
     const reduced = motion === 'reduced' || (motion === 'system' && prefersReducedMotion());
     const globeNow = () => useMapInstanceStore.getState().projection === 'globe';
-    const fit = (animate: boolean) => {
-      if (done || viewerMoved) return;
+    const solve = (): FrameFit | null => {
       const viewport = { width: window.innerWidth, height: window.innerHeight };
+      // Phone layout by the HUD's own media query (landscape phones have the sheet, no rail).
+      const phone = isPhoneLayout();
+      const panelOpen = useUiStore.getState().openPanel !== null;
       // The solver works within the map's minimum zoom (round 3 M2) and reports when the route
-      // cannot fit at it (PATHS then says so).
+      // cannot fit at it, or which endpoints stay under chrome (PATHS then says so).
       const minZoom = typeof m.getMinZoom === 'function' ? m.getMinZoom() : 0;
-      const sol = solveFrame(fr, { projection: globeNow() ? 'globe' : 'mercator', viewport, area: frameArea(viewport, panelGeometry()), obstacles: measureObstacles(), minZoom, maxZoom: 8 });
-      if (!sol) return;
+      return solveFrame(fr, { projection: globeNow() ? 'globe' : 'mercator', viewport, area: frameArea(viewport, panelGeometry(phone, panelOpen), phone), obstacles: measureObstacles({ sheet: panelOpen }), minZoom, maxZoom: 8 });
+    };
+    const apply = (sol: FrameFit, animate: boolean) => {
       framedOnce = true;
       lastClear = sol.clear;
-      setFitNotice({ key: frameKey, fits: sol.fits });
+      setFitNotice({ key: frameKey, fits: sol.fits, hidden: sol.hidden });
       const duration = animate && !reduced ? FIT_DURATION_MS : 0;
-      m.easeTo({ center: sol.center, zoom: sol.zoom, padding: sol.padding, bearing: 0, pitch: 0, duration, essential: false });
+      m.easeTo({ center: sol.center, zoom: sol.zoom, padding: sol.padding, bearing: 0, pitch: 0, duration, essential: false }, FRAMING_EVENT);
     };
-    const onMoveStart = (e: { originalEvent?: unknown }) => {
-      if (e.originalEvent) viewerMoved = true;
+    const fit = (animate: boolean) => {
+      if (halted) return;
+      const sol = solve();
+      if (sol) apply(sol, animate);
+    };
+
+    // Chrome watch: the phone sheet publishes its height and lifts the attribution after the first
+    // fit, a BASEMAP chip can appear seconds later, a phone rotates. When an endpoint dot or label
+    // is now under an overlay or off screen, re-frame if the last framing was clear or a clear one
+    // exists now; otherwise publish which endpoints are covered (PATHS names them).
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let watching = true;
+    const check = () => {
+      timer = null;
+      if (halted || !framedOnce) return;
+      if (m.isMoving()) {
+        schedule();
+        return;
+      }
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+      const obstacles = measureObstacles({ sheet: useUiStore.getState().openPanel !== null });
+      const marks = currentMarks(m, fr, globeNow());
+      const hidden = fr.endpoints
+        .map((e) => e.label)
+        .filter((label) => {
+          const own = marks.filter((b) => b.label === label);
+          return own.length < 2 || own.some(({ box }) => box.left < 0 || box.top < 0 || box.right > W || box.bottom > H || obstacles.some((o) => intersects(box, o)));
+        });
+      const notice = getFitNotice();
+      const publish = (h: string[]) => {
+        if (notice?.key === frameKey && notice.fits) setFitNotice({ ...notice, hidden: h });
+      };
+      if (!hidden.length) {
+        lastClear = true;
+        publish([]);
+        return;
+      }
+      if (refits < MAX_REFITS) {
+        const sol = solve();
+        if (sol && (lastClear || sol.clear)) {
+          refits++;
+          apply(sol, true);
+          return;
+        }
+      }
+      publish(hidden);
+    };
+    const schedule = () => {
+      if (!watching || halted) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(check, CHROME_SETTLE_MS);
+    };
+    const onWindowResize = () => {
+      layoutAt = performance.now();
+      schedule();
+    };
+    const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(schedule);
+    mutations?.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+    const controls = m.getContainer().querySelector('.maplibregl-control-container');
+    if (controls) mutations?.observe(controls, { childList: true, subtree: true, characterData: true });
+    const resizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
+    for (const el of overlayElements()) resizes?.observe(el);
+    window.addEventListener('resize', onWindowResize);
+    const stopWatch = () => {
+      watching = false;
+      mutations?.disconnect();
+      resizes?.disconnect();
+      window.removeEventListener('resize', onWindowResize);
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    const watchEnd = setTimeout(stopWatch, CHROME_WATCH_MS);
+    const halt = () => {
+      halted = true;
+      stopWatch();
+    };
+
+    // Who moved the camera: the framing's own moves carry FRAMING_EVENT; a gesture carries its DOM
+    // event; anything else after the first framing is a fly the viewer asked for (palette, preset,
+    // search, alerts/intel row, reset view, projection switch) — except MapLibre's own resize move
+    // (movestart → move → resize → moveend in one call) and moves right after a window resize.
+    const onMoveStart = (e: CameraEvent) => {
+      if (e.routeFraming) return;
+      if (e.originalEvent) return halt();
+      if (!framedOnce || performance.now() - layoutAt < LAYOUT_MOVE_MS) return;
+      mapResized = false;
+      queueMicrotask(() => {
+        if (!mapResized) halt();
+      });
+    };
+    const onMapResize = () => {
+      mapResized = true;
+    };
+    // The framing's move ended: check what is really on screen (publishes covered endpoints).
+    const onMoveEnd = (e: CameraEvent) => {
+      if (e.routeFraming) schedule();
     };
     m.on('movestart', onMoveStart);
+    m.on('resize', onMapResize);
+    m.on('moveend', onMoveEnd);
+    // A fly request or PATHS closing ends the framing even before the camera moves.
+    const unsubUi = useUiStore.subscribe((s, prev) => {
+      if ((s.flyTo && s.flyTo !== prev.flyTo) || (prev.openPanel === 'paths' && s.openPanel !== 'paths')) halt();
+    });
+
     const onStyle = () => fit(true);
     if (styleParsed(m)) fit(true);
     else m.once('style.load', onStyle);
@@ -190,55 +339,35 @@ export default function RouteLayer() {
       });
     }
 
-    // Chrome watch: the phone sheet publishes its height and lifts the attribution after the first
-    // fit, a BASEMAP chip can appear seconds later, a phone rotates. Re-frame when an endpoint dot
-    // or label is now under an overlay or off screen (only if the last framing was clear: one
-    // that could not be is not retried on every change).
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const check = () => {
-      timer = null;
-      if (done || viewerMoved || !framedOnce || !lastClear || refits >= MAX_REFITS) return;
-      if (m.isMoving()) {
-        schedule();
-        return;
-      }
-      const W = window.innerWidth;
-      const H = window.innerHeight;
-      const obstacles = measureObstacles();
-      const marks = currentMarks(m, fr, globeNow());
-      const bad = marks.length < 2 * fr.endpoints.length || marks.some(({ box }) => box.left < 0 || box.top < 0 || box.right > W || box.bottom > H || obstacles.some((o) => intersects(box, o)));
-      if (!bad) return;
-      refits++;
-      fit(true);
-    };
-    const schedule = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(check, CHROME_SETTLE_MS);
-    };
-    const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(schedule);
-    mutations?.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
-    const controls = m.getContainer().querySelector('.maplibregl-control-container');
-    if (controls) mutations?.observe(controls, { childList: true, subtree: true, characterData: true });
-    const resizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule);
-    for (const el of overlayElements()) resizes?.observe(el);
-    window.addEventListener('resize', schedule);
-    const stopWatch = () => {
-      mutations?.disconnect();
-      resizes?.disconnect();
-      window.removeEventListener('resize', schedule);
-      if (timer) clearTimeout(timer);
-      timer = null;
-    };
-    const watchEnd = setTimeout(stopWatch, CHROME_WATCH_MS);
     return () => {
-      done = true;
+      halt();
       unsub?.();
-      stopWatch();
+      unsubUi();
       clearTimeout(watchEnd);
       m.off('movestart', onMoveStart);
+      m.off('resize', onMapResize);
+      m.off('moveend', onMoveEnd);
       m.off('style.load', onStyle);
     };
   }, [cameraMap, frameKey, motion]);
+
+  // Padding release: the framing's padding (the anchor between the chrome) lives while PATHS shows
+  // the framed route/flight (or the next one is loading); when PATHS closes or nothing is framed
+  // any more, the camera eases back to zero padding so later flies land at the screen centre and
+  // `?c=` is the centre on screen.
+  const pending = route ? plan.isFetching : ident ? flight.isFetching : false;
+  const holdPadding = openPanel === 'paths' && (!!frameKey || pending);
+  const heldPadding = useRef(false);
+  useEffect(() => {
+    if (holdPadding) {
+      heldPadding.current = true;
+      return;
+    }
+    if (!heldPadding.current || !cameraMap) return;
+    heldPadding.current = false;
+    const m = useUiStore.getState().settings.motion;
+    return releaseFramePadding(cameraMap as MapLibreMap, m === 'reduced' || (m === 'system' && prefersReducedMotion()));
+  }, [holdPadding, cameraMap]);
 
   const layers = useMemo(() => {
     if (!frame) return null;
@@ -284,7 +413,7 @@ export default function RouteLayer() {
       data-layers={(layers ?? []).map((x) => (x && typeof x === 'object' && 'id' in x ? String(x.id) : '')).join(',')}
       data-points={plan.data?.greatCircle.points.length ?? flight.data?.plannedArc.length ?? 0}
       data-max-lng-step={frame ? Math.round(maxStep(frame) * 100) / 100 : ''}
-      data-fit={fitNotice && fitNotice.key === frameKey ? (fitNotice.fits ? 'full' : 'partial') : ''}
+      data-fit={fitNotice && fitNotice.key === frameKey ? fitState(fitNotice) : ''}
       data-marks={marksDiag}
     />
   );

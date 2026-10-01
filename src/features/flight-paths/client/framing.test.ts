@@ -14,6 +14,7 @@ import type { Plan } from './api';
 import {
   frameArea,
   framePoints,
+  hiddenLabels,
   intersects,
   labelBox,
   MARK_CLEAR_PX,
@@ -26,15 +27,18 @@ import {
   zoomFloor,
 } from './framing';
 import { routeFrame } from './layers';
+import { sheetOccupiedPx, sheetRect } from './insets';
 import desktopOverlays from '../__fixtures__/r4/overlays-desktop-1600x1000.json';
 import phoneOverlays from '../__fixtures__/r4/overlays-phone-390x844.json';
 import hel from '../__fixtures__/r3/plan-HEL-ANC.json';
+import per from '../__fixtures__/r3/plan-PER-LHR.json';
 import lhr from '../__fixtures__/r3/plan-LHR-JFK.json';
 import sin from '../__fixtures__/r3/plan-SIN-JFK.json';
 import syd from '../__fixtures__/r3/plan-SYD-SCL.json';
 
 const D = Math.PI / 180;
-const plans: Record<string, unknown> = { 'LHR-JFK': lhr, 'SYD-SCL': syd, 'SIN-JFK': sin, 'HEL-ANC': hel };
+const plans: Record<string, unknown> = { 'LHR-JFK': lhr, 'SYD-SCL': syd, 'SIN-JFK': sin, 'HEL-ANC': hel, 'PER-LHR': per };
+const PHONE_CLEAR = ['LHR-JFK', 'SYD-SCL', 'SIN-JFK', 'HEL-ANC'];
 
 /** Independent MapLibre pitch-0 globe: px offset from the padded centre, or null behind the horizon. */
 function globe(center: LngLatTuple, zoom: number, H: number, [lng, lat]: LngLatTuple): [number, number] | null {
@@ -99,7 +103,7 @@ describe('phone 390×844: endpoints and labels clear of the chip/attribution sta
   const PHONE_MIN_ZOOM = 0.3;
   for (const withBasemapChip of [true, false]) {
     const obstacles = rects(phoneOverlays).filter((_, i) => withBasemapChip || phoneOverlays.rects[i]!.name !== 'imagery-chip-basemap');
-    for (const code of Object.keys(plans)) {
+    for (const code of PHONE_CLEAR) {
       it(`${code}${withBasemapChip ? ' (BASEMAP INCOMPLETE chip showing)' : ''}: whole route in the area, both marks clear`, () => {
         const frame = routeFrame(plans[code] as Plan, null, null)!;
         const sol = solveFrame(frame, { projection: 'globe', viewport, area, obstacles, minZoom: PHONE_MIN_ZOOM, maxZoom: 8 })!;
@@ -126,6 +130,55 @@ describe('phone 390×844: endpoints and labels clear of the chip/attribution sta
         expect((pad.top + viewport.height - pad.bottom) / 2).toBeCloseTo(sol.anchor[1], 0);
       });
     }
+  }
+});
+
+describe('phone 390×844: a route that cannot be framed clear says which endpoint the chrome covers (round 4 fix pass)', () => {
+  const viewport = { width: 390, height: 844 };
+  const area = frameArea(viewport, panelOf(phoneOverlays), true);
+  for (const withBasemapChip of [true, false]) {
+    const obstacles = rects(phoneOverlays).filter((_, i) => withBasemapChip || phoneOverlays.rects[i]!.name !== 'imagery-chip-basemap');
+    it(`PER-LHR${withBasemapChip ? ' (BASEMAP INCOMPLETE chip showing)' : ''}: fits, keeps one end clear, and \`hidden\` is exactly the covered end`, () => {
+      const frame = routeFrame(per as unknown as Plan, null, null)!;
+      const sol = solveFrame(frame, { projection: 'globe', viewport, area, obstacles, minZoom: 0.3, maxZoom: 8 })!;
+      expect(sol.fits).toBe(true);
+      expect(sol.clear).toBe(false);
+      expect(allInArea('PER-LHR', sol, 'globe', viewport.height, area)).toBe(true);
+      // Independent projection: the endpoints whose dot or label overlaps an overlay are the hidden ones.
+      const covered = placed('PER-LHR', sol, 'globe', viewport.height)
+        .filter((m) => obstacles.some((o) => intersects(m.box, o) || intersects(m.dot, o)))
+        .map((m) => m.label);
+      expect(sol.hidden).toEqual(covered);
+      expect(sol.hidden.length).toBeGreaterThan(0);
+      expect(sol.hidden.length).toBeLessThan(frame.endpoints.length);
+    });
+  }
+
+  it('hiddenLabels lists each covered endpoint once, in order', () => {
+    const o = { left: 0, top: 0, right: 10, bottom: 10 };
+    const at = (label: string, x: number) => ({ label, box: { left: x, top: 0, right: x + 5, bottom: 5 } });
+    expect(hiddenLabels([at('PER', 2), at('PER', 4), at('LHR', 50)], [o])).toEqual(['PER']);
+    expect(hiddenLabels([at('PER', 50), at('LHR', 2)], [o])).toEqual(['LHR']);
+    expect(hiddenLabels([at('PER', 2)], [])).toEqual([]);
+  });
+});
+
+describe('landscape phone 844×390 (phone layout by media query): marks clear of the sheet (round 4 fix pass)', () => {
+  const viewport = { width: 844, height: 390 };
+  // The sheet at its CSS bound (no published height yet): 56 px nav + 55vh.
+  const sheet = sheetRect(viewport, sheetOccupiedPx('', viewport.height));
+  const area = frameArea(viewport, { side: 'bottom', size: viewport.height - sheet.top }, true);
+  for (const code of ['LHR-JFK', 'SYD-SCL']) {
+    it(`${code}: no 48 px rail in the area, both endpoint marks above the sheet`, () => {
+      expect(area.left).toBe(16);
+      const frame = routeFrame(plans[code] as Plan, null, null)!;
+      const sol = solveFrame(frame, { projection: 'globe', viewport, area, obstacles: [sheet], minZoom: 0.3, maxZoom: 8 })!;
+      expect(sol.fits && sol.clear).toBe(true);
+      for (const m of placed(code, sol, 'globe', viewport.height)) {
+        expect(m.box.bottom).toBeLessThanOrEqual(sheet.top);
+        expect(m.dot.bottom).toBeLessThanOrEqual(sheet.top);
+      }
+    });
   }
 });
 

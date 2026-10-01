@@ -18,7 +18,7 @@ import { entityFreshness } from '@/lib/freshness';
 import { OBSERVATION_CADENCE_MS } from '@/lib/layer-registry';
 import type { FreshnessState } from '@/lib/types';
 import { draftMessage, pendingSides, setPathsDraft, usePathsDraft, type DraftSuggestion } from './draft';
-import { PARTIAL_FIT_TEXT, useFitNotice } from './fit';
+import { obscuredFitText, PARTIAL_FIT_TEXT, useFitNotice } from './fit';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
 import { FLT_TOKEN, PATH_TYPES, TWILIGHT_TOKEN, codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
@@ -787,6 +787,11 @@ export default function PathsPanel(_props: PanelProps) {
       {fitNotice && !fitNotice.fits && fitNotice.key.startsWith(route ? 'route:' : ident ? 'flight:' : '-') && (
         <p role="status" data-testid="paths-fit-partial" className="font-sans text-[12px] text-[var(--text-secondary)]">
           {PARTIAL_FIT_TEXT}
+        </p>
+      )}
+      {fitNotice && fitNotice.fits && !!fitNotice.hidden?.length && fitNotice.key.startsWith(route ? 'route:' : ident ? 'flight:' : '-') && (
+        <p role="status" data-testid="paths-fit-obscured" className="font-sans text-[12px] text-[var(--text-secondary)]">
+          {obscuredFitText(fitNotice.hidden)}
         </p>
       )}
       {mode === 'route' && route && (plan.data ? <PlanView plan={plan.data} /> : plan.error ? <Note tone="error">{failureText(plan.error)}</Note> : <Note>Plotting {route.from} → {route.to}…</Note>)}

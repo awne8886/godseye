@@ -19,8 +19,9 @@
  * centre) the highest zoom is searched (coarse descending scan, then bisection) at which an anchor
  * exists that keeps every point in the area and every mark clear of the obstacles. Levels, best
  * first: (A) the area also shrunk away from chrome the arc can avoid cheaply, (B) marks clear,
- * (C) marks inside the area only, (D) nothing fits at the minimum zoom — centred on the route's
- * visible hemisphere and reported as a partial fit.
+ * (C) one endpoint's marks clear, else marks inside the area only — the endpoints left under
+ * chrome are reported (`hidden`, shown in PATHS), (D) nothing fits at the minimum zoom — centred on the route's visible hemisphere and
+ * reported as a partial fit.
  */
 import type { LngLatTuple } from '@/lib/geo';
 import { pointAlong } from '../lib/geometry';
@@ -55,11 +56,19 @@ export const PHONE_FRAME_MARGIN_PX = 16;
 export const PHONE_MAX_WIDTH = 768;
 
 /**
- * Fixed edge chrome over the map (R2-M4): header row (top-16 = 64 px), status bar (28 px), and on
- * ≥ 768 px the left layer rail (w-12 = 48 px). The docked panel / phone sheet is passed separately.
+ * Whether a viewport uses the phone layout when the caller does not say: width only. The app
+ * passes `isPhoneLayout()` (insets.ts: the HUD's own media query, which also matches landscape
+ * phones, 844×390, that have no rail and a bottom sheet).
  */
-export function hudChrome(viewport: { width: number }): { top: number; bottom: number; left: number } {
-  return { top: 64, bottom: 28, left: viewport.width >= PHONE_MAX_WIDTH ? 48 : 0 };
+const phoneByWidth = (viewport: { width: number }) => viewport.width < PHONE_MAX_WIDTH;
+
+/**
+ * Fixed edge chrome over the map (R2-M4): header row (top-16 = 64 px), status bar (28 px), and in
+ * the desktop layout the left layer rail (w-12 = 48 px). The docked panel / phone sheet is passed
+ * separately.
+ */
+export function hudChrome(viewport: { width: number }, phone = phoneByWidth(viewport)): { top: number; bottom: number; left: number } {
+  return { top: 64, bottom: 28, left: phone ? 0 : 48 };
 }
 
 /**
@@ -67,9 +76,9 @@ export function hudChrome(viewport: { width: number }): { top: number; bottom: n
  * the docked panel on the right (desktop) or the bottom sheet (phone); the panel share is capped so
  * at least a quarter of the viewport stays for the route.
  */
-export function framePadding(viewport: Viewport, panel: { side: 'right' | 'bottom'; size: number } | null): Padding {
-  const c = hudChrome(viewport);
-  const m = viewport.width < PHONE_MAX_WIDTH ? PHONE_FRAME_MARGIN_PX : FRAME_MARGIN_PX;
+export function framePadding(viewport: Viewport, panel: { side: 'right' | 'bottom'; size: number } | null, phone = phoneByWidth(viewport)): Padding {
+  const c = hudChrome(viewport, phone);
+  const m = phone ? PHONE_FRAME_MARGIN_PX : FRAME_MARGIN_PX;
   const p: Padding = { top: c.top + m, right: m, bottom: c.bottom + m, left: c.left + m };
   if (panel?.side === 'right') p.right = Math.max(m, Math.min(m + panel.size, viewport.width * 0.75 - p.left));
   if (panel?.side === 'bottom') p.bottom = Math.max(p.bottom, Math.min(m + panel.size, viewport.height * 0.75 - p.top));
@@ -77,8 +86,8 @@ export function framePadding(viewport: Viewport, panel: { side: 'right' | 'botto
 }
 
 /** The framing area as a screen box. */
-export function frameArea(viewport: Viewport, panel: { side: 'right' | 'bottom'; size: number } | null): Rect {
-  const p = framePadding(viewport, panel);
+export function frameArea(viewport: Viewport, panel: { side: 'right' | 'bottom'; size: number } | null, phone = phoneByWidth(viewport)): Rect {
+  const p = framePadding(viewport, panel, phone);
   return { left: p.left, top: p.top, right: viewport.width - p.right, bottom: viewport.height - p.bottom };
 }
 
@@ -254,6 +263,12 @@ export interface FrameFit {
   fits: boolean;
   /** True when every endpoint dot and label is clear of every overlay. */
   clear: boolean;
+  /**
+   * Endpoint codes whose dot or label lands under an overlay at this camera (a fitting framing
+   * that could not keep them clear, e.g. PER-LHR on a 390×844 phone); empty when `clear` or when
+   * the route does not fit at all (PATHS then says that instead).
+   */
+  hidden: string[];
 }
 
 interface Shape {
@@ -478,6 +493,8 @@ function solveLevel(
   obstacles: readonly Rect[],
   minZoom: number,
   maxZoom: number,
+  /** Only the marks for which this is true must clear the obstacles (all of them by default). */
+  mustClear?: (m: Mark) => boolean,
 ): Solved | null {
   const projector = (c: LngLatTuple, z: number) => (env.projection === 'globe' ? globeProjector(c, z, env.viewport.height) : mercatorProjector(c, z));
   let best: Solved | null = null;
@@ -490,7 +507,8 @@ function solveLevel(
     const hit = bestZoom(
       (z) => {
         const shape = shapeOf(projector(cand.center, z), pts, marks);
-        return shape ? placeAnchor(shape, area, obstacles, env.viewport) : null;
+        if (!shape) return null;
+        return placeAnchor(mustClear ? { ext: shape.ext, marks: shape.marks.filter((_, i) => mustClear(marks[i]!)) } : shape, area, obstacles, env.viewport);
       },
       floor,
       Math.max(floor, maxZoom),
@@ -532,6 +550,13 @@ export function shrinkArea(area: Rect, obstacles: readonly Rect[], clear = MARK_
 /** Prefer the fully clear framing unless it costs more than this much size (log2 px) against B. */
 const LEVEL_A_SLACK = 0.5;
 
+/** Endpoint codes with a mark box (screen px) overlapping any obstacle, in endpoint order. */
+export function hiddenLabels(marks: readonly { label: string; box: Rect }[], obstacles: readonly Rect[]): string[] {
+  const out: string[] = [];
+  for (const m of marks) if (!out.includes(m.label) && obstacles.some((o) => intersects(m.box, o))) out.push(m.label);
+  return out;
+}
+
 /**
  * Solve the camera for a route/flight frame (see the module comment). Null when nothing is framed.
  */
@@ -544,21 +569,42 @@ export function solveFrame(frame: RouteFrame, env: FrameEnv): FrameFit | null {
   const area = env.area;
   const obstacles = (env.obstacles ?? []).filter((o) => intersects({ left: o.left - MARK_CLEAR_PX, top: o.top - MARK_CLEAR_PX, right: o.right + MARK_CLEAR_PX, bottom: o.bottom + MARK_CLEAR_PX }, area));
   const candidates = env.projection === 'globe' ? globeCandidates(frame, pts) : mercatorCandidate(pts);
-  const finish = (center: LngLatTuple, zoom: number, anchor: [number, number], fits: boolean, clear: boolean): FrameFit => {
+  const finish = (center: LngLatTuple, zoom: number, anchor: [number, number], fits: boolean, hidden: string[]): FrameFit => {
     const r = env.projection === 'mercator' ? mercatorRecentre(center, zoom, anchor, env.viewport.height) : { center, anchor };
-    return { center: r.center, zoom, anchor: r.anchor, padding: paddingFor(r.anchor, env.viewport), fits, clear };
+    return { center: r.center, zoom, anchor: r.anchor, padding: paddingFor(r.anchor, env.viewport), fits, clear: fits && hidden.length === 0, hidden };
   };
-  const done = (s: Solved, clear: boolean): FrameFit => finish(s.center, s.zoom, s.anchor, true, clear);
+  const done = (s: Solved, hidden: string[]): FrameFit => finish(s.center, s.zoom, s.anchor, true, hidden);
 
   if (obstacles.length) {
     const b = solveLevel(candidates, env, pts, marks, area, obstacles, minZoom, maxZoom);
     const shrunk = shrinkArea(area, obstacles);
     const a = shrunk.right - shrunk.left < area.right - area.left || shrunk.bottom - shrunk.top < area.bottom - area.top ? solveLevel(candidates, env, pts, marks, shrunk, obstacles, minZoom, maxZoom) : null;
-    if (a && (!b || a.size >= b.size - LEVEL_A_SLACK)) return done(a, true);
-    if (b) return done(b, true);
+    if (a && (!b || a.size >= b.size - LEVEL_A_SLACK)) return done(a, []);
+    if (b) return done(b, []);
   }
+  // (C) The marks cannot all be kept clear: keep as many endpoints clear as possible (one end
+  // clear when only one can be, the larger such framing), else the marks only inside the area; say
+  // which endpoints the chrome covers at the chosen camera.
+  const hiddenAt = (s: Solved) => {
+    const project = env.projection === 'globe' ? globeProjector(s.center, s.zoom, env.viewport.height) : mercatorProjector(s.center, s.zoom);
+    const boxes = markBoxes(frame, (p) => {
+      const xy = project(p);
+      return xy ? [xy[0] + s.anchor[0], xy[1] + s.anchor[1]] : null;
+    });
+    return hiddenLabels(boxes, obstacles);
+  };
+  let partial: { s: Solved; hidden: string[] } | null = null;
+  if (obstacles.length && frame.endpoints.length > 1) {
+    for (const e of frame.endpoints) {
+      const s = solveLevel(candidates, env, pts, marks, area, obstacles, minZoom, maxZoom, (m) => m.label === e.label);
+      if (!s) continue;
+      const hidden = hiddenAt(s);
+      if (!partial || hidden.length < partial.hidden.length || (hidden.length === partial.hidden.length && s.size > partial.s.size + 0.01)) partial = { s, hidden };
+    }
+  }
+  if (partial) return done(partial.s, partial.hidden);
   const c = solveLevel(candidates, env, pts, marks, area, [], minZoom, maxZoom);
-  if (c) return done(c, obstacles.length === 0);
+  if (c) return done(c, hiddenAt(c));
 
   // (D) Cannot fit at the minimum zoom: keep both ends in front of the horizon, then show as much
   // of the route inside the area as possible, anchored at the area's centre.
@@ -572,7 +618,7 @@ export function solveFrame(frame: RouteFrame, env: FrameEnv): FrameFit | null {
     const score = ends.filter((p) => project(p) !== null).length * 100_000 + pts.filter((p) => inArea(project(p))).length;
     if (!fallback || score > fallback.score) fallback = { c: center, zoom, score };
   }
-  return finish(fallback!.c, fallback!.zoom, anchor, false, false);
+  return finish(fallback!.c, fallback!.zoom, anchor, false, []);
 }
 
 /** Screen boxes of every mark for a camera (diagnostics and tests): absolute px. */

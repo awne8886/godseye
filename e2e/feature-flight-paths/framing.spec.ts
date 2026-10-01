@@ -1,11 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { gotoMap, MAP, waitForMapIdle } from '../map-engine/helpers';
+import { gotoMap, MAP, readCamera, waitForMapIdle } from '../map-engine/helpers';
 
 /**
  * Round 4 visual-qa m1/m2 (R3-m5 / R3-m9 remainders): a framed route keeps both endpoint dots and
  * their code labels clear of every HUD overlay — on a 390×844 phone (header, view controls, imagery
  * chips, the attribution lifted above the sheet, the sheet, the bottom nav) for LHR-JFK, SYD-SCL,
- * SIN-JFK and HEL-ANC, and on the desktop in mercator clear of the left rail.
+ * SIN-JFK and HEL-ANC, and on the desktop in mercator clear of the left rail. A route that cannot
+ * be framed clear on a phone (PER-LHR) says which endpoint the chrome covers. The framing never
+ * pulls the camera back after the viewer flies elsewhere (round 4 fix pass).
  *
  * The app reports where it drew each endpoint dot and label (MapLibre's own projection of the
  * endpoint plus the label's pixel offset and pill size: `data-marks` on the flight-paths status
@@ -63,18 +65,24 @@ async function readMarks(page: Page): Promise<MarkBox[]> {
 
 const overlaps = (a: Box, b: Box) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
 
+/** Every mark that is off screen or under an overlay (by this spec's own measurements). */
+async function problemList(page: Page): Promise<{ label: string; text: string }[]> {
+  const marks = await readMarks(page);
+  const vp = page.viewportSize()!;
+  const overlays = await overlayBoxes(page);
+  const out: { label: string; text: string }[] = [];
+  for (const m of marks) {
+    if (m.box[0] < 0 || m.box[1] < 0 || m.box[2] > vp.width || m.box[3] > vp.height) out.push({ label: m.label, text: `${m.label} ${m.kind} off screen ${m.box.join(',')}` });
+    for (const o of overlays) if (overlaps(m.box, o.box)) out.push({ label: m.label, text: `${m.label} ${m.kind} ${m.box.join(',')} under ${o.name} ${o.box.map(Math.round).join(',')}` });
+  }
+  return out;
+}
+
 /** '' when every mark is on screen and clear of every overlay, else what is wrong. */
 async function problems(page: Page): Promise<string> {
   const marks = await readMarks(page);
   if (marks.length < 4) return `only ${marks.length} of 4 marks on screen`;
-  const vp = page.viewportSize()!;
-  const overlays = await overlayBoxes(page);
-  const out: string[] = [];
-  for (const m of marks) {
-    if (m.box[0] < 0 || m.box[1] < 0 || m.box[2] > vp.width || m.box[3] > vp.height) out.push(`${m.label} ${m.kind} off screen ${m.box.join(',')}`);
-    for (const o of overlays) if (overlaps(m.box, o.box)) out.push(`${m.label} ${m.kind} ${m.box.join(',')} under ${o.name} ${o.box.map(Math.round).join(',')}`);
-  }
-  return out.join('; ');
+  return (await problemList(page)).map((p) => p.text).join('; ');
 }
 
 /**
@@ -172,5 +180,68 @@ for (const proj of ['globe', 'mercator'] as const) {
     await expectClearFraming(page, 'LHR-JFK', proj, { layers: '' });
     await expect.poll(async () => Math.min(...(await labelPixels(page))), { timeout: 120_000, intervals: [2_000, 4_000] }).toBeGreaterThan(12);
     await page.screenshot({ path: info.outputPath(`labels-lhr-jfk-${proj}-${info.project.name}.png`), animations: 'disabled', mask: [page.locator('time')] });
+  });
+}
+
+// Round 4 fix pass: a long north-south route on a phone may have no framing that keeps both ends
+// clear of the chrome. Then one end is kept clear and PATHS names the covered one; an endpoint
+// under chrome is never left unannounced.
+test('phone 390×844 · PER-LHR on the globe: framed clear, or PATHS names every endpoint the chrome covers', async ({ page }, info) => {
+  test.skip(info.project.name !== 'mobile', 'phone layout');
+  test.setTimeout(240_000);
+  await gotoMap(page, { params: { route: 'PER-LHR', proj: 'globe' } });
+  await expect(status(page)).toHaveAttribute('data-route', 'PER-LHR');
+  await waitForMapIdle(page);
+  await expect(status(page)).toHaveAttribute('data-fit', /^full(-obscured)?$/, { timeout: 60_000 });
+  await expect(page.locator(MAP)).toHaveAttribute('data-camera-idle', 'true', { timeout: 30_000 });
+  // Let the chrome settle (sheet height, attribution, chips) and the post-framing check publish.
+  await page.waitForTimeout(3_000);
+  await expect(page.locator(MAP)).toHaveAttribute('data-camera-idle', 'true', { timeout: 30_000 });
+  const marks = await readMarks(page);
+  expect(marks.length, 'both endpoints in front of the horizon').toBe(4);
+  const covered = [...new Set((await problemList(page)).map((p) => p.label))];
+  const fit = await status(page).getAttribute('data-fit');
+  const note = page.getByTestId('paths-fit-obscured');
+  if (covered.length === 0) {
+    expect(fit).toBe('full');
+    await expect(note).toHaveCount(0);
+  } else {
+    expect(fit, `covered: ${covered.join(', ')}`).toBe('full-obscured');
+    await expect(note).toBeVisible();
+    for (const code of covered) await expect(note).toContainText(code);
+    expect(covered.length, 'one end is kept clear').toBeLessThan(2);
+  }
+  await page.screenshot({ path: info.outputPath('framing-per-lhr-globe-mobile.png'), animations: 'disabled', mask: [page.locator('time')] });
+});
+
+// Round 4 fix pass (BLOCKING): a fly the viewer asks for within the 30 s chrome watch (palette
+// "Fly to EAST ASIA") ends the framing; the BASEMAP LOADING/INCOMPLETE chip that follows on the new
+// area, and a window resize, must not pull the camera back to the route.
+for (const proj of ['globe', 'mercator'] as const) {
+  test(`desktop · LHR-JFK (${proj}): a palette fly-to right after the framing is not undone by the chrome watch`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'the command palette is a keyboard flow (desktop)');
+    test.setTimeout(240_000);
+    await expectClearFraming(page, 'LHR-JFK', proj);
+    await page.keyboard.press('Control+k');
+    const palette = page.getByRole('dialog', { name: 'Command palette' });
+    await expect(palette).toBeVisible();
+    await page.keyboard.type('Fly to EAST ASIA');
+    await palette.getByRole('option', { name: /Fly to EAST ASIA/ }).click();
+    await expect(palette).toBeHidden();
+    const nearEastAsia = async () => {
+      const c = await readCamera(page);
+      return !!c && Math.abs(c.lng - 120) < 15 && Math.abs(c.lat - 35) < 15;
+    };
+    await expect.poll(nearEastAsia, { timeout: 30_000 }).toBe(true);
+    // Through the chips that appear over the new area, then a window resize: still over East Asia.
+    for (let i = 0; i < 10; i++) {
+      await page.waitForTimeout(1_000);
+      expect(await nearEastAsia(), `camera ${JSON.stringify(await readCamera(page))} after ${i + 1} s`).toBe(true);
+    }
+    await page.setViewportSize({ width: 1500, height: 1000 });
+    for (let i = 0; i < 4; i++) {
+      await page.waitForTimeout(1_000);
+      expect(await nearEastAsia(), `camera ${JSON.stringify(await readCamera(page))} after the resize`).toBe(true);
+    }
   });
 }

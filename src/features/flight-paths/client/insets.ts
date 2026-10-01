@@ -69,8 +69,11 @@ export function overlayElements(root: ParentNode = document): HTMLElement[] {
   return [...root.querySelectorAll(MAP_INSET_SELECTORS.join(','))].filter((el): el is HTMLElement => el instanceof HTMLElement);
 }
 
-/** Every chrome box over the map right now (phones include the sheet, open or about to open). */
-export function measureObstacles(): Rect[] {
+/**
+ * Every chrome box over the map right now. Phones include the sheet at its final height while a
+ * panel is open or about to open (`sheet`, default true: PATHS opens with every new route).
+ */
+export function measureObstacles({ sheet = true }: { sheet?: boolean } = {}): Rect[] {
   if (typeof window === 'undefined' || typeof document === 'undefined') return [];
   const viewport = { width: window.innerWidth, height: window.innerHeight };
   const out: Rect[] = [];
@@ -81,6 +84,6 @@ export function measureObstacles(): Rect[] {
     if (getComputedStyle(el).visibility === 'hidden') continue;
     out.push(toRect(r));
   }
-  if (isPhoneLayout()) out.push(sheetRect(viewport, sheetOccupiedPx(publishedSheet(), viewport.height)));
+  if (sheet && isPhoneLayout()) out.push(sheetRect(viewport, sheetOccupiedPx(publishedSheet(), viewport.height)));
   return out;
 }

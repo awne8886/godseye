@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { liveChip, liveCounts } from './PathsPanel';
-import { frameArea, PHONE_FRAME_MARGIN_PX } from './framing';
+import { frameArea, hudChrome, PHONE_FRAME_MARGIN_PX } from './framing';
 import { sheetOccupiedPx, sheetRect } from './insets';
 import { endpointLabelOffset, LABEL_GAP_X_PX, LABEL_GAP_Y_PX } from './layers';
 
@@ -60,5 +60,20 @@ describe('framing area around the edge chrome (R3-m5, R3-m9)', () => {
     // The published value wins once PanelHost has written it.
     expect(sheetOccupiedPx('410px', 844)).toBe(410);
     expect(frameArea(vp, { side: 'bottom', size: 410 }).bottom).toBe(844 - 410 - PHONE_FRAME_MARGIN_PX);
+  });
+
+  it('landscape phone (844×390, the HUD phone layout by media query): no rail, the phone margin, the sheet below (round 4 fix pass)', () => {
+    const vp = { width: 844, height: 390 };
+    // By width alone 844 px would be desktop (48 px rail, 40 px margin): RouteLayer passes isPhoneLayout().
+    expect(hudChrome(vp).left).toBe(48);
+    expect(hudChrome(vp, true).left).toBe(0);
+    const area = frameArea(vp, { side: 'bottom', size: 270 }, true);
+    expect(area.left).toBe(PHONE_FRAME_MARGIN_PX);
+    expect(area.right).toBe(844 - PHONE_FRAME_MARGIN_PX);
+    expect(area.top).toBe(64 + PHONE_FRAME_MARGIN_PX);
+    // The sheet share is capped so a quarter of the height stays for the route (the marks then
+    // avoid the sheet as an obstacle).
+    expect(area.bottom).toBe(390 - (390 * 0.75 - area.top)); // 177.5
+    expect(frameArea(vp, { side: 'bottom', size: 270 }).left).toBe(88);
   });
 });
