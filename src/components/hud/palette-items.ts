@@ -33,8 +33,39 @@ export type RouteQuery = { kind: 'codes'; from: string; to: string } | { kind: '
 const looksLikeCode = (s: string) => /^[A-Z0-9]{3,4}$/.test(s) || (/\d/.test(s) && /^[A-Z0-9]{3,8}$/.test(s));
 
 /**
+ * Words that make "X to Y" a navigation or command phrase rather than a city pair: "go to paris",
+ * "fly to europe", "zoom to kyiv", "switch to satellite", "take me to rome".
+ */
+const NOT_A_PLACE = new Set([
+  'go', 'fly', 'zoom', 'pan', 'jump', 'move', 'navigate', 'take', 'take me', 'bring', 'bring me', 'show', 'show me', 'switch', 'change',
+  'set', 'toggle', 'turn', 'head', 'travel', 'goto', 'centre', 'center', 'scroll', 'rotate', 'tilt', 'back', 'return', 'snap', 'route',
+  'plan', 'directions', 'from', 'me', 'up', 'down', 'how', 'way', 'path', 'next', 'add', 'map', 'globe', 'view', 'camera',
+]);
+/** Continents and other areas that never resolve to one airport. */
+const AREAS = new Set(['europe', 'asia', 'africa', 'america', 'north america', 'south america', 'oceania', 'antarctica', 'arctic', 'the world', 'world', 'middle east', 'pacific', 'atlantic', 'globe', 'satellite', 'satellites', 'map', 'mercator', '2d', '3d']);
+
+/**
+ * A code as typed: 3-character codes in any case ("lhr"), but a 4-letter word only when typed in
+ * capitals ("EGLL"), so "Rome" or "Kyiv" are place names, not ICAO idents.
+ */
+function typedCode(s: string): boolean {
+  const U = s.toUpperCase();
+  if (!looksLikeCode(U)) return false;
+  return U.length !== 4 || /\d/.test(U) || s === U;
+}
+
+/** A place name the airport search can resolve: letters (any script), spaces, . ' -; ≥ 3 letters. */
+export function looksLikePlace(s: string): boolean {
+  const v = s.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (NOT_A_PLACE.has(v) || AREAS.has(v)) return false;
+  if (!/^[\p{L}][\p{L}\p{M} .'’-]*$/u.test(v)) return false;
+  return (v.match(/\p{L}/gu)?.length ?? 0) >= 3;
+}
+
+/**
  * "LHR JFK", "EGLL→KJFK", "LHR-JFK", "LHR to JFK" → codes; "London to New York", "Paris → Tokyo"
- * → names. Anything else (a single word, "satellites") → null.
+ * → names, only when both sides look like places (m6: "go to paris", "fly to europe" are not
+ * routes). Anything else (a single word, "satellites") → null.
  */
 export function parseRouteQuery(query: string): RouteQuery | null {
   const q = query.trim();
@@ -44,11 +75,14 @@ export function parseRouteQuery(query: string): RouteQuery | null {
     const from = words[1]!.trim();
     const to = words[2]!.trim();
     if (from.toLowerCase() === to.toLowerCase()) return null;
+    if (NOT_A_PLACE.has(from.toLowerCase().replace(/\s+/g, ' '))) return null;
     const F = from.toUpperCase();
     const T = to.toUpperCase();
-    if (looksLikeCode(F) && looksLikeCode(T)) return { kind: 'codes', from: F, to: T };
-    if (from.length < 2 || to.length < 2 || from.length > 60 || to.length > 60) return null;
-    return { kind: 'names', from, to };
+    if (typedCode(from) && typedCode(to)) return { kind: 'codes', from: F, to: T };
+    if (from.length > 60 || to.length > 60) return null;
+    const fromOk = typedCode(from) || looksLikePlace(from);
+    const toOk = typedCode(to) || looksLikePlace(to);
+    return fromOk && toOk ? { kind: 'names', from, to } : null;
   }
   const r = parseRouteParam(q);
   return r && looksLikeCode(r.from) && looksLikeCode(r.to) ? { kind: 'codes', ...r } : null;
@@ -140,21 +174,49 @@ export function queryItems(query: string, available: (id: PanelId) => boolean, f
   return out;
 }
 
+/** Exact label, or the label without its verb ("Show Flights" for "flights", "Fly to Europe" for "europe"). */
+function exactLabel(label: string, s: string): boolean {
+  const l = label.toLowerCase();
+  return l === s || l.replace(/^(show|hide|fly to|toggle)\s+/, '') === s;
+}
+
 /**
- * cmdk ranking over its fuzzy score: typed route/flight commands first, then exact label matches
- * ("LAYERS" opens the LAYERS panel, not a tool whose tooltip mentions layers), then label prefixes,
- * then everything else by fuzzy score. 0 hides the item.
+ * cmdk ranking over its fuzzy score (m6, n1): exact command labels first ("LAYERS" opens the
+ * LAYERS panel, "SETTINGS" opens SETTINGS), then typed airport-code routes and flight idents, then
+ * place-name routes, then label prefixes, then everything else by fuzzy score. 0 hides the item.
  */
 export function rankItem(item: Pick<PaletteItem, 'id' | 'label'>, search: string, fuzzy: number): number {
-  const s = search.trim().toLowerCase();
+  const s = search.trim().toLowerCase().replace(/\s+/g, ' ');
   if (!s) return 1;
-  if (item.id.startsWith('route') || item.id.startsWith('flight:')) return 1;
-  const label = item.label.toLowerCase();
-  if (label === s) return 0.999;
+  if (exactLabel(item.label, s)) return 1;
+  if (item.id.startsWith('route:') || item.id.startsWith('flight:')) return 0.97;
+  if (item.id.startsWith('route-names:')) return 0.95;
   if (fuzzy <= 0) return 0;
   const f = Math.min(fuzzy, 1);
-  if (label.startsWith(s)) return 0.9 + f * 0.09;
+  if (item.label.toLowerCase().startsWith(s)) return 0.9 + f * 0.04;
   return f * 0.89;
+}
+
+/**
+ * The item Enter runs for `search` when the visitor has not moved the selection: the best-ranked
+ * item of the current query (ties keep list order). Computed from the query itself, so a fast
+ * typist never runs the stale top item of a previous keystroke (n1).
+ */
+export function topItem<T extends Pick<PaletteItem, 'id' | 'label' | 'keywords'>>(
+  items: readonly T[],
+  search: string,
+  fuzzy: (value: string, search: string, keywords: string[]) => number,
+): T | null {
+  let best: T | null = null;
+  let bestScore = 0;
+  for (const i of items) {
+    const score = rankItem(i, search, fuzzy(`${i.label} ${i.id}`, search, i.keywords));
+    if (score > bestScore) {
+      best = i;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 export function paletteItems(ctx: { available: (id: PanelId) => boolean; layers: LayerDef[]; active: ReadonlySet<string> }): PaletteItem[] {

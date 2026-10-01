@@ -14,7 +14,7 @@ import { useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import type { TickerResponse } from '@/lib/types';
 import { useApiRoute, useVisibleLayers } from './hooks';
-import { zoomGateLabel } from './status-logic';
+import { eventTickerAt, zoomGateLabel } from './status-logic';
 
 function subscribeOnline(cb: () => void) {
   window.addEventListener('online', cb);
@@ -73,7 +73,7 @@ function useTickerItems(): TickerItem[] {
       for (const q of ticker.data.quakes) items.push({ key: `q-${q.id}`, text: `M${q.magnitude.toFixed(1)} ${q.place ?? ''}`.trim(), at: q.observedAt, tone: 'var(--map-seismic)' });
     }
     if (items.length < 4)
-      for (const e of events.slice(0, 12)) items.push({ key: `e-${e.layer}-${e.id}`, text: e.title, at: e.observedAt, tone: 'var(--text-primary)' });
+      for (const e of events.slice(0, 12)) items.push({ key: `e-${e.layer}-${e.id}`, text: e.title, at: eventTickerAt(e), tone: 'var(--text-primary)' });
     return items;
   }, [ticker.data, events]);
 }

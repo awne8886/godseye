@@ -223,15 +223,42 @@ describe('palette query items (Flight Path Planner shortcuts)', () => {
     expect(track!.label).toBe('Track flight G-XWBA');
   });
 
-  it('ranks typed commands, then exact labels, then prefixes, then fuzzy matches', async () => {
+  it('ranks exact labels, then typed commands, then prefixes, then fuzzy matches', async () => {
     const { rankItem } = await import('./palette-items');
     const layers = rankItem({ id: 'tool:layers', label: 'LAYERS' }, 'LAYERS', 0.5);
     const arcgis = rankItem({ id: 'tool:arcgis', label: 'ARCGIS' }, 'LAYERS', 0.99);
     const show = rankItem({ id: 'layer:flights', label: 'Show Commercial' }, 'LAYERS', 0.3);
     expect(layers).toBeGreaterThan(arcgis);
     expect(layers).toBeGreaterThan(show);
-    expect(rankItem({ id: 'route:LHR-JFK', label: 'Plan route LHR → JFK' }, 'lhr jfk', 0)).toBe(1);
+    expect(rankItem({ id: 'route:LHR-JFK', label: 'Plan route LHR → JFK' }, 'lhr jfk', 0)).toBe(0.97);
+    // m6: an exact command label outranks any typed route; place-name routes sit below code routes.
+    expect(layers).toBe(1);
+    expect(rankItem({ id: 'route-names:Paris|Tokyo', label: 'Plan route PARIS → TOKYO' }, 'paris to tokyo', 0)).toBe(0.95);
+    expect(rankItem({ id: 'region:europe', label: 'Fly to Europe' }, 'europe', 0.5)).toBe(1);
     expect(rankItem({ id: 'tool:share', label: 'SHARE' }, 'sh', 0.8)).toBeGreaterThan(rankItem({ id: 'action:ghost', label: 'Toggle Ghost Protocol' }, 'sh', 0.8));
     expect(rankItem({ id: 'tool:share', label: 'SHARE' }, 'zzz', 0)).toBe(0);
+  });
+
+  it('does not treat navigation phrases or areas as routes (m6)', async () => {
+    const { parseRouteQuery, queryItems, looksLikePlace } = await import('./palette-items');
+    for (const q of ['go to paris', 'fly to europe', 'zoom to kyiv', 'take me to rome', 'switch to satellite', 'Go To Paris', 'pan to 3d', 'paris to 12345!'])
+      expect(parseRouteQuery(q), q).toBeNull();
+    expect(queryItems('go to paris', () => true)).toEqual([]);
+    expect(parseRouteQuery('São Paulo to Zürich')).toEqual({ kind: 'names', from: 'São Paulo', to: 'Zürich' });
+    expect(parseRouteQuery('Rome to JFK')).toEqual({ kind: 'names', from: 'Rome', to: 'JFK' });
+    expect(looksLikePlace('St. John’s')).toBe(true);
+    expect(looksLikePlace('ab')).toBe(false);
+  });
+
+  it('Enter runs the best match of the current query, not a stale top item (n1)', async () => {
+    const { topItem, paletteItems } = await import('./palette-items');
+    const { defaultFilter } = await import('cmdk');
+    const items = paletteItems({ available: () => true, layers: LAYERS.slice(0, 6), active: new Set() });
+    const pick = (q: string) => topItem(items, q, (v, s, k) => defaultFilter(v, s, k))?.label;
+    expect(pick('LAYERS')).toBe('LAYERS');
+    expect(pick('settings')).toBe('SETTINGS');
+    expect(pick('SHARE')).toBe('SHARE');
+    expect(pick('style studio')).toBe('STYLE STUDIO');
+    expect(pick('zzzzqqq')).toBeUndefined();
   });
 });

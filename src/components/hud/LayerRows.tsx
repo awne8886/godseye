@@ -4,7 +4,7 @@
  * (aria-pressed), count badge, refresh interval, freshness LED + label, and the feed's source
  * line (providers / attribution; SOURCE OFFLINE with last-good time). Owner: design-system-hud.
  */
-import { motion } from 'motion/react';
+import { m } from 'motion/react';
 import { useId } from 'react';
 import { freshnessLabel, FRESHNESS_COLOR_TOKEN } from '@/lib/freshness';
 import type { LayerDef, LayerId } from '@/lib/layer-registry';
@@ -16,7 +16,7 @@ import { refreshLabel, zoomGateLabel } from './status-logic';
 export function Toggle({ on }: { on: boolean }) {
   return (
     <span aria-hidden className="hud-toggle" data-on={on}>
-      <motion.span
+      <m.span
         layout
         transition={{ type: 'spring', stiffness: 500, damping: 30 }}
         className="block h-[10px] w-[10px] rounded-full"
@@ -33,7 +33,8 @@ export function statusAttribution(st: LayerStatus): Attribution[] {
 
 const hhmm = (iso: string | null) => (iso ? `${new Date(iso).toISOString().slice(11, 16)}Z` : '—');
 
-export function FreshnessLed({ layer, status }: { layer: LayerDef; status: LayerStatus }) {
+/** `omitReference`: the row already shows a REFERENCE chip, so a healthy reference feed adds nothing (n4). */
+export function FreshnessLed({ layer, status, omitReference = false }: { layer: LayerDef; status: LayerStatus; omitReference?: boolean }) {
   const gate = zoomGateLabel(status);
   if (gate) return <span className="hud-micro text-[var(--text-secondary)]">{gate}</span>;
   if (status.state === 'idle') return null;
@@ -45,6 +46,7 @@ export function FreshnessLed({ layer, status }: { layer: LayerDef; status: Layer
       </span>
     );
   const state = layer.kind === 'reference' && status.state !== 'offline' ? 'reference' : status.state;
+  if (state === 'reference' && omitReference) return null;
   const at = status.observedAt ?? status.fetchedAt;
   const color = `var(${FRESHNESS_COLOR_TOKEN[state]})`;
   return (
