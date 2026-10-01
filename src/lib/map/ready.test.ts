@@ -3,42 +3,42 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { STYLE_EVENT } from '@/components/hud/style-engine';
 import { afterIdle, useAfterIdle, useSticky, yieldToMain } from './defer';
-import { onceStyleLoaded, styleParsed, type ReadyMap } from './ready';
+import { onceStyleParsed, styleParsed } from './ready';
 import { getStyleVersion, MAP_STYLE_EVENT, useStyleVersion } from './style-version';
 
-function fakeMap(loaded: boolean) {
+function fakeMap(parsed: boolean) {
   const handlers = new Map<string, Set<() => void>>();
-  const state = { loaded };
-  const map: ReadyMap & { fire: (t: string) => void; state: typeof state; count: () => number } = {
-    state,
-    isStyleLoaded: () => state.loaded,
-    on: (t, fn) => {
+  // A basemap tile that never answers: `load` never fires and isStyleLoaded() stays false.
+  const map = {
+    style: { _loaded: parsed },
+    isStyleLoaded: () => false,
+    loaded: () => false,
+    once: (t: string, fn: () => void) => {
       if (!handlers.has(t)) handlers.set(t, new Set());
       handlers.get(t)!.add(fn);
     },
-    off: (t, fn) => void handlers.get(t)?.delete(fn),
-    fire: (t) => handlers.get(t)?.forEach((fn) => fn()),
+    off: (t: string, fn: () => void) => void handlers.get(t)?.delete(fn),
+    fire: (t: string) => [...(handlers.get(t) ?? [])].forEach((fn) => fn()),
     count: () => [...handlers.values()].reduce((n, s) => n + s.size, 0),
   };
   return map;
 }
 
-describe('map readiness without idle', () => {
-  it('is ready immediately after load when the style reports loaded', () => {
+describe('R1r3-M1 regression: the map is ready once the style is parsed, even while a tile hangs', () => {
+  it('is ready immediately when style.load already fired, though load never will', () => {
     const ready = vi.fn();
-    onceStyleLoaded(fakeMap(true), ready);
+    onceStyleParsed(fakeMap(true), ready);
     expect(ready).toHaveBeenCalledTimes(1);
   });
 
-  it('otherwise waits for style/source data to report loaded, once, then unsubscribes', () => {
+  it('otherwise becomes ready on style.load (no tile, no load, no idle needed), once, then unsubscribes', () => {
     const map = fakeMap(false);
     const ready = vi.fn();
-    onceStyleLoaded(map, ready);
-    map.fire('sourcedata');
+    onceStyleParsed(map, ready);
     expect(ready).not.toHaveBeenCalled();
-    map.state.loaded = true;
-    map.fire('styledata');
-    map.fire('sourcedata');
+    map.style._loaded = true;
+    map.fire('style.load');
+    map.fire('load');
     expect(ready).toHaveBeenCalledTimes(1);
     expect(map.count()).toBe(0);
   });
@@ -46,11 +46,11 @@ describe('map readiness without idle', () => {
   it('can be cancelled', () => {
     const map = fakeMap(false);
     const ready = vi.fn();
-    const cancel = onceStyleLoaded(map, ready);
+    const cancel = onceStyleParsed(map, ready);
     cancel();
-    map.state.loaded = true;
-    map.fire('styledata');
+    map.fire('style.load');
     expect(ready).not.toHaveBeenCalled();
+    expect(map.count()).toBe(0);
   });
 
   it('knows when the style JSON is parsed even if style.load already fired', () => {

@@ -1,5 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { CONTEXT_ATTRIBUTE_LADDER, effectiveProjection, GLOBE_SKY, initialCamera, normalizeCamera, projectionPitchEase } from './view';
+import { readFileSync } from 'node:fs';
+import { CONTEXT_ATTRIBUTE_LADDER, DESKTOP_MIN_ZOOM, effectiveProjection, GLOBE_SKY, initialCamera, mediaQueryStore, minZoomFor, normalizeCamera, PHONE_LAYOUT_QUERY, PHONE_MIN_ZOOM, projectionPitchEase } from './view';
+
+describe('R1r4-m5: phone minZoom follows the HUD phone-layout media query', () => {
+  it('uses the same query as the HUD (useIsMobile)', () => {
+    const hud = readFileSync(new URL('../../components/hud/hooks.ts', import.meta.url), 'utf8');
+    expect(hud).toContain(`'${PHONE_LAYOUT_QUERY}'`);
+  });
+  it('phone layout (portrait < 768 px or a landscape phone) zooms out to 0.3, else 1.2', () => {
+    expect(minZoomFor(true)).toBe(PHONE_MIN_ZOOM);
+    expect(minZoomFor(false)).toBe(DESKTOP_MIN_ZOOM);
+  });
+  it('re-reads the query on change (rotation / resize)', () => {
+    let matches = false;
+    const listeners = new Set<() => void>();
+    const mql = { get matches() { return matches; }, addEventListener: (_: string, cb: () => void) => listeners.add(cb), removeEventListener: (_: string, cb: () => void) => listeners.delete(cb) };
+    const store = mediaQueryStore(PHONE_LAYOUT_QUERY, { matchMedia: () => mql as unknown as MediaQueryList });
+    const seen: boolean[] = [];
+    const off = store.subscribe(() => seen.push(store.get()));
+    expect(store.get()).toBe(false);
+    matches = true; // 844×390 landscape phone after rotation
+    for (const cb of listeners) cb();
+    expect(seen).toEqual([true]);
+    off();
+    expect(listeners.size).toBe(0);
+    expect(mediaQueryStore(PHONE_LAYOUT_QUERY, undefined).get()).toBe(false);
+  });
+});
 
 describe('projection', () => {
   it('is mercator while terrain is engaged, else the user choice', () => {

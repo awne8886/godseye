@@ -1,38 +1,42 @@
 /**
- * Map readiness without waiting for `idle`. `idle` needs every tile settled and nothing
- * animating, so a permanently failing tile host or a 1 Hz animated layer can postpone it forever;
- * `load` + `isStyleLoaded()` is the honest "style, sprite and sources are in" signal that feature
- * modules need before adding sources and layers. Owner: map-engine. Unit-tested with a fake map.
+ * Map readiness without waiting for tiles or `idle` (R1r3-M1). `idle` needs every tile settled and
+ * nothing animating, and `load`/`isStyleLoaded()` stay false while ANY tile of ANY source is still
+ * loading, so one hung tile host or a 1 Hz animated layer could postpone them forever. The host's
+ * ready signal is therefore "style JSON parsed" (`style.load`, or `styleParsed()` for a style that
+ * finished before we subscribed): sources and layers can be added from then on. That is what
+ * `useMapInstance()`, `data-map-ready` and `data-style-ready` mean; tiles may still be loading
+ * (the basemap health chip reports that). `onceBasemapPainted` is the separate, capped "first
+ * frame with basemap tiles" signal that gates feature start-up. Owner: map-engine. Unit-tested with
+ * a fake map.
  */
 
-export interface ReadyMap {
-  isStyleLoaded: () => boolean | void;
-  on: (type: 'styledata' | 'sourcedata' | 'data', fn: () => void) => unknown;
-  off: (type: 'styledata' | 'sourcedata' | 'data', fn: () => void) => unknown;
+export interface StyleEventsMap {
+  once(type: 'style.load' | 'load', fn: () => void): unknown;
+  off(type: 'style.load' | 'load', fn: () => void): unknown;
 }
 
 /**
- * Call `onReady` once, as soon as `map.isStyleLoaded()` is true (immediately when it already is,
- * which is the normal case right after `load`). Returns a cancel function.
+ * Call `onReady` once, as soon as the style is parsed: immediately when it already is, else on
+ * `style.load` (or `load`, whichever comes first). Never waits for tiles. Returns cancel.
  */
-export function onceStyleLoaded(map: ReadyMap, onReady: () => void): () => void {
-  if (map.isStyleLoaded()) {
-    onReady();
-    return () => undefined;
-  }
+export function onceStyleParsed(map: StyleEventsMap, onReady: () => void): () => void {
   let done = false;
-  const check = () => {
-    if (done || !map.isStyleLoaded()) return;
+  const fire = () => {
+    if (done) return;
     cancel();
     onReady();
   };
   const cancel = () => {
     done = true;
-    map.off('styledata', check);
-    map.off('sourcedata', check);
+    map.off('style.load', fire);
+    map.off('load', fire);
   };
-  map.on('styledata', check);
-  map.on('sourcedata', check);
+  if (styleParsed(map)) {
+    fire();
+    return cancel;
+  }
+  map.once('style.load', fire);
+  map.once('load', fire);
   return cancel;
 }
 

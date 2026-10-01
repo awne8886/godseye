@@ -29,6 +29,33 @@ export const GLOBE_SKY: SkySpecification = {
   'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0],
 };
 
+/**
+ * The HUD's phone layout (bottom sheet instead of rails): narrow screens and landscape phones.
+ * Must equal the query behind `useIsMobile()` in src/components/hud/hooks.ts (pinned by a test).
+ */
+export const PHONE_LAYOUT_QUERY = '(max-width: 767px), (max-height: 499px) and (orientation: landscape)';
+/** Phones zoom further out so long polar routes (SIN–JFK, HEL–ANC) fit above the sheet. */
+export const PHONE_MIN_ZOOM = 0.3;
+export const DESKTOP_MIN_ZOOM = 1.2;
+
+/** Map minZoom for the current layout (follows the media query: resize and rotation update it). */
+export function minZoomFor(phoneLayout: boolean): number {
+  return phoneLayout ? PHONE_MIN_ZOOM : DESKTOP_MIN_ZOOM;
+}
+
+/** `useSyncExternalStore` pair for a media query (false on the server / without matchMedia). */
+export function mediaQueryStore(query: string, win: Pick<Window, 'matchMedia'> | undefined = typeof window === 'undefined' ? undefined : window) {
+  return {
+    subscribe(cb: () => void): () => void {
+      if (!win?.matchMedia) return () => undefined;
+      const mq = win.matchMedia(query);
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    get: (): boolean => !!win?.matchMedia && win.matchMedia(query).matches,
+  };
+}
+
 export const RESET_VIEW = { latitude: 20, longitude: 0, zoom: 2.5, pitch: 20, bearing: 0 } as const;
 
 /** Stacked twilight fills: civil, nautical, astronomical, night (opacity adds up where they overlap). */

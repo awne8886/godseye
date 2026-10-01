@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { cameraParam, readCamera, waitForMapIdle, type CameraArg } from '../map-engine/helpers';
+import { cameraParam, readCamera, waitForCameraIdle, waitForMapIdle, type CameraArg } from '../map-engine/helpers';
 
 /**
  * panels-recon end-to-end checks. Browser → /api responses for SEARCH, ROUTE and RECON are
@@ -122,7 +122,7 @@ test.describe('panels-recon', () => {
 
   test('DRAW measures a line', async ({ page }) => {
     await gotoMap(page, { lat: 20, lng: 0, zoom: 4 });
-    // Drawing listens to the map instance, which the host publishes on the style's first load.
+    // Drawing listens to the map instance, which the host publishes once the style is parsed.
     await needsBasemap(page);
     await waitForMapIdle(page, 200_000);
     await openTool(page, 'DRAW');
@@ -130,6 +130,10 @@ test.describe('panels-recon', () => {
     await panel.getByRole('button', { name: /Line/ }).click();
     await expect(panel.getByRole('button', { name: /Line/ })).toHaveAttribute('aria-pressed', 'true');
     const canvas = page.locator('canvas.maplibregl-canvas');
+    // Drawing is armed when the map shows the crosshair (the DRAW click handler is attached), and
+    // the clicks must land where the camera has stopped.
+    await expect(canvas).toHaveCSS('cursor', 'crosshair', { timeout: 30_000 });
+    await waitForCameraIdle(page);
     const box = (await canvas.boundingBox())!;
     await canvas.click({ position: { x: box.width * 0.35, y: box.height * 0.5 } });
     await canvas.click({ position: { x: box.width * 0.45, y: box.height * 0.5 } });
