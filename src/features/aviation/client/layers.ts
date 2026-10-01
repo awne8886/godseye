@@ -24,6 +24,15 @@ export const AGGREGATE_ABOVE = 20_000;
 export const AGGREGATE_BELOW_ZOOM = 4;
 const H3_RES = 3;
 
+/**
+ * GPU state for the aircraft billboards. `cullMode: 'none'` is load-bearing on the globe: MapLibre
+ * leaves back-face culling enabled after drawing the globe tiles and the interleaved deck layers
+ * inherit it; IconLayer flips its quad in Y (`pixelOffset.y *= -1`) so its triangles wind the
+ * other way and were culled — no aircraft drew on the globe while mercator (no culling) was fine.
+ * `depthCompare: 'always'` keeps the flat billboard from being half-clipped by the globe surface.
+ */
+export const ICON_PARAMETERS = { cullMode: 'none', depthCompare: 'always' } as const;
+
 export interface View {
   center: LngLatTuple;
   zoom: number;
@@ -293,7 +302,7 @@ export function buildLayers(o: BuildOptions): LayersList | null {
           billboard: true,
           alphaCutoff: 0.2,
           pickable: true,
-          parameters: { depthCompare: 'always' },
+          parameters: ICON_PARAMETERS,
           // Read by the map's click/hover router (src/lib/map/picking.ts); no own onClick handler,
           // so a GPU pick and the CPU hit-test of the same aircraft still open one card.
           toSelection: (info: PickingInfo) => (info.index < 0 ? null : o.toSelection(rec(info.index), at(info.index, [0, 0]))),
@@ -336,7 +345,7 @@ export function buildLayers(o: BuildOptions): LayersList | null {
       lineWidthUnits: 'pixels',
       getLineWidth: width,
       billboard: true,
-      parameters: { depthCompare: 'always' },
+      parameters: ICON_PARAMETERS,
       updateTriggers: { getPosition: [o.tick], getLineColor: [o.theme] },
     });
   // Emergency squawks (7500 / 7600 / 7700): a red ring; watched/selected aircraft: an amber ring.
