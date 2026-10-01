@@ -1,6 +1,6 @@
 'use client';
 /**
- * Entity-card frame (§0.3, §7): kind + id header, freshness badge (entityFreshness over the layer's
+ * Entity-card frame (§0.3, §7): kind + display-name header, freshness badge (entityFreshness over the layer's
  * observation cadence, never better than the feed), source line with attribution, observed-at time
  * kept separate from fetched-at, SOURCE OFFLINE with last-good time, and tabs Overview / Sources.
  * The body comes from the feature module registered for the entity kind. Owner: design-system-hud.
@@ -12,6 +12,7 @@ import { getLayer } from '@/lib/layer-registry';
 import type { LayerStatus, Selection } from '@/lib/layer-host';
 import { statusAttribution } from '@/components/hud/LayerRows';
 import { cardBadge } from '@/components/hud/status-logic';
+import { entityDisplayName } from './display-name';
 import { sourceDisplayName } from './source-name';
 
 const iso = (s: string | null) => (s ? `${s.slice(0, 10)} ${s.slice(11, 19)}Z` : '—');
@@ -56,6 +57,7 @@ export default function EntityCardFrame({
   const attribution = feed ? statusAttribution(feed) : [];
   const offline = feed?.state === 'offline';
   const kindLabel = selection.kind.replace(/_/g, ' ');
+  const name = entityDisplayName(selection);
 
   return (
     <section aria-labelledby={titleId} className="glass-panel instrument-grid instrument-corners relative flex max-h-full min-h-0 flex-col">
@@ -65,13 +67,16 @@ export default function EntityCardFrame({
           <h2 id={titleId} className="hud-title truncate">
             {kindLabel}
           </h2>
-          {/* The id gets its own line so a long one never pushes the kind out of the title. */}
-          <p className="hud-micro truncate text-[var(--text-secondary)] normal-case tabular-nums" title={selection.id}>
-            {selection.id}
-          </p>
+          {/* The record's display name (never its internal key, which is under SOURCES), wrapping
+              to two lines rather than cutting a long place name mid-word (round 5 visual-qa m4). */}
+          {name && (
+            <p className="hud-micro line-clamp-2 break-words text-[var(--text-secondary)] normal-case tabular-nums" title={name} data-testid="card-name">
+              {name}
+            </p>
+          )}
         </div>
         <FreshnessBadge selection={selection} feed={feed} now={now} />
-        <button type="button" onClick={onClose} aria-label="Close card" className="hud-control grid h-7 w-7 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+        <button type="button" onClick={onClose} aria-label="Close card" className="hud-control grid h-7 w-7 shrink-0 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11">
           <X size={15} />
         </button>
       </header>
@@ -101,7 +106,7 @@ export default function EntityCardFrame({
             type="button"
             aria-selected={tab === t}
             onClick={() => setTab(t)}
-            className={`hud-micro hud-control min-h-[28px] border px-2 ${tab === t ? 'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
+            className={`hud-micro hud-control min-h-[28px] border px-2 phone:min-h-[44px] ${tab === t ?'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
           >
             {t}
           </button>
@@ -112,6 +117,12 @@ export default function EntityCardFrame({
           children
         ) : (
           <div className="space-y-2 text-[12px] text-[var(--text-secondary)]">
+            <p className="break-all">
+              <span className="hud-micro text-[var(--text-muted)]">ID </span>
+              <span className="font-mono" data-testid="card-id">
+                {selection.id}
+              </span>
+            </p>
             <p>
               <span className="hud-micro text-[var(--text-muted)]">LAYER </span>
               {layer?.label ?? '—'} {layer?.kind === 'reference' && <span className="instrument-chip ml-1">REFERENCE</span>}

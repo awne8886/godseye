@@ -59,26 +59,26 @@ export default function Telemetry() {
 
   return (
     <div className="hud-micro fixed right-4 top-4 z-[var(--z-hud)] flex items-center gap-3 text-[var(--text-secondary)]" aria-label="Telemetry" role="group" data-map-inset="telemetry">
-      <span className="hidden font-bold text-[var(--cyan-primary)] md:inline">ZULU {zulu}Z</span>
+      <span className="inline font-bold text-[var(--cyan-primary)] phone:hidden">ZULU {zulu}Z</span>
       <span aria-live="polite" className="flex items-center gap-1.5" style={{ color: STATUS_COLOR[st] }}>
         <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[st], boxShadow: st === 'LIVE' ? '0 0 6px var(--alert-green)' : undefined }} />
         STATUS: {st}
       </span>
-      <span className="hidden text-[var(--cyan-primary)] md:inline">{shown.length} LAYERS</span>
+      <span className="inline text-[var(--cyan-primary)] phone:hidden">{shown.length} LAYERS</span>
       <span
         data-testid="telemetry-entities"
-        className="hidden text-[var(--alert-green)] md:inline"
+        className="inline text-[var(--alert-green)] phone:hidden"
         title={drawPending && entities > 0 ? 'Entities received from the feeds; some layers are still being drawn' : undefined}
       >
         {entitiesLabel(entities, drawPending)}
       </span>
-      <span className="hidden lg:inline" title={sw.data?.xray.observedAt ? `GOES X-ray observed ${sw.data.xray.observedAt}` : 'Space weather feed unavailable'}>
+      <span className="hidden lg:inline phone:hidden" title={sw.data?.xray.observedAt ? `GOES X-ray observed ${sw.data.xray.observedAt}` : 'Space weather feed unavailable'}>
         SOLAR <span className="text-[var(--text-primary)]">{xray ?? '—'}</span>
       </span>
-      <span className="hidden lg:inline" title={sw.data?.kp.observedAt ? `Kp observed ${sw.data.kp.observedAt}` : 'Space weather feed unavailable'}>
+      <span className="hidden lg:inline phone:hidden" title={sw.data?.kp.observedAt ? `Kp observed ${sw.data.kp.observedAt}` : 'Space weather feed unavailable'}>
         KP <span style={{ color: kpColor }}>{typeof kp === 'number' ? kp.toFixed(1) : '—'}</span>
       </span>
-      <span className="hidden md:inline">V{APP_VERSION}</span>
+      <span className="inline phone:hidden">V{APP_VERSION}</span>
     </div>
   );
 }

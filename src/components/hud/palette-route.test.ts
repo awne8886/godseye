@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { useUiStore } from '@/lib/store';
 import search from './__fixtures__/airports-search.2026-10-01.json';
-import { originOf, parseRouteQuery, queryItems } from './palette-items';
+import { destinationOf, isPlaceName, originOf, parseRouteQuery, queryItems } from './palette-items';
 
 /** /api/airports/search answers recorded from a local production build on 2026-10-01 (zero keys). */
 const recorded = (async (url: string) => {
@@ -92,5 +92,98 @@ describe('palette route parsing is position-aware (round 4 m4)', () => {
     expect(useUiStore.getState().openPanel).toBe('paths');
     await vi.waitFor(() => expect(useUiStore.getState().plannedRoute).toEqual(planned));
     useUiStore.setState({ plannedRoute: null, openPanel: null, flightIdent: null });
+  });
+});
+
+/**
+ * Round 5 M1 (r1-map-hud): conversational phrases never become flight routes. Before the fix
+ * "now go to rome" offered "PLAN ROUTE NOW GO → ROME" as the top palette item and Enter opened PATHS
+ * with FROM "NOW GO". Ports R1's scratch repro (round5/r1-map-hud/unit/palette.test.ts, pal.out).
+ */
+describe('palette never plans a route from speech (round 5 M1)', () => {
+  it.each([
+    'now go to rome',
+    'I need to drive to paris',
+    'i need to go to rome',
+    'we should go to rome',
+    'okay take me to london',
+    'ok, take me to london',
+    'just go to paris',
+    'time to go to rome',
+    'how do i get to paris',
+    'How do I get to Paris?',
+    'hey fly to rome',
+    'Hey, fly to Rome',
+    'quickly go to berlin',
+    'then zoom to tokyo',
+    'so fly to rome',
+    'and then go to rome',
+    'we need to head to rome',
+    'we head to rome',
+    'lol go to rome',
+    'please now go to rome',
+    'I want to fly to paris',
+    // The destination is checked too: a command verb never opens a place name.
+    'London to drive to Paris',
+    'London to go',
+    'London to zoom in',
+    'Rome to show me paris',
+    // A multi-leg request is not a two-point route.
+    'London to New York to Paris',
+  ])('%s is not a route', (q) => {
+    expect(parseRouteQuery(q)).toBeNull();
+    expect(queryItems(q, () => true)).toEqual([]);
+  });
+
+  it.each([
+    ['Can Tho to Hanoi', 'Can Tho', 'Hanoi'],
+    ['In Salah to Algiers', 'In Salah', 'Algiers'],
+    ['Hilton Head to Atlanta', 'Hilton Head', 'Atlanta'],
+    ['Atlanta to Hilton Head', 'Atlanta', 'Hilton Head'],
+    ['Show Low to Phoenix', 'Show Low', 'Phoenix'],
+    ['Phoenix to Show Low', 'Phoenix', 'Show Low'],
+    ['Mountain View to Los Angeles', 'Mountain View', 'Los Angeles'],
+    ['Orange Walk to Belize City', 'Orange Walk', 'Belize City'],
+    ['Copper Center to Anchorage', 'Copper Center', 'Anchorage'],
+    ['London to New York', 'London', 'New York'],
+    ['fly from Can Tho to Hanoi', 'Can Tho', 'Hanoi'],
+    ['now fly from London to Paris', 'London', 'Paris'],
+    ['hey, fly from Can Tho to Hanoi', 'Can Tho', 'Hanoi'],
+    ['I need to fly from Hilton Head to Atlanta', 'Hilton Head', 'Atlanta'],
+    ['St. Louis to Chicago', 'St. Louis', 'Chicago'],
+  ])('%s → %s → %s still plans', (q, from, to) => {
+    expect(parseRouteQuery(q)).toEqual({ kind: 'names', from, to });
+  });
+
+  it('keeps capitalised airport codes that spell a verb ("CDG to RUN" is Réunion)', () => {
+    expect(parseRouteQuery('CDG to RUN')).toEqual({ kind: 'codes', from: 'CDG', to: 'RUN' });
+    expect(parseRouteQuery('GET to PER')).toEqual({ kind: 'codes', from: 'GET', to: 'PER' });
+    expect(parseRouteQuery('lhr to jfk')).toEqual({ kind: 'codes', from: 'LHR', to: 'JFK' });
+  });
+
+  it('checks verbs at every position of a name, with the real place prefixes and suffixes allowed', () => {
+    expect(isPlaceName(['now', 'go'])).toBe(false);
+    expect(isPlaceName(['hey', 'fly'])).toBe(false);
+    expect(isPlaceName(['how', 'do', 'i', 'get'])).toBe(false);
+    expect(isPlaceName(['we', 'head'])).toBe(false);
+    expect(isPlaceName(['hilton', 'head', 'island'])).toBe(true);
+    expect(isPlaceName(['frying', 'pan', 'island'])).toBe(true);
+    expect(isPlaceName(['show', 'low'])).toBe(true);
+    expect(isPlaceName(['show', 'me'])).toBe(false);
+    expect(isPlaceName(['drive', 'to', 'paris'])).toBe(false);
+    expect(isPlaceName(['new', 'york', 'to', 'paris'])).toBe(false);
+    expect(originOf('now go')).toBeNull();
+    expect(originOf('I need')).toBe('I need'); // a bare left side is judged with its destination
+    expect(destinationOf('drive to paris')).toBeNull();
+    expect(destinationOf('go to rome')).toBeNull();
+    expect(destinationOf('Paris please')).toBe('Paris');
+  });
+
+  it('Enter on "now go to rome" can never open PATHS with FROM "NOW GO"', () => {
+    useUiStore.setState({ plannedRoute: null, openPanel: null, flightIdent: null });
+    for (const q of ['now go to rome', 'I need to drive to paris', 'just go to paris', 'hey fly to rome', 'then zoom to tokyo', 'how do i get to paris']) {
+      expect(queryItems(q, () => true).some((i) => i.id.startsWith('route'))).toBe(false);
+    }
+    expect(useUiStore.getState().openPanel).toBeNull();
   });
 });

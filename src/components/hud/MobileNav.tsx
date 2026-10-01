@@ -31,7 +31,7 @@ export default function MobileNav() {
   return (
     <nav data-map-inset="mobile-nav"
       aria-label="Main"
-      className="glass-1 fixed inset-x-0 bottom-0 z-[var(--z-mobile-nav)] flex border-t border-[var(--border-primary)] md:hidden"
+      className="glass-1 fixed inset-x-0 bottom-0 z-[var(--z-mobile-nav)] hidden border-t border-[var(--border-primary)] phone:flex"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       {tabs.map(({ tab, first }) => {

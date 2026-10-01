@@ -81,7 +81,7 @@ export default function SharePanel(_: PanelProps) {
         <button
           type="button"
           onClick={() => void copy()}
-          className="hud-micro hud-control flex min-h-[36px] flex-1 items-center justify-center gap-2 border border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.1)] text-[var(--gold-light)]"
+          className="hud-micro hud-control flex min-h-[36px] phone:min-h-[44px] flex-1 items-center justify-center gap-2 border border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.1)] text-[var(--gold-light)]"
         >
           {copied === 'ok' ? <Check size={14} aria-hidden /> : <Copy size={14} aria-hidden />}
           {copied === 'ok' ? 'COPIED' : copied === 'failed' ? 'COPY BLOCKED — SELECT THE LINK' : 'COPY LINK'}
@@ -90,7 +90,7 @@ export default function SharePanel(_: PanelProps) {
           <button
             type="button"
             onClick={() => void navigator.share({ url, title: 'GODSEYE view' }).catch(() => undefined)}
-            className="hud-micro hud-control flex min-h-[36px] items-center gap-2 border border-[var(--border-primary)] px-3 text-[var(--text-primary)]"
+            className="hud-micro hud-control flex min-h-[36px] phone:min-h-[44px] items-center gap-2 border border-[var(--border-primary)] px-3 text-[var(--text-primary)]"
           >
             <Share2 size={14} aria-hidden /> SHARE
           </button>

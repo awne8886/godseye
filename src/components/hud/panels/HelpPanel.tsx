@@ -41,7 +41,7 @@ export default function HelpPanel({ onClose }: PanelProps) {
       onClose={onClose}
       className="left-1/2 top-1/2 max-h-[85vh] w-[min(520px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 gap-3 p-5 instrument-grid instrument-corners"
     >
-      <button type="button" onClick={onClose} aria-label="Close shortcuts" className="hud-control absolute right-3 top-3 grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+      <button type="button" onClick={onClose} aria-label="Close shortcuts" className="hud-control absolute right-3 top-3 grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11">
         <X size={15} />
       </button>
       <div className="instrument-rule" aria-hidden />

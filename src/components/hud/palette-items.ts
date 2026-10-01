@@ -48,13 +48,19 @@ type Phrase = readonly string[];
 const phrases = (...p: string[]): Phrase[] => p.map((s) => s.split(' '));
 
 /**
- * Politeness that only ever opens a command, stripped as whole leading phrases ("please …",
- * "can you …", "I want to …"). Never a single word that also starts a place name: "Can Tho" and
- * "In Salah" keep their first word because "can" and "in" alone are not fillers (round 4 m4).
+ * Politeness and discourse words that only ever open a command, stripped as whole leading phrases
+ * ("please …", "can you …", "now …", "hey …", "I need to …"). Never a single word that also starts a
+ * place name: "Can Tho" and "In Salah" keep their first word because "can" and "in" alone are not
+ * fillers (round 4 m4). The discourse fillers (round 5 M1) make "now go to rome" and "I need to
+ * drive to paris" read as "go to rome" / "drive to paris": commands, never routes.
  */
 const LEAD_FILLERS = phrases(
   'please', 'pls', 'kindly', 'can you', 'could you', 'would you', 'will you', 'can i', 'could i', 'i want to', 'i wanna',
   "i'd like to", 'i would like to', "let's", 'lets', 'let me', 'let us',
+  'now', 'just', 'then', 'ok', 'okay', 'hey', 'so', 'and', 'also', 'quickly', 'right now',
+  'i need to', 'we need to', 'i have to', 'we have to', 'i must', 'we must', 'i should', 'we should', 'shall we', 'should we',
+  'i gotta', 'gotta', "i'm going to", 'i am going to', "we're going to", 'we are going to', 'i will', "i'll", 'we will', "we'll",
+  'time to', "it's time to", 'how do i get to', 'how do we get to', 'how can i get to', 'how do i go to', 'how to get to',
 );
 /** Politeness at the very end of the destination ("London to Paris please"). */
 const TRAIL_FILLERS = phrases('please', 'pls', 'thanks', 'thank you');
@@ -74,20 +80,40 @@ const COMMAND_VERBS = phrases(
   'scroll', 'rotate', 'tilt', 'return', 'snap', 'teleport', 'focus', 'directions',
   'drive', 'walk', 'ride', 'cycle', 'bike', 'hike', 'run', 'sail', 'swim', 'commute', 'cruise',
 );
+/** Every word that opens a command or a flight request. */
+const VERB_WORDS: ReadonlySet<string> = new Set([...COMMAND_VERBS, ...FLIGHT_VERBS].map((p) => p[0]!));
 /**
  * Command verbs that also begin real place names: followed directly by another word they are part
- * of the name ("Show Low" — SOW, Arizona), not a command. Alone or followed only by particles
- * ("show me", "head over", "go back") they are still commands.
+ * of the name ("Show Low" — SOW, Arizona; "Center Island"; "Snap Lake"), not a command. Alone or
+ * followed only by particles ("show me", "head over", "go back") they are still commands.
  */
-const PLACE_PREFIX_VERBS = new Set(['go', 'show', 'head', 'pan', 'centre', 'center', 'back', 'view', 'look', 'turn', 'travel']);
+const PLACE_PREFIX_VERBS = new Set(['go', 'show', 'head', 'pan', 'centre', 'center', 'back', 'view', 'look', 'turn', 'travel', 'snap']);
+/**
+ * Command verbs that also END real place names in the bundled airport data ("Hilton Head", "Mountain
+ * View", "Orange Walk", "Copper Center", "Frying Pan Island"). Anywhere else after the first word a
+ * verb means the phrase is speech ("now go", "hey fly", "how do i get"), not a name (round 5 M1).
+ */
+const PLACE_SUFFIX_VERBS = new Set(['head', 'view', 'centre', 'center', 'walk', 'pan', 'run']);
+/** Pronouns, modals and discourse words: a verb right after one of them is speech, not a name ("we head"). */
+const CONVERSATIONAL = new Set([
+  'i', "i'm", 'we', "we're", 'you', 'me', 'us', 'they', 'should', 'need', 'needs', 'must', 'want', 'wanna', 'gotta', 'gonna',
+  'have', 'has', 'do', 'does', 'did', 'can', 'could', 'would', 'will', 'shall', 'may', 'might', 'let', "let's", 'lets', 'now',
+  'just', 'then', 'ok', 'okay', 'hey', 'so', 'quickly', 'please', 'pls', 'time', 'how', 'to', 'and', 'also',
+]);
 /** Words that may follow a command verb without naming a place ("zoom in", "take me", "head over"). */
 const PARTICLES = new Set([
   'me', 'us', 'in', 'out', 'over', 'back', 'up', 'down', 'around', 'along', 'on', 'off', 'there', 'now', 'please', 'straight',
   'right', 'again', 'quickly', 'ahead', 'across', 'away', 'the', 'a',
 ]);
+/** Route separators: a name never contains one ("London to New York to Paris" is not a two-point route). */
+const SEPARATORS = new Set(['to', 'from', '→', '->', '>']);
 
-/** Lower-case, apostrophe-folded word for phrase matching (the original word is what gets kept). */
-const norm = (w: string) => w.toLowerCase().replace(/[’`]/g, "'");
+/** Lower-case, apostrophe-folded word without trailing punctuation, for matching (the original word is kept). */
+const norm = (w: string) =>
+  w
+    .toLowerCase()
+    .replace(/[’`]/g, "'")
+    .replace(/[,.!?;:]+$/, '');
 
 /** Length of the longest phrase that starts at word `i`, else 0. */
 function phraseAt(words: readonly string[], i: number, list: readonly Phrase[]): number {
@@ -122,36 +148,71 @@ function stripTrailFillers(s: string): string {
   return s;
 }
 
+/** One token typed in capitals as an airport code ("RUN", "GET", "EGLL"): never read as a verb. */
+const capsCode = (raw: readonly string[]) => raw.length === 1 && /^[A-Z0-9]{3,4}$/.test(raw[0]!);
+
+/**
+ * Whether normalised words can be a place name rather than speech (round 5 M1). A command verb may
+ * open a name only as a place prefix followed by a real word ("Show Low"), and appear later only as
+ * a known place suffix after a non-conversational word ("Hilton Head", "Mountain View"). Any other
+ * verb ("now go", "hey fly", "drive to paris") or a route separator ("New York to Paris") means the
+ * words are a command or a multi-leg request, never one place.
+ */
+export function isPlaceName(n: readonly string[]): boolean {
+  if (n.length === 0) return false;
+  const first = n[0]!;
+  if (VERB_WORDS.has(first)) {
+    const next = n[1];
+    if (!PLACE_PREFIX_VERBS.has(first) || next === undefined || PARTICLES.has(next) || SEPARATORS.has(next) || VERB_WORDS.has(next)) return false;
+  }
+  for (let k = 1; k < n.length; k++) {
+    const x = n[k]!;
+    if (SEPARATORS.has(x)) return false;
+    if (!VERB_WORDS.has(x)) continue;
+    const next = n[k + 1];
+    const endsName = next === undefined || !(PARTICLES.has(next) || SEPARATORS.has(next));
+    if (!(PLACE_SUFFIX_VERBS.has(x) && !CONVERSATIONAL.has(n[k - 1]!) && endsName)) return false;
+  }
+  return true;
+}
+
 /**
  * The origin named by the left side of "X to Y", or null when the left side is a command.
- * Position-aware (round 4 m4): a command verb counts only as the first word, particles only right
- * after it, and words are never removed from inside a name — "fly from Can Tho" → "Can Tho",
- * "Show Low" → "Show Low", "drive" / "zoom in" / "head over" / "show me" → null.
+ * Position-aware (round 4 m4, round 5 M1): a command verb opens a command only as the first word,
+ * particles count only right after it, words are never removed from inside a name, and what is left
+ * must pass isPlaceName — "fly from Can Tho" → "Can Tho", "Show Low" → "Show Low", "Hilton Head" →
+ * "Hilton Head"; "drive" / "zoom in" / "head over" / "show me" / "now go" / "hey fly" → null.
  */
 export function originOf(left: string): string | null {
   const raw = left.trim().split(/\s+/).filter(Boolean);
+  if (capsCode(raw)) return raw[0]!;
   const w = raw.map(norm);
   let i = 0;
   const verb = phraseAt(w, 0, COMMAND_VERBS);
   if (verb) {
     const j = skipWords(w, verb, PARTICLES);
     if (j === w.length) return null; // "go", "zoom in", "head over", "get me", "drive"
-    if (!phraseAt(w, j, FLIGHT_VERBS)) {
-      // "Show Low": the verb is the first word of the name. "drive from…", "show me rome" are commands.
-      const prefix = PLACE_PREFIX_VERBS.has(w.slice(0, verb).join(' ')) && j === verb && w[j] !== 'from';
-      return prefix ? raw.join(' ') : null;
-    }
+    // "Show Low": the verb is the first word of the name. "drive from…", "show me rome" are commands.
+    if (!phraseAt(w, j, FLIGHT_VERBS)) return isPlaceName(w) ? raw.join(' ') : null;
     i = j; // "show me flights from …"
   }
   const flight = phraseAt(w, i, FLIGHT_VERBS);
   if (flight) {
     i = skipWords(w, i + flight, new Set(['me', 'us']));
     if (w[i] === 'from') i++;
-    // "fly to paris", "plan a route to rome": a destination without an origin is navigation.
-    return i < w.length ? raw.slice(i).join(' ') : null;
-  }
-  if (w[0] === 'from') i = 1;
-  return i < w.length ? raw.slice(i).join(' ') : null;
+  } else if (w[0] === 'from') i = 1;
+  // "fly to paris", "plan a route to rome": a destination without an origin is navigation.
+  if (i >= w.length) return null;
+  const name = raw.slice(i);
+  return capsCode(name) || isPlaceName(w.slice(i)) ? name.join(' ') : null;
+}
+
+/** The destination of "X to Y" without trailing politeness, or null when it is a command ("… to drive to paris"). */
+export function destinationOf(right: string): string | null {
+  const to = stripTrailFillers(right.trim());
+  const raw = to.split(/\s+/).filter(Boolean);
+  if (capsCode(raw)) return to;
+  return isPlaceName(raw.map(norm)) ? to : null;
 }
 
 /**
@@ -175,8 +236,9 @@ export function looksLikePlace(s: string): boolean {
 /**
  * "LHR JFK", "EGLL→KJFK", "LHR-JFK", "LHR to JFK" → codes; "London to New York", "Paris → Tokyo",
  * "fly from Can Tho to Hanoi" → names, only when both sides look like places and the left side is
- * not a command (m6: "go to paris", "fly to europe"; round 4 m4: "drive to paris"). Anything else
- * (a single word, "satellites") → null.
+ * not a command (m6: "go to paris", "fly to europe"; round 4 m4: "drive to paris"; round 5 M1: "now
+ * go to rome", "I need to drive to paris", "how do i get to paris"). Anything else (a single word,
+ * "satellites", a multi-leg "A to B to C") → null.
  */
 export function parseRouteQuery(query: string): RouteQuery | null {
   const q = stripLeadFillers(query.trim());
@@ -184,8 +246,8 @@ export function parseRouteQuery(query: string): RouteQuery | null {
   const words = q.match(/^(.+?)\s+(?:to|→|->|>)\s+(.+)$/i) ?? q.match(/^(.+?)\s*(?:→|->)\s*(.+)$/);
   if (words) {
     const from = originOf(words[1]!);
-    const to = stripTrailFillers(words[2]!.trim());
-    if (!from || from.toLowerCase() === to.toLowerCase()) return null;
+    const to = destinationOf(words[2]!);
+    if (!from || !to || from.toLowerCase() === to.toLowerCase()) return null;
     if (typedCode(from) && typedCode(to)) return { kind: 'codes', from: from.toUpperCase(), to: to.toUpperCase() };
     if (from.length > 60 || to.length > 60) return null;
     const fromOk = typedCode(from) || looksLikePlace(from);
@@ -234,7 +296,8 @@ export function queryItems(query: string, available: (id: PanelId) => boolean, f
       id: `route-names:${route.from}|${route.to}`,
       group: 'ACTIONS',
       label: `Plan route ${route.from.toUpperCase()} → ${route.to.toUpperCase()}`,
-      hint: 'Main airport of each city; switch airports in PATHS',
+      // An honest hint: the search's best match is not always a city's main airport (R4 B2).
+      hint: 'Best airport match for each name; check and switch airports in PATHS',
       keywords: [q, 'route', 'plan', 'flight path'],
       run: () => {
         ui().setOpenPanel('paths');
