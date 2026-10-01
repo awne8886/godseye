@@ -177,7 +177,7 @@ export function GpsJamCard({ selection }: CardProps) {
       <Provenance
         source={selection.source}
         observedDay={live ? undefined : (c.date ?? undefined)}
-        note={live ? 'Live bin: aircraft reporting NACp ≤ 4 in this H3 cell (≥ 3 aircraft).' : `gpsjam.org daily aggregate for ${c.date} (UTC day).`}
+        note={live ? 'Live bin: airborne ADS-B aircraft (no ground, TIS-B, ADS-R or MLAT positions) seen in the last 60 s; NACp ≤ 4 counts as degraded; ≥ 3 aircraft in this H3 cell.' : `gpsjam.org daily aggregate for ${c.date} (UTC day); share = (bad − 1) / (good + bad), gpsjam's published formula.`}
       />
       <h3 className="mb-1 font-mono text-[13px] uppercase tracking-[.08em] text-[var(--text-heading)]">GPS interference · {level.label}</h3>
       <dl>

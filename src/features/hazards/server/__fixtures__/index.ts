@@ -25,10 +25,12 @@ export const FX = {
   stac: 'cdse-stac-search.2026-09-30.json',
   gpsManifest: 'gpsjam-manifest.2026-09-30.csv',
   gpsDay: 'gpsjam-2026-09-29-h3_4.2026-09-30.csv',
-  /** adsb.lol /v2/point/29.5/48.0/250 (Kuwait/Gulf), 2026-09-30 22:5x UTC: one r4 cell with 5 aircraft, one NACp 0. */
+  /** adsb.lol /v2/point/29.5/48.0/250 (Kuwait/Gulf), 2026-09-30 22:5x UTC: r4 cell 84536e1ffffffff has 5 NACp reporters whose only NACp 0 is on the ground (no live cell after the airborne-only rule). */
   adsbGulf: 'adsblol-point-29.5_48.0_250.2026-09-30.json',
   /** adsb.lol /v2/point/55.5/21.0/250 (Baltic), same night: degraded aircraft, but none in a cell with ≥ 3 NACp reporters. */
   adsbBaltic: 'adsblol-point-55.5_21.0_250.2026-09-30.json',
+  /** adsb.lol /v2/point/51.5/-0.1/100 (London), 2026-10-01 02:07 UTC: 18 aircraft, 7 on the ground, 1 MLAT; aviation normalises 15 rows (4 on the ground). */
+  adsbLondon: 'adsblol-point-51.5_-0.1_100.2026-10-01.json',
   snpp: 'SUOMI_VIIRS_C2_Global_24h.2026-09-30.csv',
   j1: 'J1_VIIRS_C2_Global_24h.2026-09-30.csv',
   j2: 'J2_VIIRS_C2_Global_24h.2026-09-30.csv',

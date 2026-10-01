@@ -38,7 +38,8 @@ describe('GET /api/gps-interference', () => {
     expect(GpsInterferenceResponse.safeParse(body).success).toBe(true);
     expect(body.totalCells).toBe(399);
     expect(body.suspect).toBe(false);
-    expect(body.items.every((c: { bad: number; date: string }) => c.bad > 0 && c.date === '2026-09-29')).toBe(true);
+    // gpsjam's (bad − 1) correction: only cells with ≥ 2 degraded aircraft have a share above zero.
+    expect(body.items.every((c: { bad: number; date: string }) => c.bad >= 2 && c.date === '2026-09-29')).toBe(true);
     expect(body.providers.gpsjam_manifest.ok).toBe(true);
     expect(body.providers.gpsjam).toMatchObject({ ok: true });
     // No flights feed in this process: live binning did not run, so it is reported as not available.
@@ -48,8 +49,10 @@ describe('GET /api/gps-interference', () => {
     expect(body.meta.attribution[0].licence).toMatch(/unstated/i);
   });
 
-  it('adds live NACp bins from the in-process flights feed', async () => {
+  it('adds live NACp bins from the in-process flights feed (airborne ADS-B, ≤ 60 s old)', async () => {
     state.routes = ALL;
+    const t = Math.floor(Date.now() / 1000) - 5;
+    const old = t - 120;
     const flights = defineFeed({
       key: 'flights',
       ttlMs: 60_000,
@@ -57,7 +60,18 @@ describe('GET /api/gps-interference', () => {
       attribution: [],
       count: (d: { rows: unknown[] }) => d.rows.length,
       run: async () => ({
-        data: { fields: ['id', 'lat', 'lng', 'nacP'], rows: [['a', 51.47, -0.45, 3], ['b', 51.471, -0.452, 9], ['c', 51.472, -0.451, 10]] },
+        data: {
+          fields: ['id', 'onGround', 'lat', 'lng', 'nacP', 'seenAt'],
+          rows: [
+            ['a', 0, 51.47, -0.45, 3, t],
+            ['b', 0, 51.471, -0.452, 9, t],
+            ['c', 0, 51.472, -0.451, 10, t],
+            // Excluded: on the ground, TIS-B (`~` address), older than the 60 s window.
+            ['d', 1, 51.4705, -0.4505, 0, t],
+            ['~e', 0, 51.4706, -0.4506, 0, t],
+            ['f', 0, 51.4707, -0.4507, 0, old],
+          ],
+        },
         providers: {},
       }),
     });
@@ -68,6 +82,9 @@ describe('GET /api/gps-interference', () => {
     expect(live).toHaveLength(1);
     expect(live[0]).toMatchObject({ aircraft: 3, bad: 1, date: null });
     expect(body.providers.live_nacp).toMatchObject({ ok: true, count: 1 });
+    expect(body.meta.note).toMatch(/≤ 60 s old/);
+    expect(body.meta.note).toMatch(/airborne ADS-B/);
+    expect(body.meta.note).toMatch(/\(bad − 1\) \/ \(good \+ bad\)/);
   });
 
   it('validates the date', async () => {

@@ -301,14 +301,16 @@ describe('gpsjam', () => {
     expect(rows[0]).toEqual({ date: '2022-02-14', suspect: true });
     expect(rows.at(-1)).toEqual({ date: '2026-09-29', suspect: false });
   });
-  it('keeps only cells with bad > 0 and counts the whole grid', () => {
+  it('keeps only cells with a gpsjam share > 0 (bad ≥ 2) and counts the whole grid', () => {
     const { items, totalCells } = parseGpsJamDay(fixtureText(FX.gpsDay), '2026-09-29');
     expect(totalCells).toBe(399);
     expect(items.length).toBeGreaterThan(0);
-    expect(items.every((c) => c.bad > 0 && c.aircraft >= c.bad && c.basis === 'gpsjam-daily' && c.date === '2026-09-29')).toBe(true);
+    expect(items.every((c) => c.bad >= 2 && c.aircraft >= c.bad && c.basis === 'gpsjam-daily' && c.date === '2026-09-29')).toBe(true);
     for (const c of items) expect(GpsJamCell.safeParse(c).success).toBe(true);
-    const c = items.find((x) => x.h3 === '8400ec3ffffffff')!;
-    expect(c).toMatchObject({ aircraft: 2, bad: 1, badRatio: 0.5 });
+    // 4 cells in the recorded day have bad > 0; 3 of them have a single bad aircraft (share 0 by gpsjam's formula).
+    expect(items.find((x) => x.h3 === '8400ec3ffffffff')).toBeUndefined();
+    // 840135dffffffff: good 11, bad 2 → (2 − 1) / 13 = 0.076923 → 0.0769 (MEDIUM: > 2 %, ≤ 10 %).
+    expect(items.find((x) => x.h3 === '840135dffffffff')).toMatchObject({ aircraft: 13, bad: 2, badRatio: 0.0769 });
     const capped = parseGpsJamDay(fixtureText(FX.gpsDay), '2026-09-29', 3);
     expect(capped.items.map((x) => x.bad)).toEqual([...items].slice(0, 3).map((x) => x.bad));
   });
