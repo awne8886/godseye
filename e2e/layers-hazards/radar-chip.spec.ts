@@ -114,5 +114,9 @@ test('the radar frame time stays clear of attribution, nav, rails, chips and hin
   const tooClose = Object.entries(others)
     .filter(([, b]) => gap(c!, b) < 8)
     .map(([k, b]) => `${k} gap ${gap(c!, b).toFixed(1)} px (chip ${JSON.stringify(c)} vs ${JSON.stringify(b)})`);
+  // Evidence for review (test output dir, also attached to the report).
+  const shot = test.info().outputPath('radar-chip.png');
+  await page.screenshot({ path: shot, animations: 'disabled' });
+  await test.info().attach('radar-chip', { path: shot, contentType: 'image/png' });
   expect(tooClose).toEqual([]);
 });

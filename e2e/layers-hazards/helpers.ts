@@ -5,18 +5,26 @@ import { expect, test, type Page } from '@playwright/test';
  * the map skips honestly (with the reason, reported as skipped, never a silent pass) when the
  * OpenFreeMap style cannot be reached: the app then shows BASEMAP UNAVAILABLE and creates no map
  * canvas at all (round-4 e2e: `tiles.openfreemap.org/styles/dark` net::ERR_TOO_MANY_RETRIES at the
- * sandbox proxy). Same rule as e2e/panels-recon needsBasemap().
+ * sandbox proxy). Same rule as e2e/panels-recon needsBasemap(), except that the app's own style
+ * retries (MapView: 4, 8, 16, 32 s…) are waited out first, since the alert shows from the first
+ * failed try and a later try often succeeds. No canvas and no alert is a failure, not a skip.
  */
 
 export const BASEMAP_DOWN = 'BASEMAP UNAVAILABLE';
 
-/** Wait for the map canvas or the BASEMAP UNAVAILABLE alert; skip with the reason on the latter. */
-export async function needsBasemap(page: Page): Promise<void> {
+/** Long enough for the style's first try plus the 4 + 8 + 16 + 32 s retries. */
+const BASEMAP_WAIT_MS = 100_000;
+
+/** Wait for the map canvas (through the style retries); skip with the reason if the basemap stays down. */
+export async function needsBasemap(page: Page, timeout = BASEMAP_WAIT_MS): Promise<void> {
   const map = page.locator('canvas.maplibregl-canvas');
-  const down = page.getByText(BASEMAP_DOWN);
-  // The style is fetched with retry/backoff (4, 8, 16, 32 s…): allow for a slow first try.
-  await expect(map.or(down).first()).toBeVisible({ timeout: 90_000 }).catch(() => undefined);
-  test.skip((await down.isVisible()) || !(await map.isVisible()), 'the OpenFreeMap basemap style is unreachable from this network (BASEMAP UNAVAILABLE: no map canvas, so no hazard layer can draw)');
+  const drawn = await map.waitFor({ state: 'visible', timeout }).then(
+    () => true,
+    () => false,
+  );
+  if (drawn) return;
+  test.skip(await page.getByText(BASEMAP_DOWN).isVisible(), `the OpenFreeMap basemap style is unreachable from this network (BASEMAP UNAVAILABLE for ${timeout / 1000} s, through the app's retries: no map canvas, so no hazard layer can draw)`);
+  await expect(map, 'no map canvas and no BASEMAP UNAVAILABLE alert').toBeVisible({ timeout: 1 });
 }
 
 /** Open the app at `query`, require the basemap (or skip), and wait for the splash to lift. */
