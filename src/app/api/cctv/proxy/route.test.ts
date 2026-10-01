@@ -48,6 +48,31 @@ describe('GET /api/cctv/proxy', () => {
     expect(await res.json()).toMatchObject({ error: 'frame_unavailable', detail: 'not_an_image' });
   });
 
+  it('R2 MINOR-1: NSW HTML frames → SOURCE OFFLINE / not an image, and /api/cctv/providers marks NSW frames unavailable', async () => {
+    const { FX, text } = await import('@/features/surveillance/server/__fixtures__');
+    const { GET: providersGET } = await import('../providers/route');
+    state.body = Buffer.from(text(FX.nswHtmlFrame)); // the 307-byte page NSW served for every .jpeg (probed 2026-10-01)
+    state.type = 'text/html';
+    for (const id of ['nsw-5-ways-miranda', 'nsw-airport-drive-mascot', 'nsw-alison-road-randwick']) {
+      const res = await GET(req(`/api/cctv/proxy?id=${id}`), undefined);
+      expect(res.status, id).toBe(502);
+      expect(res.headers.get('content-type')).toMatch(/^application\/json/);
+      const b = await res.json();
+      expect(b).toMatchObject({ error: 'frame_unavailable', detail: 'not_an_image', state: 'offline', upstreamType: 'text/html' });
+      expect(b.message).toMatch(/web page instead of an image/);
+    }
+    const p = await (await providersGET(req('/api/cctv/providers'), undefined)).json();
+    expect(p.frames.nsw).toMatchObject({ state: 'unavailable', cameras: 3, camerasFailing: 3, errors: { not_an_image: 3 } });
+    expect(p.frames.hktd.state).toBe('unchecked');
+    expect(p.frames.rws).toBeUndefined(); // link-out-only providers relay no frames
+  });
+
+  it('relays the frame fetch time separately from the operator frame time', async () => {
+    const res = await GET(req('/api/cctv/proxy?id=hktd-H429F'), undefined);
+    expect(res.headers.get('x-frame-time-source')).toBe('last-modified');
+    expect(Date.parse(res.headers.get('x-frame-fetched-at')!)).toBeGreaterThan(Date.parse(res.headers.get('x-frame-observed-at')!));
+  });
+
   it('404s unknown ids and link-out cameras; 400s bad input; ignores url params', async () => {
     expect((await GET(req('/api/cctv/proxy?id=hktd-NOPE'), undefined)).status).toBe(404);
     expect((await GET(req('/api/cctv/proxy?id=evil-1'), undefined)).status).toBe(404);

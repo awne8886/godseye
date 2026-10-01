@@ -8,19 +8,24 @@
 import { MonitorPlay, Tv } from 'lucide-react';
 import type { CardProps } from '@/lib/feature-module';
 import type { Camera, NewsChannel } from '@/lib/types';
-import { cameraTag, STREAM_LABEL } from '../shared';
+import { cameraTag, frameHealthLabel, frameHealthNote, STREAM_LABEL } from '../shared';
 import { isoShort, OutLink, ProviderBlock, ReportLink, Row } from './parts';
 import { openCameraViewer, openLiveNews } from './store';
-import { refreshSeconds, useProviders } from './useProviders';
+import { refreshSeconds, useFrameHealth, useProviders } from './useProviders';
 
 const btn =
   'inline-flex min-h-[32px] items-center gap-1.5 rounded border border-[var(--gold-primary)] px-2.5 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--gold-primary)] hover:bg-[var(--gold-primary)]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]';
 
+const TONE_CLASS = { ok: 'text-[var(--alert-green)]', warn: 'text-[var(--alert-orange)]', error: 'text-[var(--alert-red)]', idle: 'text-[var(--text-secondary)]' } as const;
+
 export function CameraCard({ selection }: CardProps) {
   const cam = selection.data as unknown as Camera;
   const providers = useProviders();
+  const health = useFrameHealth();
   const provider = providers?.get(cam.providerId);
   const place = [cam.city, cam.country].filter(Boolean).join(', ');
+  const proxied = !!provider && provider.proxy_allowed && !provider.link_out_only && cam.streamType !== 'link';
+  const frames = proxied ? frameHealthLabel(health[cam.providerId]) : null;
   return (
     <div className="flex flex-col gap-2" data-testid="camera-card">
       <p className="font-sans text-[13px] text-[var(--text-heading)]">{cam.name}</p>
@@ -28,11 +33,22 @@ export function CameraCard({ selection }: CardProps) {
         <Row label="Tag">{cameraTag(cam.lat, cam.lng)}</Row>
         {place && <Row label="Place">{place}</Row>}
         <Row label="Feed">{provider?.link_out_only ? 'LINK OUT' : STREAM_LABEL[cam.streamType]}</Row>
-        <Row label="Image time" testId="camera-observed">
+        {/* The operator's frame time as of the last camera-list refresh (the viewer shows the current frame's own time). */}
+        <Row label={cam.observedAt ? 'Listed frame time' : 'Image time'} testId="camera-observed">
           {cam.observedAt ? isoShort(cam.observedAt) : 'Time not published by operator'}
         </Row>
         {provider && !provider.link_out_only && <Row label="Refresh">{`≥ ${refreshSeconds(provider)} s`}</Row>}
+        {frames && (
+          <Row label="Operator frames" testId="camera-frames">
+            <span className={TONE_CLASS[frames.tone]}>{frames.text}</span>
+          </Row>
+        )}
       </dl>
+      {frames && frameHealthNote(health[cam.providerId]) && (
+        <p className="font-sans text-[12px] text-[var(--text-secondary)]" data-testid="camera-frames-note">
+          {frameHealthNote(health[cam.providerId])}
+        </p>
+      )}
       <ProviderBlock provider={provider} />
       <div className="flex flex-wrap items-center gap-3 pt-1">
         {provider?.link_out_only || cam.streamType === 'link' ? (

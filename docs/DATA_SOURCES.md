@@ -755,6 +755,30 @@ MAJOR-D:
 | IBI 511: `511ga.org/developers/doc`; `prod-ut.ibi511.com/api/v2/get/cameras`; `511ga.org/List/GetData/Cameras` | 200 (key required, 10 calls/60 s); 400 "Invalid Key" · 0.42 s; 200 internal DataTables endpoint (recordsTotal 4 331) | **Not wired**: the official API is keyed; the internal endpoint is not used. |
 | MLIT `cam.river.go.jp/` and `/cam/now/` | 200 · 1.27 s · 0 B; 200 · 0.71 s · PNG placeholder | **Not wired**: no machine-readable catalogue. |
 
+#### Phase 3 round 4 re-probes (2026-10-01 07:49–08:04 UTC, same honest UA, `Accept: FRAME_ACCEPT`, 2 s pacing)
+
+Frame time vs fetch time (item 1) and HTML frames (item 2). One official still per provider; headers recorded in
+`__fixtures__/frame-headers.2026-10-01.json`, the NSW page body in `__fixtures__/nsw-frame-unavailable.2026-10-01.html`.
+"Frame age" = upstream `Date` − `Last-Modified`.
+
+| Still | Status · latency · type | CORS | Frame time published | Frame age at probe | Effect |
+|---|---|---|---|---|---|
+| HK TD `tdcctv.data.one.gov.hk/H429F.JPG` | 200 · 1.54 s · image/jpeg 22.9 kB | `*` | Last-Modified | 68 s | `X-Frame-Observed-At` = Last-Modified, `X-Frame-Time-Source: last-modified`, `X-Frame-Fetched-At` separate. |
+| Caltrans `cwwp2.dot.ca.gov/data/d7/cctv/image/i110196avenue26offramp/…jpg` | 200 · 0.49 s · image/jpeg 27.3 kB | `*` | Last-Modified | 91 s | same |
+| Fintraffic `weathercam.digitraffic.fi/C0150301.jpg` | 200 · 0.54 s · image/jpeg 318 kB (CloudFront `RefreshHit`) | `*` | Last-Modified (= `x-amz-meta-last-modified`) | **61 min** | Shown as a 1 h-old frame (was the concern: an age near 0 would have been the fetch time). |
+| NSW `webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/5_ways_miranda.jpeg`, `airport_dr_mascot.jpeg` | 200 · 1.31–1.38 s · **text/html 307 B** (`x-cache: Error from cloudfront`, Last-Modified 2023-08-30) | none | — | — | Refused by declared Content-Type before any byte is inspected → 502 `{detail: not_an_image, state: offline, upstreamType: text/html}`; HTML never parsed or relayed; frame-health ledger marks NSW **FRAMES UNAVAILABLE** once ≥ 3 cameras fail. |
+| Ottawa `traffic.ottawa.ca/map/camera?id=148` | 200 · 0.50 s · image/jpg | none | **none** | unknown | `X-Frame-Time-Source: none`; viewer reads UNTIMED + fetch time, never LIVE. |
+| THB `cctv-ss06.thb.gov.tw/T3-262K+800/snapshot` | 200 · 1.75 s · image/jpeg (no `Date` either) | none | **none** | unknown | same |
+| Via Lietuva `eismoinfo.lt/…/camera/last?id=305` | 200 · 0.77 s · image/jpeg 151 kB | `*` | **none** | unknown | same |
+| WSDOT `images.wsdot.wa.gov/nw/520vc00570.jpg` | 200 · 0.65 s · image/jpeg | none | Last-Modified | 34 s | — |
+| ODOT `tripcheck.com/RoadCams/cams/US30%20at%20Rainier%20Summit%20EB_pid4055.jpg` | 200 · 0.45 s · image/jpeg | none | Last-Modified | 24 min | Viewer: `SNAPSHOT · STALE · 24m` (6 × 60 s cadence exceeded). |
+| INDOT `public.carsprogram.org/cameras/IN/INDOT_508_…flv.png` | 200 · 0.53 s · declared image/jpeg, **PNG bytes** | `*` | Last-Modified | 3 min | Sniffed type wins (`image/png`). |
+| Toronto `opendata.toronto.ca/…/CameraImages/loc8170.jpg` | 200 · 0.40 s · declared image/jpeg, PNG bytes | none | Last-Modified | **16 h** | Viewer: `SNAPSHOT · STALE · 16h`. |
+| MDOT `micamerasimages.net/thumbs/semtoc_cam_130.flv.jpg?item=1` | 301 · 0.44 s (to host-root `.jpg`, exact-file rule) | none | — | — | unchanged |
+
+`/api/cctv` `providers.*.age_s` (R2 MINOR-2): the precompressed payload's version now carries a minute bucket, so
+`age_s` = seconds since that provider's inventory fetch (± 60 s), no longer frozen at the first request's 0–3 s.
+
 ### layers-threats-network
 
 Probed **2026-09-30 20:02–20:10 UTC** from the build sandbox with

@@ -4,7 +4,13 @@
  *  - Frames are fetched ONLY with allowListedFetch(url, rulesFor(provider, url)): exact host + directory
  *    prefix (or one exact file for operators that publish frames at the host root) and the SSRF guard on every redirect hop, TLS verification on, honest User-Agent, no
  *    Referer/IP forging. The URL always comes from the catalogue (the route takes a camera id).
- *  - Only image/* bodies (or octet-stream whose magic bytes are JPEG/PNG/WebP/GIF) ≤ 3 MB pass.
+ *  - The proxied answer's declared Content-Type is checked first: anything that is not image/* (or a
+ *    generic octet-stream) is refused as `not_an_image` and its body is never parsed (an operator's
+ *    HTML error page is not scraped). Image bodies must also carry JPEG/PNG/WebP/GIF magic, ≤ 3 MB.
+ *  - Frame time = the operator's own: its published timestamp (LTA list, TxDOT snapshot) or the
+ *    frame file's Last-Modified. Never the proxy's fetch time; when the operator publishes neither,
+ *    the answer says so (`X-Frame-Time-Source: none`) and carries only `X-Frame-Fetched-At`.
+ *  - Every attempt's outcome (not the bytes) feeds the frame-health ledger (frame-health.ts).
  *  - Nothing is stored: bytes stream straight back with `Cache-Control` = the operator's minimum
  *    poll interval, so browsers/CDNs coalesce refreshes. HLS segments are never proxied.
  * Owner: layers-surveillance. Server-only.
@@ -15,16 +21,68 @@ import { sourceCache } from '@/lib/cache';
 import { httpJson } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import { allowListedFetch, type AllowRule, type SafeFetchOptions } from '@/lib/ssrf';
-import type { Camera, CameraProvider, StreamStatusResponse } from '@/lib/types';
+import type { Camera, CameraProvider, FrameError, FrameTimeSource, StreamStatusResponse } from '@/lib/types';
 import { stillPath } from '../shared';
 import { parseLta, parseTxdotId } from './adapters';
+import { recordFrame } from './frame-health';
 import { providerRow, rulesFor, type ProviderDef } from './registry';
 
 export const MAX_FRAME_BYTES = 3 * 1024 * 1024;
+/** A frame time further than this ahead of the fetch is a clock/metadata error, not an observation. */
+export const FRAME_FUTURE_SKEW_MS = 60_000;
 
 export type FrameResult =
-  | { ok: true; body: Buffer; contentType: string; observedAt: string | null; maxAgeS: number }
-  | { ok: false; status: number; error: string };
+  | { ok: true; body: Buffer; contentType: string; observedAt: string | null; timeSource: FrameTimeSource; fetchedAt: string; maxAgeS: number }
+  | { ok: false; status: number; error: string; fetchedAt: string; upstreamType?: string | null; httpStatus?: number | null };
+
+const failed = (status: number, error: string, extra: { upstreamType?: string | null; httpStatus?: number | null } = {}): FrameResult => ({ ok: false, status, error, fetchedAt: new Date().toISOString(), ...extra });
+
+/** `type/subtype` of a declared Content-Type, lower-cased and sanitised (null when absent or odd). */
+export function declaredType(v: string | string[] | undefined): string | null {
+  const s = (Array.isArray(v) ? v[0] : v) ?? '';
+  const t = s.split(';')[0]!.trim().toLowerCase();
+  return /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,60}$/.test(t) ? t : null;
+}
+
+/**
+ * The frame's own time: the operator's published timestamp first, then Last-Modified. A time more
+ * than a minute after the fetch is dropped (never shown as an observation).
+ */
+export function frameTime(operatorAt: string | null, lastModified: string | null, fetchedAtMs: number): { observedAt: string | null; timeSource: FrameTimeSource } {
+  const ok = (iso: string | null) => {
+    const t = iso ? Date.parse(iso) : NaN;
+    return Number.isFinite(t) && t - fetchedAtMs <= FRAME_FUTURE_SKEW_MS ? new Date(t).toISOString() : null;
+  };
+  const op = ok(operatorAt);
+  if (op) return { observedAt: op, timeSource: 'operator' };
+  const lm = ok(lastModified);
+  if (lm) return { observedAt: lm, timeSource: 'last-modified' };
+  return { observedAt: null, timeSource: 'none' };
+}
+
+/** Viewer-facing meaning of a frame failure (plain language; never upstream text). */
+export function frameErrorInfo(error: string): Pick<FrameError, 'state' | 'message'> {
+  if (error === 'not_an_image') return { state: 'offline', message: 'The operator answered with a web page instead of an image (a fault on the operator side). No frame to show.' };
+  if (error === 'upstream_404' || error === 'upstream_410') return { state: 'offline', message: 'The operator has no current image for this camera.' };
+  if (error === 'no_snapshot') return { state: 'offline', message: 'The operator returned no snapshot for this camera.' };
+  if (error === 'too_large') return { state: 'offline', message: 'The operator sent a file larger than a camera still.' };
+  if (error === 'blocked') return { state: 'unavailable', message: 'The frame address left the operator’s allow-listed image path, so it was not fetched.' };
+  if (error === 'timeout') return { state: 'unavailable', message: 'The operator did not answer in time. Try again.' };
+  return { state: 'unavailable', message: 'The operator could not be reached or answered with an error. Try again.' };
+}
+
+/** Feed the frame-health ledger (attempts that reached, or tried to reach, the operator only). */
+function noted(def: ProviderDef, camera: Camera, r: FrameResult): FrameResult {
+  if (!r.ok && (r.error === 'link_out_only' || r.error === 'no_still')) return r;
+  recordFrame(def.row.id, {
+    at: Date.parse(r.fetchedAt),
+    cameraId: camera.id,
+    ok: r.ok,
+    error: r.ok ? null : r.error,
+    observedAt: r.ok && r.observedAt ? Date.parse(r.observedAt) : null,
+  });
+  return r;
+}
 
 /** Content type from magic bytes (Singapore serves JPEGs as application/octet-stream). */
 export function sniffImage(b: Buffer): string | null {
@@ -35,13 +93,15 @@ export function sniffImage(b: Buffer): string | null {
   return null;
 }
 
-/** The declared type must be an image (or generic octet-stream) AND the bytes must look like one. */
+/**
+ * The declared type must be an image (or generic octet-stream / absent) AND the bytes must look
+ * like one. The declared type is checked first: an HTML or JSON answer is refused without looking
+ * at its body.
+ */
 export function acceptImage(declared: string | undefined, body: Buffer): string | null {
   const d = (declared ?? '').split(';')[0]!.trim().toLowerCase();
-  const sniffed = sniffImage(body);
-  if (!sniffed) return null;
-  if (d.startsWith('image/') || d === 'application/octet-stream' || d === '') return sniffed;
-  return null;
+  if (!(d.startsWith('image/') || d === 'application/octet-stream' || d === '')) return null;
+  return sniffImage(body);
 }
 
 // An explicit list, not `image/*`: some operators (eismoinfo.lt) answer 406 to a bare wildcard.
@@ -101,57 +161,66 @@ export interface FrameDeps {
   env?: Record<string, string | undefined>;
 }
 
-/** Fetch one still for a catalogued camera (never stored). */
+const fetchFailure = (e: unknown): FrameResult => {
+  const code = (e as { code?: string }).code;
+  return failed(code === 'blocked' ? 403 : 502, code ?? 'network');
+};
+
+/** Fetch one still for a catalogued camera (never stored); the outcome feeds the frame-health ledger. */
 export async function fetchFrame(camera: Camera, def: ProviderDef, deps: FrameDeps = {}): Promise<FrameResult> {
   const row = providerRow(def, deps.env);
-  if (row.link_out_only || !row.proxy_allowed) return { ok: false, status: 404, error: 'link_out_only' };
+  if (row.link_out_only || !row.proxy_allowed) return failed(404, 'link_out_only');
   if (def.row.id === 'txdot') return fetchTxdotSnapshot(camera, def, deps);
   const target = await currentStillUrl(camera, def);
-  if (!target) return { ok: false, status: 404, error: 'no_still' };
+  if (!target) return failed(404, 'no_still');
   let res;
   try {
     res = await allowListedFetch(target.url, rulesFor(def, target.url), { maxBytes: MAX_FRAME_BYTES, headers: { accept: FRAME_ACCEPT }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
   } catch (e) {
-    const code = (e as { code?: string }).code;
-    return { ok: false, status: code === 'blocked' ? 403 : 502, error: code ?? 'network' };
+    return noted(def, camera, fetchFailure(e));
   }
-  if (!res.ok) return { ok: false, status: 502, error: `upstream_${res.status}` };
+  const fetchedAtMs = Date.now();
+  if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, { httpStatus: res.status }));
   const type = acceptImage(res.headers['content-type'] as string | undefined, res.body);
-  if (!type) return { ok: false, status: 502, error: 'not_an_image' };
-  return { ok: true, body: res.body, contentType: type, observedAt: target.observedAt ?? httpDate(res.headers['last-modified']), maxAgeS: row.max_poll_interval };
+  if (!type) return noted(def, camera, failed(502, 'not_an_image', { upstreamType: declaredType(res.headers['content-type']), httpStatus: res.status }));
+  const t = frameTime(target.observedAt, httpDate(res.headers['last-modified']), fetchedAtMs);
+  return noted(def, camera, { ok: true, body: res.body, contentType: type, ...t, fetchedAt: new Date(fetchedAtMs).toISOString(), maxAgeS: row.max_poll_interval });
 }
 
 /** TxDOT answers JSON `{snippet: <base64 JPEG>, timestampFormatted: 'M/D/YYYY h:mm AM'}` (local time). */
 export async function fetchTxdotSnapshot(camera: Camera, def: ProviderDef, deps: FrameDeps = {}): Promise<FrameResult> {
   const parts = parseTxdotId(camera.id);
-  if (!parts || !camera.stillUrl) return { ok: false, status: 404, error: 'no_still' };
+  if (!parts || !camera.stillUrl) return failed(404, 'no_still');
   let res;
   try {
     res = await allowListedFetch(camera.stillUrl, rulesFor(def, camera.stillUrl), { maxBytes: 8 * MAX_FRAME_BYTES / 3, headers: { accept: 'application/json' }, limiter: frameLimiter('txdot'), ...deps.fetchOpts });
   } catch (e) {
-    const code = (e as { code?: string }).code;
-    return { ok: false, status: code === 'blocked' ? 403 : 502, error: code ?? 'network' };
+    return noted(def, camera, fetchFailure(e));
   }
-  if (!res.ok) return { ok: false, status: 502, error: `upstream_${res.status}` };
+  const fetchedAtMs = Date.now();
+  if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, { httpStatus: res.status }));
+  if (declaredType(res.headers['content-type'])?.includes('html')) return noted(def, camera, failed(502, 'not_an_image', { upstreamType: declaredType(res.headers['content-type']), httpStatus: res.status }));
   let json: { snippet?: unknown; timestampFormatted?: unknown };
   try {
     json = JSON.parse(res.body.toString('utf8'));
   } catch {
-    return { ok: false, status: 502, error: 'parse' };
+    return noted(def, camera, failed(502, 'parse', { httpStatus: res.status }));
   }
-  if (typeof json.snippet !== 'string' || !/^[A-Za-z0-9+/=\s]+$/.test(json.snippet)) return { ok: false, status: 502, error: 'no_snapshot' };
+  if (typeof json.snippet !== 'string' || !/^[A-Za-z0-9+/=\s]+$/.test(json.snippet)) return noted(def, camera, failed(502, 'no_snapshot', { httpStatus: res.status }));
   const body = Buffer.from(json.snippet, 'base64');
-  if (body.length > MAX_FRAME_BYTES || sniffImage(body) !== 'image/jpeg') return { ok: false, status: 502, error: 'not_an_image' };
+  if (body.length > MAX_FRAME_BYTES || sniffImage(body) !== 'image/jpeg') return noted(def, camera, failed(502, 'not_an_image', { upstreamType: null, httpStatus: res.status }));
   const zone = parts.district === 'ELP' ? 'America/Denver' : (def.timeZone ?? 'America/Chicago');
-  const observedAt = typeof json.timestampFormatted === 'string' ? zonedToUtc(json.timestampFormatted.trim(), zone) : null;
-  return { ok: true, body, contentType: 'image/jpeg', observedAt, maxAgeS: def.row.max_poll_interval };
+  const published = typeof json.timestampFormatted === 'string' ? zonedToUtc(json.timestampFormatted.trim(), zone) : null;
+  const t = frameTime(published, null, fetchedAtMs);
+  return noted(def, camera, { ok: true, body, contentType: 'image/jpeg', ...t, fetchedAt: new Date(fetchedAtMs).toISOString(), maxAgeS: def.row.max_poll_interval });
 }
 
 export function frameResponse(r: FrameResult): Response {
   if (!r.ok) {
-    return new Response(JSON.stringify({ error: 'frame_unavailable', detail: r.error }), {
+    const body: FrameError = { error: 'frame_unavailable', detail: r.error, ...frameErrorInfo(r.error), upstreamType: r.upstreamType ?? null, fetchedAt: r.fetchedAt };
+    return new Response(JSON.stringify(body), {
       status: r.status,
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, max-age=0' },
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, max-age=0', 'X-Frame-Error': r.error, 'X-Frame-Fetched-At': r.fetchedAt },
     });
   }
   const headers: Record<string, string> = {
@@ -161,6 +230,8 @@ export function frameResponse(r: FrameResult): Response {
     'X-Content-Type-Options': 'nosniff',
     'Content-Security-Policy': "default-src 'none'; sandbox",
     'Cross-Origin-Resource-Policy': 'same-origin',
+    'X-Frame-Fetched-At': r.fetchedAt,
+    'X-Frame-Time-Source': r.timeSource,
   };
   if (r.observedAt) headers['X-Frame-Observed-At'] = r.observedAt;
   return new Response(new Uint8Array(r.body), { status: 200, headers });
@@ -222,8 +293,7 @@ export async function probeCamera(camera: Camera, def: ProviderDef, deps: FrameD
   }
   const frame = await fetchFrame(camera, def, deps);
   if (frame.ok) return { status: 'online', checkedAt, httpStatus: 200 };
-  const m = frame.error.match(/^upstream_(\d{3})$/);
-  return { status: 'offline', checkedAt, httpStatus: m ? Number(m[1]) : null };
+  return { status: 'offline', checkedAt, httpStatus: frame.httpStatus ?? null, reason: frame.error };
 }
 
 const statusCaches = new Map<string, ReturnType<typeof sourceCache<Omit<StreamStatusResponse, 'id'>>>>();

@@ -62,6 +62,39 @@ describe('camera card', () => {
     expect(report.rel).toBe('noopener noreferrer');
     expect(screen.getByTestId('camera-open-viewer')).toBeTruthy();
   });
+
+  it('R2 MINOR-1: an operator serving HTML instead of frames is marked FRAMES UNAVAILABLE on the card', async () => {
+    const nsw = { ...provider, id: 'nsw', operator: 'Transport for NSW (Live Traffic NSW)' };
+    const frames = { nsw: { state: 'unavailable', windowS: 600, attempts: 4, ok: 0, failed: 4, cameras: 4, camerasFailing: 4, errors: { not_an_image: 4 }, lastOkAt: null, lastFailAt: '2026-10-01T05:20:00.000Z', lastError: 'not_an_image', lastFrameAge_s: null, untimed: 0 } };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [nsw], frames }), { status: 200 })));
+    const c = { ...cam, id: 'nsw-5-ways-miranda', providerId: 'nsw', source: 'nsw' };
+    const sel: Selection = { kind: 'camera', id: c.id, layer: 'cctv', source: 'nsw', observedAt: null, data: c as unknown as Record<string, unknown>, lngLat: [c.lng, c.lat] };
+    render(wrap(<CameraCard selection={sel} />));
+    expect((await screen.findByTestId('camera-frames')).textContent).toContain('UNAVAILABLE · 4/4 FAILING');
+    expect(screen.getByTestId('camera-frames-note').textContent).toMatch(/web pages instead of camera images/);
+  });
+
+  it('a camera list frame time is labelled as such (the viewer shows the current frame’s own time)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [provider] }), { status: 200 })));
+    const c = { ...cam, observedAt: '2026-10-01T07:20:00.000Z' };
+    const sel: Selection = { kind: 'camera', id: c.id, layer: 'cctv', source: 'hktd', observedAt: c.observedAt, data: c as unknown as Record<string, unknown>, lngLat: [c.lng, c.lat] };
+    render(wrap(<CameraCard selection={sel} />));
+    const row = await screen.findByTestId('camera-observed');
+    expect(row.querySelector('dt')!.textContent).toBe('Listed frame time');
+    expect((await screen.findByTestId('camera-frames')).querySelector('dd')!.textContent).toBe('NOT CHECKED YET');
+  });
+});
+
+describe('preview tiles', () => {
+  it('never draw a refused frame: FEED UNAVAILABLE for this bucket, SOURCE OFFLINE for an unavailable operator', async () => {
+    const { tileState } = await import('./CctvPreviews');
+    expect(tileState({ video: false, health: undefined, failedBucket: undefined, bucket: 3 })).toBe('frame');
+    expect(tileState({ video: false, health: undefined, failedBucket: 3, bucket: 3 })).toBe('failed');
+    expect(tileState({ video: false, health: undefined, failedBucket: 3, bucket: 4 })).toBe('frame'); // retried next refresh
+    expect(tileState({ video: false, health: { state: 'unavailable' }, failedBucket: undefined, bucket: 0 })).toBe('source-offline');
+    expect(tileState({ video: true, health: { state: 'unavailable' }, failedBucket: undefined, bucket: 0 })).toBe('source-offline');
+    expect(tileState({ video: true, health: { state: 'available' }, failedBucket: undefined, bucket: 0 })).toBe('video');
+  });
 });
 
 describe('news channel card + embed', () => {

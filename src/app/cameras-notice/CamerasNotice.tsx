@@ -63,7 +63,10 @@ export default function CamerasNotice({ env }: { env: Record<string, string | un
 
         <H2 id="not-done">What we do not do</H2>
         <ul className={`${prose} list-disc pl-5`}>
-          <li>No recording and no archiving: frames are relayed from the operator when you open them and are never stored on our servers.</li>
+          <li>
+            No recording and no archiving: frames are relayed from the operator when you open them and are never stored on our servers. Only whether each frame loaded, why it failed and the
+            operator&apos;s own frame time are kept, in memory for 10 minutes, so an operator outage can be shown as &ldquo;frames unavailable&rdquo; instead of broken images.
+          </li>
           <li>No face, licence-plate or object recognition, and no enhancement, zoom or re-identification of any frame.</li>
           <li>No private, unsecured or &ldquo;default password&rdquo; cameras (no Insecam/Opentopia-type directories), no scraping of sites whose terms forbid it (OpenCCTV, SkylineWebcams, EarthCam frames).</li>
           <li>No spoofed headers: requests identify {APP_NAME} honestly and respect each operator&apos;s minimum refresh interval.</li>

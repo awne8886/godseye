@@ -77,6 +77,63 @@ export const StreamStatusResponse = z.object({
   status: z.enum(['online', 'offline', 'unknown']),
   checkedAt: IsoTime,
   httpStatus: z.number().int().nullable(),
+  /** Why the camera is offline (`not_an_image` = the operator answered with a web page, `upstream_404`, `timeout`…). */
+  reason: z.string().optional(),
+});
+
+/**
+ * Where a relayed frame's time came from: the operator's published timestamp (`operator`), the
+ * frame file's HTTP Last-Modified (`last-modified`), or nothing (`none`: the age is unknown and the
+ * frame is never shown as current — only its fetch time is known).
+ */
+export const FrameTimeSource = z.enum(['operator', 'last-modified', 'none']);
+
+/**
+ * Body of a failed `/api/cctv/proxy` or `/api/cctv/texas/snapshot` answer. `state: 'offline'` means
+ * the operator answered but the camera has no usable frame (a web page instead of an image, 404,
+ * an empty snapshot); `unavailable` is a transient failure (timeout, 5xx) worth a retry.
+ */
+export const FrameError = z.object({
+  error: z.literal('frame_unavailable'),
+  detail: z.string(),
+  state: z.enum(['offline', 'unavailable']),
+  /** Plain-language reason for the viewer (never upstream text). */
+  message: z.string(),
+  /** Declared content type of a refused non-image answer (sanitised `type/subtype`), else null. */
+  upstreamType: z.string().nullable(),
+  fetchedAt: IsoTime,
+});
+
+/**
+ * Frame availability of one provider over the last `windowS` seconds, from the frames this server
+ * actually relayed (bytes are never kept, only success/failure and the frame time). Per camera the
+ * latest attempt counts: `unavailable` = at least 3 cameras tried and more than 90 % of them failing
+ * (FRAMES UNAVAILABLE), `failing` = fewer than 3 tried and all failing, `available` = otherwise with
+ * at least one frame relayed, `unchecked` = no frame requested in the window.
+ */
+export const FrameHealthState = z.enum(['unchecked', 'available', 'failing', 'unavailable']);
+
+export const FrameHealth = z.object({
+  state: FrameHealthState,
+  windowS: z.number().int().positive(),
+  attempts: z.number().int().nonnegative(),
+  ok: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  /** Distinct cameras tried in the window, and how many of them failed on their latest attempt. */
+  cameras: z.number().int().nonnegative(),
+  camerasFailing: z.number().int().nonnegative(),
+  /** Failure reasons in the window (`not_an_image`, `upstream_404`, `timeout`…). */
+  errors: z.record(z.string(), z.number().int().nonnegative()),
+  lastOkAt: IsoTime.nullable(),
+  lastFailAt: IsoTime.nullable(),
+  lastError: z.string().nullable(),
+  /**
+   * Age in seconds of the newest relayed frame when it was fetched, from the operator's own frame
+   * time (published timestamp or Last-Modified); null when the operator publishes none.
+   */
+  lastFrameAge_s: z.number().nonnegative().nullable(),
+  /** Frames relayed in the window that carried no operator frame time. */
+  untimed: z.number().int().nonnegative(),
 });
 
 export const NewsChannel = EntityBase.extend({
@@ -109,7 +166,13 @@ export const RemovalContact = z.object({ kind: z.enum(['tracker', 'email', 'url'
 /** A source OSIRIS uses that this registry deliberately does not wire, with the probe-backed reason. */
 export const CameraSourceNotWired = z.object({ id: z.string(), operator: z.string(), region: z.string(), country: z.string(), reason: z.string(), probedAt: z.string() });
 
-export const CameraProvidersResponse = Envelope.extend({ items: z.array(CameraProvider), removal: RemovalContact.optional(), notWired: z.array(CameraSourceNotWired).optional() });
+export const CameraProvidersResponse = Envelope.extend({
+  items: z.array(CameraProvider),
+  removal: RemovalContact.optional(),
+  notWired: z.array(CameraSourceNotWired).optional(),
+  /** Frame availability per provider id (proxied providers only; `providers` covers the inventory lists). */
+  frames: z.record(z.string(), FrameHealth).optional(),
+});
 
 /** GET /api/cctv/resolve */
 export const CameraResolveResponse = z.object({

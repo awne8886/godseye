@@ -5,6 +5,7 @@
 import { clearL1, MemoryStore, setStore } from '@/lib/cache';
 import { resetFeeds } from '@/lib/feeds';
 import { resetRegionFeeds } from '../catalog';
+import { resetFrameHealth } from '../frame-health';
 import { FX, json } from './index';
 
 export { fixtureLoaders } from './loaders';
@@ -19,6 +20,7 @@ export function req(path: string, headers: Record<string, string> = {}): Request
 export function fresh(): void {
   resetFeeds();
   resetRegionFeeds();
+  resetFrameHealth();
   clearL1();
   setStore(new MemoryStore());
 }
@@ -26,6 +28,7 @@ export function fresh(): void {
 export function done(): void {
   resetFeeds();
   resetRegionFeeds();
+  resetFrameHealth();
   setStore(undefined);
 }
 
