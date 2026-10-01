@@ -1,6 +1,8 @@
 /**
  * Lighthouse gatherer `MapWebGl` (owner: pages-docs-privacy-ops): which WebGL2 renderer drew the
- * MapLibre globe in the page load Lighthouse is scoring.
+ * MapLibre globe in the page load Lighthouse is scoring. Used by both configs for `/`: gpu-config.mjs
+ * (judged by godseye-map-webgl-hardware) and home-config.mjs (judged by godseye-map-globe-drawn,
+ * which needs the canvas and its WebGL2 context but accepts any renderer).
  *
  * Runs in Lighthouse's own Chromium (launched by chrome-launcher with the config's chromeFlags) in
  * the `getArtifact` phase, i.e. after load, `pauseAfterLoadMs` and the end of tracing, so it never

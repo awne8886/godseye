@@ -24,6 +24,7 @@
     "test:live": "RUN_LIVE_TESTS=1 vitest run",
     "e2e": "playwright test",
     "lhci": "lhci autorun --config=./lighthouserc.json",
+    "lhci:home": "lhci autorun --config=./lighthouserc.home.json",
     "lhci:gpu:check": "node --experimental-transform-types --disable-warning=ExperimentalWarning tools/gpu-renderer-check.ts lighthouserc.gpu.json",
     "lhci:gpu:verify": "node --experimental-transform-types --disable-warning=ExperimentalWarning tools/gpu-renderer-check.ts --verify-runs lighthouserc.gpu.json",
     "lhci:gpu": "pnpm lhci:gpu:check && lhci collect --config=./lighthouserc.gpu.json && pnpm lhci:gpu:verify && lhci assert --config=./lighthouserc.gpu.json && lhci upload --config=./lighthouserc.gpu.json",

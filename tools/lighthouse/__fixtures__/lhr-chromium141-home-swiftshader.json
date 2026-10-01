@@ -1,0 +1,1264 @@
+{
+ "godseye:capture": "lhci collect --config=lighthouserc.home.json on / (2026-10-01, build sandbox without a GPU): Chromium 141.0.7390.37 (/opt/pw-browsers/chromium), chromeFlags of lighthouserc.home.json plus --ignore-certificate-errors (sandbox egress proxy), run 2 of 3 (the median run); trimmed to the fields tools/ops-config.test.ts reads",
+ "lighthouseVersion": "12.6.1",
+ "fetchTime": "2026-10-01T18:32:08.580Z",
+ "requestedUrl": "http://127.0.0.1:3200/",
+ "finalDisplayedUrl": "http://127.0.0.1:3200/?c=51.507,-0.128,3.4,25,0",
+ "environment": {
+  "hostUserAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36"
+ },
+ "configSettings": {
+  "formFactor": "desktop",
+  "screenEmulation": {
+   "mobile": false,
+   "width": 1350,
+   "height": 940,
+   "deviceScaleFactor": 1,
+   "disabled": false
+  },
+  "throttling": {
+   "rttMs": 40,
+   "throughputKbps": 10240,
+   "requestLatencyMs": 0,
+   "downloadThroughputKbps": 0,
+   "uploadThroughputKbps": 0,
+   "cpuSlowdownMultiplier": 1
+  },
+  "throttlingMethod": "simulate",
+  "emulatedUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+  "pauseAfterLoadMs": 9000
+ },
+ "categories": {
+  "performance": {
+   "score": 0.53
+  },
+  "accessibility": {
+   "score": 1
+  },
+  "best-practices": {
+   "score": 0.96
+  },
+  "seo": {
+   "score": 1
+  },
+  "godseye": {
+   "score": 1
+  }
+ },
+ "audits": {
+  "godseye-map-globe-drawn": {
+   "id": "godseye-map-globe-drawn",
+   "title": "Globe drawn in this run (any WebGL2 renderer)",
+   "description": "The MapLibre canvas held a WebGL2 context and painted (colour statistics of the canvas alone), the map was ready, no \"WEBGL2 REQUIRED\" or \"BASEMAP UNAVAILABLE\" fallback was shown, the basemap was not offline, and the MapLibre worker and at least one basemap vector tile loaded with HTTP 200. The renderer may be software (SwiftShader in CI): this audit says the scored page was the globe, not that it ran on a GPU.",
+   "score": 1,
+   "scoreDisplayMode": "binary",
+   "displayValue": "globe drawn on ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver): 641 colours, basemap ok, 30 vector tiles",
+   "details": {
+    "type": "debugdata",
+    "problems": [],
+    "requests": {
+     "worker": true,
+     "vectorTiles": 30
+    },
+    "webgl": {
+     "canvas": true,
+     "context": true,
+     "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+     "vendor": "Google Inc. (Google)",
+     "version": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
+     "hardwareContext": true,
+     "product": "Chrome/141.0.7390.37",
+     "gpu": {
+      "featureStatus": {
+       "2d_canvas": "enabled",
+       "direct_rendering_display_compositor": "disabled_off_ok",
+       "gpu_compositing": "enabled",
+       "multiple_raster_threads": "enabled_on",
+       "opengl": "enabled_on",
+       "rasterization": "enabled",
+       "raw_draw": "disabled_off_ok",
+       "skia_graphite": "disabled_off",
+       "trees_in_viz": "disabled_off",
+       "video_decode": "enabled",
+       "video_encode": "disabled_software",
+       "vulkan": "disabled_off",
+       "webgl": "enabled",
+       "webgl2": "enabled",
+       "webgpu": "disabled_off",
+       "webnn": "disabled_off"
+      },
+      "devices": [
+       {
+        "vendorId": 65535,
+        "deviceId": 65535,
+        "vendorString": "Google Inc. (Google)",
+        "deviceString": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+        "driverVendor": "SwANGLE",
+        "driverVersion": "5.0.0"
+       }
+      ],
+      "error": null
+     }
+    },
+    "paint": {
+     "fallback": null,
+     "alerts": [],
+     "container": true,
+     "mapReady": true,
+     "basemapState": "ok",
+     "mapLoads": 1,
+     "rect": {
+      "x": 0,
+      "y": 0,
+      "width": 1350,
+      "height": 940
+     },
+     "pixels": {
+      "width": 338,
+      "height": 235,
+      "distinctColours": 641,
+      "dominantShare": 0.3103,
+      "dominantColour": "#080808"
+     },
+     "pixelsError": null
+    }
+   }
+  },
+  "network-requests": {
+   "details": {
+    "type": "table",
+    "items": [
+     {
+      "url": "http://127.0.0.1:3200/",
+      "statusCode": 200,
+      "resourceType": "Document",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/media/inter_latin_wght_normal-s.p.0gsaq8ukbf34m.woff2",
+      "statusCode": 200,
+      "resourceType": "Font",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/media/jetbrains_mono_latin_wght_normal-s.p.2rmhnsrc80fag.woff2",
+      "statusCode": 200,
+      "resourceType": "Font",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1o_ivwtu4rkp-.css",
+      "statusCode": 200,
+      "resourceType": "Stylesheet",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/05cr92-yr1l9c.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/14m2ely06sm_e.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/26-3f-vvat83b.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3p-zyavfh2xow.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-3pfx41ydsexp9.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2v3exkbn35rzq.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1wqc7efqcvoak.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/04q7htr10yvc5.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3gzv0p55hztf8.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/05_rqeyh6r1id.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3wgup-n-bsf54.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3ln3waunaxjfj.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/styles/dark",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter i…",
+      "statusCode": 200,
+      "resourceType": "Image",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/manifest.webmanifest",
+      "statusCode": 200,
+      "resourceType": "Manifest",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/icon.svg?icon.1uxzxqnet9_uc.svg",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/health",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/space-weather",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0eh3hg0a099nx.css",
+      "statusCode": 200,
+      "resourceType": "Stylesheet",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1ywfe3_ayhj2e.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3fb_ezbjyo8-2.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1rhvfwc41yew7.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3ocp_jm-5tnqt.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1l0q2t_5z_lxl.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/228kajpghty9o.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3bgo17fh0o0y8.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/icon.svg",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/ticker",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-worker-2ru9m5gbh1na6.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-1539cb4cf8icz.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3gpayc1iv_4x5.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/43yys77bpu6xz.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/maplibre/6.11.2/maplibre-gl-worker.mjs",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm.json",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/142mbdng3w_17.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/sprites/ofm_f384/ofm.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/maplibre/6.11.2/maplibre-gl-shared.mjs",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/16hcwkd9onjng.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0kaaqskvj--ka.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/25ky-uzz4w09x.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/13igt-6j0wnmw.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0t9_ilapqs90w.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1oni56vtto6x-.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/36pouy-qp9ej0.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2u2aglez7jq1q.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0htfo-p5zjeh9.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0ba15r697wd5k.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0n4qhezeboqij.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1n-qyz4uc14wr.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1dxh5b-lg4um3.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1gyr4l18v03jq.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2mre0j0qnm7pk.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3wwgonoojplgs.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/3/4.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/3/3.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/1/1/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/1/0/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/1/1/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/1/0/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/4/4.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/4/3.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/2/4.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/2/3.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/3/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/4/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/2/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/5/4.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/5/3.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/1/4.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/fonts/Noto%20Sans%20Regular/0-255.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/1/3.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/5/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/1/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/1/2.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/6/4.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/6/3.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/0/4.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/0/3.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/6/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/0/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/0/2.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3b0s11hlvkplp.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3_s8rgq7k8xit.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1vkfd8qjj2mcz.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3r6e3-aktchno.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/43w0t678yzpw3.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2_k20h_mqukju.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1-cn61ijyznbz.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/38pusad3wplpx.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2cucz6ikac0-k.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0g4y-h6fyekzc.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/earthquakes",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cables",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-worker-2ru9m5gbh1na6.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=us-west",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=texas",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=us-midwest",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=canada",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=europe",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=nordics",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=asia",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv?region=oceania",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/live-news",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/gdacs",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/maritime",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-1y4kxz5i5sot1.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/41ued1wtgdfft.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/cctv/providers",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3b0s11hlvkplp.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/132v4yii_bn2k.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/satellites",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/5/7.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/5/8.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2xam5npntgur8.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3cab7r9mlrvlc.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0b35_7a4jyukw.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1p98q0ggm2_6z.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/6/7.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/3/2.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/4/2.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/3/3.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/4/3.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/3/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/4/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/2/2.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/5/2.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/2/3.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/5/3.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/2/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/5/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/3/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/4/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/1/2.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/6/2.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/2/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/5/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/1/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/6/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/1/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/6/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/0/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/7/1.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/0/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet/20260927_080001_pt/3/7/0.pbf",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/6/8.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/02mnbx8b7npvz.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/4/7.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/4/8.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/5/9.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/6/9.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/4/6.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/4/9.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2sg9minm5k1cf.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/3/7.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/3/8.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/7/9.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/5/10.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/3/6.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/3/9.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/6/10.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/4/10.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/2/7.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/2/8.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3wa-42lqdeb7e.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/3/10.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/2/6.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/2/9.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/5/11.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0h8xn7hi4li-2.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/6/11.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/4/11.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/2/5.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/2/10.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/3/11.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/1/7.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/1/8.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/1/6.png",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/1/9.png",
+      "statusCode": -1,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/4/5/12.png",
+      "statusCode": -1,
+      "resourceType": "Fetch",
+      "sessionTargetType": "worker"
+     }
+    ]
+   }
+  },
+  "first-contentful-paint": {
+   "score": 1,
+   "numericValue": 393.31512499999997,
+   "displayValue": "0.4 s"
+  },
+  "speed-index": {
+   "score": 0,
+   "numericValue": 9870.034569221041,
+   "displayValue": "9.9 s"
+  },
+  "largest-contentful-paint": {
+   "score": 0.71,
+   "numericValue": 1764.2042000000001,
+   "displayValue": "1.8 s"
+  },
+  "total-blocking-time": {
+   "score": 0,
+   "numericValue": 14756.57395,
+   "displayValue": "14,760 ms"
+  },
+  "cumulative-layout-shift": {
+   "score": 1,
+   "numericValue": 0.006106410887838193,
+   "displayValue": "0.006"
+  }
+ }
+}
