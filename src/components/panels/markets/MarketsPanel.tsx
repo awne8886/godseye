@@ -14,7 +14,8 @@ import { formatAge } from '@/lib/freshness';
 import type { ChainBriefResponse, MarketsResponse, Quote, ScmSuppliersResponse, SpaceWeatherResponse } from '@/lib/types';
 import { AiReadout } from '../intel/AiReadout';
 import { FeedOfflineError, fmtNum, fmtPct, getJson, useNow } from '../intel/client';
-import { marketsChip } from './markets-chip';
+import { marketsChip, utcLabel, yahooLastGood } from './markets-chip';
+import { scmStatusLine } from './scm-status';
 
 const MarketChart = dynamic(() => import('./MarketChart'), { ssr: false, loading: () => <p className="font-sans text-[12px] text-[var(--text-muted)]">Loading chart…</p> });
 
@@ -59,10 +60,17 @@ export function MarketsPanel(_: PanelProps) {
   const scm = useQuery({ queryKey: ['intel', 'scm'], queryFn: ({ signal }) => getJson<ScmSuppliersResponse>('/api/scm-suppliers', signal), refetchInterval: 900_000, staleTime: 600_000 });
   const chain = useQuery({ queryKey: ['intel', 'chain', 30], queryFn: ({ signal }) => getJson<ChainBriefResponse>('/api/chain/daily?days=30', signal), staleTime: 1_800_000 });
   const [chart, setChart] = useState<{ symbol: string; name: string } | null>(null);
-  const chip = m.data ? marketsChip(m.data) : null;
-  usePanelChip(chip ? chip.text : m.isPending ? 'PLOTTING' : 'SOURCE OFFLINE', chip ? chip.tone : m.isPending ? 'busy' : 'error');
+  const chip = m.data ? marketsChip(m.data, now) : null;
+  usePanelChip(chip ? chip.text : m.isPending ? 'PLOTTING' : 'SOURCE OFFLINE', chip ? chip.tone : m.isPending ? 'busy' : 'error', chip?.title);
 
   const d = m.data;
+  const yahoo = d?.providers.yahoo;
+  const yahooDown = !!yahoo && !yahoo.ok && !yahoo.skipped;
+  const yahooAt = d ? yahooLastGood(d.quotes) : null;
+  const yahooNote = yahooDown
+    ? `SOURCE OFFLINE — Yahoo chart endpoint (${yahoo.error ?? 'error'}); ${yahooAt ? `last-good quotes from ${utcLabel(yahooAt, now)}, each with its own observation time` : 'no exchange quotes yet'}.`
+    : 'Yahoo chart endpoint — unofficial, delayed per exchange rules.';
+  const scmLine = scm.data ? scmStatusLine(scm.data, now) : null;
   return (
     <div className="flex flex-col gap-3" data-testid="markets-panel">
       <AiReadout path="/api/ai/overview" body={{ scope: 'markets' }} label="Market read-out" />
@@ -89,11 +97,16 @@ export function MarketsPanel(_: PanelProps) {
           <p className="font-mono text-[11px] uppercase tabular-nums tracking-[0.08em] text-[var(--text-secondary)]" aria-live="polite">
             Breadth <span className="text-[var(--up)]">{d.breadth.up} up</span> · <span className="text-[var(--down)]">{d.breadth.down} down</span> · {d.breadth.flat} flat
           </p>
+          {yahooDown && !d.quotes.some((q) => q.source === 'yahoo') && (
+            <p className="font-sans text-[12px] text-[var(--alert-orange)]" data-testid="markets-yahoo-offline">
+              {yahooNote}
+            </p>
+          )}
           {GROUPS.map((g) => {
             const qs = d.quotes.filter((q) => q.group === g.id);
             if (!qs.length) return null;
             return (
-              <Section key={g.id} title={g.label} note={g.id === 'crypto' ? undefined : 'Yahoo chart endpoint — unofficial, delayed per exchange rules.'}>
+              <Section key={g.id} title={g.label} note={g.id === 'crypto' ? undefined : yahooNote}>
                 <ul className="flex flex-col">
                   {qs.map((q) => {
                     const up = (q.changePct ?? 0) >= 0;
@@ -103,7 +116,7 @@ export function MarketsPanel(_: PanelProps) {
                           type="button"
                           onClick={() => setChart(q.group === 'crypto' ? { symbol: `${q.symbol}-USD`, name: q.name } : { symbol: q.symbol, name: q.name })}
                           className="grid min-h-11 md:min-h-8 w-full grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-sm px-1 text-left hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
-                          title={`${q.source}${q.unofficial ? ' (unofficial)' : ''} · observed ${q.observedAt ?? 'unknown'}`}
+                          title={`${q.source}${q.unofficial ? ' (unofficial)' : ''} · observed ${q.observedAt ?? 'unknown'}${q.lastGoodAt ? ` · source offline, last good ${q.lastGoodAt}` : ''}`}
                         >
                           <span className="truncate font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-primary)]">{q.name}</span>
                           <Spark v={q.spark} up={up} />
@@ -112,7 +125,10 @@ export function MarketsPanel(_: PanelProps) {
                             {fmtPct(q.changePct)}
                           </span>
                         </button>
-                        <span className="sr-only">Observed {q.observedAt ? `${formatAge(now - Date.parse(q.observedAt))} ago` : 'at an unknown time'}</span>
+                        <span className="sr-only">
+                          Observed {q.observedAt ? `${formatAge(now - Date.parse(q.observedAt))} ago` : 'at an unknown time'}
+                          {q.lastGoodAt ? `; source offline, last good ${utcLabel(q.lastGoodAt, now)}` : ''}
+                        </span>
                       </li>
                     );
                   })}
@@ -168,8 +184,11 @@ export function MarketsPanel(_: PanelProps) {
                   {s.name}, {s.city} — {s.threats[0]?.label} ({s.threats[0]?.distanceKm} km; {s.threats[0]?.method})
                 </li>
               ))}
-            <li className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-secondary)]">
-              {scm.data.items.filter((s) => s.riskLevel === 'NORMAL').length} of {scm.data.items.length} sites with no hazard in range
+            <li
+              className={`font-mono text-[10px] uppercase tracking-[0.16em] ${scmLine?.degraded ? 'text-[var(--alert-orange)]' : 'text-[var(--text-secondary)]'}`}
+              data-testid="scm-status"
+            >
+              {scmLine?.text}
             </li>
           </ul>
         ) : (

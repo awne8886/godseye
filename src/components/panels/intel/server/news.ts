@@ -58,7 +58,7 @@ export const WIRE_FEEDS: readonly NewsSource[] = [
   wire('timesofisrael', 'Times of Israel', 'Israeli newspaper', 'regional', 'https://www.timesofisrael.com/feed/'),
   wire('tass', 'TASS', 'Russian state agency', 'russian', 'https://tass.com/rss/v2.xml'),
   wire('anadolu', 'Anadolu Agency', 'Turkish state agency', 'regional', 'https://www.aa.com.tr/en/rss/default?cat=world'),
-  wire('scmp', 'South China Morning Post', 'Hong Kong newspaper', 'regional', 'https://www.scmp.com/rss/91/feed'),
+  wire('scmp', 'South China Morning Post', 'Hong Kong newspaper', 'regional', 'https://www.scmp.com/rss/91/feed/'),
   wire('cna', 'CNA', 'Singapore broadcaster', 'regional', 'https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6311'),
   wire('africanews', 'Africanews', 'Pan-African broadcaster', 'regional', 'https://www.africanews.com/feed/rss'),
 ];

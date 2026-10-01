@@ -32,24 +32,35 @@ interface SparqlBinding {
   [k: string]: { value: string } | undefined;
 }
 
+/** Wikidata country facts; the population is the best-rank P1082 statement with its P585 date. */
 export function countrySparql(iso2: string): string {
-  return `SELECT ?c ?cLabel ?capitalLabel ?pop ?area ?hosLabel ?regionLabel (GROUP_CONCAT(DISTINCT ?langLabel;separator="|") AS ?langs) WHERE { ?c wdt:P297 "${iso2}". OPTIONAL{?c wdt:P36 ?capital} OPTIONAL{?c wdt:P1082 ?pop} OPTIONAL{?c wdt:P2046 ?area} OPTIONAL{?c p:P35 ?st. ?st ps:P35 ?hos. FILTER NOT EXISTS{?st pq:P582 ?e}} OPTIONAL{?c wdt:P30 ?region} OPTIONAL{?c wdt:P37 ?lang. ?lang rdfs:label ?langLabel. FILTER(LANG(?langLabel)="en")} SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } GROUP BY ?c ?cLabel ?capitalLabel ?pop ?area ?hosLabel ?regionLabel LIMIT 5`;
+  return `SELECT ?c ?cLabel ?capitalLabel ?pop ?popDate ?area ?hosLabel ?regionLabel (GROUP_CONCAT(DISTINCT ?langLabel;separator="|") AS ?langs) WHERE { ?c wdt:P297 "${iso2}". OPTIONAL{?c wdt:P36 ?capital} OPTIONAL{?c p:P1082 ?popSt. ?popSt ps:P1082 ?pop; a wikibase:BestRank. OPTIONAL{?popSt pq:P585 ?popDate}} OPTIONAL{?c wdt:P2046 ?area} OPTIONAL{?c p:P35 ?st. ?st ps:P35 ?hos. FILTER NOT EXISTS{?st pq:P582 ?e}} OPTIONAL{?c wdt:P30 ?region} OPTIONAL{?c wdt:P37 ?lang. ?lang rdfs:label ?langLabel. FILTER(LANG(?langLabel)="en")} SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } } GROUP BY ?c ?cLabel ?capitalLabel ?pop ?popDate ?area ?hosLabel ?regionLabel LIMIT 20`;
 }
 
 export function parseCountry(body: { results?: { bindings?: SparqlBinding[] } }, iso2: string): Country | null {
-  const b = body.results?.bindings?.[0];
+  const rows = body.results?.bindings ?? [];
+  const b = rows[0];
   if (!b?.cLabel) return null;
-  const n = (k: string) => {
-    const v = b[k]?.value;
+  const num = (row: SparqlBinding, k: string) => {
+    const v = row[k]?.value;
     const x = v === undefined ? NaN : Number(v);
     return Number.isFinite(x) ? x : null;
   };
+  const n = (k: string) => num(b, k);
   const qid = b.c?.value.match(/(Q\d+)$/)?.[1] ?? null;
+  // Several best-rank population statements: the one with the latest point-in-time wins.
+  const yearOf = (row: SparqlBinding) => {
+    const y = Number(row.popDate?.value.match(/^(\d{4})-/)?.[1]);
+    return Number.isFinite(y) && y > 0 ? y : null;
+  };
+  const popRow = rows.filter((r) => num(r, 'pop') !== null).sort((x, y) => (yearOf(y) ?? 0) - (yearOf(x) ?? 0))[0] ?? null;
+  const population = popRow ? num(popRow, 'pop') : null;
   return {
     name: b.cLabel.value,
     iso2,
     capital: b.capitalLabel?.value ?? null,
-    population: n('pop'),
+    population,
+    populationSource: population === null || !popRow ? null : { name: 'Wikidata P1082', year: yearOf(popRow), url: qid ? `https://www.wikidata.org/wiki/${qid}#P1082` : 'https://www.wikidata.org/' },
     areaKm2: n('area'),
     languages: (b.langs?.value ?? '').split('|').filter(Boolean),
     region: b.regionLabel?.value ?? null,
@@ -74,7 +85,34 @@ export function parseOpenMeteo(body: { current?: { time?: string; temperature_2m
   return { temperatureC: num(c.temperature_2m), windKmh: num(c.wind_speed_10m), code: num(c.weather_code), observedAt: normalizeUtc(c.time) };
 }
 
+/**
+ * World Bank WDI total population (SP.POP.TOTL), most recent non-empty year (`mrnev=1`). Keyless,
+ * CC BY 4.0, CORS *. Probed 2026-10-01: UA → 200 in 0.34 s, `{date:"2025", value:38980376}`;
+ * TW (not a WDI economy) → 200 with a null page (no figure; Wikidata is used instead).
+ */
+export function worldBankPopulationUrl(iso2: string): string {
+  return `https://api.worldbank.org/v2/country/${iso2}/indicator/SP.POP.TOTL?format=json&mrnev=1`;
+}
+
+export function parseWorldBankPopulation(body: unknown): { value: number; year: number } | null {
+  if (!Array.isArray(body) || body.length < 2) throw new Error('parse');
+  const rows: unknown = body[1];
+  if (rows === null) return null; // the economy is not covered
+  if (!Array.isArray(rows)) throw new Error('parse');
+  for (const r of rows as { date?: unknown; value?: unknown }[]) {
+    if (typeof r?.value === 'number' && Number.isFinite(r.value) && typeof r.date === 'string' && /^\d{4}$/.test(r.date)) return { value: r.value, year: Number(r.date) };
+  }
+  return null;
+}
+
+/** Prefer the dated World Bank figure; keep Wikidata's (with its own year) when the Bank has none. */
+export function withPopulation(country: Country | null, wb: { value: number; year: number } | null, iso2: string): Country | null {
+  if (!country || !wb) return country;
+  return { ...country, population: wb.value, populationSource: { name: 'World Bank (SP.POP.TOTL)', year: wb.year, url: `https://data.worldbank.org/indicator/SP.POP.TOTL?locations=${iso2}` } };
+}
+
 const wikiLimiter = () => providerBucket('wikimedia', 5, 5);
+const worldBankLimiter = () => providerBucket('worldbank', 2, 4);
 
 export async function runDossierStatic(lat: number, lng: number, signal?: AbortSignal): Promise<FeedData<DossierStatic>> {
   const providers: Record<string, ProviderRun> = {};
@@ -90,10 +128,11 @@ export async function runDossierStatic(lat: number, lng: number, signal?: AbortS
   const iso2 = place?.countryCode ? place.countryCode.toUpperCase() : null;
   const location = place ? { displayName: place.label || place.name, countryCode: iso2, attribution: OSM_ATTRIBUTION } : null;
 
-  const [country, weather] = await Promise.all([
-    iso2 && /^[A-Z]{2}$/.test(iso2)
+  const validIso = iso2 && /^[A-Z]{2}$/.test(iso2) ? iso2 : null;
+  const [country, weather, population] = await Promise.all([
+    validIso
       ? runProvider(
-          async () => parseCountry((await getJson<{ results?: { bindings?: SparqlBinding[] } }>(`https://query.wikidata.org/sparql?query=${encodeURIComponent(countrySparql(iso2))}`, { headers: { Accept: 'application/sparql-results+json' }, timeoutMs: 12_000, signal, limiter: wikiLimiter() })).data, iso2),
+          async () => parseCountry((await getJson<{ results?: { bindings?: SparqlBinding[] } }>(`https://query.wikidata.org/sparql?query=${encodeURIComponent(countrySparql(validIso))}`, { headers: { Accept: 'application/sparql-results+json' }, timeoutMs: 12_000, signal, limiter: wikiLimiter() })).data, validIso),
           (c) => (c ? 1 : 0),
         )
       : null,
@@ -103,9 +142,19 @@ export async function runDossierStatic(lat: number, lng: number, signal?: AbortS
           (w) => (w ? 1 : 0),
         )
       : null,
+    validIso
+      ? runProvider(
+          async () => parseWorldBankPopulation((await getJson<unknown>(worldBankPopulationUrl(validIso), { timeoutMs: 8000, retries: 1, signal, limiter: worldBankLimiter() })).data),
+          (p) => (p ? 1 : 0),
+          // Economies the Bank does not cover (e.g. Taiwan) answer with no rows: truthfully none.
+          { allowEmpty: true },
+        )
+      : null,
   ]);
   if (country) providers.wikidata = country.run;
+  if (population) providers.worldbank = population.run;
   providers['open-meteo'] = weather ? weather.run : skippedProvider('licence');
+  const countryFacts = validIso ? withPopulation(country?.result ?? null, population?.result ?? null, validIso) : null;
 
   // 2) Brief: the country's English article (a reverse-geocoded point is often a building whose
   // local-language name has no article); the place name only when no country was resolved.
@@ -119,5 +168,5 @@ export async function runDossierStatic(lat: number, lng: number, signal?: AbortS
     providers.wikipedia = w.run;
     brief = w.result;
   }
-  return { data: { location, country: country?.result ?? null, brief, weather: weather?.result ?? null }, providers, observedAt: null };
+  return { data: { location, country: countryFacts, brief, weather: weather?.result ?? null }, providers, observedAt: null };
 }

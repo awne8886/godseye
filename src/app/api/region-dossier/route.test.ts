@@ -30,7 +30,8 @@ describe('GET /api/region-dossier', () => {
     earthquakeFeed(); // registers the `earthquakes` feed in this process (unregistered layers stay offline)
     state.routes = [
       ['photon.komoot.io/reverse', FX.photon],
-      ['query.wikidata.org/sparql', FX.sparqlUA],
+      ['query.wikidata.org/sparql', FX.sparqlUAPopDate],
+      ['api.worldbank.org/v2/country/UA/indicator/SP.POP.TOTL', FX.worldBankUA],
       ['en.wikipedia.org/api/rest_v1/page/summary', FX.wiki],
       ['summary/2.5_day.geojson', FX.usgs],
     ];
@@ -41,6 +42,9 @@ describe('GET /api/region-dossier', () => {
     expect(parsed.success).toBe(true);
     expect(body.location).toMatchObject({ countryCode: 'UA' });
     expect(body.country).toMatchObject({ name: 'Ukraine', capital: 'Kyiv', headOfState: { name: 'Volodymyr Zelenskyy' } });
+    // R3 round-4 MINOR-5: a dated population (World Bank 2025), not Wikidata's undated 41.2 M.
+    expect(body.country).toMatchObject({ population: 38980376, populationSource: { name: 'World Bank (SP.POP.TOTL)', year: 2025 } });
+    expect(body.providers.worldbank).toMatchObject({ ok: true, count: 1 });
     expect(body.brief.url).toMatch(/^https:\/\/en\.wikipedia\.org\//);
     expect(body.nearby.radiusKm).toBe(150);
     expect(body.nearby.counts.earthquakes).toMatchObject({ state: 'live' });

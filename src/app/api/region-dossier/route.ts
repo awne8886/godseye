@@ -29,7 +29,7 @@ export const GET = withRoute('/api/region-dossier', async (req) => {
     lookup<DossierStatic>(`dossier:${lat},${lng}`, {
       feed: 'region-dossier',
       ttlMs: 30 * 60_000,
-      attribution: [{ text: OSM_ATTRIBUTION }, { text: 'Wikidata (CC0) and Wikipedia (CC BY-SA 4.0)' }, { text: 'Weather: Open-Meteo (CC BY 4.0)' }],
+      attribution: [{ text: OSM_ATTRIBUTION }, { text: 'Wikidata (CC0) and Wikipedia (CC BY-SA 4.0)' }, { text: 'Population: World Bank WDI SP.POP.TOTL (CC BY 4.0)', url: 'https://data.worldbank.org/indicator/SP.POP.TOTL' }, { text: 'Weather: Open-Meteo (CC BY 4.0)' }],
       isEmpty: (d) => !d.location && !d.country && !d.brief && !d.weather,
       deadlineMs: 30_000,
       run: (signal) => runDossierStatic(lat, lng, signal),

@@ -31,6 +31,13 @@ test('MARKETS opens with sessions + quotes, or SOURCE OFFLINE', async ({ page, r
     await expect(panel.getByText(/SOURCE OFFLINE/).first()).toBeVisible({ timeout: 30_000 });
   }
   await expect(panel.getByRole('button', { name: /Market read-out/ })).toBeVisible();
+  // Supply chain: a verdict only from a fresh hazard check, else the outage with its last-good time.
+  const scm = await request.get('/api/scm-suppliers');
+  if (scm.ok()) {
+    const s = await scm.json();
+    const fresh = s.providers.usgs?.ok && (s.meta.state === 'live' || s.meta.state === 'recent' || s.meta.state === 'reference');
+    await expect(panel.getByTestId('scm-status')).toHaveText(fresh ? /sites with no hazard in range/i : /Hazard source (offline|stale) — last good/i, { timeout: 30_000 });
+  }
 });
 
 test('ALERTS lists stance-labelled posts and names offline sources', async ({ page, request }) => {

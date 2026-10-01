@@ -105,7 +105,14 @@ export function DossierPanel(_: PanelProps) {
               <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
                 <Row k="Country" v={`${d.country.name}${d.country.iso2 ? ` (${d.country.iso2})` : ''}`} />
                 <Row k="Capital" v={d.country.capital ?? '—'} />
-                <Row k="Population" v={d.country.population?.toLocaleString('en-US') ?? '—'} />
+                <Row
+                  k="Population"
+                  v={
+                    d.country.population === null
+                      ? '—'
+                      : `${d.country.population.toLocaleString('en-US')}${d.country.populationSource ? ` (${d.country.populationSource.year ?? 'undated'}, ${d.country.populationSource.name})` : ' (undated)'}`
+                  }
+                />
                 <Row k="Area" v={d.country.areaKm2 ? `${Math.round(d.country.areaKm2).toLocaleString('en-US')} km²` : '—'} />
                 <Row k="Region" v={d.country.region ?? '—'} />
                 <Row k="Languages" v={d.country.languages.join(', ') || '—'} />

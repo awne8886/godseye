@@ -100,9 +100,25 @@ export interface ScmData {
   items: ScmItem[];
   /** False when the quake feed had no data: every site would read NORMAL without having been checked. */
   hazardsChecked: boolean;
+  /** When the quake data used for these checks was fetched (ISO). */
+  hazardsAsOf: string | null;
 }
 
-export async function runScm(): Promise<FeedData<ScmData>> {
+/** Thrown when the required hazard input is not fresh: the cache keeps the last-good checks (stale → offline). */
+export class InputDown extends Error {
+  constructor(readonly what: string) {
+    super(`input down: ${what}`);
+    this.name = 'InputDown';
+  }
+}
+
+/**
+ * Hazard checks over the reference sites. Only fresh quakes make a check: when the earthquake feed
+ * is stale/offline the run fails (after reporting the attempt), so `/api/scm-suppliers` serves the
+ * last-good checks as STALE → OFFLINE with their time instead of re-stamping old quakes as LIVE.
+ * USGS is required; the weather feed is optional and reported in `providers`.
+ */
+export async function runScm(onAttempt?: (providers: Record<string, ProviderRun>) => void): Promise<FeedData<ScmData>> {
   const q = await earthquakeFeed().get();
   const quakes = q.data?.items ?? [];
   const wf = getFeed('weather');
@@ -112,8 +128,14 @@ export async function runScm(): Promise<FeedData<ScmData>> {
     usgs: runFromFeed(q.meta, quakes.length, q.data !== null),
     weather: runFromFeed(w?.meta ?? null, weather.length, !!w?.data),
   };
+  onAttempt?.(providers);
+  if (!providers.usgs!.status.ok) throw new InputDown(`usgs ${q.meta.state}`);
   const items = assess(quakes, weather);
-  return { data: { items, hazardsChecked: q.data !== null }, providers, observedAt: q.meta.observedAt ? Date.parse(q.meta.observedAt) : null };
+  return {
+    data: { items, hazardsChecked: true, hazardsAsOf: q.meta.fetchedAt },
+    providers,
+    observedAt: q.meta.observedAt ? Date.parse(q.meta.observedAt) : null,
+  };
 }
 
 /** Chokepoint alerts from the maritime feed (when registered). Shape-tolerant: `{chokepoints:[{name, risk, message}]}`. */

@@ -83,6 +83,11 @@ export const Quote = z.object({
   source: z.string(),
   /** Unofficial upstreams (Yahoo v8 chart) are flagged in the UI. */
   unofficial: z.boolean(),
+  /**
+   * Present only on a quote kept from an earlier refresh because its source failed this time:
+   * when that source last answered for it. The quote's own `observedAt` is unchanged.
+   */
+  lastGoodAt: IsoTime.optional(),
 });
 
 /** GET /api/markets */
@@ -139,6 +144,8 @@ export const RegionDossierResponse = z.object({
       iso2: z.string().nullable(),
       capital: z.string().nullable(),
       population: z.number().nullable(),
+      /** Where the population figure comes from and the year it refers to (null year = undated). */
+      populationSource: z.object({ name: z.string(), year: z.number().int().nullable(), url: z.url() }).nullable().optional(),
       areaKm2: z.number().nullable(),
       languages: z.array(z.string()),
       region: z.string().nullable(),
@@ -274,4 +281,6 @@ export const ScmSuppliersResponse = Envelope.extend({
       threats: z.array(z.object({ label: z.string(), distanceKm: z.number(), method: z.string(), observedAt: IsoTime.nullable() })),
     }),
   ),
+  /** When the quake data these checks used was fetched (the hazard check's last-good time). */
+  hazardsAsOf: IsoTime.nullable().optional(),
 });
