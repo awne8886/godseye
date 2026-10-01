@@ -29,6 +29,9 @@
  * `LIMB.maxDeg` from the camera's ground point and `LIMB.marginDeg` inside the horizon at the solved
  * zoom; a route too long for that (> ~110°: PER→LHR, SIN→JFK) gets the relaxed limits
  * (`limbModes`: half its span + 4°, 6° inside the horizon), and only then none.
+ *
+ * Vignette: the HUD's screen vignette darkens the corners (over half black there), so the clear
+ * levels first also keep the marks out of its darkest corners (`vignetteCorners`), then without.
  */
 import type { LngLatTuple } from '@/lib/geo';
 import { pointAlong } from '../lib/geometry';
@@ -332,6 +335,42 @@ export interface FrameEnv {
   obstacles?: readonly Rect[];
   minZoom?: number;
   maxZoom?: number;
+  /** Keep the marks out of the vignette's dark corners when a clear framing allows it (default true). */
+  vignette?: boolean;
+}
+
+/**
+ * The HUD's base screen vignette (design-system-hud `.vignette` in base.css): a radial gradient on
+ * the farthest-corner ellipse, transparent to 40 % of it and 0.6 black at 80 %. Past this share of
+ * the ellipse it is ~0.4 black: a 12 px code there loses over a third of its brightness (round 5:
+ * the LAX pill in the 1600×1000 bottom-left corner was at 76 %, 0.54 black).
+ */
+export const VIGNETTE_MARK_SHARE = 0.65;
+
+/**
+ * Boxes inside the vignette's dark corners (beyond `share` of its ellipse): per corner a staircase
+ * of rectangles, each from a point on the ellipse out to the corner, so every box lies wholly in
+ * the dark part (a conservative cover of it).
+ */
+export function vignetteCorners(viewport: Viewport, share = VIGNETTE_MARK_SHARE): Rect[] {
+  const cx = viewport.width / 2;
+  const cy = viewport.height / 2;
+  // "ellipse at center" sizes to the farthest corner: the corners lie on the 100 % ellipse.
+  const rx = cx * Math.SQRT2;
+  const ry = cy * Math.SQRT2;
+  const out: Rect[] = [];
+  for (const deg of [15, 30, 45, 60, 75]) {
+    const dx = share * Math.cos(deg * D2R) * rx;
+    const dy = share * Math.sin(deg * D2R) * ry;
+    if (dx >= cx || dy >= cy) continue;
+    out.push(
+      { left: 0, top: 0, right: cx - dx, bottom: cy - dy },
+      { left: cx + dx, top: 0, right: viewport.width, bottom: cy - dy },
+      { left: 0, top: cy + dy, right: cx - dx, bottom: viewport.height },
+      { left: cx + dx, top: cy + dy, right: viewport.width, bottom: viewport.height },
+    );
+  }
+  return out;
 }
 
 export interface FrameFit {
@@ -642,6 +681,11 @@ export function shrinkArea(area: Rect, obstacles: readonly Rect[], clear = MARK_
 
 /** Prefer the fully clear framing unless it costs more than this much size (log2 px) against B. */
 const LEVEL_A_SLACK = 0.5;
+/**
+ * Keep the marks out of the vignette's corners only when that costs at most this much size (log2 px:
+ * ≈ 22 % smaller) — a phone's route would otherwise shrink by a third or more.
+ */
+const VIGNETTE_SLACK = 0.35;
 
 /** Endpoint codes with a mark box (screen px) overlapping any obstacle, in endpoint order. */
 export function hiddenLabels(marks: readonly { label: string; box: Rect }[], obstacles: readonly Rect[]): string[] {
@@ -673,15 +717,23 @@ export function solveFrame(frame: RouteFrame, env: FrameEnv): FrameFit | null {
   const ends = frame.endpoints.map((e) => e.position);
   const limbs = limbModes(env.projection, ends);
 
-  if (obstacles.length) {
-    const shrunk = shrinkArea(area, obstacles);
-    const canShrink = shrunk.right - shrunk.left < area.right - area.left || shrunk.bottom - shrunk.top < area.bottom - area.top;
-    for (const limb of limbs) {
-      const b = solveLevel(candidates, env, pts, marks, area, obstacles, minZoom, maxZoom, undefined, limb);
-      const a = canShrink ? solveLevel(candidates, env, pts, marks, shrunk, obstacles, minZoom, maxZoom, undefined, limb) : null;
-      if (a && (!b || a.size >= b.size - LEVEL_A_SLACK)) return done(a, []);
-      if (b) return done(b, []);
-    }
+  // (A)/(B) with every mark clear of the chrome — and, when that costs at most VIGNETTE_SLACK of
+  // size, also out of the vignette's dark corners (no chrome at all: marks inside the area).
+  const vignette = env.vignette === false ? [] : vignetteCorners(env.viewport).filter((o) => intersects(o, area));
+  const shrunk = shrinkArea(area, obstacles);
+  const canShrink = shrunk.right - shrunk.left < area.right - area.left || shrunk.bottom - shrunk.top < area.bottom - area.top;
+  const levelAB = (obs: readonly Rect[], limb: LimbLimits | undefined): Solved | null => {
+    const b = solveLevel(candidates, env, pts, marks, area, obs, minZoom, maxZoom, undefined, limb);
+    const a = canShrink ? solveLevel(candidates, env, pts, marks, shrunk, obs, minZoom, maxZoom, undefined, limb) : null;
+    return a && (!b || a.size >= b.size - LEVEL_A_SLACK) ? a : b;
+  };
+  for (const limb of limbs) {
+    const plain = obstacles.length ? levelAB(obstacles, limb) : null;
+    if (!obstacles.length && !vignette.length) break;
+    const dark = vignette.length ? levelAB([...obstacles, ...vignette], limb) : null;
+    const ref = plain ?? (obstacles.length ? null : solveLevel(candidates, env, pts, marks, area, [], minZoom, maxZoom, undefined, limb));
+    if (dark && (!ref || dark.size >= ref.size - VIGNETTE_SLACK)) return done(dark, []);
+    if (plain) return done(plain, []);
   }
   // (C) The marks cannot all be kept clear: keep as many endpoints clear as possible (one end
   // clear when only one can be, the larger such framing), else the marks only inside the area; say

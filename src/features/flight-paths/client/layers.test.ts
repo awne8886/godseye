@@ -59,9 +59,9 @@ describe('buildRouteLayers', () => {
       'route-planned-arc',
       'route-filed',
       'route-filed-waypoints',
+      'route-diversions',
       'route-endpoints',
       'route-endpoint-labels',
-      'route-diversions',
       'route-inferred-aircraft',
       'route-live-aircraft',
     ]);

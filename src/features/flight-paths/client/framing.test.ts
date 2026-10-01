@@ -19,6 +19,8 @@ import {
   horizonDeg,
   LIMB,
   limbModes,
+  vignetteCorners,
+  VIGNETTE_MARK_SHARE,
   intersects,
   labelBox,
   MARK_CLEAR_PX,
@@ -43,7 +45,7 @@ import svo from '../__fixtures__/r3/plan-SVO-LAX.json';
 import akl from '../__fixtures__/r3/plan-AKL-EZE.json';
 
 const D = Math.PI / 180;
-const plans: Record<string, unknown> = { 'LHR-JFK': lhr, 'SYD-SCL': syd, 'SIN-JFK': sin, 'HEL-ANC': hel, 'PER-LHR': per };
+const plans: Record<string, unknown> = { 'LHR-JFK': lhr, 'SYD-SCL': syd, 'SIN-JFK': sin, 'HEL-ANC': hel, 'PER-LHR': per, 'SVO-LAX': svo };
 const PHONE_CLEAR = ['LHR-JFK', 'SYD-SCL', 'SIN-JFK', 'HEL-ANC'];
 
 /** Independent MapLibre pitch-0 globe: px offset from the padded centre, or null behind the horizon. */
@@ -259,6 +261,38 @@ describe('globe limb: both endpoints well inside the visible hemisphere (round 5
       }
     });
   }
+
+  it('vignette: the SVO-LAX desktop labels stay out of the dark corners (LAX was at 76 % of the vignette ellipse, 0.54 black)', () => {
+    const frame = routeFrame(svo as unknown as Plan, null, null)!;
+    const share = (sol: NonNullable<ReturnType<typeof solveFrame>>) =>
+      Math.max(
+        ...placed('SVO-LAX', sol, 'globe', desktop.height).map((m) =>
+          Math.max(...[[m.box.left, m.box.top], [m.box.right, m.box.top], [m.box.left, m.box.bottom], [m.box.right, m.box.bottom]].map(([x, y]) => Math.hypot((x! - 800) / (800 * Math.SQRT2), (y! - 500) / (500 * Math.SQRT2)))),
+        ),
+      );
+    const env = { projection: 'globe' as const, viewport: desktop, area: dArea, obstacles: rects(desktopOverlays), minZoom: 1.2, maxZoom: 8 };
+    const plain = solveFrame(frame, { ...env, vignette: false })!;
+    const kept = solveFrame(frame, env)!;
+    expect(share(plain)).toBeGreaterThan(0.72);
+    expect(share(kept)).toBeLessThan(0.7);
+    expect(kept.fits && kept.clear).toBe(true);
+    // At a modest cost in size (≤ VIGNETTE_SLACK).
+    expect(plain.zoom - kept.zoom).toBeLessThan(0.35);
+  });
+
+  it('vignetteCorners: every box lies wholly beyond the share of the farthest-corner ellipse', () => {
+    for (const vp of [desktop, phone]) {
+      const boxes = vignetteCorners(vp);
+      expect(boxes.length).toBeGreaterThan(8);
+      const d = (x: number, y: number) => Math.hypot((x - vp.width / 2) / ((vp.width / 2) * Math.SQRT2), (y - vp.height / 2) / ((vp.height / 2) * Math.SQRT2));
+      for (const b of boxes) {
+        // The inner corner of each box (nearest the screen centre) is on or beyond the share.
+        const ix = b.left === 0 ? b.right : b.left;
+        const iy = b.top === 0 ? b.bottom : b.top;
+        expect(d(ix, iy)).toBeGreaterThanOrEqual(VIGNETTE_MARK_SHARE - 1e-9);
+      }
+    }
+  });
 
   it('limbModes: mercator has no limb; a short route only the strict limits', () => {
     expect(limbModes('mercator', [[0, 0], [10, 0]])).toEqual([undefined]);

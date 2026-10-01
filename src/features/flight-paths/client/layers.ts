@@ -296,6 +296,24 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
 
   if (frame.remaining.length > 1) out.push(pathLayer('route-remaining', dashPieces(frame.remaining, 2, 2), color('--map-route-planned', 0.45), 1.5));
 
+  // Diversion dots under the endpoint dots and their pills (round 5: a diversion near SVO cut into its pill).
+  const diversions = frame.diversions.filter((p) => vis(p.position));
+  if (diversions.length) {
+    out.push(
+      new ScatterplotLayer<Point>({
+        id: 'route-diversions',
+        data: diversions,
+        getPosition: (d) => d.position,
+        getRadius: 3.5,
+        radiusUnits: 'pixels',
+        getFillColor: color('--map-route-filed', 0.8),
+        billboard: true,
+        parameters: { ...NO_CULL, depthCompare: 'always' },
+        updateTriggers: trigger,
+      }),
+    );
+  }
+
   const endpoints = frame.endpoints.filter((p) => vis(p.position));
   if (endpoints.length) {
     const ring = color('--map-airport-watch');
@@ -336,23 +354,6 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: { ...trigger, getBackgroundColor: [o.theme], getBorderColor: [o.theme] },
-      }),
-    );
-  }
-
-  const diversions = frame.diversions.filter((p) => vis(p.position));
-  if (diversions.length) {
-    out.push(
-      new ScatterplotLayer<Point>({
-        id: 'route-diversions',
-        data: diversions,
-        getPosition: (d) => d.position,
-        getRadius: 3.5,
-        radiusUnits: 'pixels',
-        getFillColor: color('--map-route-filed', 0.8),
-        billboard: true,
-        parameters: { ...NO_CULL, depthCompare: 'always' },
-        updateTriggers: trigger,
       }),
     );
   }
