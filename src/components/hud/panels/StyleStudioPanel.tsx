@@ -42,7 +42,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function Swatch({ label, value, onChange, onReset }: { label: string; value: string; onChange: (v: string) => void; onReset?: () => void }) {
   return (
     <div className="flex items-center gap-2">
-      <label className="flex min-h-[28px] flex-1 cursor-pointer items-center gap-2">
+      {/* The whole row is the colour picker's label, so on phones the row height is the target. */}
+      <label className="flex min-h-[28px] flex-1 cursor-pointer items-center gap-2 phone:min-h-[44px]">
         <span className="relative block h-6 w-6 overflow-hidden rounded-[var(--radius-control)] border border-[var(--border-primary)]" style={{ background: value, boxShadow: `0 0 10px ${value}55` }}>
           <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={label} />
         </span>
@@ -50,7 +51,7 @@ function Swatch({ label, value, onChange, onReset }: { label: string; value: str
         <span className="font-mono text-[11px] text-[var(--text-primary)]">{value.toUpperCase()}</span>
       </label>
       {onReset && (
-        <button type="button" onClick={onReset} aria-label={`Reset ${label}`} className="hud-control grid h-6 w-6 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+        <button type="button" onClick={onReset} aria-label={`Reset ${label}`} className="hud-control grid h-6 w-6 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11">
           <RotateCcw size={12} />
         </button>
       )}
@@ -58,6 +59,11 @@ function Swatch({ label, value, onChange, onReset }: { label: string; value: str
   );
 }
 
+/**
+ * One knob: label, range, readout and AUTO. On phones the range input and AUTO are 44 px targets
+ * (round 5 visual-qa m2: they were a 4 px tall input and 44×24). The native track stays thin and
+ * centred; only the input's hit box grows.
+ */
 function Knob({ k, value, auto, onChange, onAuto }: { k: KnobKey; value: number; auto: boolean; onChange: (v: number) => void; onAuto: () => void }) {
   const spec = KNOBS[k];
   const readout = auto ? 'AUTO' : k === 'blur' ? `${value}PX` : k === 'tracking' ? `${value.toFixed(3)}EM` : k === 'radius' || k === 'motion' ? `${value.toFixed(2)}×` : `${Math.round((value / spec.max) * 100)}%`;
@@ -72,14 +78,14 @@ function Knob({ k, value, auto, onChange, onAuto }: { k: KnobKey; value: number;
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         aria-label={spec.label}
-        className="h-1 w-full accent-[var(--gold-primary)]"
+        className="h-1 w-full accent-[var(--gold-primary)] phone:h-11"
       />
       <span className="text-right font-mono text-[11px] tabular-nums text-[var(--text-primary)]">{readout}</span>
       <button
         type="button"
         aria-pressed={auto}
         onClick={onAuto}
-        className={`hud-micro hud-control min-h-[24px] border px-1.5 ${auto ? 'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)]'}`}
+        className={`hud-micro hud-control min-h-[24px] border px-1.5 phone:min-h-[44px] phone:min-w-[44px] ${auto ? 'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)]'}`}
       >
         AUTO
       </button>
@@ -192,10 +198,10 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
 
   const tools = (
     <>
-      <button type="button" onClick={() => void paste()} aria-label="Import theme JSON from clipboard" title="Paste theme JSON" className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+      <button type="button" onClick={() => void paste()} aria-label="Import theme JSON from clipboard" title="Paste theme JSON" className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11">
         <ClipboardPaste size={14} />
       </button>
-      <button type="button" onClick={() => void copy()} aria-label="Copy theme JSON" title="Copy theme JSON" className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+      <button type="button" onClick={() => void copy()} aria-label="Copy theme JSON" title="Copy theme JSON" className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11">
         <Copy size={14} />
       </button>
       <button
@@ -206,7 +212,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
         }}
         aria-label="Reset custom edits"
         title="Reset custom edits"
-        className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]"
+        className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11"
       >
         <RotateCcw size={14} />
       </button>
@@ -233,7 +239,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
               aria-checked={theme === id}
               disabled={ghost}
               onClick={() => choosePreset(id)}
-              className={`hud-micro hud-control flex min-h-[44px] md:min-h-[32px] items-center gap-1.5 border px-2 disabled:opacity-60 ${theme === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+              className={`hud-micro hud-control flex min-h-[32px] phone:min-h-[44px] items-center gap-1.5 border px-2 disabled:opacity-60 ${theme === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
             >
               <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: PRESETS[id].accent, boxShadow: `0 0 6px ${PRESETS[id].accent}` }} />
               {id}
@@ -244,7 +250,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
           type="button"
           aria-pressed={ghost}
           onClick={() => setGhost(!ghost)}
-          className={`hud-micro hud-control flex min-h-[44px] md:min-h-[32px] w-full items-center justify-center gap-2 border ${ghost ? 'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)]'}`}
+          className={`hud-micro hud-control flex min-h-[32px] phone:min-h-[44px] w-full items-center justify-center gap-2 border ${ghost ? 'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)]'}`}
         >
           GHOST PROTOCOL {ghost ? 'ON' : 'OFF'}
         </button>
@@ -327,7 +333,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
           type="button"
           disabled={!importText.trim()}
           onClick={() => importJson(importText)}
-          className="hud-micro hud-control min-h-[44px] md:min-h-[32px] w-full border border-[var(--border-active)] text-[var(--gold-light)] disabled:opacity-60"
+          className="hud-micro hud-control min-h-[32px] phone:min-h-[44px] w-full border border-[var(--border-active)] text-[var(--gold-light)] disabled:opacity-60"
         >
           IMPORT
         </button>
@@ -356,7 +362,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
       onClose={onClose}
       overlay={false}
       hideTitle
-      className="bottom-10 left-3 right-3 top-20 md:bottom-[150px] md:left-[58px] md:right-auto md:top-auto md:max-h-[min(calc(100dvh-230px),760px)] md:w-[360px]"
+      className="bottom-[150px] left-[58px] max-h-[min(calc(100dvh-230px),760px)] w-[360px] phone:bottom-10 phone:left-3 phone:right-3 phone:top-20 phone:max-h-none phone:w-auto"
     >
       {/* Named region like every docked panel, so "STYLE STUDIO" resolves the same way everywhere (R3-m1). */}
       <section aria-label="STYLE STUDIO" className="flex min-h-0 flex-1 flex-col">
@@ -364,7 +370,7 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
           <span className="instrument-accent mr-1" aria-hidden />
           <span className="hud-title flex-1">STYLE STUDIO</span>
           {tools}
-          <button type="button" onClick={onClose} aria-label="Close Style Studio" className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+          <button type="button" onClick={onClose} aria-label="Close Style Studio" className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11">
             <X size={15} />
           </button>
         </div>

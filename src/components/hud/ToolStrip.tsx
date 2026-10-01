@@ -9,27 +9,37 @@ import { useEffect } from 'react';
 import { panelFor } from '@/features/registry';
 import { TOOLS, type PanelId } from '@/lib/tool-registry';
 import { useUiStore } from '@/lib/store';
-import { isPanelAvailable, useHasBluetooth } from './hooks';
+import { isPanelAvailable, MOBILE_QUERY, useHasBluetooth, useIsMobile } from './hooks';
 import { iconFor } from './icons';
 import { preloadComponent, preloadWhenIdle } from './preload';
 
 /** Panels opened from the strip, the rail bottom and the palette shortcut: warmed after boot. */
-const WARM_AFTER_BOOT: readonly PanelId[] = [...TOOLS.map((t) => t.id), 'layers', 'settings', 'style-studio', 'palette'];
+export const WARM_AFTER_BOOT: readonly PanelId[] = [...TOOLS.map((t) => t.id), 'layers', 'settings', 'style-studio', 'palette'];
+
+/** Desktop panels are warmed on idle only after boot and only while the desktop layout is active. */
+export function shouldWarmPanels(splashDone: boolean, phone: boolean): boolean {
+  if (!splashDone || phone) return false;
+  // The hook reads the server value (desktop) during hydration; ask the media query itself too.
+  return typeof window === 'undefined' || typeof window.matchMedia !== 'function' || !window.matchMedia(MOBILE_QUERY).matches;
+}
 
 export default function ToolStrip() {
   const openPanel = useUiStore((s) => s.openPanel);
   const pinned = useUiStore((s) => s.pinnedPanels);
   const togglePanel = useUiStore((s) => s.togglePanel);
   const splashDone = useUiStore((s) => s.splashDone);
+  const phone = useIsMobile();
   const bt = useHasBluetooth();
   const tools = TOOLS.filter((t) => isPanelAvailable(t.id, bt));
-  useEffect(() => (splashDone ? preloadWhenIdle(WARM_AFTER_BOOT.map((id) => panelFor(id))) : undefined), [splashDone]);
+  // Only the desktop layout shows the strip: a phone (where it is hidden) never downloads every
+  // desktop panel chunk on idle (round 4 leftover). Rotating into the desktop layout starts it.
+  useEffect(() => (shouldWarmPanels(splashDone, phone) ? preloadWhenIdle(WARM_AFTER_BOOT.map((id) => panelFor(id))) : undefined), [splashDone, phone]);
   if (!tools.length) return null;
   return (
     <nav
       data-map-inset="tools"
       aria-label="Tools"
-      className="glass-1 fixed right-2 top-1/2 z-[var(--z-tool-strip)] hidden -translate-y-1/2 flex-col items-center gap-1 rounded-[var(--radius-panel)] border border-[var(--border-secondary)] p-1 md:flex"
+      className="glass-1 fixed right-2 top-1/2 z-[var(--z-tool-strip)] flex -translate-y-1/2 flex-col items-center gap-1 rounded-[var(--radius-panel)] border border-[var(--border-secondary)] p-1 phone:hidden"
     >
       {tools.map((t, i) => {
         const Icon = iconFor(t.icon);

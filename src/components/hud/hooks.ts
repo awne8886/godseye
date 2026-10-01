@@ -46,7 +46,7 @@ export function useVisibleLayers(): LayerDef[] {
   return visibleLayers(caps);
 }
 
-const MOBILE_QUERY = '(max-width: 767px), (max-height: 499px) and (orientation: landscape)';
+export const MOBILE_QUERY = '(max-width: 767px), (max-height: 499px) and (orientation: landscape)';
 
 function subscribeMedia(query: string) {
   return (cb: () => void) => {

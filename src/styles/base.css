@@ -3,6 +3,20 @@
  * sensor modes, keyframes). Owner: design-system-hud.
  * No global `* { transition }`: theme swaps add a short-lived `.theme-transition` class to <html>.
  */
+
+/*
+ * `phone:` = the HUD's phone layout (round 5 M2): exactly PHONE_LAYOUT_QUERY (src/lib/map/view.ts)
+ * and useIsMobile() (hooks.ts), so a landscape phone (844×390) is fully phone — bottom nav, sheets,
+ * 44 px targets — never half phone (JS sheet) and half desktop (`md:` chrome). HUD classes are
+ * desktop-first: the base class is the desktop chrome and `phone:` overrides it, so there is no
+ * fractional-width gap between two queries. Pinned by src/components/hud/round5.test.tsx.
+ */
+@custom-variant phone {
+  @media (max-width: 767px), (max-height: 499px) and (orientation: landscape) {
+    @slot;
+  }
+}
+
 @layer base {
   html,
   body {
@@ -249,7 +263,10 @@
   .splash-bar {
     transition: width 0.55s var(--ease-hud);
   }
-  /* Layer toggle knob (28×14 track): slides 14 px; a transition, not a JS spring. */
+  /* Layer toggle knob (28×14 track): slides 14 px on the contract spring (500/30) expressed as a
+     CSS linear() easing (--ease-toggle-spring), so no JS spring ships in the first load. Browsers
+     without linear() keep the HUD ease; reduced motion (system or Settings) zeroes the duration
+     through the rules at the end of this file. */
   .hud-toggle-knob {
     position: absolute;
     top: 1px;
@@ -261,6 +278,13 @@
     transition:
       transform var(--dur-flyout) var(--ease-hud),
       background-color var(--dur-flyout) var(--ease-hud);
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .hud-toggle-knob {
+      transition:
+        transform var(--dur-toggle-spring) var(--ease-toggle-spring),
+        background-color var(--dur-flyout) var(--ease-hud);
+    }
   }
   .hud-toggle[data-on='true'] .hud-toggle-knob {
     transform: translateX(14px);
@@ -443,6 +467,25 @@
     0 0 4px var(--bg-void),
     0 0 8px var(--bg-void);
 }
+/* The header block sits on a void scrim (round 5 visual-qa m6: basemap labels such as GREECE and
+   UZBEKISTAN printed through the tagline). Theme-aware (--bg-void), soft-edged, behind the text
+   only (z -1 inside the header's own stacking context), never a pointer target. */
+.hud-header-scrim::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -10px -48px -10px -10px;
+  pointer-events: none;
+  border-radius: var(--radius-panel);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg-void) 82%, transparent) 0%,
+    color-mix(in srgb, var(--bg-void) 72%, transparent) calc(100% - 64px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(180deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
 
 /* Horizontal scrollers (phone sheet tabs): the right-edge fade says "more this way". */
 .hud-fade-right {
@@ -484,6 +527,20 @@
   }
   .maplibregl-map .maplibregl-ctrl-attrib-inner {
     white-space: normal;
+  }
+  /* 44 px touch targets for the credit links (round 5 visual-qa m1; they were 13 px tall): each link
+     is an inline-block whose 15 px block padding is cancelled by an equal negative margin, so the
+     hit box is 44 px but the credits line stays 14 px tall (a taller box obscured route framing and
+     pushed the honesty chips above it off-screen on landscape phones). */
+  .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+    padding-block: 0;
+  }
+  .maplibregl-map .maplibregl-ctrl-attrib a {
+    display: inline-block;
+    padding-block: 15px;
+    margin-block: -15px;
+    line-height: 14px;
+    position: relative;
   }
 }
 /* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome (z ≥ 40). The map wrapper

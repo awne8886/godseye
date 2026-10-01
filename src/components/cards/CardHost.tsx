@@ -72,7 +72,7 @@ function CardSheet({ selection, onClose }: { selection: Selection; onClose: () =
       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       inert={!present}
       aria-hidden={present ? undefined : true}
-      className="fixed inset-x-2 bottom-[calc(60px+env(safe-area-inset-bottom))] z-[var(--z-docked)] flex max-h-[50vh] flex-col md:inset-x-auto md:bottom-auto md:left-16 md:top-28 md:max-h-[calc(100vh-12rem)] md:w-[340px]"
+      className="fixed left-16 top-28 z-[var(--z-docked)] flex max-h-[calc(100vh-12rem)] w-[340px] flex-col phone:inset-x-2 phone:top-auto phone:bottom-[calc(60px+env(safe-area-inset-bottom))] phone:max-h-[50vh] phone:w-auto"
     >
       <EntityCardFrame selection={selection} feed={feed} onClose={onClose}>
         {createElement(body, { selection })}

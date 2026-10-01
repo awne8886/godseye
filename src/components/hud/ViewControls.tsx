@@ -31,7 +31,7 @@ function Segmented<T extends string>({ label, value, options, onChange, group }:
             aria-pressed={on}
             title={o.title}
             onClick={() => onChange(o.value)}
-            className={`hud-micro hud-control relative flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 px-2 md:min-h-[32px] md:min-w-0 md:px-2.5 ${on ? 'text-[var(--gold-light)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+            className={`hud-micro hud-control relative flex min-h-[32px] items-center justify-center gap-1.5 px-2.5 phone:min-h-[44px] phone:min-w-[44px] phone:px-2 ${on ? 'text-[var(--gold-light)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
           >
             {on && (
               <m.span
@@ -42,7 +42,7 @@ function Segmented<T extends string>({ label, value, options, onChange, group }:
               />
             )}
             <span className="relative flex items-center gap-1.5">
-              <span className="hidden md:inline-flex">{o.icon}</span>
+              <span className="inline-flex phone:hidden">{o.icon}</span>
               {o.text}
             </span>
           </button>
@@ -200,7 +200,8 @@ function TerrainLine() {
   return (
     <p
       role="status"
-      className="hud-micro fixed left-3 top-[112px] z-[var(--z-hud)] flex items-center gap-1.5 md:bottom-[140px] md:left-[120px] md:top-auto"
+      data-map-inset="terrain-line"
+      className="hud-micro fixed bottom-[140px] left-[120px] z-[var(--z-hud)] flex items-center gap-1.5 phone:bottom-auto phone:left-3 phone:top-[112px]"
       style={{ color: error ? 'var(--alert-orange)' : 'var(--text-secondary)' }}
     >
       <Mountain size={12} aria-hidden /> {terrainText(status.state)}
@@ -252,7 +253,7 @@ export function CompassButton() {
       onClick={reset}
       aria-label="Reset north and tilt"
       title="Reset north and tilt"
-      className="hud-control grid h-11 w-11 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] md:h-8 md:w-8"
+      className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11"
     >
       <span ref={needle} className="grid place-items-center" data-testid="compass-needle">
         <Navigation2 size={14} aria-hidden className="text-[var(--gold-primary)]" />
@@ -282,7 +283,7 @@ export function FullscreenButton() {
       aria-pressed={on}
       aria-label="Fullscreen"
       title={on ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}
-      className="hud-control grid h-11 w-11 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] md:h-8 md:w-8"
+      className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11"
     >
       {on ? <Minimize size={14} aria-hidden /> : <Maximize size={14} aria-hidden />}
     </button>
@@ -321,7 +322,7 @@ export default function ViewControls() {
   return (
     <>
       {/* data-map-inset: map framing (flight paths) keeps route endpoints out from under this bar. */}
-      <div data-map-inset="view-controls" data-testid="view-controls" className="glass-panel fixed left-3 top-[64px] z-[var(--z-hud)] flex items-center gap-1 p-1 md:bottom-[100px] md:left-[120px] md:top-auto">
+      <div data-map-inset="view-controls" data-testid="view-controls" className="glass-panel fixed bottom-[100px] left-[120px] z-[var(--z-hud)] flex items-center gap-1 p-1 phone:bottom-auto phone:left-3 phone:top-[64px]">
         <Segmented
           label="Projection"
           group="proj"
@@ -349,7 +350,7 @@ export default function ViewControls() {
           onClick={() => void locate()}
           aria-label="Centre on my region"
           title="Centre on my region (asks your browser for your location; nothing is sent to the server)"
-          className="hud-control grid h-11 w-11 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] md:h-8 md:w-8"
+          className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11"
           style={locating === 'failed' ? { color: 'var(--alert-orange)' } : undefined}
         >
           <LocateFixed size={14} aria-hidden className={locating === 'busy' ? 'hud-pulse' : ''} />
@@ -358,8 +359,13 @@ export default function ViewControls() {
         <FullscreenButton />
       </div>
       <TerrainLine />
+      {/* data-map-inset on both status lines: route framing keeps endpoints out from under them (round 5 m1). */}
       {locating === 'failed' && (
-        <p role="status" className="hud-micro fixed left-3 top-[112px] z-[var(--z-hud)] text-[var(--alert-orange)] md:bottom-[160px] md:left-[120px] md:top-auto">
+        <p
+          role="status"
+          data-map-inset="locate-status"
+          className="hud-micro fixed bottom-[160px] left-[120px] z-[var(--z-hud)] text-[var(--alert-orange)] phone:bottom-auto phone:left-3 phone:top-[112px]"
+        >
           LOCATION UNAVAILABLE
         </p>
       )}
@@ -371,7 +377,7 @@ export default function ViewControls() {
         ref={readoutRow}
         data-readout-row
         data-testid="readout-row"
-        className="group hud-micro pointer-events-none fixed bottom-8 left-72 right-[44rem] z-[var(--z-hud)] hidden min-w-0 items-end gap-6 overflow-hidden text-[var(--text-secondary)] xl:flex"
+        className="group hud-micro pointer-events-none fixed bottom-8 left-72 right-[44rem] z-[var(--z-hud)] hidden min-w-0 items-end gap-6 overflow-hidden text-[var(--text-secondary)] xl:flex phone:hidden"
       >
         <Readout units={units} geocode={geocodeRoute} />
         <span data-testid="view-hint" className="hidden min-w-0 truncate text-[var(--text-muted)] group-data-[cursor]:!hidden group-data-[narrow]:!hidden 2xl:inline">DRAG TO PAN · RIGHT-DRAG TO TILT · DOUBLE RIGHT-CLICK FOR DOSSIER · ⌘K COMMANDS · ? SHORTCUTS</span>

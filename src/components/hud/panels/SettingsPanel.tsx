@@ -33,7 +33,7 @@ function Choice<T extends string>({ label, value, options, onChange }: { label: 
           role="radio"
           aria-checked={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`hud-micro hud-control min-h-[44px] border px-2.5 md:min-h-[32px] ${value === o.value ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+          className={`hud-micro hud-control min-h-[32px] border px-2.5 phone:min-h-[44px] ${value === o.value ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
         >
           {o.text}
         </button>
@@ -81,7 +81,7 @@ export default function SettingsPanel(_: PanelProps) {
               key={a.action}
               type="button"
               onClick={() => runKeyAction(a.action)}
-              className="hud-micro hud-control min-h-[44px] border border-[var(--border-secondary)] px-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] md:min-h-[32px]"
+              className="hud-micro hud-control min-h-[32px] border border-[var(--border-secondary)] px-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] phone:min-h-[44px]"
             >
               {a.text}
             </button>
@@ -132,7 +132,7 @@ export default function SettingsPanel(_: PanelProps) {
           type="button"
           aria-pressed={settings.previewAutoplay}
           onClick={() => update({ previewAutoplay: !settings.previewAutoplay })}
-          className="hud-micro hud-control flex min-h-[44px] items-center gap-2 text-[var(--text-primary)] md:min-h-[32px]"
+          className="hud-micro hud-control flex min-h-[32px] items-center gap-2 text-[var(--text-primary)] phone:min-h-[44px]"
         >
           <Toggle on={settings.previewAutoplay} /> AUTOPLAY PREVIEWS
         </button>

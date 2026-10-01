@@ -93,7 +93,7 @@ export default function PalettePanel({ onClose }: PanelProps) {
                     value={i.id}
                     keywords={i.keywords}
                     onSelect={() => run(i)}
-                    className="hud-control flex min-h-[36px] cursor-pointer items-center gap-3 px-2 py-1.5 data-[selected=true]:bg-[rgba(var(--gold-rgb),0.12)] data-[selected=true]:text-[var(--gold-light)]"
+                    className="hud-control flex min-h-[36px] cursor-pointer items-center phone:min-h-[44px] gap-3 px-2 py-1.5 data-[selected=true]:bg-[rgba(var(--gold-rgb),0.12)] data-[selected=true]:text-[var(--gold-light)]"
                   >
                     <span className="hud-text flex-1 truncate text-[12px]">{i.label}</span>
                     {i.hint && <span className="max-w-[45%] truncate font-sans text-[12px] text-[var(--text-secondary)]">{i.hint}</span>}
