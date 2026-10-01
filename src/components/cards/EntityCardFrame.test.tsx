@@ -34,7 +34,9 @@ describe('entity card frame', () => {
         <p>body</p>
       </EntityCardFrame>,
     );
-    expect(screen.getByText('usgs')).toBeTruthy();
+    // n7: the catalogue name, never the raw id.
+    expect(screen.getByTestId('card-source').textContent).toBe('USGS Earthquake Hazards Program');
+    expect(screen.queryByText('usgs')).toBeNull();
     expect(screen.getByText('3m ago')).toBeTruthy();
     // A 3-minute-old quake is older than the 60 s refresh: RECENT, not LIVE.
     expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('recent');
@@ -76,7 +78,7 @@ describe('entity card frame', () => {
       </EntityCardFrame>,
     );
     fireEvent.click(screen.getByRole('tab', { name: 'sources' }));
-    expect(screen.getByText(/usgs: OK · 12 · 210 ms/)).toBeTruthy();
+    expect(screen.getByText(/USGS Earthquake Hazards Program: OK · 12 · 210 ms/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Close card' }));
     expect(onClose).toHaveBeenCalled();
   });

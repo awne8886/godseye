@@ -9,9 +9,9 @@
  * refuses non-embeddable videos, so embedding is allowed. The channel `/live` page could not be read
  * from the build sandbox (Google bot wall), so the panel always offers the YouTube link-out too.
  */
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Crosshair, ExternalLink, Radio, X } from 'lucide-react';
+import { Crosshair, ExternalLink, Radio } from 'lucide-react';
 import type { PanelProps } from '@/lib/feature-module';
 import { useSelectionStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
@@ -52,7 +52,16 @@ function GroundTrackMap({ iss }: { iss: IssResponse }) {
   );
 }
 
-export function SpacePanel({ onClose }: PanelProps) {
+/** How long the embed may take before the panel says it did not load (the link-out stays). */
+export const PLAYER_TIMEOUT_MS = 15_000;
+
+/** The host frame (InstrumentFrame / phone sheet) owns the title and the close button. */
+export function SpacePanel(_props: PanelProps) {
+  const [player, setPlayer] = useState<'loading' | 'ready' | 'failed'>('loading');
+  useEffect(() => {
+    const t = setTimeout(() => setPlayer((p) => (p === 'loading' ? 'failed' : p)), PLAYER_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, []);
   const autoplay = useUiStore((s) => s.settings.previewAutoplay);
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
   const setLayer = useUiStore((s) => s.setLayer);
@@ -70,32 +79,38 @@ export function SpacePanel({ onClose }: PanelProps) {
   const embed = `https://www.youtube-nocookie.com/embed/${NASA_ISS_VIDEO_ID}?${new URLSearchParams({ autoplay: autoplay ? '1' : '0', mute: '1', playsinline: '1', rel: '0' })}`;
 
   return (
-    <section aria-label="Live from Space" className="glass-panel flex w-full flex-col gap-3 p-3" data-testid="space-panel">
-      <header className="flex items-center gap-2">
+    // The host's panel frame supplies the one header (SPACE + state chip + close); this body adds a
+    // sub-heading only. The player stays collapsed until the embed has loaded, so the panel never
+    // shows an empty black 16:9 box (R3-m7, n6).
+    <div className="flex w-full flex-col gap-3" data-testid="space-panel">
+      <div className="flex items-center gap-2">
         <Radio aria-hidden className="h-4 w-4 text-[var(--cyan-primary)]" />
-        <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--cyan-primary)]">Live from Space</h2>
-        <span className="ml-auto rounded-sm border border-[var(--border-secondary)] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-secondary)]">NASA stream</span>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close Live from Space"
-          className="grid h-8 w-8 place-items-center rounded-md text-[var(--text-muted)] hover:text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
-        >
-          <X aria-hidden className="h-4 w-4" />
-        </button>
-      </header>
+        <h3 className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-heading)]">Live from space · NASA stream</h3>
+      </div>
 
-      <div className="relative w-full overflow-hidden rounded-md bg-[var(--bg-void)]" style={{ aspectRatio: '16 / 9' }}>
+      <div
+        className="relative w-full overflow-hidden rounded-md bg-[var(--bg-void)]"
+        style={player === 'ready' ? { aspectRatio: '16 / 9' } : { height: 0 }}
+        aria-hidden={player === 'ready' ? undefined : true}
+        data-testid="space-player"
+        data-state={player}
+      >
         <iframe
           src={embed}
           title="Live High-Definition Views from the International Space Station (Official NASA Stream)"
           allow="autoplay; encrypted-media; picture-in-picture"
           referrerPolicy="strict-origin-when-cross-origin"
           allowFullScreen
-          loading="lazy"
+          tabIndex={player === 'ready' ? undefined : -1}
+          onLoad={() => setPlayer('ready')}
           className="absolute inset-0 h-full w-full border-0"
         />
       </div>
+      {player !== 'ready' && (
+        <p role="status" className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-secondary)]" data-testid="space-player-status">
+          {player === 'loading' ? 'Connecting to the NASA stream…' : 'The NASA stream did not load here; open it on YouTube.'}
+        </p>
+      )}
       <p className="flex items-start justify-between gap-2 font-sans text-[12px] text-[var(--text-secondary)]">
         <span>Official NASA stream. During loss of signal NASA shows a holding screen or a recording.</span>
         <a
@@ -167,6 +182,6 @@ export function SpacePanel({ onClose }: PanelProps) {
           {issRecord ? 'Track ISS on globe' : sats.isError ? 'Satellite catalogue offline' : 'Satellite catalogue loading…'}
         </button>
       </div>
-    </section>
+    </div>
   );
 }

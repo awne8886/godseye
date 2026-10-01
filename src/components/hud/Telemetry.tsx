@@ -13,7 +13,7 @@ import { useDrawPending } from '@/lib/map/admission-scheduler';
 import { useUiStore } from '@/lib/store';
 import type { SpaceWeatherResponse } from '@/lib/types';
 import { useHealth, useVisibleLayers } from './hooks';
-import { STATUS_COLOR, activeVisible, hudStatus } from './status-logic';
+import { STATUS_COLOR, activeVisible, entitiesLabel, hudStatus } from './status-logic';
 
 function useZulu(): string {
   const [now, setNow] = useState<string>('--:--:--');
@@ -48,7 +48,8 @@ export default function Telemetry() {
   const visibleIds = useMemo(() => new Set(visible.map((l) => l.id)), [visible]);
   const shown = activeVisible(active, visibleIds);
   const entities = shown.reduce((n, id) => n + (status[id as keyof typeof status]?.count ?? 0), 0);
-  // Never claim entities the map has not drawn yet (layers waiting for their admission slot).
+  // Never claim entities the map has not drawn yet (layers waiting for their admission slot): the
+  // count stays visible but is worded as received while drawing is in progress (R3-m6).
   const drawPending = useDrawPending();
   const st = hudStatus({ active, visible: visibleIds, status, health: health.isError ? 'error' : health.data ? 'ok' : 'loading' });
   const sw = useSpaceWeather();
@@ -64,7 +65,13 @@ export default function Telemetry() {
         STATUS: {st}
       </span>
       <span className="hidden text-[var(--cyan-primary)] md:inline">{shown.length} LAYERS</span>
-      <span className="hidden text-[var(--alert-green)] md:inline">{drawPending ? 'ENTITIES LOADING' : `${entities.toLocaleString('en-US')} ENTITIES`}</span>
+      <span
+        data-testid="telemetry-entities"
+        className="hidden text-[var(--alert-green)] md:inline"
+        title={drawPending && entities > 0 ? 'Entities received from the feeds; some layers are still being drawn' : undefined}
+      >
+        {entitiesLabel(entities, drawPending)}
+      </span>
       <span className="hidden lg:inline" title={sw.data?.xray.observedAt ? `GOES X-ray observed ${sw.data.xray.observedAt}` : 'Space weather feed unavailable'}>
         SOLAR <span className="text-[var(--text-primary)]">{xray ?? '—'}</span>
       </span>

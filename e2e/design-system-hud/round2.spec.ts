@@ -130,3 +130,43 @@ test.describe('readout row', () => {
     });
   }
 });
+
+/** Overlap (px²) between the attribution box and the readout row / visible hint. */
+function attributionOverlap(page: Page) {
+  return page.evaluate(() => {
+    const a = document.querySelector('.maplibregl-ctrl-attrib')!.getBoundingClientRect();
+    const area = (r: DOMRect) => {
+      if (r.width === 0 || r.height === 0) return 0;
+      const w = Math.min(a.right, r.right) - Math.max(a.left, r.left);
+      const h = Math.min(a.bottom, r.bottom) - Math.max(a.top, r.top);
+      return w > 0 && h > 0 ? w * h : 0;
+    };
+    const row = document.querySelector('[data-testid="readout-row"]')!.getBoundingClientRect();
+    const hint = document.querySelector('[data-testid="view-hint"]')!.getBoundingClientRect();
+    return { row: area(row), hint: area(hint), attribLeft: a.left };
+  });
+}
+
+test.describe('hint vs attribution (R3-M1)', () => {
+  test.skip(({ isMobile }) => isMobile, 'desktop layout');
+
+  for (const width of [1280, 1600, 1920]) {
+    test(`the hint row never intersects the attribution at ${width} px, even with long credits`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await boot(page);
+      await expect(page.getByTestId('readout-row')).toBeVisible();
+      await expect.poll(async () => (await attributionOverlap(page)).row, { timeout: 5_000 }).toBe(0);
+      // Worst case seen in round 3: the GIBS night-lights credit makes the box ~850 px wide.
+      await page.evaluate(() => {
+        const inner = document.querySelector('.maplibregl-ctrl-attrib-inner') ?? document.querySelector('.maplibregl-ctrl-attrib')!;
+        const extra = document.createElement('span');
+        extra.textContent = ' | Night lights: VIIRS Black Marble 2016 (NASA GIBS) | Imagery: Esri World Imagery, Maxar, Earthstar Geographics';
+        inner.appendChild(extra);
+      });
+      await expect.poll(async () => (await attributionOverlap(page)).row, { timeout: 5_000 }).toBe(0);
+      const o = await attributionOverlap(page);
+      expect(o.hint).toBe(0);
+      expect(o.attribLeft).toBeGreaterThanOrEqual(0);
+    });
+  }
+});

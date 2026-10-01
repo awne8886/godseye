@@ -12,6 +12,8 @@ export type ChipTone = 'idle' | 'busy' | 'live' | 'warn' | 'error';
 export interface PanelChipState {
   text: string;
   tone: ChipTone;
+  /** Full wording for the tooltip when `text` is abbreviated (defaults to `text`). */
+  title?: string;
 }
 
 const TONE_COLOR: Record<ChipTone, string> = {
@@ -25,17 +27,17 @@ const TONE_COLOR: Record<ChipTone, string> = {
 const ChipContext = createContext<((c: PanelChipState) => void) | null>(null);
 
 /** Set this panel's header chip, e.g. usePanelChip('12 RESULTS', 'live'). Honest states only. */
-export function usePanelChip(text: string, tone: ChipTone = 'idle'): void {
+export function usePanelChip(text: string, tone: ChipTone = 'idle', title?: string): void {
   const set = useContext(ChipContext);
   useEffect(() => {
-    set?.({ text, tone });
-  }, [set, text, tone]);
+    set?.({ text, tone, title });
+  }, [set, text, tone, title]);
 }
 
 /** The chip gives way before the panel title does (long counts truncate, full text in `title`). */
-export function StateChip({ text, tone }: PanelChipState) {
+export function StateChip({ text, tone, title }: PanelChipState) {
   return (
-    <span className="instrument-chip min-w-0 overflow-hidden text-ellipsis" title={text} style={{ color: TONE_COLOR[tone] }}>
+    <span className="instrument-chip min-w-0 overflow-hidden text-ellipsis" title={title ?? text} style={{ color: TONE_COLOR[tone] }}>
       {text}
     </span>
   );

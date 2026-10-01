@@ -9,7 +9,7 @@
  */
 import { m } from 'motion/react';
 import { Globe, Layers2, LocateFixed, MapPinned, Maximize, Minimize, Mountain, Navigation2, Satellite } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useLayerStatus, useMapInstanceStore } from '@/lib/layer-host';
 import { getCursor, getView, subscribeCursor, subscribeView, type MapPoint } from '@/lib/map/cursor';
 import { TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
@@ -17,7 +17,7 @@ import { useUiStore, type Settings } from '@/lib/store';
 import { toggleFullscreen } from './actions';
 import { locateOnce } from './Boot';
 import { useApiRoute } from './hooks';
-import { formatLatLng, geoCell, scaleBarFor } from './map-readout';
+import { formatLatLng, geoCell, HINT_MIN_ROW_PX, readoutRightInset, scaleBarFor } from './map-readout';
 
 function Segmented<T extends string>({ label, value, options, onChange, group }: { label: string; value: T; group: string; options: { value: T; text: string; title: string; icon: ReactNode }[]; onChange: (v: T) => void }) {
   return (
@@ -149,6 +149,43 @@ export function Readout({ units, geocode = true }: { units: Settings['units']; g
   );
 }
 
+/**
+ * Keeps the desktop readout/hint row clear of MapLibre's attribution box (R3-M1): measures the
+ * attribution (ResizeObserver + window resize; re-found if the map remounts) and writes the row's
+ * right inset straight to the element, hiding the hint (`data-narrow`) when too little room is left.
+ */
+export function useClearOfAttribution(row: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    let attrib: Element | null = null;
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => apply());
+    function apply() {
+      const el = row.current;
+      if (!el) return;
+      const box = attrib?.isConnected ? attrib.getBoundingClientRect() : null;
+      const visible = box !== null && box.width > 0 && box.height > 0;
+      const inset = readoutRightInset(window.innerWidth, visible ? box.left : null);
+      el.style.right = `${inset}px`;
+      const rowWidth = window.innerWidth - inset - el.getBoundingClientRect().left;
+      el.toggleAttribute('data-narrow', rowWidth < HINT_MIN_ROW_PX);
+    }
+    function find() {
+      if (attrib?.isConnected) return;
+      ro?.disconnect();
+      attrib = document.querySelector('.maplibregl-ctrl-attrib');
+      if (attrib) ro?.observe(attrib);
+      apply();
+    }
+    find();
+    const poll = setInterval(find, 1000);
+    window.addEventListener('resize', apply);
+    return () => {
+      clearInterval(poll);
+      window.removeEventListener('resize', apply);
+      ro?.disconnect();
+    };
+  }, [row]);
+}
+
 /** Terrain status from the layer status the map host reports for `terrain_elevation`. */
 export function terrainText(state: string): string {
   const s: TerrainStatus = state === 'loading' ? 'loading' : state === 'reference' || state === 'live' ? 'ready' : state === 'offline' ? 'error' : 'idle';
@@ -266,6 +303,8 @@ export default function ViewControls() {
   const geocodeRoute = useApiRoute('/api/geo/reverse');
   const [locating, setLocating] = useState<'idle' | 'busy' | 'failed'>('idle');
   const failTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readoutRow = useRef<HTMLDivElement>(null);
+  useClearOfAttribution(readoutRow);
 
   const locate = async () => {
     // The click itself is the consent; it is remembered in Settings (and can be revoked there).
@@ -281,7 +320,8 @@ export default function ViewControls() {
 
   return (
     <>
-      <div className="glass-panel fixed left-3 top-[64px] z-[var(--z-hud)] flex items-center gap-1 p-1 md:bottom-[100px] md:left-[120px] md:top-auto">
+      {/* data-map-inset: map framing (flight paths) keeps route endpoints out from under this bar. */}
+      <div data-map-inset="view-controls" data-testid="view-controls" className="glass-panel fixed left-3 top-[64px] z-[var(--z-hud)] flex items-center gap-1 p-1 md:bottom-[100px] md:left-[120px] md:top-auto">
         <Segmented
           label="Projection"
           group="proj"
@@ -323,16 +363,18 @@ export default function ViewControls() {
           LOCATION UNAVAILABLE
         </p>
       )}
-      {/* Ends 44rem short of the right edge so it never runs under the attribution / imagery chips. */}
-      {/* One row: scale bar, readout (clipped at the row edge, never overprinting) and the hint, which
-          is hidden while a cursor position is shown (R2-M5). */}
+      {/* Ends at least 44rem short of the right edge, and always before the measured attribution box
+          (R3-M1), so it never runs under the credits / imagery chips. One row: scale bar, readout
+          (clipped at the row edge, never overprinting) and the hint, which is hidden while a cursor
+          position is shown (R2-M5) or when the row is too narrow for it. */}
       <div
+        ref={readoutRow}
         data-readout-row
         data-testid="readout-row"
         className="group hud-micro pointer-events-none fixed bottom-8 left-72 right-[44rem] z-[var(--z-hud)] hidden min-w-0 items-end gap-6 overflow-hidden text-[var(--text-secondary)] xl:flex"
       >
         <Readout units={units} geocode={geocodeRoute} />
-        <span data-testid="view-hint" className="hidden min-w-0 truncate text-[var(--text-muted)] group-data-[cursor]:!hidden 2xl:inline">DRAG TO PAN · RIGHT-DRAG TO TILT · DOUBLE RIGHT-CLICK FOR DOSSIER · ⌘K COMMANDS · ? SHORTCUTS</span>
+        <span data-testid="view-hint" className="hidden min-w-0 truncate text-[var(--text-muted)] group-data-[cursor]:!hidden group-data-[narrow]:!hidden 2xl:inline">DRAG TO PAN · RIGHT-DRAG TO TILT · DOUBLE RIGHT-CLICK FOR DOSSIER · ⌘K COMMANDS · ? SHORTCUTS</span>
       </div>
     </>
   );

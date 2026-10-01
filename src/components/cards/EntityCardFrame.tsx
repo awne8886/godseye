@@ -12,6 +12,7 @@ import { getLayer } from '@/lib/layer-registry';
 import type { LayerStatus, Selection } from '@/lib/layer-host';
 import { statusAttribution } from '@/components/hud/LayerRows';
 import { cardBadge } from '@/components/hud/status-logic';
+import { sourceDisplayName } from './source-name';
 
 const iso = (s: string | null) => (s ? `${s.slice(0, 10)} ${s.slice(11, 19)}Z` : '—');
 
@@ -51,6 +52,7 @@ export default function EntityCardFrame({
   const titleId = useId();
   const layer = selection.layer ? getLayer(selection.layer) : undefined;
   const badge = cardBadge({ layer: selection.layer, observedAt: selection.observedAt, feed, now });
+  const sourceName = sourceDisplayName(selection.source, selection.layer ?? undefined);
   const attribution = feed ? statusAttribution(feed) : [];
   const offline = feed?.state === 'offline';
   const kindLabel = selection.kind.replace(/_/g, ' ');
@@ -76,7 +78,9 @@ export default function EntityCardFrame({
       <div className="instrument-rule mx-4" aria-hidden />
       <dl className="relative grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 px-4 pt-2 text-[12px]">
         <dt className="hud-micro text-[var(--text-muted)]">SOURCE</dt>
-        <dd className="truncate text-[var(--text-primary)]">{selection.source}</dd>
+        <dd className="truncate text-[var(--text-primary)]" title={sourceName} data-testid="card-source">
+          {sourceName}
+        </dd>
         <dt className="hud-micro text-[var(--text-muted)]">OBSERVED</dt>
         <dd className="font-mono text-[var(--text-primary)] tabular-nums">
           {layer?.kind === 'reference' ? 'REFERENCE DATA' : iso(selection.observedAt)}
@@ -114,7 +118,7 @@ export default function EntityCardFrame({
             </p>
             <p>
               <span className="hud-micro text-[var(--text-muted)]">PROVIDER </span>
-              {selection.source}
+              {sourceName}
             </p>
             {feed?.fetchedAt && (
               <p>
@@ -125,7 +129,7 @@ export default function EntityCardFrame({
             {feed?.providers &&
               Object.entries(feed.providers).map(([name, p]) => (
                 <p key={name} className="font-mono text-[11px]">
-                  {name}: {p.ok ? 'OK' : 'FAILED'} · {p.count} · {p.ms} ms
+                  {sourceDisplayName(name)}: {p.ok ? 'OK' : 'FAILED'} · {p.count} · {p.ms} ms
                 </p>
               ))}
             {attribution.map((a) =>

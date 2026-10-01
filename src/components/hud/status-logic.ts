@@ -119,3 +119,15 @@ export function refreshLabel(refreshMs: number | null, transport: string): strin
   const h = Math.round(m / 60);
   return h < 48 ? `${h}H` : `${Math.round(h / 24)}D`;
 }
+
+/**
+ * Header entity readout (R3-m6). Settled: "N ENTITIES". While map start-up work is still queued the
+ * count stays visible but is worded as what it is, entities received from the feeds with drawing
+ * still in progress ("N RECEIVED + DRAWING"), never claimed as drawn; with nothing received yet it
+ * reads "ENTITIES LOADING".
+ */
+export function entitiesLabel(count: number, drawPending: boolean): string {
+  const n = Math.max(0, Math.round(count)).toLocaleString('en-US');
+  if (!drawPending) return `${n} ENTITIES`;
+  return count > 0 ? `${n} RECEIVED + DRAWING` : 'ENTITIES LOADING';
+}
