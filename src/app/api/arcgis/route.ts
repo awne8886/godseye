@@ -5,14 +5,15 @@
  * services-eu1/-ap1.arcgis.com, *.arcgisonline.com under /arcgis/rest/services/, ARCGIS_ALLOWED_HOSTS);
  * URL rebuilt, allow-list + SSRF guard on every hop, FEATURE_CAP features. A service that answers
  * 4xx (bad item, path or layer; token required) → 422 `service_error` with `upstreamStatus`; only an
- * unreachable/5xx/unusable service is 503 SOURCE OFFLINE. Owner: panels-recon.
+ * unreachable/5xx/unusable service is 503 SOURCE OFFLINE; a layer over ARCGIS_MAX_BYTES is 422
+ * `layer_too_large`. Owner: panels-recon.
  */
 import { z } from 'zod';
 import { HttpError } from '@/lib/http';
 import { apiError, json, parseQuery, withRoute } from '@/lib/respond';
 import { assertPublicUrl } from '@/lib/ssrf';
 import type { ProviderStatus } from '@/lib/types';
-import { arcgisPorts, arcgisRules, importLayer, isAllowedService, parseServiceUrl, searchItems, type Bbox, type ServiceRefusal } from '@/components/panels/recon/server/arcgis';
+import { ARCGIS_MAX_BYTES, arcgisPorts, arcgisRules, importLayer, isAllowedService, parseServiceUrl, searchItems, type Bbox, type ServiceRefusal } from '@/components/panels/recon/server/arcgis';
 import { offline } from '@/components/panels/recon/server/lookup';
 
 export const dynamic = 'force-dynamic';
@@ -74,6 +75,14 @@ export const GET = withRoute('/api/arcgis', async (req: Request) => {
   const r = await importLayer(ref, q.data.bbox);
   if (r.status.error === 'blocked' || r.status.error === 'redirect') return apiError(400, 'blocked_target', 'The service redirected to a host, address or scheme this server will not fetch.');
   if (!r.fc && r.refusal) return serviceRefused(r.refusal, r.status);
+  // The host answered; the layer is just bigger than this server proxies. A retry cannot succeed, so
+  // this is 422 (not SOURCE OFFLINE with Retry-After).
+  if (!r.fc && r.status.error === 'too_large') {
+    return json(
+      { error: 'layer_too_large', detail: `The layer exceeds ${(ARCGIS_MAX_BYTES / 1e6).toFixed(1)} MB; import a smaller layer, or call the API with a bbox (west,south,east,north).`, providers: { service: r.status } },
+      { status: 422, ttl: 0 },
+    );
+  }
   if (!r.fc) return offline({ service: r.status }, 'The ArcGIS service did not return usable GeoJSON.');
   return json(
     { mode: 'layer', items: [], features: r.fc, truncated: r.truncated, providers: { service: r.status }, timestamp: now(), source: `${ref.origin}${ref.servicePath}/${ref.layer}` },

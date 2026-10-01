@@ -84,48 +84,57 @@ export default function DrawPanel(_: PanelProps) {
   };
 
   const tool = TOOLS.find((t) => t.id === drawMode);
+  // Two columns: at 326 px a 4-up grid squeezed the icons to nothing next to "POLYGON" (visual-qa M7).
+  const toolGrid = (
+    <div key="tools" className="grid grid-cols-2 gap-1.5" role="group" aria-label="Drawing tools">
+      {TOOLS.map(({ id, label, Icon }) => (
+        <HudButton key={id} tone={drawMode === id ? 'cyan' : 'muted'} pressed={drawMode === id} onClick={() => setDrawMode(drawMode === id ? null : id)}>
+          <Icon size={14} aria-hidden className="shrink-0" data-testid={`draw-tool-icon-${id}`} /> {label}
+        </HudButton>
+      ))}
+    </div>
+  );
   return (
     <div className="flex flex-col gap-3" data-testid="draw-panel">
-      {/* Two columns: at 326 px a 4-up grid squeezed the icons to nothing next to "POLYGON" (visual-qa M7). */}
-      <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Drawing tools">
-        {TOOLS.map(({ id, label, Icon }) => (
-          <HudButton key={id} tone={drawMode === id ? 'cyan' : 'muted'} pressed={drawMode === id} onClick={() => setDrawMode(drawMode === id ? null : id)}>
-            <Icon size={14} aria-hidden className="shrink-0" data-testid={`draw-tool-icon-${id}`} /> {label}
-          </HudButton>
-        ))}
-      </div>
-      {tool ? (
-        <div className="flex flex-col gap-2">
-          <Prose>{coarse ? tool.touch : tool.hint}</Prose>
-          {status && (
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] tabular-nums text-[var(--cyan-primary)]" data-testid="draw-sketch" aria-live="polite">
-              {status}
-            </p>
-          )}
-          {/* FINISH commits, CANCEL discards, DONE stops the tool (keeping a finishable shape). 44 px on phones. */}
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Sketch actions">
-            {need !== null && (
-              <HudButton
-                tone="cyan"
-                data-testid="draw-finish"
-                disabled={need > 0}
-                title={need > 0 ? `Add ${need} more ${tool.id === 'polygon' ? (need === 1 ? 'corner' : 'corners') : need === 1 ? 'vertex' : 'vertices'} first` : undefined}
-                onClick={() => finishSketch()}
-              >
-                <Check size={14} aria-hidden /> Finish
-              </HudButton>
-            )}
-            <HudButton tone="muted" disabled={!sketch.length} onClick={cancelSketch} aria-label="Cancel the shape in progress">
-              <Undo2 size={14} aria-hidden /> Cancel
-            </HudButton>
-            <HudButton tone="muted" onClick={stopDrawing} aria-label="Stop drawing" title="Stop drawing (a finishable shape is kept)">
-              <X size={14} aria-hidden /> Done
-            </HudButton>
-          </div>
-        </div>
-      ) : (
-        <Prose>Pick a tool, then {coarse ? 'tap' : 'click'} the map. Distances and areas are geodesic (turf), in your unit setting.</Prose>
-      )}
+      {/* While a tool is armed the sketch status and FINISH/CANCEL/DONE come first, so a landscape
+          phone's short sheet shows them without scrolling (r5). Keyed, so flipping the order inserts
+          the sketch block without remounting the tool grid (focus stays on the button just pressed). */}
+      {tool
+        ? [
+            <div key="sketch" className="flex flex-col gap-2">
+              <Prose>{coarse ? tool.touch : tool.hint}</Prose>
+              {status && (
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] tabular-nums text-[var(--cyan-primary)]" data-testid="draw-sketch" aria-live="polite">
+                  {status}
+                </p>
+              )}
+              {/* FINISH commits, CANCEL discards, DONE stops the tool (keeping a finishable shape). 44 px on phones. */}
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Sketch actions">
+                {need !== null && (
+                  <HudButton
+                    tone="cyan"
+                    data-testid="draw-finish"
+                    disabled={need > 0}
+                    title={need > 0 ? `Add ${need} more ${tool.id === 'polygon' ? (need === 1 ? 'corner' : 'corners') : need === 1 ? 'vertex' : 'vertices'} first` : undefined}
+                    onClick={() => finishSketch()}
+                  >
+                    <Check size={14} aria-hidden /> Finish
+                  </HudButton>
+                )}
+                <HudButton tone="muted" disabled={!sketch.length} onClick={cancelSketch} aria-label="Cancel the shape in progress">
+                  <Undo2 size={14} aria-hidden /> Cancel
+                </HudButton>
+                <HudButton tone="muted" onClick={stopDrawing} aria-label="Stop drawing" title="Stop drawing (a finishable shape is kept)">
+                  <X size={14} aria-hidden /> Done
+                </HudButton>
+              </div>
+            </div>,
+            toolGrid,
+          ]
+        : [
+            toolGrid,
+            <Prose key="hint">Pick a tool, then {coarse ? 'tap' : 'click'} the map. Distances and areas are geodesic (turf), in your unit setting.</Prose>,
+          ]}
       <div className="flex flex-wrap gap-1.5">
         <HudButton tone="muted" onClick={() => fileRef.current?.click()}>
           <FileUp size={14} aria-hidden /> Import GeoJSON

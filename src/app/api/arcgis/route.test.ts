@@ -5,7 +5,7 @@ import { ArcgisResponse } from '@/lib/schemas';
 import { fixture, fixtureText, upstream } from '@/components/panels/recon/__fixtures__/mock-http';
 import { error, freshState, get } from '@/components/panels/recon/__fixtures__/route-helpers';
 import { matchesAllowList } from '@/lib/ssrf';
-import { arcgisError, arcgisRules, BUILTIN_ARCGIS_RULES, FEATURE_CAP, HOSTED_SERVICE_HOSTS, isImportableUrl, isRefusalStatus, parseServiceUrl, queryUrl, SERVER_QUERY_PATH } from '@/components/panels/recon/server/arcgis';
+import { ARCGIS_MAX_BYTES, arcgisError, arcgisRules, isAllowedService, BUILTIN_ARCGIS_RULES, FEATURE_CAP, HOSTED_SERVICE_HOSTS, isImportableUrl, isRefusalStatus, parseServiceUrl, queryUrl, SERVER_QUERY_PATH } from '@/components/panels/recon/server/arcgis';
 
 // Fixtures: arcgis.com search "earthquakes" and the USGS_Seismic_Data_v1 FeatureServer query, 2026-09-30;
 // sampleserver6 unknown-service 404 page, layer-57 error body and the services.arcgis.com bad-service 400, 2026-10-01.
@@ -128,6 +128,28 @@ describe('GET /api/arcgis', () => {
     expect(isImportableUrl('https://services-eu1.arcgis.com/abc/arcgis/rest/services/x/FeatureServer/0', {})).toBe(true);
     expect(isImportableUrl('https://services-ap1.arcgis.com/abc/arcgis/rest/services/x/FeatureServer/0', {})).toBe(true);
     expect(isImportableUrl('https://services-eu1.arcgis.com.evil.example/abc/arcgis/rest/services/x/FeatureServer/0', {})).toBe(false);
+  });
+
+  it('accepts the REST Services Directory casing /<org>/ArcGIS/rest/services/ (r5 blocking)', async () => {
+    const dir = 'https://services9.arcgis.com/RHVPKKiFTONKtxq3/ArcGIS/rest/services/USGS_Seismic_Data_v1/FeatureServer/0';
+    expect(isImportableUrl(dir, {})).toBe(true);
+    expect(isAllowedService(parseServiceUrl(dir), {})).toBe(true);
+    expect(isImportableUrl('https://services6.arcgis.com/abc/ArcGIS/rest/services/BCWS_FirePerimeters_PublicView/FeatureServer', {})).toBe(true);
+    expect(isImportableUrl('https://gis.example.org/Server/ArcGIS/rest/services/x/MapServer', { ARCGIS_ALLOWED_HOSTS: 'gis.example.org' })).toBe(true);
+    // The other APIs on the same hosts stay refused whatever their casing.
+    expect(matchesAllowList(new URL('https://services9.arcgis.com/abc/ArcGIS/Sharing/rest/info'), arcgisRules({}))).toBe(false);
+    upstream.on('/ArcGIS/rest/services/USGS_Seismic_Data_v1/FeatureServer/0/query', { json: fixture('arcgis-featureserver-query.json') });
+    const body = await valid(await call(`?url=${encodeURIComponent(dir)}`));
+    expect(body.features.features.length).toBe(3);
+  });
+
+  it('reports a layer over the size cap as 422 layer_too_large, not SOURCE OFFLINE', async () => {
+    upstream.on('/FeatureServer/1/query', { text: 'x'.repeat(ARCGIS_MAX_BYTES + 1) });
+    const res = await call(`?url=${encodeURIComponent(`${SVC}/1`)}`);
+    const body = await error(res, 422);
+    expect(body.error).toBe('layer_too_large');
+    expect(body.providers.service).toMatchObject({ ok: false, error: 'too_large' });
+    expect(res.headers.get('retry-after')).toBeNull();
   });
 
   it('imports from *.arcgisonline.com under /arcgis/rest/services/', async () => {

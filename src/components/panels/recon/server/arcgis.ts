@@ -53,13 +53,15 @@ export function parseServiceUrl(raw: string): ServiceRef {
  * hop (AllowRule.pathPattern): a host allow-listed at `/` cannot be steered to another API on the
  * same host (`/sharing/rest/…`, `/usrsvcs/…`, admin endpoints).
  */
+// Case-insensitive like SERVICE_RE and like ArcGIS itself: the REST Services Directory form
+// `/<org>/ArcGIS/rest/services/…` keeps the user's casing and must not be refused as "host not allowed".
 const QUERY_TAIL = String.raw`rest\/services\/[^?#]*\/(?:Feature|Map)Server\/\d{1,4}\/query$`;
 /** ArcGIS Online hosted services: `/<orgId>/arcgis/rest/services/…/(Feature|Map)Server/<n>/query`. */
-export const HOSTED_QUERY_PATH = new RegExp(String.raw`^\/[A-Za-z0-9]{1,64}\/arcgis\/` + QUERY_TAIL);
+export const HOSTED_QUERY_PATH = new RegExp(String.raw`^\/[A-Za-z0-9]{1,64}\/arcgis\/` + QUERY_TAIL, 'i');
 /** Esri's own servers: `/arcgis/rest/services/…/(Feature|Map)Server/<n>/query`. */
-export const ESRI_QUERY_PATH = new RegExp(String.raw`^\/arcgis\/` + QUERY_TAIL);
+export const ESRI_QUERY_PATH = new RegExp(String.raw`^\/arcgis\/` + QUERY_TAIL, 'i');
 /** Operator hosts (ArcGIS Server / Enterprise): any web-adaptor directory, then the same tail. */
-export const SERVER_QUERY_PATH = new RegExp(String.raw`^\/(?:[^/?#]+\/)*` + QUERY_TAIL);
+export const SERVER_QUERY_PATH = new RegExp(String.raw`^\/(?:[^/?#]+\/)*` + QUERY_TAIL, 'i');
 
 /** Exact ArcGIS Online hosted-service hosts (no wildcard; see BUILTIN_ARCGIS_RULES). */
 export const HOSTED_SERVICE_HOSTS: readonly string[] = ['services.arcgis.com', ...Array.from({ length: 9 }, (_, i) => `services${i + 1}.arcgis.com`), 'services-eu1.arcgis.com', 'services-ap1.arcgis.com'];

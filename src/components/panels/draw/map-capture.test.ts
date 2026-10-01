@@ -4,7 +4,7 @@
 // phone sheet. Modelled on MapLibre's DOM wiring: its HandlerManager listens for `click`/`dblclick`
 // on the canvas container in the bubble phase and turns them into map events.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CLICK_TOLERANCE_PX, canvasPoint, captureMapClicks, keyForSketch, type CaptureMap } from './map-capture';
+import { CLICK_TOLERANCE_PX, DOUBLE_CLICK_MS, canvasPoint, captureMapClicks, isRepeatClick, keyForSketch, type CaptureMap } from './map-capture';
 
 function fakeMap() {
   const host = document.createElement('div');
@@ -132,5 +132,25 @@ describe('keyForSketch', () => {
     expect(keyForSketch({ key: 'Enter', target: document.body, isComposing: true })).toBeNull();
     expect(keyForSketch({ key: 'Enter', target: document.body, repeat: true })).toBeNull();
     expect(keyForSketch({ key: 'a', target: document.body })).toBeNull();
+  });
+});
+
+describe('isRepeatClick (r5: a double-click must not drop two identical points)', () => {
+  const last = { px: [100, 100] as [number, number], at: 1000 };
+  it('the second click of a dblclick with the Point tool is not a second point', () => {
+    expect(isRepeatClick(last, [101, 100], 1000 + 120, 0, true)).toBe(true);
+  });
+  it('a later click on the same spot with the Point tool is a deliberate second point', () => {
+    expect(isRepeatClick(last, [100, 100], 1000 + DOUBLE_CLICK_MS + 1, 0, true)).toBe(false);
+  });
+  it('a quick click elsewhere is a new point', () => {
+    expect(isRepeatClick(last, [100 + CLICK_TOLERANCE_PX, 100], 1010, 0, true)).toBe(false);
+  });
+  it('with a sketch in progress, a click on the vertex just added is a repeat whatever the delay', () => {
+    expect(isRepeatClick(last, [100, 101], 9000, 2, false)).toBe(true);
+  });
+  it('without a sketch or Point tool (first vertex of a line), nothing is a repeat', () => {
+    expect(isRepeatClick(last, [100, 100], 1050, 0, false)).toBe(false);
+    expect(isRepeatClick(null, [100, 100], 1050, 3, true)).toBe(false);
   });
 });

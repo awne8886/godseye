@@ -14,7 +14,7 @@ import { useDeckLayers, useMapInstance } from '@/lib/layer-host';
 import { getFarSideCamera, isFacing, type FarSideCamera } from '@/lib/map/far-side';
 import { readCssColor } from '@/lib/tokens';
 import { addDrawPoint, useOverlayStore } from './overlay-store';
-import { CLICK_TOLERANCE_PX, captureMapClicks, keyForSketch } from '../draw/map-capture';
+import { captureMapClicks, isRepeatClick, keyForSketch, type LastClick } from '../draw/map-capture';
 
 /** Above basemap-ish layers, below live entities. */
 const Z = 45;
@@ -34,16 +34,17 @@ function useDrawInteraction() {
   useEffect(() => {
     if (!map || !mode) return;
     const st = useOverlayStore.getState;
-    // The second click of a double-click lands on the vertex the first one added: not a new vertex.
-    let lastPx: [number, number] | null = null;
+    // A double-click must not add the same vertex (or Point) twice: isRepeatClick.
+    let last: LastClick | null = null;
     const release = captureMapClicks(map, {
       onPoint: (p, px) => {
-        const repeat = lastPx && st().sketch.length > 0 && Math.hypot(px[0] - lastPx[0], px[1] - lastPx[1]) < CLICK_TOLERANCE_PX;
-        lastPx = px;
+        const at = performance.now();
+        const repeat = isRepeatClick(last, px, at, st().sketch.length, mode === 'point');
+        last = { px, at };
         if (!repeat) addDrawPoint(p);
       },
       onDouble: () => {
-        lastPx = null;
+        last = null;
         st().finishSketch();
       },
     });
@@ -51,7 +52,7 @@ function useDrawInteraction() {
       const k = keyForSketch(e);
       if (k === 'finish') st().finishSketch();
       if (k === 'cancel') st().cancelSketch();
-      if (k) lastPx = null;
+      if (k) last = null;
     };
     const dblZoom = map.doubleClickZoom.isEnabled();
     map.doubleClickZoom.disable();

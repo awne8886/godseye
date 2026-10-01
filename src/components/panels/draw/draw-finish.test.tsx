@@ -162,6 +162,21 @@ describe('DrawPanel FINISH / CANCEL / DONE', () => {
     }
   });
 
+  it('armed: the sketch actions come before the tool grid (landscape phones see FINISH unscrolled); the pressed tool keeps focus', () => {
+    panel();
+    const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const lineBtn = screen.getByRole('button', { name: 'Line' });
+    lineBtn.focus();
+    fireEvent.click(lineBtn);
+    expect(before(screen.getByRole('group', { name: 'Sketch actions' }), screen.getByRole('group', { name: 'Drawing tools' }))).toBe(true);
+    // Not remounted: the same node, still focused.
+    expect(screen.getByRole('button', { name: 'Line' })).toBe(lineBtn);
+    expect(document.activeElement).toBe(lineBtn);
+    fireEvent.click(lineBtn);
+    expect(screen.queryByRole('group', { name: 'Sketch actions' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Line' })).toBe(lineBtn);
+  });
+
   it('closing the panel keeps a finishable sketch and disarms the tool', () => {
     const { unmount } = panel();
     fireEvent.click(screen.getByRole('button', { name: 'Line' }));

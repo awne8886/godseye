@@ -29,6 +29,26 @@ export interface CaptureHandlers {
 export const CLICK_TOLERANCE_PX = 3;
 
 /** Canvas-pixel position of a mouse event, as MapLibre computes it (CSS-scale aware, borders excluded). */
+/** Two clicks on the same spot closer than this are one double-click (browser default is ~500 ms). */
+export const DOUBLE_CLICK_MS = 500;
+
+/** The previous canvas click, for {@link isRepeatClick}. */
+export interface LastClick {
+  px: [number, number];
+  at: number;
+}
+
+/**
+ * True when a click is the second half of a double-click on the spot the first click already used:
+ * with a sketch in progress any click on that spot (it would duplicate the vertex just added); with
+ * the Point tool, which commits on every click and leaves the sketch empty, only within
+ * DOUBLE_CLICK_MS (a later click on the same spot is a deliberate second point).
+ */
+export function isRepeatClick(last: LastClick | null, px: [number, number], at: number, sketchLength: number, pointTool: boolean): boolean {
+  if (!last || Math.hypot(px[0] - last.px[0], px[1] - last.px[1]) >= CLICK_TOLERANCE_PX) return false;
+  return sketchLength > 0 || (pointTool && at - last.at < DOUBLE_CLICK_MS);
+}
+
 export function canvasPoint(el: HTMLElement, e: { clientX: number; clientY: number }): [number, number] {
   const rect = el.getBoundingClientRect();
   const sx = el.offsetWidth ? rect.width / el.offsetWidth : 1;
