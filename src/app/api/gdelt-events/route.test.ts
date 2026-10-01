@@ -36,6 +36,9 @@ describe('GET /api/gdelt-events', () => {
     expect(body.window).toEqual({ from: '2026-09-30T19:40:39.000Z', to: '2026-09-30T19:55:39.000Z', batches: 1, latestLabel: '2026-09-30T20:00:00.000Z' });
     expect(body.scanned).toBe(1233);
     expect(body.items.length).toBeGreaterThan(1100);
+    // Everything in the window was served, and the response says so.
+    expect(body.total).toBe(body.items.length);
+    expect(body.truncated).toBe(false);
     expect(body.providers.export).toMatchObject({ ok: true });
     expect(body.meta).toMatchObject({ feed: 'gdelt-events', observedAt: '2026-09-30T19:55:39.000Z' });
     const zipCalls = state.calls.filter((c) => c.url.includes('.export.CSV.zip'));
@@ -68,10 +71,33 @@ describe('GET /api/gdelt-events', () => {
   it('filters by QuadClass and limit, and validates the query', async () => {
     state.routes = [['lastupdate.txt', FX.gdeltLast], ['20260930200000.export', FX.gdeltZip], ['.export.CSV.zip', 404]];
     const body = await (await GET(req('/api/gdelt-events?quad=4&limit=50'), undefined)).json();
+    expect(GdeltEventsResponse.safeParse(body).success).toBe(true);
     expect(body.items).toHaveLength(50);
     expect(body.items.every((e: { quadClass: number }) => e.quadClass === 4)).toBe(true);
     expect((await GET(req('/api/gdelt-events?quad=7'), undefined)).status).toBe(400);
     expect((await GET(req('/api/gdelt-events?limit=9999'), undefined)).status).toBe(400);
+    expect((await GET(req('/api/gdelt-events?limit=5001'), undefined)).status).toBe(400);
+  });
+
+  // R3 round-5 MINOR-3: the default limit served the first 1 000 of 4 247 events with no hint.
+  it('never truncates silently: total and truncated describe what was left out', async () => {
+    state.routes = [['lastupdate.txt', FX.gdeltLast], ['20260930200000.export', FX.gdeltZip], ['.export.CSV.zip', 404]];
+    const all = await (await GET(req('/api/gdelt-events?limit=5000'), undefined)).json();
+    expect(all.truncated).toBe(false);
+    expect(all.total).toBe(all.items.length);
+    expect(all.total).toBeGreaterThan(1000);
+    // The default limit (1 000) is a slice of the window and says so.
+    const def = await (await GET(req('/api/gdelt-events'), undefined)).json();
+    expect(GdeltEventsResponse.safeParse(def).success).toBe(true);
+    expect(def.items).toHaveLength(1000);
+    expect(def.total).toBe(all.total);
+    expect(def.truncated).toBe(true);
+    // The slice is the newest events (the order the feed keeps).
+    expect(def.items.map((e: { id: string }) => e.id)).toEqual(all.items.slice(0, 1000).map((e: { id: string }) => e.id));
+    // With a QuadClass filter, total counts the matching events.
+    const q4 = await (await GET(req('/api/gdelt-events?quad=4&limit=50'), undefined)).json();
+    expect(q4.total).toBe(all.items.filter((e: { quadClass: number }) => e.quadClass === 4).length);
+    expect(q4.truncated).toBe(q4.total > 50);
   });
 
   it('answers 503 when GDELT is unreachable', async () => {

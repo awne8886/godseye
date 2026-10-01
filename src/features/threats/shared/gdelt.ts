@@ -62,3 +62,19 @@ export function gdeltTitle(e: { actor1: string | null; actor2: string | null; ro
   const actors = [e.actor1, e.actor2].filter(Boolean).join(' → ');
   return actors ? `${actors}: ${action}` : action;
 }
+
+/** What part of the 1 h GDELT window a /api/gdelt-events answer drew (null when it drew all of it). */
+export interface GdeltWindowCoverage {
+  served: number;
+  total: number;
+}
+
+/**
+ * Coverage of a /api/gdelt-events body: null when every matching event in the window was served,
+ * else how many were served of how many (R3 round-5 MINOR-3: never a silent first-N).
+ */
+export function gdeltCoverage(body: { items: readonly unknown[]; total?: number; truncated?: boolean }): GdeltWindowCoverage | null {
+  const total = body.total ?? body.items.length;
+  if (!body.truncated && total <= body.items.length) return null;
+  return { served: body.items.length, total: Math.max(total, body.items.length) };
+}

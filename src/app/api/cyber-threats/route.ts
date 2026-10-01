@@ -3,11 +3,12 @@
  * already fetched (KevResponse). Scores and `providers.nvd` are merged at response time, with the
  * NVD queue state in `nvd` (queued lookups, wait at the rate limit, last good lookup). `?limit=N`
  * (1–2000) serves only the N newest additions — the NETWORK layers use it for the Intel Feed — and
- * `total` always reports the full catalogue size.
+ * `total` always reports the full catalogue size. The ETag covers the merged enrichment too
+ * (`kevEnrichmentTag`), so a revalidating poll never gets a 304 for a body that changed since.
  * Owner: layers-threats-network.
  */
 import { z } from 'zod';
-import { enrichKev, kevFeed } from '@/features/network/server/kev';
+import { enrichKev, kevEnrichmentTag, kevFeed } from '@/features/network/server/kev';
 import { feedJson, parseQuery, withRoute } from '@/lib/respond';
 
 export const dynamic = 'force-dynamic';
@@ -21,5 +22,6 @@ export const GET = withRoute('/api/cyber-threats', async (req) => {
   const r = await kevFeed.get();
   const total = r.data?.items.length ?? 0;
   const { result, nvd } = enrichKev(r, limit);
-  return feedJson(req, result, (d) => ({ items: d.items, total, catalogVersion: d.catalogVersion, enriched: d.enriched, nvd }));
+  const variant = `${new URL(req.url).search}|${kevEnrichmentTag(result, nvd)}`;
+  return feedJson(req, result, (d) => ({ items: d.items, total, catalogVersion: d.catalogVersion, enriched: d.enriched, nvd }), variant);
 });

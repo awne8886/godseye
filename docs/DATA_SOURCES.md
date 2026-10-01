@@ -888,6 +888,15 @@ Re-probe 2026-10-01 05:35–05:48 UTC (Phase 3 round-4 fixes; UA `GODSEYE/0.1.0 
 | INFORM `Workflows/GetByYear/2026` | 200 · 1.22 s | `*` | Unchanged. |
 | World Bank `GOV_WGI_PV.EST?source=3&date=2023` | 200 · 6.92 s · 54 kB | `*` | Slow this time (6.9 s; was 0.47 s); within the 60 s feed deadline. Rows with a WGI value but no INFORM score are listed by `/api/country-risk` and not shaded; scored states without a 1:110m outline are drawn at their Natural Earth label point. |
 
+Re-probe 2026-10-01 18:23–18:46 UTC (Phase 3 round-5 fixes; UA `GODSEYE/0.1.0 (open-source monitor; layers-threats-network probe)`, `Origin: https://example.org`):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| CISA KEV JSON (plain GET) | 200 · 0.54–0.71 s · 1.76 MB | none | `ETag "1adda5-65cb6389188a8"`, `Last-Modified Wed, 30 Sep 2026 16:59:23 GMT`, `Cache-Control max-age=502`. Unchanged since the 2026-09-30 release. |
+| CISA KEV JSON, `If-None-Match` + `If-Modified-Since` | **304** · 0.29–0.31 s · 0 B | none | The KEV feed now sends both validators once it has a snapshot; the revalidation that follows each NVD batch (so `/api/health` restates `providers.nvd`) costs a 304, not 1.76 MB. |
+| CISA KEV JSON, `If-None-Match` only | 200 · 0.39–0.46 s · 1.76 MB | none | The CDN ignores the ETag alone → never send it without `If-Modified-Since` (http.ts sends both when both are known). |
+| CISA KEV JSON, `If-Modified-Since` only | 304 · 0.46 s | none | — |
+
 ## map-engine — probe log
 
 All map sources are fetched **by the browser, straight from the tile host** (hosts in

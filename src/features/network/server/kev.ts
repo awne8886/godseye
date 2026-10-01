@@ -11,8 +11,18 @@
  * the queue (`nvd.queued`, `etaS` at the bucket's pace, `lastLookupAt`), never an open-ended
  * "pending" frozen in an hour-old snapshot (R3 round-4 MINOR-5). CVEs NVD has not analysed yet are
  * asked again after 6 h instead of being cached as unscored for good.
+ *
+ * Because the scores are merged at response time, the route's ETag carries a digest of what was
+ * merged (`kevEnrichmentTag`): a revalidating poll gets a 200 as soon as a score lands, never a 304
+ * with the old body (security round-5 M-1). When the NVD worker stops (queue drained or a lookup
+ * refused) the KEV snapshot is revalidated once — a conditional GET, 304 in ~0.3 s (probed
+ * 2026-10-01) — so `providers.nvd` in /api/health states what the route states instead of the
+ * "queued" of the last refresh (R3 round-5 MINOR-2). That revalidation never queues new lookups:
+ * new CVEs are queued at most once per NVD_QUEUE_EVERY_MS, so NVD's pace stays one batch per KEV
+ * refresh and the shared nvdBucket stays free for user lookups between batches.
  */
 import 'server-only';
+import { createHash } from 'node:crypto';
 import { hasCapability } from '@/lib/capabilities';
 import { defineFeed, runProvider, type FeedResult, type ProviderRun } from '@/lib/feeds';
 import { errorReason, httpJson } from '@/lib/http';
@@ -77,6 +87,10 @@ interface Checked {
 
 interface NvdJob {
   running: Promise<void> | null;
+  /** The worker plus the KEV revalidation that follows it (tests await it). */
+  settled: Promise<void> | null;
+  /** When the last batch was queued (ms epoch; 0 = never). */
+  lastQueuedAt: number;
   /** CVEs waiting for an nvdBucket slot, newest KEV additions first. */
   queue: string[];
   keyed: boolean;
@@ -86,12 +100,20 @@ interface NvdJob {
 
 const G = globalThis as unknown as { __godseyeNvdScores?: Map<string, Checked>; __godseyeNvdQueue?: NvdJob };
 const scores = (G.__godseyeNvdScores ??= new Map());
-const job = (G.__godseyeNvdQueue ??= { running: null, queue: [], keyed: false, last: null });
+const job = (G.__godseyeNvdQueue ??= { running: null, settled: null, lastQueuedAt: 0, queue: [], keyed: false, last: null });
+// A job object pinned by an older build (HMR) lacks the newer fields.
+job.settled ??= null;
+job.lastQueuedAt ??= 0;
 
 /** CVEs queued per KEV refresh: keyless 40 (≈ 4 min at 5 / 30 s), keyed 400 (≈ 4 min at 50 / 30 s). */
 export const NVD_PER_REFRESH = { keyless: 40, keyed: 400 } as const;
 /** NVD answers "no metrics yet" for CVEs it has not analysed: ask again after this long, not never. */
 export const NVD_RECHECK_MS = 6 * 60 * 60_000;
+/**
+ * New lookups are queued at most this often. The KEV TTL is 60 min, so every regular refresh
+ * queues a batch, while the revalidation after a drained batch (minutes later) does not.
+ */
+export const NVD_QUEUE_EVERY_MS = 30 * 60_000;
 
 /** True when NVD has never answered for this CVE, or answered "not analysed yet" long enough ago. */
 export function needsNvd(cveId: string, now = Date.now()): boolean {
@@ -109,7 +131,7 @@ export function queueNvd(cveIds: readonly string[], keyed: boolean): Promise<voi
   for (const id of cveIds) if (!job.queue.includes(id)) job.queue.push(id);
   job.keyed = keyed;
   if (job.running || job.queue.length === 0) return job.running;
-  job.running = (async () => {
+  const running = (async () => {
     const bucket = nvdBucket(keyed);
     try {
       while (job.queue.length > 0) {
@@ -134,17 +156,35 @@ export function queueNvd(cveIds: readonly string[], keyed: boolean): Promise<voi
       job.running = null;
     }
   })();
-  return job.running;
+  job.running = running;
+  // The worker stopped: restate the snapshot's providers.nvd (what /api/health reads).
+  const settled = running.then(restateKevSnapshot).catch(() => undefined);
+  job.settled = settled;
+  void settled.finally(() => {
+    if (job.settled === settled) job.settled = null;
+  });
+  return running;
 }
 
-/** The in-flight background worker, if any (tests). */
-export const nvdBatchInFlight = (): Promise<void> | null => job.running;
+/**
+ * Revalidate the KEV snapshot after the NVD worker stopped, so the providers.nvd it stores (read by
+ * /api/health between refreshes) is the post-batch status. Only when a snapshot exists (a bare
+ * queueNvd() has nothing to restate); the refresh honours the feed's error back-off.
+ */
+async function restateKevSnapshot(): Promise<void> {
+  if (kevFeed.peek().data === null) return;
+  await kevFeed.refresh();
+}
+
+/** The in-flight background worker and the revalidation that follows it, if any (tests). */
+export const nvdBatchInFlight = (): Promise<void> | null => job.settled ?? job.running;
 
 /** Forget cached scores, the queue and the last lookup (tests start cold). */
 export function clearNvdScores(): void {
   scores.clear();
   job.queue.length = 0;
   job.last = null;
+  job.lastQueuedAt = 0;
 }
 
 export interface NvdProgress {
@@ -198,6 +238,8 @@ export interface KevData {
   items: KevEntry[];
   catalogVersion: string | null;
   enriched: number;
+  /** CISA's dateReleased (ms epoch), kept so a 304 revalidation keeps the observation time. */
+  released?: number | null;
 }
 
 /**
@@ -221,6 +263,20 @@ export function enrichKev(r: FeedResult<KevData>, limit?: number, now = Date.now
   };
 }
 
+/**
+ * Digest of everything enrichKev() merged into a response: the served scores, the NVD progress and
+ * providers.nvd (minus its per-request age). The route adds it to the ETag variant, so a body that
+ * changed because a score landed is never answered with a 304 (security round-5 M-1).
+ */
+export function kevEnrichmentTag(result: FeedResult<KevData>, nvd: NvdProgress): string {
+  const h = createHash('sha1');
+  for (const k of result.data?.items ?? []) h.update(`${k.cveId}:${k.cvssScore ?? '-'}:${k.cvssSeverity ?? '-'}:${k.cvssVersion ?? '-'};`);
+  const p = result.providers.nvd;
+  h.update(`|${result.data?.enriched ?? 0}|${nvd.queued}|${nvd.etaS ?? '-'}|${nvd.ratePer30s}|${nvd.awaitingAnalysis}|${nvd.lastLookupAt ?? '-'}`);
+  h.update(`|${p ? `${p.ok}:${p.count}:${p.error ?? ''}` : '-'}`);
+  return h.digest('base64url').slice(0, 16);
+}
+
 export const kevFeed = defineFeed<KevData>({
   key: 'cyber-threats',
   ttlMs: 60 * 60_000,
@@ -233,12 +289,24 @@ export const kevFeed = defineFeed<KevData>({
   note: 'CVSS scores are looked up from NVD in the background at its rate limit (5 / 30 s keyless); every response carries the scores known so far and how many lookups are queued.',
   count: (d) => d.items.length,
   deadlineMs: 60_000,
-  run: async ({ signal }) => {
+  run: async ({ signal, previous, etag, lastModified }) => {
     let version: string | null = null;
     let released: number | null = null;
+    let validators: { etag: string | null; lastModified: string | null } = { etag: null, lastModified: null };
     const kev = await runProvider(
       async () => {
-        const res = await httpJson<{ vulnerabilities?: KevRaw[]; catalogVersion?: string; dateReleased?: string }>(KEV_URL, { signal, timeoutMs: 30_000 });
+        // Conditional GET once a snapshot exists (CISA answers 304 when both validators match).
+        const res = await httpJson<{ vulnerabilities?: KevRaw[]; catalogVersion?: string; dateReleased?: string }>(KEV_URL, {
+          signal,
+          timeoutMs: 30_000,
+          ...(previous ? { etag, lastModified } : {}),
+        });
+        validators = { etag: res.etag ?? etag, lastModified: res.lastModified ?? lastModified };
+        if (res.notModified && previous) {
+          version = previous.catalogVersion;
+          released = previous.released ?? null;
+          return previous.items;
+        }
         version = res.data?.catalogVersion ?? null;
         released = res.data?.dateReleased ? Date.parse(res.data.dateReleased) || null : null;
         return parseKev(res.data ?? {});
@@ -248,15 +316,24 @@ export const kevFeed = defineFeed<KevData>({
     const items = kev.result ?? [];
     const keyed = hasCapability('nvd');
     const now = Date.now();
-    queueNvd(
-      items
+    if (now - job.lastQueuedAt >= NVD_QUEUE_EVERY_MS) {
+      const ids = items
         .filter((k) => needsNvd(k.cveId, now))
         .slice(0, keyed ? NVD_PER_REFRESH.keyed : NVD_PER_REFRESH.keyless)
-        .map((k) => k.cveId),
-      keyed,
-    );
+        .map((k) => k.cveId);
+      if (ids.length > 0) {
+        job.lastQueuedAt = now;
+        queueNvd(ids, keyed);
+      }
+    }
     const out = items.map(merge);
     const enriched = out.filter((k) => k.cvssScore !== undefined).length;
-    return { data: { items: out, catalogVersion: version, enriched }, providers: { cisa_kev: kev.run, nvd: nvdStatus(enriched) }, observedAt: released };
+    return {
+      data: { items: out, catalogVersion: version, enriched, released },
+      providers: { cisa_kev: kev.run, nvd: nvdStatus(enriched) },
+      observedAt: released,
+      etag: validators.etag,
+      lastModified: validators.lastModified,
+    };
   },
 });

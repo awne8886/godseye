@@ -4,7 +4,8 @@
  * frame prints `selection.id` on the line under the entity kind, so these selections carry the
  * record's display name there (the curated zone label, the chokepoint/port name) instead of an
  * internal slug. Upstream identifiers stay as they are: WPI index, Natural Earth ne_id, MMSI,
- * GDELT GLOBALEVENTID. Pure; owner: layers-threats-network.
+ * GDELT GLOBALEVENTID. In-zone GDELT events are attributed to the (live) GDELT events layer, not
+ * to the REFERENCE zone layer. Pure; owner: layers-threats-network.
  */
 import type { Selection } from '@/lib/layer-host';
 import type { Chokepoint, ConflictEvent, ConflictZone, Port } from '@/lib/types';
@@ -21,10 +22,15 @@ export function zoneSelection(z: ConflictZone): Selection {
   return { kind: 'conflict_zone', id: zoneDisplayName(z), layer: 'conflict_zones', source: 'curated', observedAt: null, data: record(z), lngLat: z.anchor };
 }
 
-/** An in-zone event keeps its GDELT event id; its card names the zone it falls in by display name. */
+/**
+ * An in-zone event keeps its GDELT event id; its card names the zone it falls in by display name.
+ * The zone polygons are REFERENCE, the event is not: the selection is attributed to the observed
+ * GDELT events layer, so the card shows the event's own time and inherits a live feed state
+ * instead of "REFERENCE DATA" (R3 round-5 MINOR-1). The body still uses the conflict-zone card.
+ */
 export function conflictEventSelection(e: ConflictEvent, zone: Pick<ConflictZone, 'label'> | undefined): Selection {
   const data: ConflictEventCardData = { ...e, zoneLabel: zone ? zoneDisplayName(zone) : null };
-  return { kind: 'conflict_zone', id: e.id, layer: 'conflict_zones', source: 'gdelt', observedAt: e.observedAt, data: record(data), lngLat: [e.lng, e.lat] };
+  return { kind: 'conflict_zone', id: e.id, layer: 'gdelt_events', source: 'gdelt', observedAt: e.observedAt, data: record(data), lngLat: [e.lng, e.lat] };
 }
 
 export function chokepointSelection(c: Chokepoint): Selection {

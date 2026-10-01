@@ -9,8 +9,9 @@
  */
 import type { ReactNode } from 'react';
 import type { CardProps } from '@/lib/feature-module';
+import { useLayerStatus } from '@/lib/layer-host';
 import type { AttackOrigin, C2Server, Chokepoint, ConflictZone, CountryRisk, GdacsIncident, GdeltEvent, LandingPoint, MalwareHost, NuclearSite, Outage, Port, SubmarineCable, ThreatIndicator, Vessel } from '@/lib/types';
-import { CAMEO_ROOT, GEO_PRECISION_LABEL, QUAD_LABEL } from '../shared/gdelt';
+import { CAMEO_ROOT, GEO_PRECISION_LABEL, QUAD_LABEL, type GdeltWindowCoverage } from '../shared/gdelt';
 import type { ConflictEventCardData } from './selection';
 
 const safeHttp = (u: unknown): string | null => (typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null);
@@ -140,7 +141,8 @@ export function GdacsCard({ selection }: CardProps) {
 }
 
 export function GdeltCard({ selection }: CardProps) {
-  const e = selection.data as unknown as GdeltEvent;
+  const e = selection.data as unknown as GdeltEvent & { windowCoverage?: GdeltWindowCoverage };
+  const cov = e.windowCoverage;
   return (
     <Body testId="card-gdelt" title={[e.actor1, e.actor2].filter(Boolean).join(' → ') || 'Unattributed actors'} chips={<Chip tone={e.quadClass >= 3 ? 'red' : 'muted'}>{QUAD_LABEL[e.quadClass]}</Chip>}>
       <Row label="Action">{`${CAMEO_ROOT[e.rootCode] ?? 'CAMEO'} (${e.eventCode})`}</Row>
@@ -153,25 +155,38 @@ export function GdeltCard({ selection }: CardProps) {
       <Row label="Batch added">{iso(e.dateAdded)}</Row>
       <Row label="Event date">{e.observedAt ? e.observedAt.slice(0, 10) : '—'}</Row>
       <Note>Machine-coded from news coverage (GDELT); the point is the geocoded place named in the article.</Note>
+      {cov && (
+        <Note>
+          <span data-testid="card-gdelt-coverage">{`The map draws the newest ${cov.served.toLocaleString('en-US')} of ${cov.total.toLocaleString('en-US')} geocoded events in this hour’s window; the rest are not shown.`}</span>
+        </Note>
+      )}
       <Link href={e.sourceUrl}>Source article</Link>
+    </Body>
+  );
+}
+
+/**
+ * An in-zone GDELT event (observed, not REFERENCE). Its selection is attributed to the GDELT events
+ * layer; the conflict-zone feed that delivered it is restated here when it is stale or offline.
+ */
+function ConflictEventBody({ e }: { e: ConflictEventCardData }) {
+  const feed = useLayerStatus('conflict_zones');
+  const degraded = feed.state === 'stale' || feed.state === 'offline';
+  return (
+    <Body testId="card-conflict-event" title={e.title} chips={<Chip tone="red">GDELT event</Chip>}>
+      <Row label="Zone">{dash(e.zoneLabel)}</Row>
+      <Row label="Precision">{e.precision}</Row>
+      <Row label="Reported">{iso(e.observedAt)}</Row>
+      {degraded && <Row label="Feed">{`${feed.state === 'offline' ? 'Source offline' : 'Stale'} · last good ${iso(feed.lastGoodAt)}`}</Row>}
+      <Note>Drawn at the event’s own geocoded coordinates, never moved toward a zone anchor.</Note>
+      <Link href={e.url}>Source article</Link>
     </Body>
   );
 }
 
 export function ConflictZoneCard({ selection }: CardProps) {
   const d = selection.data as unknown as (ConflictZone & { kind: 'reference' }) | (ConflictEventCardData & { kind?: undefined });
-  if (d.kind !== 'reference') {
-    const e = d as ConflictEventCardData;
-    return (
-      <Body testId="card-conflict-event" title={e.title} chips={<Chip tone="red">GDELT event</Chip>}>
-        <Row label="Zone">{dash(e.zoneLabel)}</Row>
-        <Row label="Precision">{e.precision}</Row>
-        <Row label="Reported">{iso(e.observedAt)}</Row>
-        <Note>Drawn at the event’s own geocoded coordinates, never moved toward a zone anchor.</Note>
-        <Link href={e.url}>Source article</Link>
-      </Body>
-    );
-  }
+  if (d.kind !== 'reference') return <ConflictEventBody e={d as ConflictEventCardData} />;
   const z = d as ConflictZone;
   return (
     <Body testId="card-conflict-zone" title={z.label} chips={<Chip testId="card-reference">REFERENCE</Chip>}>

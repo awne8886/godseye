@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { gotoMap } from '../map-engine/helpers';
+import { gotoMap, MAP, waitForCameraIdle, waitForMapIdle } from '../map-engine/helpers';
 
 /**
  * layers-threats-network: Global Incidents (GDACS) and GDELT Events render ≥ 1 entity when their
@@ -88,6 +88,7 @@ test.describe('threats & network layers', () => {
 
   test('a malware card says INDICATOR and names URLhaus', async ({ page }, info) => {
     test.skip(info.project.name === 'mobile', 'desktop pointer test');
+    test.setTimeout(240_000);
     test.skip(!hasCardHost(), 'no entity-card host (cardFor) is mounted by the HUD in this build');
     const body = await live<{ items: { ip: string; lat: number; lng: number }[] }>(page, '/api/malware', 'urlhaus');
     test.skip(body === null || body.items.length === 0, 'URLhaus offline/disabled right now (asserted SOURCE OFFLINE or capability_disabled)');
@@ -97,11 +98,25 @@ test.describe('threats & network layers', () => {
     for (const h of body!.items) counts.set(key(h), (counts.get(key(h)) ?? 0) + 1);
     const host = body!.items.find((h) => counts.get(key(h)) === 1) ?? body!.items[0]!;
     await openAt(page, host.lat, host.lng, 9, 'malware');
-    await page.waitForTimeout(3000);
+    // R3 round-5 MINOR-4: the click went out 3 s after load, before the map and the deck layers
+    // were drawn (SwiftShader took ~20 s). Wait for the start-up admission to finish, the layer to
+    // report hosts and the camera to settle, then click until the pick opens the card.
+    await waitForMapIdle(page);
+    await expect(page.locator(MAP)).toHaveAttribute('data-admission-pending', '0', { timeout: 120_000 });
+    expect(await railCount(page, 'NETWORK INTEL', /Live Malware/)).toBeGreaterThanOrEqual(1);
+    await page.keyboard.press('Escape');
+    await waitForCameraIdle(page);
     const vp = page.viewportSize()!;
-    await page.mouse.click(vp.width / 2, vp.height / 2);
     const card = page.getByTestId('card-malware');
-    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          if (!(await card.isVisible())) await page.mouse.click(vp.width / 2, vp.height / 2);
+          return card.isVisible();
+        },
+        { timeout: 60_000, intervals: [1_000, 2_000, 3_000] },
+      )
+      .toBe(true);
     await expect(card.getByTestId('card-indicator')).toHaveText('INDICATOR');
     await expect(card).toContainText('URLhaus');
   });

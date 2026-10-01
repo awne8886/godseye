@@ -7,11 +7,12 @@
  * (fixture 2026-09-30); rendered through the real card frame.
  */
 import { cleanup, render, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import EntityCardFrame from '@/components/cards/EntityCardFrame';
 import { buildChokepoints, buildPorts } from '@/features/maritime/server/maritime';
-import type { Selection } from '@/lib/layer-host';
-import { ChokepointCard, ConflictZoneCard, PortCard } from './cards';
+import { useLayerStatusStore, type Selection } from '@/lib/layer-host';
+import { gdeltCoverage } from '../shared/gdelt';
+import { ChokepointCard, ConflictZoneCard, GdeltCard, PortCard } from './cards';
 import { fixture, FX } from '../server/__fixtures__';
 import { buildConflicts, loadZones } from '../server/conflicts';
 import { parseExport } from '../server/gdelt';
@@ -64,6 +65,55 @@ describe('card headers name curated records, never their minted ids (visual-qa r
     expect(within(container).queryByText(zone.id)).toBeNull();
   });
 
+  // R3 round-5 MINOR-1: the in-zone event selection used the REFERENCE zone layer, so an event GDELT
+  // published at 13:20Z was badged REFERENCE with "REFERENCE DATA" as its observed time.
+  it('an in-zone GDELT event card is observed data, never REFERENCE', () => {
+    const e = built.events[0]!;
+    const sel = conflictEventSelection(e, byId.get(e.zoneId!));
+    expect(sel.layer).toBe('gdelt_events');
+    expect(sel.observedAt).toBe(e.observedAt);
+    const now = Date.parse(e.observedAt) + 5 * 60_000;
+    vi.setSystemTime(now);
+    try {
+      const feed = { state: 'live' as const, count: 1, fetchedAt: new Date(now).toISOString(), observedAt: e.observedAt, lastGoodAt: new Date(now).toISOString() };
+      const { container } = render(
+        <EntityCardFrame selection={sel} feed={feed} onClose={() => {}}>
+          <ConflictZoneCard selection={sel} />
+        </EntityCardFrame>,
+      );
+      expect(container.textContent).not.toMatch(/REFERENCE/);
+      const observed = within(container).getByText('OBSERVED').nextElementSibling!.textContent!;
+      expect(observed).toContain(e.observedAt.slice(0, 10));
+      expect(observed).not.toContain('REFERENCE DATA');
+      cleanup();
+      // Without the GDELT events layer on, the badge still never claims LIVE or REFERENCE.
+      const bare = render(
+        <EntityCardFrame selection={sel} feed={undefined} onClose={() => {}}>
+          <ConflictZoneCard selection={sel} />
+        </EntityCardFrame>,
+      );
+      expect(bare.container.querySelector('header')!.textContent).not.toMatch(/LIVE|REFERENCE/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an in-zone event card restates a stale conflict-zone feed (the feed that delivered it)', () => {
+    const e = built.events[0]!;
+    const sel = conflictEventSelection(e, byId.get(e.zoneId!));
+    useLayerStatusStore.setState({ status: { conflict_zones: { state: 'stale', count: 15, fetchedAt: null, observedAt: null, lastGoodAt: '2026-09-30T20:10:00.000Z' } } });
+    try {
+      const { container } = render(<ConflictZoneCard selection={sel} />);
+      const row = within(container).getByText('Feed').parentElement!;
+      expect(row.querySelector('dd')!.textContent).toBe('Stale · last good 2026-09-30 20:10 UTC');
+      cleanup();
+      useLayerStatusStore.setState({ status: { conflict_zones: { state: 'live', count: 15, fetchedAt: null, observedAt: null, lastGoodAt: null } } });
+      expect(within(render(<ConflictZoneCard selection={sel} />).container).queryByText('Feed')).toBeNull();
+    } finally {
+      useLayerStatusStore.setState({ status: {} });
+    }
+  });
+
   it('chokepoints and curated ports are headed by their names; WPI / Natural Earth ports keep the upstream index', () => {
     const chokes = buildChokepoints(readRef('chokepoints.json'));
     expect(chokes).toHaveLength(10);
@@ -89,5 +139,26 @@ describe('card headers name curated records, never their minted ids (visual-qa r
     expect(new Set(chokes.map((c) => chokepointSelection(c).id)).size).toBe(chokes.length);
     const curated = buildPorts(readRef('ports.json')).filter((p) => p.dataset === 'curated');
     expect(new Set(curated.map((p) => portSelection(p).id)).size).toBe(curated.length);
+  });
+});
+
+// R3 round-5 MINOR-3: /api/gdelt-events served the first N of the window without saying so.
+describe('GDELT window coverage is stated, never silent', () => {
+  const e = batch[0]!;
+  it('gdeltCoverage: null when the whole window was served, served/total otherwise', () => {
+    expect(gdeltCoverage({ items: batch, total: batch.length, truncated: false })).toBeNull();
+    expect(gdeltCoverage({ items: batch })).toBeNull();
+    expect(gdeltCoverage({ items: batch.slice(0, 1000), total: 4247, truncated: true })).toEqual({ served: 1000, total: 4247 });
+    // A capped window whose kept events were all served still says what was left out.
+    expect(gdeltCoverage({ items: batch, total: batch.length + 300, truncated: true })).toEqual({ served: batch.length, total: batch.length + 300 });
+  });
+
+  it('the GDELT card says how much of the window the map draws when it is not all of it', () => {
+    const sel = (data: Record<string, unknown>): Selection => ({ kind: 'gdelt_event', id: e.id, layer: 'gdelt_events', source: 'gdelt', observedAt: e.dateAdded, data, lngLat: [e.lng, e.lat] });
+    const full = render(<GdeltCard selection={sel({ ...e })} />);
+    expect(within(full.container).queryByTestId('card-gdelt-coverage')).toBeNull();
+    cleanup();
+    const part = render(<GdeltCard selection={sel({ ...e, windowCoverage: { served: 5000, total: 5412 } })} />);
+    expect(within(part.container).getByTestId('card-gdelt-coverage').textContent).toBe('The map draws the newest 5,000 of 5,412 geocoded events in this hour’s window; the rest are not shown.');
   });
 });
