@@ -114,6 +114,19 @@ describe('RouteLayer', () => {
     expect(opts.padding.right).toBeGreaterThan(400);
   });
 
+  it('the globe camera never asks for less than the map minimum zoom (round 3 M2)', async () => {
+    const m = Object.assign(fakeMap(), { getMinZoom: () => 1.2 });
+    useMapInstanceStore.setState({ map: m as never });
+    useUiStore.setState({ plannedRoute: { from: 'LHR', to: 'JFK' } });
+    await act(async () => {
+      mount();
+    });
+    await waitFor(() => expect(m.easeTo).toHaveBeenCalledTimes(1));
+    const [opts] = m.easeTo.mock.calls[0]! as [{ zoom: number }];
+    expect(opts.zoom).toBeGreaterThanOrEqual(1.2);
+    await waitFor(() => expect(document.querySelector('[data-testid="flight-paths-status"]')?.getAttribute('data-fit')).toBe('full'));
+  });
+
   it('a route restored after mount still opens PATHS (no first-render latch)', async () => {
     await act(async () => {
       mount();

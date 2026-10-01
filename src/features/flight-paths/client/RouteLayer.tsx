@@ -20,6 +20,7 @@ import { styleParsed } from '@/lib/map/ready';
 import { useUiStore } from '@/lib/store';
 import type { LngLatTuple } from '@/lib/geo';
 import { useFlight, useLive, usePlan } from './api';
+import { setFitNotice, useFitNotice } from './fit';
 import { buildRouteAnimLayers, buildRouteLayers, frameBounds, framePadding, globeCamera, routeFrame } from './layers';
 
 /** Above aviation (80–83) so the route and its aircraft rings sit on top. */
@@ -123,7 +124,11 @@ export default function RouteLayer() {
       const duration = animate && !reduced ? FIT_DURATION_MS : 0;
       // Globe (R2-M4): centre on the arc midpoint and zoom by angular extent — a lng/lat box cannot
       // frame polar or antimeridian routes. Mercator: fit the unwrapped bounds.
-      const cam = useMapInstanceStore.getState().projection === 'globe' ? globeCamera(fr, viewport, padding) : null;
+      // The solver works within the map's minimum zoom (round 3 M2) and reports when the route
+      // cannot fit at it (PATHS then says so).
+      const minZoom = typeof m.getMinZoom === 'function' ? m.getMinZoom() : 0;
+      const cam = useMapInstanceStore.getState().projection === 'globe' ? globeCamera(fr, viewport, padding, { minZoom, maxZoom: 8 }) : null;
+      setFitNotice({ key: frameKey, fits: cam ? cam.fits : true });
       if (cam) m.easeTo({ center: cam.center, zoom: cam.zoom, padding, bearing: 0, pitch: 0, duration, essential: false });
       else m.fitBounds(bounds, { padding, maxZoom: 8, duration, essential: false });
     };
@@ -186,6 +191,7 @@ export default function RouteLayer() {
   }, [animating, frame, globe, themeTick, view]);
 
   useDeckLayers('flight-paths', layers, Z);
+  const fitNotice = useFitNotice();
   // Diagnostics for tests (what is drawn, from which request); no visible output.
   return (
     <div
@@ -196,6 +202,7 @@ export default function RouteLayer() {
       data-layers={(layers ?? []).map((x) => (x && typeof x === 'object' && 'id' in x ? String(x.id) : '')).join(',')}
       data-points={plan.data?.greatCircle.points.length ?? flight.data?.plannedArc.length ?? 0}
       data-max-lng-step={frame ? Math.round(maxStep(frame) * 100) / 100 : ''}
+      data-fit={fitNotice && fitNotice.key === frameKey ? (fitNotice.fits ? 'full' : 'partial') : ''}
     />
   );
 }

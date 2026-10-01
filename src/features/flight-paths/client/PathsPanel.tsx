@@ -15,6 +15,7 @@ import { usePanelChip } from '@/components/hud/PanelChrome';
 import { useUiStore } from '@/lib/store';
 import { parseRouteParam } from '@/lib/url-state';
 import { draftMessage, setPathsDraft, usePathsDraft } from './draft';
+import { PARTIAL_FIT_TEXT, useFitNotice } from './fit';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
 import { FLT_TOKEN, PATH_TYPES, TWILIGHT_TOKEN, codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
@@ -528,6 +529,7 @@ export default function PathsPanel(_props: PanelProps) {
     setMode('route');
   }
   const draftNotice = draft && draft.seq === seenDraft ? draftMessage(draft) : null;
+  const fitNotice = useFitNotice();
 
   const plan = usePlan(route);
   const live = useLive(route, mode === 'live');
@@ -685,6 +687,11 @@ export default function PathsPanel(_props: PanelProps) {
         </div>
       )}
 
+      {fitNotice && !fitNotice.fits && fitNotice.key.startsWith(route ? 'route:' : ident ? 'flight:' : '-') && (
+        <p role="status" data-testid="paths-fit-partial" className="font-sans text-[12px] text-[var(--text-secondary)]">
+          {PARTIAL_FIT_TEXT}
+        </p>
+      )}
       {mode === 'route' && route && (plan.data ? <PlanView plan={plan.data} /> : plan.error ? <Note tone="error">{failureText(plan.error)}</Note> : <Note>Plotting {route.from} → {route.to}…</Note>)}
       {mode === 'live' && (route ? <LiveView live={live.data} error={live.error} /> : <Note>Plot a route first to see aircraft flying it.</Note>)}
       {mode === 'flight' && ident && (flight.data ? <FlightView flight={flight.data} /> : flight.error ? <Note tone="error">{failureText(flight.error)}</Note> : <Note>Resolving {ident}…</Note>)}
