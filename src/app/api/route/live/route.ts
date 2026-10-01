@@ -9,7 +9,7 @@ import { apiError, feedJson, parseQuery, withRoute } from '@/lib/respond';
 import { flightsFeed } from '@/features/aviation/feeds';
 import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { findAirport, vrsIndex } from '@/features/flight-paths/server/data';
-import { aircraftOnRoute } from '@/features/flight-paths/server/live';
+import { aircraftOnRoute, tileCoverage } from '@/features/flight-paths/server/live';
 import { AIRPORT_CODE_RE } from '@/features/flight-paths/lib/idents';
 
 export const dynamic = 'force-dynamic';
@@ -47,6 +47,7 @@ export const GET = withRoute('/api/route/live', async (req: Request) => {
     to: q.data.to,
     aircraft: aircraftOnRoute(snap.records, o, d, { reverse: q.data.reverse, now, vrs }),
     snapshotAt: result.meta.fetchedAt,
+    coverage: tileCoverage(snap),
     timestamp: new Date(now).toISOString(),
   }));
 });

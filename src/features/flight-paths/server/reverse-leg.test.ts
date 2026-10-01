@@ -23,7 +23,12 @@ import { aircraftOnRoute } from './live';
 const ok = { ok: true, count: 1, ms: 1, age_s: 0 };
 const NOW = Date.parse('2026-10-01T03:12:00Z');
 
-type Recorded = typeof aal606;
+interface Recorded {
+  resolved: { callsign: string; hex: string; registration: string | null };
+  origin: { icao: string; iata: string };
+  destination: { icao: string; iata: string };
+  position: { lat: number; lng: number; altFt: number | null; gsKt: number | null; trackDeg: number | null; observedAt: string } | null;
+}
 const record = (f: Recorded) => ({
   id: f.resolved.hex!,
   callsign: f.resolved.callsign!,

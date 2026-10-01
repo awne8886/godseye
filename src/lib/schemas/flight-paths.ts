@@ -204,6 +204,12 @@ export const RouteLiveResponse = z.object({
   to: z.string(),
   aircraft: z.array(LiveRouteAircraft),
   snapshotAt: IsoTime.nullable(),
+  /**
+   * Coverage of the snapshot the list was read from: adsb.lol tiles read successfully at least once
+   * of all tiles. `complete: false` (e.g. the first sweep after a start) means aircraft on the pair
+   * may be missing — an empty list is then not "none flying".
+   */
+  coverage: z.object({ tilesRead: z.number().int().min(0), tilesTotal: z.number().int().min(0), complete: z.boolean() }).optional(),
   providers: Providers,
   timestamp: IsoTime,
 });

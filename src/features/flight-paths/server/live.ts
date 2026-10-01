@@ -17,6 +17,7 @@ import type { z } from 'zod';
 import type { LngLatTuple } from '@/lib/geo';
 import type { LiveRouteAircraft } from '@/lib/schemas/flight-paths';
 import type { FlightRecord } from '@/features/aviation/adsb';
+import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { distanceKm } from '@/lib/geo';
 import { airlineCodeOf } from '@/features/aviation/classify';
 import { corridorReject, etaMs, flyingRoute, progressOn } from '../lib/geometry';
@@ -124,4 +125,15 @@ export function aircraftOnRoute(
   return out
     .sort((x, y) => (x.direction === y.direction ? 0 : x.direction === 'forward' ? -1 : 1) || (x.basis === y.basis ? 0 : x.basis === 'matched' ? -1 : 1) || y.progress - x.progress)
     .slice(0, MAX_LIVE);
+}
+
+/**
+ * How much of the tile sweep the snapshot holds (round 3 m4: the first sweep after a start had
+ * 232 tiles of rows and was answered as a complete LIVE picture). Undefined without tile state.
+ */
+export function tileCoverage(snap: Pick<FlightsSnapshot, 'tiles'>): { tilesRead: number; tilesTotal: number; complete: boolean } | undefined {
+  const tiles = snap.tiles;
+  if (!Array.isArray(tiles) || !tiles.length) return undefined;
+  const tilesRead = tiles.filter((t) => t.ok && t.at !== null).length;
+  return { tilesRead, tilesTotal: tiles.length, complete: tilesRead === tiles.length };
 }
