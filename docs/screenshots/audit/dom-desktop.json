@@ -47,15 +47,15 @@
   },
   "named": {
     "attribution": {
-      "x": 919,
-      "y": 958,
-      "w": 675,
-      "h": 14,
+      "x": 743,
+      "y": 953,
+      "w": 851,
+      "h": 19,
       "z": "auto"
     },
     "imageryChips": {
       "x": 1346,
-      "y": 922,
+      "y": 917,
       "w": 238,
       "h": 26,
       "z": "auto"
@@ -84,9 +84,9 @@
     },
     "readout": null,
     "telemetry": {
-      "x": 968,
+      "x": 953,
       "y": 16,
-      "w": 616,
+      "w": 631,
       "h": 15,
       "z": "200"
     },
@@ -105,14 +105,16 @@
       "z": "50"
     },
     "hint": {
-      "x": 328,
+      "x": 344,
       "y": 953,
-      "w": 568,
+      "w": 552,
       "h": 15,
       "z": "auto"
     }
   },
-  "overlaps": [],
+  "overlaps": [
+    "attribution x hint (153x15px)"
+  ],
   "tiny": [],
   "tracking": [],
   "smallTargets": [],

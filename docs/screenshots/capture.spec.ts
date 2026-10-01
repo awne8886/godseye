@@ -76,7 +76,8 @@ async function cardAt(page: Page, vp: Viewport, qs: (lat: number, lng: number) =
   await page.waitForTimeout(5000);
   const v = page.viewportSize()!;
   await page.mouse.click(v.width / 2, v.height / 2);
-  const card = page.locator('[data-testid$="-card"]').first();
+  // Every entity card is an EntityCardFrame with a "Close card" button (threat cards have no -card test id).
+  const card = page.getByRole('button', { name: 'Close card' }).first();
   const opened = await card.waitFor({ timeout: 10_000 }).then(() => true).catch(() => false);
   if (!opened) test.info().annotations.push({ type: 'miss', description: `no card opened (${vp})` });
   await page.waitForTimeout(1500);
@@ -187,7 +188,10 @@ const SHOTS: Shot[] = [
 
 /** CAPTURE_SKIP_EXISTING=1 resumes an interrupted round without re-shooting what is already on disk. */
 const SKIP_EXISTING = process.env.CAPTURE_SKIP_EXISTING === '1';
-const have = (file: string) => SKIP_EXISTING && existsSync(file);
+/** A shot counts as captured when its PNG is in CAPTURE_PNG_DIR or its WebP is already committed here. */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const have = (file: string) =>
+  SKIP_EXISTING && (existsSync(file) || existsSync(join(HERE, file.slice(OUT.length).replace(/\.png$/, '.webp'))));
 
 async function shoot(page: Page, file: string, full = false): Promise<void> {
   mkdirSync(dirname(file), { recursive: true });
