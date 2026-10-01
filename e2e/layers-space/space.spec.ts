@@ -49,6 +49,11 @@ test('satellites: the catalogue loads, propagates and is counted per category wh
   await expect(allRow).toContainText(/\d/, { timeout: 30_000 });
   const count = Number((await allRow.innerText()).replace(/[^\d]/g, ''));
   expect(count).toBeGreaterThanOrEqual(1);
+  // An element-set epoch may lie in the future (CelesTrak's CXO); the feed's observedAt never does.
+  if (body.meta.observedAt) expect(Date.parse(body.meta.observedAt)).toBeLessThanOrEqual(Date.parse(body.meta.fetchedAt));
+  // The rail names the catalogue in use: CelesTrak, or a FALLBACK line for SatNOGS.
+  const credit = flyout.getByTestId('attribution-satellites');
+  await expect(credit).toContainText(body.catalogueSource === 'satnogs-fallback' ? /FALLBACK · SatNOGS/ : /CelesTrak/);
   expect(errors).toEqual([]);
 });
 

@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { SATELLITE_FIELDS, SatellitesResponse } from '@/lib/schemas';
 import { MAX_RESPONSE_BYTES } from '@/lib/respond';
 import { fx } from '../__fixtures__';
+import { packRows, packedRecord } from './packed';
 import {
+  CELESTRAK_GROUPS,
   COL,
   MISSIONS,
+  epochIso,
+  epochMs,
   classifySatellite,
   countByCategory,
   ommToRecord,
@@ -130,8 +134,10 @@ describe('payload size (§4: every response < 4 MB uncompressed)', () => {
   it('the full active catalogue plus 20 % growth fits as SATELLITE_FIELDS rows', () => {
     // 2026-09-30: `active` held 16 612 objects (6 993 014 B of OMM JSON). Build 20 000 rows from the
     // real fixture records (test-only fixture: distinct ids so nothing dedupes), worst-case group names.
-    const base: SatRecord[] = fx.active.map((o) => ommToRecord(o, ['active', 'glonass-operational'])!);
-    const rows = Array.from({ length: 20_000 }, (_, i) => recordToRow({ ...base[i % base.length]!, noradId: 100_000 + i, group: 'glonass-operational' }));
+    // The longest group name in use is the worst case for the `group` column.
+    const longest = CELESTRAK_GROUPS.map((g) => g.group).sort((a, b) => b.length - a.length)[0]!;
+    const base: SatRecord[] = fx.active.map((o) => ommToRecord(o, ['active', longest])!);
+    const rows = Array.from({ length: 20_000 }, (_, i) => recordToRow({ ...base[i % base.length]!, noradId: 100_000 + i, group: longest }));
     const body = {
       fields: SATELLITE_FIELDS,
       rows,
@@ -143,7 +149,38 @@ describe('payload size (§4: every response < 4 MB uncompressed)', () => {
     };
     expect(SatellitesResponse.safeParse(body).success).toBe(true);
     const bytes = Buffer.byteLength(JSON.stringify(body));
-    expect(bytes).toBeLessThan(MAX_RESPONSE_BYTES);
-    expect(bytes / rows.length).toBeLessThan(200);
+    expect(bytes).toBeLessThan(MAX_RESPONSE_BYTES * 0.8);
+    // Epochs as integer ms: 166.5 B/row here (worst-case group name), ≈ 180 with ISO strings;
+    // live 2026-10-01 catalogue ≈ 161 B/row (perf round 4 measured 2 841 kB for 16 612 rows with ISO).
+    expect(bytes / rows.length).toBeLessThan(170);
+  });
+});
+
+describe('epoch column (integer ms on the wire, ISO in records)', () => {
+  it('rows carry integer ms; records and OMM get ISO-8601 UTC back, unchanged', () => {
+    const r = ommToRecord(issOmm)!;
+    const row = recordToRow(r);
+    expect(row[COL.epoch]).toBe(Date.parse('2026-09-30T03:25:12.177Z'));
+    expect(rowToRecord(row).epoch).toBe('2026-09-30T03:25:12.177Z');
+    expect(recordToOmm(rowToRecord(row)).EPOCH).toBe('2026-09-30T03:25:12.177Z');
+  });
+
+  it('decoders accept the ISO strings of snapshots written before the change', () => {
+    const legacy = [...recordToRow(ommToRecord(issOmm)!)];
+    legacy[COL.epoch] = '2026-09-30T03:25:12.177Z';
+    expect(rowToRecord(legacy).epoch).toBe('2026-09-30T03:25:12.177Z');
+    expect(epochIso('2026-09-30T03:25:12.177120')).toBe('2026-09-30T03:25:12.177Z');
+    expect(epochMs('2026-09-30T03:25:12.177Z')).toBe(Date.parse('2026-09-30T03:25:12.177Z'));
+    expect(epochIso(null)).toBe('');
+    expect(Number.isNaN(epochMs(undefined))).toBe(true);
+  });
+
+  it('packRows hands cards the ISO epoch for both encodings', () => {
+    const row = recordToRow(ommToRecord(issOmm)!);
+    const legacy = [...row];
+    legacy[COL.epoch] = '2026-09-30T03:25:12.177Z';
+    const p = packRows([row, legacy]);
+    expect(packedRecord(p, 0)!.epoch).toBe('2026-09-30T03:25:12.177Z');
+    expect(packedRecord(p, 1)!.epoch).toBe('2026-09-30T03:25:12.177Z');
   });
 });

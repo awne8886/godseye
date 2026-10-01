@@ -22,14 +22,27 @@ import type { WorkerIn, WorkerOut } from './lib/propagator';
 import { hitTestSatellites, latestLngLat } from './client/pick';
 import { registerDeckPick, registerHitTester, type DeckPickInfo } from '@/lib/map/picking';
 import { catalogue, fetchOrbit, indexOfId, orbitQueryKey, recordAt, selectionDataFor, setCatalogue, useSpaceStore, type SatelliteSelectionData } from './client/data';
-import type { SatCategory } from '@/lib/types';
+import type { Attribution, SatCategory } from '@/lib/types';
 import { hudFontFamily } from '@/lib/tokens';
+import { createBoundaryPublisher, startAlignedTicks } from './lib/second-clock';
+import type { CatalogueSummary } from './lib/propagator';
 
 const REFRESH_MS = 120 * 60_000;
+/** While the SatNOGS fallback is served, ask again this soon (the server retries CelesTrak on a back-off). */
+const FALLBACK_REFRESH_MS = 5 * 60_000;
 /** After a failed catalogue load (SOURCE OFFLINE), ask again after this long. */
 const RETRY_MS = 60_000;
 const TICK_MS = 1000;
 const TICK_MS_REDUCED = 2000;
+/**
+ * Ticks are requested this long before each wall-clock second, and the frame is published AT the
+ * second (propagation takes 60–90 ms for 16.6k objects, perf round 4), so the satellites redraw on
+ * the same boundary as every other 1 Hz layer instead of at an arbitrary phase.
+ */
+const TICK_LEAD_MS = 250;
+/** The ISS label's glyphs: a full ASCII atlas is never built for three letters. */
+export const ISS_LABEL = 'ISS';
+export const ISS_LABEL_CHARSET = [...new Set(ISS_LABEL)];
 const DECK_Z = 90;
 const DOTS_ID = 'space-satellites';
 const ORBIT_REANCHOR_MS = 10 * 60_000;
@@ -84,8 +97,62 @@ export function visibleCategories(active: ReadonlySet<LayerId>): number[] {
   return out;
 }
 
+type Rgba = [number, number, number, number];
+
+/** The selected satellite's orbit (±½ period) at the markers' compressed altitude; antialiased, never culled. */
+export function orbitLayer(segments: readonly (readonly (readonly [number, number, number])[])[], color: Rgba): PathLayer<{ path: [number, number, number][] }> {
+  return new PathLayer<{ path: [number, number, number][] }>({
+    id: 'space-orbit',
+    data: segments.map((seg) => ({ path: seg.map(([lng, lat, alt]) => [lng, lat, displayAltM(alt)] as [number, number, number]) })),
+    getPath: (d) => d.path,
+    getColor: color,
+    getWidth: 1.5,
+    widthUnits: 'pixels',
+    antialiasing: true,
+    parameters: { cullMode: 'none' },
+    pickable: false,
+  });
+}
+
+/** "ISS" beside its marker; the glyph atlas holds only the label's letters. */
+export function issLabelLayer(p: [number, number, number], color: Rgba): TextLayer<{ p: [number, number, number] }> {
+  return new TextLayer<{ p: [number, number, number] }>({
+    id: 'space-iss-label',
+    data: [{ p }],
+    getPosition: (d) => d.p,
+    getText: () => ISS_LABEL,
+    getColor: color,
+    getSize: 11,
+    fontFamily: hudFontFamily(),
+    characterSet: ISS_LABEL_CHARSET,
+    getPixelOffset: [0, -12],
+    billboard: true,
+    parameters: { cullMode: 'none' },
+    pickable: false,
+  });
+}
+
 function palette(): [number, number, number, number][] {
   return SAT_CATEGORIES.map((c) => readCssColor(CATEGORY_TOKEN[c], 0.95));
+}
+
+/**
+ * Rail attribution for the catalogue in use. The SatNOGS fallback is named as such (with its size
+ * and why), so the rail never shows a fallback as if it were the CelesTrak catalogue.
+ */
+export function railAttribution(summary: Pick<CatalogueSummary, 'catalogueSource' | 'meta' | 'total'>): Attribution[] {
+  const all = summary.meta.attribution ?? [];
+  if (summary.catalogueSource === 'satnogs-fallback') {
+    const sn = all.find((a) => /satnogs/i.test(a.text));
+    return [
+      {
+        text: `FALLBACK · SatNOGS DB TLEs, ${summary.total.toLocaleString('en-US')} objects (CelesTrak unavailable; retrying)`,
+        ...(sn?.url ? { url: sn.url } : {}),
+        ...(sn?.licence ? { licence: sn.licence } : {}),
+      },
+    ];
+  }
+  return all.filter((a) => !/satnogs/i.test(a.text));
 }
 
 const REDUCED_QUERY = '(prefers-reduced-motion: reduce)';
@@ -137,20 +204,24 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     };
     updateStatus('satellites', { state: 'loading' });
     w.postMessage({ type: 'load', url } satisfies WorkerIn);
+    // Frames are propagated for the next wall-clock second and published at that second.
+    const publisher = createBoundaryPublisher<Frame>((f) => {
+      latestFrame.current = f;
+      setFrameState(f);
+      setFrame(f.at, f.selected ? { ...f.selected, at: f.at } : null);
+    });
     w.onmessage = (e: MessageEvent<WorkerOut>) => {
       const msg = e.data;
       if (msg.type === 'frame') {
         const f = msg as Frame;
-        latestFrame.current = f;
-        setFrameState(f);
-        setFrame(f.at, f.selected ? { ...f.selected, at: f.at } : null);
+        publisher.offer(f, f.at);
       } else if (msg.type === 'catalogue') {
         setCatalogue(msg.version, msg.summary, msg.packed);
         const d = msg.summary;
-        const base = { state: d.meta.state, fetchedAt: d.meta.fetchedAt, observedAt: d.meta.observedAt, lastGoodAt: d.meta.lastGoodAt, providers: d.providers };
+        const base = { state: d.meta.state, fetchedAt: d.meta.fetchedAt, observedAt: d.meta.observedAt, lastGoodAt: d.meta.lastGoodAt, providers: d.providers, attribution: railAttribution(d) };
         updateStatus('satellites', { ...base, count: d.total, categoryCounts: d.categoryCounts, error: undefined });
         for (const [layer, cat] of Object.entries(LAYER_CATEGORY)) updateStatus(layer as LayerId, { ...base, count: d.categoryCounts[cat as SatCategory] ?? 0, error: undefined });
-        load(REFRESH_MS);
+        load(d.catalogueSource === 'satnogs-fallback' ? FALLBACK_REFRESH_MS : REFRESH_MS);
       } else if (msg.type === 'catalogue-error') {
         // Keep drawing the last catalogue the worker holds (its epoch is on every card); the badge says offline.
         const meta = msg.meta;
@@ -162,6 +233,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     };
     return () => {
       clearTimeout(timer);
+      publisher.cancel();
       w.terminate();
       workerRef.current = null;
     };
@@ -211,15 +283,15 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     };
   }, [map, projection, visible, selectedId, theme, catalogueVersion]);
 
-  // 1 Hz propagation clock (0.5 Hz with reduced motion); paused while the tab is hidden.
+  // 1 Hz propagation clock (0.5 Hz with reduced motion) on wall-clock second boundaries; paused
+  // while the tab is hidden. The first frame is propagated for "now" so nothing waits a second.
   useEffect(() => {
-    const tick = () => {
+    const request = (at: number) => {
       if (document.hidden) return;
-      workerRef.current?.postMessage({ type: 'tick', at: Date.now() });
+      workerRef.current?.postMessage({ type: 'tick', at } satisfies WorkerIn);
     };
-    tick();
-    const t = setInterval(tick, reduced ? TICK_MS_REDUCED : TICK_MS);
-    return () => clearInterval(t);
+    request(Date.now());
+    return startAlignedTicks(request, { periodMs: reduced ? TICK_MS_REDUCED : TICK_MS, leadMs: TICK_LEAD_MS });
   }, [reduced, catalogueVersion]);
 
   // Orbit for the selected satellite, anchored on the frame its marker was drawn for.
@@ -240,19 +312,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     if (!frame) return null;
     const out: LayersList = [];
     if (orbit.data && selData && orbit.data.noradId === selData.noradId) {
-      const color = readCssColor(CATEGORY_TOKEN[selData.category], 0.85);
-      out.push(
-        new PathLayer<{ path: [number, number, number][] }>({
-          id: 'space-orbit',
-          data: orbit.data.segments.map((seg) => ({ path: seg.map(([lng, lat, alt]) => [lng, lat, displayAltM(alt)] as [number, number, number]) })),
-          getPath: (d) => d.path,
-          getColor: color,
-          getWidth: 1.5,
-          widthUnits: 'pixels',
-          parameters: { cullMode: 'none' },
-          pickable: false,
-        }),
-      );
+      out.push(orbitLayer(orbit.data.segments, readCssColor(CATEGORY_TOKEN[selData.category], 0.85)));
     }
     out.push(
       new SatelliteDotsLayer({
@@ -280,21 +340,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     const issIdx = indexOfId(ISS_NORAD_ID);
     const k = issIdx === undefined ? -1 : frame.index.indexOf(issIdx);
     if (k >= 0) {
-      out.push(
-        new TextLayer<{ p: [number, number, number] }>({
-          id: 'space-iss-label',
-          data: [{ p: [frame.positions[k * 3]!, frame.positions[k * 3 + 1]!, frame.positions[k * 3 + 2]!] }],
-          getPosition: (d) => d.p,
-          getText: () => 'ISS',
-          getColor: readCssColor('--map-sat-science', 1),
-          getSize: 11,
-          fontFamily: hudFontFamily(),
-          getPixelOffset: [0, -12],
-          billboard: true,
-          parameters: { cullMode: 'none' },
-          pickable: false,
-        }),
-      );
+      out.push(issLabelLayer([frame.positions[k * 3]!, frame.positions[k * 3 + 1]!, frame.positions[k * 3 + 2]!], readCssColor('--map-sat-science', 1)));
     }
     return out;
   }, [frame, orbit.data, selData]);

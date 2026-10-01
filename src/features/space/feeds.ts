@@ -5,7 +5,7 @@
  */
 import 'server-only';
 import { defineFeed, type Feed } from '@/lib/feeds';
-import { runSatellites, type SatCatalogue } from './server/satellites';
+import { runSatellites, satelliteRecoveryTick, type SatCatalogue } from './server/satellites';
 import { runSpaceWeather, type SpaceWeatherData } from './server/space-weather';
 import { runIss, type IssPosition } from './server/iss';
 
@@ -24,10 +24,40 @@ export const satellitesFeed = defineFeed<SatCatalogue>({
   count: (d) => d.rows.length,
   // Never hammer CelesTrak after a failure (TLS resets / firewall after 50 errors in 2 h).
   retryAfterErrorMs: 20 * MIN,
+  // The poller only refreshes when the 2 h TTL or the 20 min error back-off is due; a 5 min check
+  // makes that back-off real instead of waiting for the next 2 h tick.
+  pollMs: 5 * MIN,
   deadlineMs: 180_000,
   idleStopMs: 6 * 60 * MIN,
   run: runSatellites,
 });
+
+// ── CelesTrak recovery loop (fallback → CelesTrak, missing groups) ─────────────────
+const RECOVERY_CHECK_MS = 5 * MIN;
+const RECOVERY_IDLE_MS = 6 * 60 * MIN;
+const R = globalThis as unknown as { __godseyeSatRecovery?: { timer: ReturnType<typeof setInterval> | null; lastRead: number } };
+const recovery = (R.__godseyeSatRecovery ??= { timer: null, lastRead: 0 });
+
+function recoveryCheck(): void {
+  if (Date.now() - recovery.lastRead > RECOVERY_IDLE_MS) {
+    if (recovery.timer) clearInterval(recovery.timer);
+    recovery.timer = null;
+    return;
+  }
+  void satelliteRecoveryTick(satellitesFeed.peek().data, () => satellitesFeed.refresh()).catch(() => undefined);
+}
+
+/**
+ * Called by the satellite routes on every read: keeps a 5-minute recovery check running while the
+ * catalogue has readers (stops after 6 h without one). The check itself is in-memory unless a
+ * CelesTrak retry or a missing-group retry is due (see satelliteRecoveryTick).
+ */
+export function noteSatellitesRead(): void {
+  recovery.lastRead = Date.now();
+  if (recovery.timer) return;
+  recovery.timer = setInterval(recoveryCheck, RECOVERY_CHECK_MS);
+  recovery.timer.unref?.();
+}
 
 export const spaceWeatherFeed = defineFeed<SpaceWeatherData>({
   key: 'space-weather',

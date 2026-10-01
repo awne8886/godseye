@@ -92,7 +92,8 @@ export const CELESTRAK_GROUPS: readonly { group: string; category: SatCategory; 
   { group: 'science', category: 'science', mission: 'Science' },
   { group: 'geodetic', category: 'science', mission: 'Geodesy' },
   { group: 'gps-ops', category: 'navigation', mission: 'GPS' },
-  { group: 'glonass-operational', category: 'navigation', mission: 'GLONASS' },
+  // `glo-ops` (probed 2026-10-01: 29 objects); `glonass-operational` answers 200 text "GROUP not found".
+  { group: 'glo-ops', category: 'navigation', mission: 'GLONASS' },
   { group: 'galileo', category: 'navigation', mission: 'Galileo' },
   { group: 'beidou', category: 'navigation', mission: 'BeiDou' },
   { group: 'military', category: 'military', mission: 'Military (CelesTrak list)' },
@@ -284,15 +285,33 @@ export function tleToOmm(name: string, line1: string, line2: string, noradId: nu
 }
 
 // ── Columnar ───────────────────────────────────────────────────────────────────
+/**
+ * A served row. `epoch` travels as integer ms since the Unix epoch (UTC): lossless against the ms
+ * precision the ISO form already had, and 13 bytes/row smaller (≈ 216 kB on the 16.6k catalogue).
+ * Snapshots written before 2026-10-01 carry the ISO string; every decoder accepts both.
+ */
 export type SatRow = [
-  number, string, string, string, number, number, number, number, number, number, number, number, number, number, number, SatCategory, number, string,
+  number, string, string, number | string, number, number, number, number, number, number, number, number, number, number, number, SatCategory, number, string,
 ];
 
 export function recordToRow(r: SatRecord): SatRow {
   return [
-    r.noradId, r.name, r.objectId, r.epoch, r.meanMotion, r.eccentricity, r.inclination, r.raan, r.argOfPericenter, r.meanAnomaly,
+    r.noradId, r.name, r.objectId, Date.parse(r.epoch), r.meanMotion, r.eccentricity, r.inclination, r.raan, r.argOfPericenter, r.meanAnomaly,
     r.bstar, r.meanMotionDot, r.meanMotionDdot, r.elementSetNo, r.revAtEpoch, r.category, r.missionIndex, r.group,
   ];
+}
+
+/** A row's `epoch` cell (ms number, or the ISO string of older snapshots) as ISO-8601 UTC; '' when unreadable. */
+export function epochIso(v: unknown): string {
+  if (typeof v === 'number') return Number.isFinite(v) ? new Date(v).toISOString() : '';
+  if (typeof v === 'string') return normalizeUtc(v) ?? '';
+  return '';
+}
+
+/** A row's `epoch` cell as ms since the Unix epoch, NaN when unreadable. */
+export function epochMs(v: unknown): number {
+  if (typeof v === 'number') return v;
+  return typeof v === 'string' ? Date.parse(normalizeUtc(v) ?? '') : Number.NaN;
 }
 
 /** Field positions in a served row (SATELLITE_FIELDS order). */
@@ -301,6 +320,7 @@ export const COL = Object.fromEntries(SATELLITE_FIELDS.map((f, i) => [f, i])) as
 export function rowToRecord(row: readonly unknown[]): SatRecord {
   const o: Record<string, unknown> = {};
   SATELLITE_FIELDS.forEach((f, i) => (o[f] = row[i]));
+  o.epoch = epochIso(o.epoch);
   return o as unknown as SatRecord;
 }
 

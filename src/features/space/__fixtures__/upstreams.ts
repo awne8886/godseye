@@ -31,7 +31,7 @@ export function celestrakRoutes(): Record<string, Answer> {
     'GROUP=science&': [],
     'GROUP=geodetic&': [],
     'GROUP=gps-ops&': ids(/^NAVSTAR/),
-    'GROUP=glonass-operational&': ids(/GLONASS/),
+    'GROUP=glo-ops&': ids(/GLONASS/),
     'GROUP=galileo&': ids(/GALILEO/),
     'GROUP=beidou&': ids(/^BEIDOU/),
     'GROUP=military&': [],

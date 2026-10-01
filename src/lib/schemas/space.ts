@@ -30,7 +30,12 @@ export const Omm = z.object({
   MEAN_MOTION_DDOT: z.number(),
 });
 
-/** Columnar layout of GET /api/satellites (OMM elements + GODSEYE classification). */
+/**
+ * Columnar layout of GET /api/satellites (OMM elements + GODSEYE classification). `epoch` is the
+ * element-set epoch as integer ms since the Unix epoch, UTC (`epochUnit: 'ms'`); responses built from
+ * snapshots older than 2026-10-01 may still carry the ISO-8601 string. An epoch is when the element
+ * set is valid, not an observation, and CelesTrak publishes a few in the future (e.g. CXO).
+ */
 export const SATELLITE_FIELDS = [
   'noradId',
   'name',
@@ -67,6 +72,8 @@ export const SatellitesResponse = columnarResponse(SATELLITE_FIELDS).extend({
   catalogueSource: z.enum(['celestrak', 'satnogs-fallback']).optional(),
   /** Human note shown with the layer (e.g. why the fallback is in use). (layers-space) */
   note: z.string().optional(),
+  /** Unit of the `epoch` column: `ms` = integer ms since the Unix epoch, UTC. (layers-space) */
+  epochUnit: z.literal('ms').optional(),
 });
 
 /** Position computed by the propagation worker (never sent by the server). */
