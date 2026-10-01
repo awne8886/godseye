@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Selection } from '@/lib/layer-host';
-import type { Camera, CameraProvider, NewsChannel } from '@/lib/types';
+import type { Camera, CameraProvider, FrameHealth, NewsChannel } from '@/lib/types';
 import { CameraCard, liveLabel, NewsChannelCard } from './cards';
 import { embedSrc } from './LiveNewsPanel';
 import { removalUrl, rowToCamera } from './rows';
@@ -65,13 +67,24 @@ describe('camera card', () => {
 
   it('R2 MINOR-1: an operator serving HTML instead of frames is marked FRAMES UNAVAILABLE on the card', async () => {
     const nsw = { ...provider, id: 'nsw', operator: 'Transport for NSW (Live Traffic NSW)' };
-    const frames = { nsw: { state: 'unavailable', windowS: 600, attempts: 4, ok: 0, failed: 4, cameras: 4, camerasFailing: 4, errors: { not_an_image: 4 }, lastOkAt: null, lastFailAt: '2026-10-01T05:20:00.000Z', lastError: 'not_an_image', lastFrameAge_s: null, untimed: 0 } };
+    const frames = { nsw: { state: 'unavailable', windowS: 600, attempts: 5, ok: 0, failed: 5, cameras: 5, camerasFailing: 5, camerasOperatorFault: 5, errors: { not_an_image: 5 }, lastOkAt: null, lastFailAt: '2026-10-01T05:20:00.000Z', lastError: 'not_an_image', lastFrameAge_s: null, untimed: 0 } };
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [nsw], frames }), { status: 200 })));
     const c = { ...cam, id: 'nsw-5-ways-miranda', providerId: 'nsw', source: 'nsw' };
     const sel: Selection = { kind: 'camera', id: c.id, layer: 'cctv', source: 'nsw', observedAt: null, data: c as unknown as Record<string, unknown>, lngLat: [c.lng, c.lat] };
     render(wrap(<CameraCard selection={sel} />));
-    expect((await screen.findByTestId('camera-frames')).textContent).toContain('UNAVAILABLE · 4/4 FAILING');
+    expect((await screen.findByTestId('camera-frames')).textContent).toContain('UNAVAILABLE · 5/5 FAILING');
     expect(screen.getByTestId('camera-frames-note').textContent).toMatch(/web pages instead of camera images/);
+  });
+
+  it('round-4 review: one failed camera never labels its operator FAILING on other cameras’ cards', async () => {
+    const frames = { hktd: { state: 'inconclusive', windowS: 600, attempts: 1, ok: 0, failed: 1, cameras: 1, camerasFailing: 1, camerasOperatorFault: 0, errors: { upstream_404: 1 }, lastOkAt: null, lastFailAt: '2026-10-01T10:30:00.000Z', lastError: 'upstream_404', lastFrameAge_s: null, untimed: 0 } };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [provider], frames }), { status: 200 })));
+    const sel: Selection = { kind: 'camera', id: cam.id, layer: 'cctv', source: 'hktd', observedAt: null, data: cam as unknown as Record<string, unknown>, lngLat: [cam.lng, cam.lat] };
+    render(wrap(<CameraCard selection={sel} />));
+    const row = (await screen.findByTestId('camera-frames')).querySelector('dd')!;
+    expect(row.textContent).toBe('NO FRAME RELAYED · 1 TRIED');
+    expect(row.textContent).not.toMatch(/FAILING|UNAVAILABLE/);
+    expect(screen.queryByTestId('camera-frames-note')).toBeNull();
   });
 
   it('a camera list frame time is labelled as such (the viewer shows the current frame’s own time)', async () => {
@@ -86,14 +99,51 @@ describe('camera card', () => {
 });
 
 describe('preview tiles', () => {
-  it('never draw a refused frame: FEED UNAVAILABLE for this bucket, SOURCE OFFLINE for an unavailable operator', async () => {
-    const { tileState } = await import('./CctvPreviews');
-    expect(tileState({ video: false, health: undefined, failedBucket: undefined, bucket: 3 })).toBe('frame');
-    expect(tileState({ video: false, health: undefined, failedBucket: 3, bucket: 3 })).toBe('failed');
-    expect(tileState({ video: false, health: undefined, failedBucket: 3, bucket: 4 })).toBe('frame'); // retried next refresh
-    expect(tileState({ video: false, health: { state: 'unavailable' }, failedBucket: undefined, bucket: 0 })).toBe('source-offline');
-    expect(tileState({ video: true, health: { state: 'unavailable' }, failedBucket: undefined, bucket: 0 })).toBe('source-offline');
-    expect(tileState({ video: true, health: { state: 'available' }, failedBucket: undefined, bucket: 0 })).toBe('video');
+  const NOT_AN_IMAGE = { error: 'frame_unavailable', detail: 'not_an_image', state: 'offline', message: 'The operator answered with a web page instead of an image (a fault on the operator side). No frame to show.', upstreamType: 'text/html', fetchedAt: '2026-10-01T10:35:52.000Z' };
+  const nswDown: FrameHealth = { state: 'unavailable', windowS: 600, attempts: 5, ok: 0, failed: 5, cameras: 5, camerasFailing: 5, camerasOperatorFault: 5, errors: { not_an_image: 5 }, lastOkAt: null, lastFailAt: '2026-10-01T10:35:52.000Z', lastError: 'not_an_image', lastFrameAge_s: null, untimed: 0 };
+
+  it('show the tile’s own outcome; the operator state is only a label', async () => {
+    const { tileState, tileNote } = await import('./CctvPreviews');
+    const fail = { state: 'offline' as const, detail: 'not_an_image', message: '' };
+    expect(tileState({ video: false, failure: null })).toBe('frame');
+    expect(tileState({ video: false, failure: fail })).toBe('failed');
+    expect(tileState({ video: true, failure: null })).toBe('video'); // an unavailable operator never hides a clip
+    expect(tileNote(fail, undefined)).toEqual({ title: 'CAMERA OFFLINE', detail: 'NOT AN IMAGE' });
+    expect(tileNote({ state: 'unavailable', detail: 'timeout', message: '' }, { state: 'available', lastOkAt: null, windowS: 600 })).toEqual({ title: 'FEED UNAVAILABLE', detail: 'TIMEOUT' });
+    expect(tileNote({ state: 'unavailable', detail: 'queued', message: '' }, undefined).detail).toBe('SERVER BUSY');
+    // SOURCE OFFLINE always carries the last good relay time, or says there was none in the window.
+    expect(tileNote(fail, nswDown)).toEqual({ title: 'SOURCE OFFLINE', detail: 'NO FRAME IN 10 MIN' });
+    expect(tileNote(fail, { ...nswDown, lastOkAt: '2026-10-01T10:31:07.000Z' })).toEqual({ title: 'SOURCE OFFLINE', detail: 'LAST GOOD 10:31Z' });
+  });
+
+  it('a tile of an unavailable operator still requests its own frame and shows it when it arrives', async () => {
+    const { PreviewTile } = await import('./CctvPreviews');
+    // The recorded TxDOT snapshot JPEG (jsdom cannot resolve the fixture module's own file URLs).
+    const snap = JSON.parse(readFileSync(join(process.cwd(), 'src/features/surveillance/server/__fixtures__/txdot-snapshot.2026-09-30.json'), 'utf8')) as { snippet: string };
+    const jpeg = Buffer.from(snap.snippet, 'base64');
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:tile-1');
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => (calls.push(u), new Response(new Uint8Array(jpeg), { status: 200, headers: { 'content-type': 'image/jpeg' } }))));
+    const nswCam = { ...cam, id: 'nsw-5-ways-miranda', providerId: 'nsw', source: 'nsw' };
+    render(<PreviewTile cam={nswCam} video={false} bucket={2} health={nswDown} tileRef={() => undefined} />);
+    const img = await screen.findByRole('img');
+    expect(img.getAttribute('src')).toBe('blob:tile-1');
+    expect(calls).toEqual(['/api/cctv/proxy?id=nsw-5-ways-miranda&r=2']);
+    expect(screen.queryByTestId('cctv-tile-unavailable')).toBeNull();
+    created.mockRestore();
+  });
+
+  it('a refused tile frame is a labelled placeholder, never a broken image', async () => {
+    const { PreviewTile } = await import('./CctvPreviews');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(NOT_AN_IMAGE), { status: 502, headers: { 'content-type': 'application/json' } })));
+    const nswCam = { ...cam, id: 'nsw-5-ways-miranda', providerId: 'nsw', source: 'nsw' };
+    const { rerender } = render(<PreviewTile cam={nswCam} video={false} bucket={0} health={undefined} tileRef={() => undefined} />);
+    expect((await screen.findByTestId('cctv-tile-unavailable')).textContent).toBe('CAMERA OFFLINE' + 'NOT AN IMAGE');
+    expect(screen.queryByRole('img')).toBeNull();
+    rerender(<PreviewTile cam={nswCam} video={false} bucket={1} health={nswDown} tileRef={() => undefined} />);
+    await vi.waitFor(() => expect(screen.getByTestId('cctv-tile-detail').textContent).toBe('NO FRAME IN 10 MIN'));
+    expect(screen.getByTestId('cctv-tile-unavailable').textContent).toContain('SOURCE OFFLINE');
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2); // retried at the next refresh
   });
 });
 

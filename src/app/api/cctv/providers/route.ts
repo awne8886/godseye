@@ -33,7 +33,7 @@ export const GET = withRoute('/api/cctv/providers', () => {
     stale: false,
     ttlSeconds: 3600,
     attribution: items.map((p) => ({ text: p.attribution_string, url: p.terms_url, licence: p.licence })),
-    note: 'Registry of official camera operators. `providers` reflects the last inventory refresh of each region; `frames` counts the frames this server relayed in the last 10 minutes (FRAMES UNAVAILABLE when more than 90 % of at least 3 cameras tried are failing).',
+    note: 'Registry of official camera operators. `providers` reflects the last inventory refresh of each region; `frames` counts the frames this server requested in the last 10 minutes, latest attempt per camera (FRAMES UNAVAILABLE when at least 5 cameras were tried and more than 90 % of them failed operator-wide: a web page instead of an image, 5xx, network or operator timeout; missing images and this server\'s own queue never count against an operator).',
   };
   return json({ items, meta, providers, frames, removal: removalContact(process.env), notWired: NOT_WIRED_SOURCES }, { ttl: PROVIDERS_TTL_S });
 });

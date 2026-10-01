@@ -8,19 +8,41 @@
  * The inventory then reports `ok: true`, so /api/cctv/providers adds `frames` from this ledger and
  * the client marks such cameras FRAMES UNAVAILABLE instead of drawing broken images.
  *
- * Per camera only the latest attempt counts, so one dead camera refreshed every minute cannot mark
- * a whole operator unavailable. In-memory per process (it describes what this server saw).
+ * An operator is judged only on evidence about the operator: per camera only the latest attempt
+ * counts (one dead camera refreshed every minute cannot mark it unavailable), only operator-wide
+ * failures count against it (`operatorWide`: a web page instead of an image, 5xx, network, an
+ * operator that used its full request time) — never a missing image (404/410, no snapshot), an
+ * address off the allow-list or a wait in this server's own queue (those are not recorded at all) —
+ * and at least FRAME_MIN_CAMERAS distinct cameras must have been tried. The state is a label for
+ * cards and tiles; it never stops a tile or viewer from requesting its own frame.
+ * In-memory per process (it describes what this server saw).
  * Owner: layers-surveillance. Server-only.
  */
 import 'server-only';
 import type { FrameHealth } from '@/lib/types';
 
 export const FRAME_WINDOW_MS = 10 * 60_000;
-/** Distinct cameras that must have been tried before an operator's frames are called unavailable. */
-export const FRAME_MIN_CAMERAS = 3;
-/** Share of tried cameras failing (latest attempt) above which frames are unavailable. */
+/** Distinct cameras that must have been tried before an operator's frames are judged at all. */
+export const FRAME_MIN_CAMERAS = 5;
+/** Share of tried cameras failing operator-wide (latest attempt) above which frames are unavailable. */
 export const FRAME_FAIL_SHARE = 0.9;
+/** Share of tried cameras failing operator-wide above which frames are failing (degraded). */
+export const FRAME_DEGRADED_SHARE = 0.5;
 const MAX_OUTCOMES = 500;
+
+/**
+ * True for a failure that says something about the whole operator rather than one camera: a web
+ * page instead of an image (an error page served for every still), a 5xx, a network/DNS/TLS failure,
+ * an unreadable answer, a redirect loop, or an operator that did not answer within its full request
+ * time. A missing image (`upstream_404`/`410`, other 4xx, `no_snapshot`), an oversized file and an
+ * address refused by the allow-list (`blocked`) are per camera.
+ */
+export function operatorWide(error: string | null): boolean {
+  if (!error) return false;
+  if (error === 'not_an_image' || error === 'network' || error === 'timeout' || error === 'parse' || error === 'redirect') return true;
+  const m = /^upstream_(\d{3})$/.exec(error);
+  return !!m && Number(m[1]) >= 500;
+}
 
 export interface FrameOutcome {
   at: number;
@@ -75,15 +97,20 @@ export function summarise(outcomes: readonly FrameOutcome[], now: number = Date.
     }
   }
   const cameras = latest.size;
-  const camerasFailing = [...latest.values()].filter((o) => !o.ok).length;
+  const failing = [...latest.values()].filter((o) => !o.ok);
+  const camerasFailing = failing.length;
+  const camerasOperatorFault = failing.filter((o) => operatorWide(o.error)).length;
+  const judged = cameras >= FRAME_MIN_CAMERAS;
   const state: FrameHealth['state'] =
     cameras === 0
       ? 'unchecked'
-      : cameras >= FRAME_MIN_CAMERAS && camerasFailing / cameras > FRAME_FAIL_SHARE
+      : judged && camerasOperatorFault / cameras > FRAME_FAIL_SHARE
         ? 'unavailable'
-        : camerasFailing === cameras
+        : judged && camerasOperatorFault / cameras > FRAME_DEGRADED_SHARE
           ? 'failing'
-          : 'available';
+          : camerasFailing < cameras
+            ? 'available'
+            : 'inconclusive';
   const lastObserved = lastOk?.observedAt ?? null;
   return {
     state,
@@ -93,6 +120,7 @@ export function summarise(outcomes: readonly FrameOutcome[], now: number = Date.
     failed: win.length - ok,
     cameras,
     camerasFailing,
+    camerasOperatorFault,
     errors,
     lastOkAt: iso(lastOk?.at ?? null),
     lastFailAt: iso(lastFail?.at ?? null),

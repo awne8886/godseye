@@ -13,7 +13,7 @@ import type { Camera } from '@/lib/types';
 import { FX, json, text } from './__fixtures__';
 import { jpeg } from './__fixtures__/helpers';
 import { frameHealth, resetFrameHealth } from './frame-health';
-import { acceptImage, declaredType, fetchFrame, frameErrorInfo, frameResponse, frameTime, probeCamera, type FrameDeps } from './frames';
+import { acceptImage, declaredType, fetchFrame, frameErrorInfo, frameResponse, frameTime, probeCamera, timeoutCause, type FrameDeps } from './frames';
 import { PROVIDERS, type ProviderDef } from './registry';
 
 type Recorded = { status: number; 'content-type': string; 'last-modified': string | null };
@@ -29,6 +29,12 @@ let futureLm = '';
 beforeAll(async () => {
   server = http.createServer((req, res) => {
     const name = new URL(req.url!, 'http://x').pathname.replace(/^\/cams\//, '').replace(/\.jpg$/, '');
+    if (name === 'slow') {
+      // An operator that does not answer within the request time.
+      const t = setTimeout(() => res.end(JPEG), 3_000);
+      res.on('close', () => clearTimeout(t));
+      return;
+    }
     if (name === 'future') {
       res.writeHead(200, { 'content-type': 'image/jpeg', 'last-modified': futureLm });
       res.end(JPEG);
@@ -51,9 +57,9 @@ beforeAll(async () => {
 afterAll(() => new Promise<void>((r) => server.close(() => r())));
 afterEach(resetFrameHealth);
 
-const deps = (): FrameDeps => ({
+const deps = (extra: FrameDeps['fetchOpts'] = {}): FrameDeps => ({
   env: {},
-  fetchOpts: { resolve: async () => [{ address: '127.0.0.1', family: 4 }], isBlocked: () => false, ports: new Set([String(port)]) },
+  fetchOpts: { resolve: async () => [{ address: '127.0.0.1', family: 4 }], isBlocked: () => false, ports: new Set([String(port)]), ...extra },
 });
 
 /** The real provider row, with its rules pointed at the loopback operator. */
@@ -147,12 +153,16 @@ describe('item 2: NSW HTML frames are refused by content type and reported offli
     expect(declaredType('<script>')).toBeNull();
   });
 
-  it('three NSW cameras failing → provider frames UNAVAILABLE; one other camera recovering flips it back', async () => {
-    for (const n of [1, 2, 3]) await fetchFrame(cam('nsw', n, 'nsw'), def('nsw'), deps());
-    expect(frameHealth(['nsw']).nsw).toMatchObject({ state: 'unavailable', cameras: 3, camerasFailing: 3, errors: { not_an_image: 3 }, lastError: 'not_an_image' });
-    // The same operator serving a real image again (recorded HK TD headers) for a fourth camera.
-    await fetchFrame(cam('nsw', 4, 'hktd'), def('nsw'), deps());
-    expect(frameHealth(['nsw']).nsw!.state).toBe('available');
+  it('five NSW cameras failing → provider frames UNAVAILABLE; four are not enough; recovering cameras lift it', async () => {
+    for (const n of [1, 2, 3, 4]) await fetchFrame(cam('nsw', n, 'nsw'), def('nsw'), deps());
+    expect(frameHealth(['nsw']).nsw).toMatchObject({ state: 'inconclusive', cameras: 4 });
+    await fetchFrame(cam('nsw', 5, 'nsw'), def('nsw'), deps());
+    expect(frameHealth(['nsw']).nsw).toMatchObject({ state: 'unavailable', cameras: 5, camerasFailing: 5, camerasOperatorFault: 5, errors: { not_an_image: 5 }, lastError: 'not_an_image' });
+    // The same operator serving real images again (recorded HK TD headers) for other cameras.
+    await fetchFrame(cam('nsw', 6, 'hktd'), def('nsw'), deps());
+    expect(frameHealth(['nsw']).nsw!.state).toBe('failing');
+    for (const n of [1, 2, 3]) await fetchFrame(cam('nsw', n, 'hktd'), def('nsw'), deps());
+    expect(frameHealth(['nsw']).nsw).toMatchObject({ state: 'available', camerasFailing: 2 });
   });
 
   it('stream-status says offline with the reason and the upstream status', async () => {
@@ -164,5 +174,72 @@ describe('item 2: NSW HTML frames are refused by content type and reported offli
     expect(frameErrorInfo('upstream_404').state).toBe('offline');
     expect(frameErrorInfo('timeout').state).toBe('unavailable');
     expect(frameErrorInfo('upstream_503').state).toBe('unavailable');
+  });
+});
+
+describe('round-4 review: whose failure it was, and whether anything was fetched', () => {
+  it('a missing image (404) is the camera’s, answered with a real fetch time', async () => {
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      const r = await fetchFrame(cam('caltrans', n, `gone-${n}`), def('caltrans'), deps());
+      expect(r).toMatchObject({ ok: false, error: 'upstream_404', httpStatus: 404 });
+      expect(r.fetchedAt).toMatch(/Z$/);
+    }
+    expect(frameHealth(['caltrans']).caltrans).toMatchObject({ state: 'inconclusive', cameras: 6, camerasOperatorFault: 0, errors: { upstream_404: 6 } });
+  });
+
+  it('refusals without a request carry no fetch time (link-out, no still, address off the allow-list)', async () => {
+    const noStill = await fetchFrame({ ...cam('hktd'), stillUrl: null }, def('hktd'), deps());
+    expect(noStill).toMatchObject({ ok: false, error: 'no_still', fetchedAt: null });
+    const linkOut = await fetchFrame(cam('rws'), PROVIDERS.find((p) => p.row.id === 'rws')!, deps());
+    expect(linkOut).toMatchObject({ ok: false, error: 'link_out_only', fetchedAt: null });
+    const off = await fetchFrame({ ...cam('hktd'), stillUrl: `http://evil.test:${port}/cams/hktd.jpg` }, def('hktd'), deps());
+    expect(off).toMatchObject({ ok: false, status: 403, error: 'blocked', fetchedAt: null });
+    const ssrf = await fetchFrame(cam('hktd'), def('hktd'), deps({ isBlocked: () => true }));
+    expect(ssrf).toMatchObject({ ok: false, error: 'blocked', fetchedAt: null });
+    for (const r of [noStill, linkOut, off]) {
+      const res = frameResponse(r);
+      expect(res.headers.get('x-frame-fetched-at')).toBeNull();
+      const body = await res.json();
+      expect(FrameError.safeParse(body).success).toBe(true);
+      expect(body.fetchedAt).toBeNull();
+    }
+    // Only the blocked attempts reached the ledger, and they are per camera.
+    expect(frameHealth(['hktd']).hktd).toMatchObject({ state: 'inconclusive', camerasOperatorFault: 0 });
+  });
+
+  it('waiting in this server’s queue past the deadline is `queued` (503, no fetch time, not counted)', async () => {
+    const stuck = { take: () => new Promise<void>(() => undefined) };
+    const r = await fetchFrame(cam('hktd'), def('hktd'), deps({ limiter: stuck, deadlineMs: 150 }));
+    expect(r).toMatchObject({ ok: false, status: 503, error: 'queued', fetchedAt: null });
+    const res = frameResponse(r);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('15');
+    expect((await res.json()).message).toMatch(/This server was busy/);
+    expect(frameHealth(['hktd']).hktd!.state).toBe('unchecked');
+    // The viewer's stream check: unknown, never "offline".
+    expect(await probeCamera(cam('hktd'), def('hktd'), deps({ limiter: stuck, deadlineMs: 150 }))).toMatchObject({ status: 'unknown', reason: 'queued' });
+  });
+
+  it('a deadline that cuts the operator short after a long queue wait is ours too', async () => {
+    const late = { take: () => new Promise<void>((r) => setTimeout(r, 250)) };
+    const r = await fetchFrame(cam('hktd', 1, 'slow'), def('hktd'), deps({ limiter: late, deadlineMs: 400, timeoutMs: 2_000 }));
+    expect(r).toMatchObject({ ok: false, error: 'queued' });
+    expect(r.fetchedAt).toMatch(/Z$/); // the request did go out
+    expect(frameHealth(['hktd']).hktd!.state).toBe('unchecked');
+  });
+
+  it('an operator that had its full request time and did not answer is `timeout` (operator-wide)', async () => {
+    const r = await fetchFrame(cam('hktd', 1, 'slow'), def('hktd'), deps({ timeoutMs: 200 }));
+    expect(r).toMatchObject({ ok: false, status: 502, error: 'timeout' });
+    expect(r.fetchedAt).toMatch(/Z$/);
+    expect(frameHealth(['hktd']).hktd).toMatchObject({ camerasOperatorFault: 1, errors: { timeout: 1 } });
+  });
+
+  it('timeoutCause: queued while waiting or cut short, timeout after the full hop time', () => {
+    const now = 1_000_000;
+    expect(timeoutCause({ waiting: true, grantedAt: null, grants: 0 }, now)).toBe('queued');
+    expect(timeoutCause({ waiting: false, grantedAt: now - 8_000, grants: 1 }, now)).toBe('timeout');
+    expect(timeoutCause({ waiting: false, grantedAt: now - 3_000, grants: 1 }, now)).toBe('queued');
+    expect(timeoutCause({ waiting: false, grantedAt: null, grants: 0 }, now)).toBe('timeout');
   });
 });

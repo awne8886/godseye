@@ -5,7 +5,10 @@ import { done, fresh, jpeg, req } from '@/features/surveillance/server/__fixture
 const state = vi.hoisted(() => ({ calls: [] as string[], body: null as Buffer | null, type: 'image/jpeg' }));
 vi.mock('@/features/surveillance/server/loaders', async () => {
   const { fixtureLoaders } = await import('@/features/surveillance/server/__fixtures__/loaders');
-  return { LOADERS: fixtureLoaders() };
+  const { FX, json } = await import('@/features/surveillance/server/__fixtures__');
+  const { parseLiveTrafficNsw } = await import('@/features/surveillance/server/adapters');
+  // Six NSW cameras (recorded 2026-10-01) so the five-camera rule can be exercised end to end.
+  return { LOADERS: { ...fixtureLoaders(), nsw: async () => parseLiveTrafficNsw(json(FX.nswLiveCams)) } };
 });
 vi.mock('@/lib/ssrf', async (orig) => {
   const real = await orig<typeof Ssrf>();
@@ -53,16 +56,22 @@ describe('GET /api/cctv/proxy', () => {
     const { GET: providersGET } = await import('../providers/route');
     state.body = Buffer.from(text(FX.nswHtmlFrame)); // the 307-byte page NSW served for every .jpeg (probed 2026-10-01)
     state.type = 'text/html';
-    for (const id of ['nsw-5-ways-miranda', 'nsw-airport-drive-mascot', 'nsw-alison-road-randwick']) {
+    const ids = ['nsw-5-ways-miranda', 'nsw-airport-drive-mascot', 'nsw-alison-road-randwick', 'nsw-anzac-bridge-eastbound', 'nsw-anzac-bridge-westbound'];
+    for (const [i, id] of ids.entries()) {
       const res = await GET(req(`/api/cctv/proxy?id=${id}`), undefined);
       expect(res.status, id).toBe(502);
       expect(res.headers.get('content-type')).toMatch(/^application\/json/);
       const b = await res.json();
       expect(b).toMatchObject({ error: 'frame_unavailable', detail: 'not_an_image', state: 'offline', upstreamType: 'text/html' });
       expect(b.message).toMatch(/web page instead of an image/);
+      if (i === 3) {
+        // Four cameras are not enough to judge an operator.
+        const p4 = await (await providersGET(req('/api/cctv/providers'), undefined)).json();
+        expect(p4.frames.nsw).toMatchObject({ state: 'inconclusive', cameras: 4 });
+      }
     }
     const p = await (await providersGET(req('/api/cctv/providers'), undefined)).json();
-    expect(p.frames.nsw).toMatchObject({ state: 'unavailable', cameras: 3, camerasFailing: 3, errors: { not_an_image: 3 } });
+    expect(p.frames.nsw).toMatchObject({ state: 'unavailable', cameras: 5, camerasFailing: 5, camerasOperatorFault: 5, errors: { not_an_image: 5 } });
     expect(p.frames.hktd.state).toBe('unchecked');
     expect(p.frames.rws).toBeUndefined(); // link-out-only providers relay no frames
   });

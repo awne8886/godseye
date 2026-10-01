@@ -55,14 +55,18 @@ describe('provider frame availability wording', () => {
   it('labels each state; unchecked is never "available"', () => {
     expect(frameHealthLabel(undefined)).toEqual({ text: 'NOT CHECKED YET', tone: 'idle' });
     expect(frameHealthLabel({ state: 'unchecked', cameras: 0, camerasFailing: 0 }).text).toBe('NOT CHECKED YET');
-    expect(frameHealthLabel({ state: 'unavailable', cameras: 4, camerasFailing: 4 })).toEqual({ text: 'UNAVAILABLE · 4/4 FAILING', tone: 'error' });
-    expect(frameHealthLabel({ state: 'failing', cameras: 2, camerasFailing: 2 }).tone).toBe('warn');
+    expect(frameHealthLabel({ state: 'unavailable', cameras: 5, camerasFailing: 5, camerasOperatorFault: 5 })).toEqual({ text: 'UNAVAILABLE · 5/5 FAILING', tone: 'error' });
+    expect(frameHealthLabel({ state: 'failing', cameras: 6, camerasFailing: 5, camerasOperatorFault: 4 })).toEqual({ text: 'FAILING · 4/6 CAMERAS', tone: 'warn' });
     expect(frameHealthLabel({ state: 'available', cameras: 5, camerasFailing: 0 })).toEqual({ text: 'AVAILABLE', tone: 'ok' });
+    expect(frameHealthLabel({ state: 'available', cameras: 5, camerasFailing: 2, camerasOperatorFault: 0 })).toEqual({ text: 'AVAILABLE · 2/5 WITHOUT FRAME', tone: 'ok' });
+    // Round-4 review: one failed camera is not a verdict on the operator.
+    expect(frameHealthLabel({ state: 'inconclusive', cameras: 1, camerasFailing: 1, camerasOperatorFault: 1 })).toEqual({ text: 'NO FRAME RELAYED · 1 TRIED', tone: 'idle' });
   });
 
   it('explains an HTML outage as an operator-side fault', () => {
-    expect(frameHealthNote({ state: 'unavailable', errors: { not_an_image: 4 }, failed: 4 })).toMatch(/web pages instead of camera images/);
-    expect(frameHealthNote({ state: 'unavailable', errors: { upstream_404: 4 }, failed: 4 })).toMatch(/returned no frame/);
+    expect(frameHealthNote({ state: 'unavailable', errors: { not_an_image: 5 }, failed: 5 })).toMatch(/web pages instead of camera images/);
+    expect(frameHealthNote({ state: 'unavailable', errors: { upstream_503: 3, timeout: 2 }, failed: 5 })).toMatch(/server errors, timeouts or connection failures/);
+    expect(frameHealthNote({ state: 'inconclusive', errors: { not_an_image: 2 }, failed: 2 })).toBeNull();
     expect(frameHealthNote({ state: 'available', errors: {}, failed: 0 })).toBeNull();
   });
 });

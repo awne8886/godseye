@@ -6,6 +6,8 @@ import { expect, test, type Page } from '@playwright/test';
  * the stills proxy, FRAMES UNAVAILABLE for the provider, placeholder tiles and an offline viewer —
  * never as a broken image. Runs against the live operators: when NSW serves images again the
  * outage assertions are skipped and only "no broken image anywhere" is checked.
+ * Round-4 review: an operator is judged on at least 5 cameras, and tiles keep requesting their own
+ * frame (a SOURCE OFFLINE tile always carries the last good relay time or "NO FRAME IN 10 MIN").
  * Item 1: every relayed frame carries its fetch time separately from the operator's frame time.
  */
 
@@ -35,9 +37,9 @@ async function brokenImages(page: Page, selector: string): Promise<number> {
 test.describe('camera frames: operator outages are never broken images', () => {
   test('stills proxy refuses an HTML frame as JSON SOURCE OFFLINE and the provider reads FRAMES UNAVAILABLE', async ({ page }) => {
     const cams = await nswCameras(page);
-    test.skip(cams === null || cams.length < 3, 'NSW camera list unavailable right now (asserted SOURCE OFFLINE elsewhere)');
+    test.skip(cams === null || cams.length < 5, 'NSW camera list unavailable right now (asserted SOURCE OFFLINE elsewhere)');
     let outage = 0;
-    for (const c of cams!.slice(0, 3)) {
+    for (const c of cams!.slice(0, 5)) {
       const res = await page.request.get(`/api/cctv/proxy?id=${encodeURIComponent(c.id)}`, { timeout: 30_000 });
       const type = res.headers()['content-type'] ?? '';
       expect(type.startsWith('text/html'), 'an operator HTML page is never relayed').toBe(false);
@@ -55,10 +57,11 @@ test.describe('camera frames: operator outages are never broken images', () => {
         expect(b).toMatchObject({ state: 'offline', upstreamType: 'text/html' });
       }
     }
-    test.skip(outage < 3, 'NSW is serving images again: the outage path is covered by the unit tests');
+    test.skip(outage < 5, 'NSW is serving images again: the outage path is covered by the unit tests');
     const p = await (await page.request.get('/api/cctv/providers')).json();
     expect(p.frames.nsw.state).toBe('unavailable');
-    expect(p.frames.nsw.errors.not_an_image).toBeGreaterThanOrEqual(3);
+    expect(p.frames.nsw.cameras).toBeGreaterThanOrEqual(5);
+    expect(p.frames.nsw.errors.not_an_image).toBeGreaterThanOrEqual(5);
   });
 
   test('preview tiles and the viewer show placeholders, not broken images', async ({ page }, info) => {
@@ -86,6 +89,12 @@ test.describe('camera frames: operator outages are never broken images', () => {
       )
       .toBe(true);
     expect(await brokenImages(page, '[data-testid="cctv-previews"]')).toBe(0);
+    // A placeholder names its reason; SOURCE OFFLINE always carries a last-good time (or says there is none).
+    for (const note of await page.getByTestId('cctv-tile-unavailable').all()) {
+      const text = (await note.textContent()) ?? '';
+      if (text.includes('SOURCE OFFLINE')) expect(text).toMatch(/LAST GOOD \d{2}:\d{2}Z|NO FRAME IN \d+ MIN/);
+      else expect(text).toMatch(/CAMERA OFFLINE|FEED UNAVAILABLE/);
+    }
 
     await tiles.getByRole('button').first().click();
     const card = page.getByTestId('camera-card');

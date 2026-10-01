@@ -10,7 +10,14 @@
  *  - Frame time = the operator's own: its published timestamp (LTA list, TxDOT snapshot) or the
  *    frame file's Last-Modified. Never the proxy's fetch time; when the operator publishes neither,
  *    the answer says so (`X-Frame-Time-Source: none`) and carries only `X-Frame-Fetched-At`.
- *  - Every attempt's outcome (not the bytes) feeds the frame-health ledger (frame-health.ts).
+ *    `fetchedAt` is only ever the time of a real request to the operator: a refusal made without
+ *    one (link-out only, no still, an address refused before connecting, a request that never left
+ *    this server's queue) carries `fetchedAt: null` and no `X-Frame-Fetched-At`.
+ *  - A timeout is told apart: still waiting in this server's per-operator queue, or answered by
+ *    the deadline before the operator had its full request time, is `queued` (ours, never counted
+ *    against the operator); an operator that had its full time and did not answer is `timeout`.
+ *  - Every attempt that reached, or tried to reach, the operator feeds the frame-health ledger
+ *    (outcome only, never the bytes; frame-health.ts).
  *  - Nothing is stored: bytes stream straight back with `Cache-Control` = the operator's minimum
  *    poll interval, so browsers/CDNs coalesce refreshes. HLS segments are never proxied.
  * Owner: layers-surveillance. Server-only.
@@ -18,7 +25,7 @@
 import 'server-only';
 import { MEDIA_HOSTS } from '@/config/hosts';
 import { sourceCache } from '@/lib/cache';
-import { httpJson } from '@/lib/http';
+import { httpJson, redactUrl } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import { allowListedFetch, type AllowRule, type SafeFetchOptions } from '@/lib/ssrf';
 import type { Camera, CameraProvider, FrameError, FrameTimeSource, StreamStatusResponse } from '@/lib/types';
@@ -31,11 +38,16 @@ export const MAX_FRAME_BYTES = 3 * 1024 * 1024;
 /** A frame time further than this ahead of the fetch is a clock/metadata error, not an observation. */
 export const FRAME_FUTURE_SKEW_MS = 60_000;
 
+/** Per-request timeout of one hop to the operator (allowListedFetch's default, set explicitly). */
+export const FRAME_HOP_TIMEOUT_MS = 8_000;
+
 export type FrameResult =
   | { ok: true; body: Buffer; contentType: string; observedAt: string | null; timeSource: FrameTimeSource; fetchedAt: string; maxAgeS: number }
-  | { ok: false; status: number; error: string; fetchedAt: string; upstreamType?: string | null; httpStatus?: number | null };
+  | { ok: false; status: number; error: string; fetchedAt: string | null; upstreamType?: string | null; httpStatus?: number | null };
 
-const failed = (status: number, error: string, extra: { upstreamType?: string | null; httpStatus?: number | null } = {}): FrameResult => ({ ok: false, status, error, fetchedAt: new Date().toISOString(), ...extra });
+/** A failed result; `fetchedAt` stays null unless a request actually went to the operator. */
+const failed = (status: number, error: string, extra: { fetchedAt?: string | null; upstreamType?: string | null; httpStatus?: number | null } = {}): FrameResult => ({ ok: false, status, error, fetchedAt: null, ...extra });
+const isoAt = (ms: number) => new Date(ms).toISOString();
 
 /** `type/subtype` of a declared Content-Type, lower-cased and sanitised (null when absent or odd). */
 export function declaredType(v: string | string[] | undefined): string | null {
@@ -68,14 +80,18 @@ export function frameErrorInfo(error: string): Pick<FrameError, 'state' | 'messa
   if (error === 'too_large') return { state: 'offline', message: 'The operator sent a file larger than a camera still.' };
   if (error === 'blocked') return { state: 'unavailable', message: 'The frame address left the operator’s allow-listed image path, so it was not fetched.' };
   if (error === 'timeout') return { state: 'unavailable', message: 'The operator did not answer in time. Try again.' };
+  if (error === 'queued') return { state: 'unavailable', message: 'This server was busy relaying other frames from this operator, so the frame was not requested in time. Try again.' };
   return { state: 'unavailable', message: 'The operator could not be reached or answered with an error. Try again.' };
 }
 
+/** Failures that say nothing about the camera or the operator, kept out of the ledger. */
+const NOT_ATTEMPTS = new Set(['link_out_only', 'no_still', 'queued']);
+
 /** Feed the frame-health ledger (attempts that reached, or tried to reach, the operator only). */
 function noted(def: ProviderDef, camera: Camera, r: FrameResult): FrameResult {
-  if (!r.ok && (r.error === 'link_out_only' || r.error === 'no_still')) return r;
+  if (!r.ok && NOT_ATTEMPTS.has(r.error)) return r;
   recordFrame(def.row.id, {
-    at: Date.parse(r.fetchedAt),
+    at: r.fetchedAt ? Date.parse(r.fetchedAt) : Date.now(),
     cameraId: camera.id,
     ok: r.ok,
     error: r.ok ? null : r.error,
@@ -161,10 +177,62 @@ export interface FrameDeps {
   env?: Record<string, string | undefined>;
 }
 
-const fetchFailure = (e: unknown): FrameResult => {
-  const code = (e as { code?: string }).code;
-  return failed(code === 'blocked' ? 403 : 502, code ?? 'network');
-};
+/** What one request saw of its operator's limiter: still queued, and when it was last let through. */
+export interface LimiterTrace {
+  waiting: boolean;
+  grantedAt: number | null;
+  grants: number;
+}
+
+/** Wrap an operator's limiter so a failed request can tell its own queue wait from the operator. */
+export function tracedLimiter(bucket: { take(): Promise<void> }): { take(): Promise<void>; trace: LimiterTrace } {
+  const trace: LimiterTrace = { waiting: false, grantedAt: null, grants: 0 };
+  return {
+    trace,
+    take: async () => {
+      trace.waiting = true;
+      try {
+        await bucket.take();
+        trace.grantedAt = Date.now();
+        trace.grants++;
+      } finally {
+        trace.waiting = false;
+      }
+    },
+  };
+}
+
+/**
+ * Whose timeout it was: `queued` when the request was still waiting in this server's limiter, or the
+ * overall deadline cut the operator off before it had its full per-request time (our queue ate the
+ * budget); `timeout` when the operator had that time and did not answer (or its address did not
+ * resolve before any request was queued).
+ */
+export function timeoutCause(trace: LimiterTrace, now: number, hopTimeoutMs: number = FRAME_HOP_TIMEOUT_MS): 'queued' | 'timeout' {
+  if (trace.waiting) return 'queued';
+  if (trace.grantedAt === null) return 'timeout';
+  return now - trace.grantedAt >= hopTimeoutMs * 0.95 ? 'timeout' : 'queued';
+}
+
+/** A thrown fetch → FrameResult: whose fault it was, and whether a request reached the operator. */
+function fetchFailure(e: unknown, trace: LimiterTrace, firstUrl: string, hopTimeoutMs: number): FrameResult {
+  const raw = (e as { code?: string }).code ?? 'network';
+  const now = Date.now();
+  const code = raw === 'timeout' ? timeoutCause(trace, now, hopTimeoutMs) : raw;
+  // A request reached the operator once the limiter let one through — except an address refused on
+  // the first hop (allow-list or SSRF guard: nothing was sent).
+  const blockedFirst = code === 'blocked' && (e as { url?: string }).url === redactUrl(firstUrl);
+  const requested = trace.grants > 0 && !blockedFirst;
+  const status = code === 'blocked' ? 403 : code === 'queued' ? 503 : 502;
+  return failed(status, code, { fetchedAt: requested ? isoAt(now) : null });
+}
+
+/** allowListedFetch options for a frame: the operator's traced limiter, the explicit hop timeout. */
+function frameFetchOpts(providerId: string, deps: FrameDeps, opts: SafeFetchOptions): { opts: SafeFetchOptions; trace: LimiterTrace; hopTimeoutMs: number } {
+  const lim = tracedLimiter(deps.fetchOpts?.limiter ?? frameLimiter(providerId));
+  const merged: SafeFetchOptions = { timeoutMs: FRAME_HOP_TIMEOUT_MS, ...opts, ...deps.fetchOpts, limiter: lim };
+  return { opts: merged, trace: lim.trace, hopTimeoutMs: merged.timeoutMs ?? FRAME_HOP_TIMEOUT_MS };
+}
 
 /** Fetch one still for a catalogued camera (never stored); the outcome feeds the frame-health ledger. */
 export async function fetchFrame(camera: Camera, def: ProviderDef, deps: FrameDeps = {}): Promise<FrameResult> {
@@ -173,55 +241,58 @@ export async function fetchFrame(camera: Camera, def: ProviderDef, deps: FrameDe
   if (def.row.id === 'txdot') return fetchTxdotSnapshot(camera, def, deps);
   const target = await currentStillUrl(camera, def);
   if (!target) return failed(404, 'no_still');
+  const f = frameFetchOpts(def.row.id, deps, { maxBytes: MAX_FRAME_BYTES, headers: { accept: FRAME_ACCEPT } });
   let res;
   try {
-    res = await allowListedFetch(target.url, rulesFor(def, target.url), { maxBytes: MAX_FRAME_BYTES, headers: { accept: FRAME_ACCEPT }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
+    res = await allowListedFetch(target.url, rulesFor(def, target.url), f.opts);
   } catch (e) {
-    return noted(def, camera, fetchFailure(e));
+    return noted(def, camera, fetchFailure(e, f.trace, target.url, f.hopTimeoutMs));
   }
-  const fetchedAtMs = Date.now();
-  if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, { httpStatus: res.status }));
+  const fetchedAt = isoAt(Date.now());
+  if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, { fetchedAt, httpStatus: res.status }));
   const type = acceptImage(res.headers['content-type'] as string | undefined, res.body);
-  if (!type) return noted(def, camera, failed(502, 'not_an_image', { upstreamType: declaredType(res.headers['content-type']), httpStatus: res.status }));
-  const t = frameTime(target.observedAt, httpDate(res.headers['last-modified']), fetchedAtMs);
-  return noted(def, camera, { ok: true, body: res.body, contentType: type, ...t, fetchedAt: new Date(fetchedAtMs).toISOString(), maxAgeS: row.max_poll_interval });
+  if (!type) return noted(def, camera, failed(502, 'not_an_image', { fetchedAt, upstreamType: declaredType(res.headers['content-type']), httpStatus: res.status }));
+  const t = frameTime(target.observedAt, httpDate(res.headers['last-modified']), Date.parse(fetchedAt));
+  return noted(def, camera, { ok: true, body: res.body, contentType: type, ...t, fetchedAt, maxAgeS: row.max_poll_interval });
 }
 
 /** TxDOT answers JSON `{snippet: <base64 JPEG>, timestampFormatted: 'M/D/YYYY h:mm AM'}` (local time). */
 export async function fetchTxdotSnapshot(camera: Camera, def: ProviderDef, deps: FrameDeps = {}): Promise<FrameResult> {
   const parts = parseTxdotId(camera.id);
   if (!parts || !camera.stillUrl) return failed(404, 'no_still');
+  const f = frameFetchOpts('txdot', deps, { maxBytes: (8 * MAX_FRAME_BYTES) / 3, headers: { accept: 'application/json' } });
   let res;
   try {
-    res = await allowListedFetch(camera.stillUrl, rulesFor(def, camera.stillUrl), { maxBytes: 8 * MAX_FRAME_BYTES / 3, headers: { accept: 'application/json' }, limiter: frameLimiter('txdot'), ...deps.fetchOpts });
+    res = await allowListedFetch(camera.stillUrl, rulesFor(def, camera.stillUrl), f.opts);
   } catch (e) {
-    return noted(def, camera, fetchFailure(e));
+    return noted(def, camera, fetchFailure(e, f.trace, camera.stillUrl, f.hopTimeoutMs));
   }
-  const fetchedAtMs = Date.now();
-  if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, { httpStatus: res.status }));
-  if (declaredType(res.headers['content-type'])?.includes('html')) return noted(def, camera, failed(502, 'not_an_image', { upstreamType: declaredType(res.headers['content-type']), httpStatus: res.status }));
+  const fetchedAt = isoAt(Date.now());
+  const answered = { fetchedAt, httpStatus: res.status };
+  if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, answered));
+  if (declaredType(res.headers['content-type'])?.includes('html')) return noted(def, camera, failed(502, 'not_an_image', { ...answered, upstreamType: declaredType(res.headers['content-type']) }));
   let json: { snippet?: unknown; timestampFormatted?: unknown };
   try {
     json = JSON.parse(res.body.toString('utf8'));
   } catch {
-    return noted(def, camera, failed(502, 'parse', { httpStatus: res.status }));
+    return noted(def, camera, failed(502, 'parse', answered));
   }
-  if (typeof json.snippet !== 'string' || !/^[A-Za-z0-9+/=\s]+$/.test(json.snippet)) return noted(def, camera, failed(502, 'no_snapshot', { httpStatus: res.status }));
+  if (typeof json.snippet !== 'string' || !/^[A-Za-z0-9+/=\s]+$/.test(json.snippet)) return noted(def, camera, failed(502, 'no_snapshot', answered));
   const body = Buffer.from(json.snippet, 'base64');
-  if (body.length > MAX_FRAME_BYTES || sniffImage(body) !== 'image/jpeg') return noted(def, camera, failed(502, 'not_an_image', { upstreamType: null, httpStatus: res.status }));
+  if (body.length > MAX_FRAME_BYTES || sniffImage(body) !== 'image/jpeg') return noted(def, camera, failed(502, 'not_an_image', { ...answered, upstreamType: null }));
   const zone = parts.district === 'ELP' ? 'America/Denver' : (def.timeZone ?? 'America/Chicago');
   const published = typeof json.timestampFormatted === 'string' ? zonedToUtc(json.timestampFormatted.trim(), zone) : null;
-  const t = frameTime(published, null, fetchedAtMs);
-  return noted(def, camera, { ok: true, body, contentType: 'image/jpeg', ...t, fetchedAt: new Date(fetchedAtMs).toISOString(), maxAgeS: def.row.max_poll_interval });
+  const t = frameTime(published, null, Date.parse(fetchedAt));
+  return noted(def, camera, { ok: true, body, contentType: 'image/jpeg', ...t, fetchedAt, maxAgeS: def.row.max_poll_interval });
 }
 
 export function frameResponse(r: FrameResult): Response {
   if (!r.ok) {
     const body: FrameError = { error: 'frame_unavailable', detail: r.error, ...frameErrorInfo(r.error), upstreamType: r.upstreamType ?? null, fetchedAt: r.fetchedAt };
-    return new Response(JSON.stringify(body), {
-      status: r.status,
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, max-age=0', 'X-Frame-Error': r.error, 'X-Frame-Fetched-At': r.fetchedAt },
-    });
+    const headers: Record<string, string> = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store, max-age=0', 'X-Frame-Error': r.error };
+    if (r.fetchedAt) headers['X-Frame-Fetched-At'] = r.fetchedAt;
+    if (r.status === 503) headers['Retry-After'] = '15';
+    return new Response(JSON.stringify(body), { status: r.status, headers });
   }
   const headers: Record<string, string> = {
     'Content-Type': r.contentType,
@@ -283,16 +354,21 @@ export async function probeCamera(camera: Camera, def: ProviderDef, deps: FrameD
   const hls = camera.streamType === 'hls' && camera.streamUrl ? camera.streamUrl : null;
   if (row.link_out_only || (!hls && !camera.stillUrl)) return { status: 'unknown', checkedAt, httpStatus: null };
   if (hls) {
+    const f = frameFetchOpts(def.row.id, deps, { maxBytes: 256 * 1024, headers: { accept: 'application/vnd.apple.mpegurl, */*' } });
     try {
-      const res = await allowListedFetch(hls, rulesFor(def, hls), { maxBytes: 256 * 1024, headers: { accept: 'application/vnd.apple.mpegurl, */*' }, limiter: frameLimiter(def.row.id), ...deps.fetchOpts });
+      const res = await allowListedFetch(hls, rulesFor(def, hls), f.opts);
       const online = res.ok && res.body.subarray(0, 7).toString('latin1') === '#EXTM3U';
       return { status: online ? 'online' : 'offline', checkedAt, httpStatus: res.status };
     } catch (e) {
-      return { status: 'offline', checkedAt, httpStatus: (e as { status?: number }).status ?? null };
+      const r = fetchFailure(e, f.trace, hls, f.hopTimeoutMs);
+      if (!r.ok && r.error === 'queued') return { status: 'unknown', checkedAt, httpStatus: null, reason: 'queued' };
+      return { status: 'offline', checkedAt, httpStatus: (e as { status?: number }).status ?? null, ...(r.ok ? {} : { reason: r.error }) };
     }
   }
   const frame = await fetchFrame(camera, def, deps);
   if (frame.ok) return { status: 'online', checkedAt, httpStatus: 200 };
+  // Our own queue was busy: nothing is known about the camera.
+  if (frame.error === 'queued') return { status: 'unknown', checkedAt, httpStatus: null, reason: 'queued' };
   return { status: 'offline', checkedAt, httpStatus: frame.httpStatus ?? null, reason: frame.error };
 }
 

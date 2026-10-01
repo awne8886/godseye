@@ -77,7 +77,11 @@ export const StreamStatusResponse = z.object({
   status: z.enum(['online', 'offline', 'unknown']),
   checkedAt: IsoTime,
   httpStatus: z.number().int().nullable(),
-  /** Why the camera is offline (`not_an_image` = the operator answered with a web page, `upstream_404`, `timeout`…). */
+  /**
+   * Why the camera is offline (`not_an_image` = the operator answered with a web page, `upstream_404`,
+   * `timeout`…), or why the status is unknown (`queued`: this server's per-operator queue was busy,
+   * so the operator was not asked in time).
+   */
   reason: z.string().optional(),
 });
 
@@ -91,7 +95,8 @@ export const FrameTimeSource = z.enum(['operator', 'last-modified', 'none']);
 /**
  * Body of a failed `/api/cctv/proxy` or `/api/cctv/texas/snapshot` answer. `state: 'offline'` means
  * the operator answered but the camera has no usable frame (a web page instead of an image, 404,
- * an empty snapshot); `unavailable` is a transient failure (timeout, 5xx) worth a retry.
+ * an empty snapshot); `unavailable` is a transient failure (timeout, 5xx, `queued` = this server's
+ * per-operator queue was busy) worth a retry.
  */
 export const FrameError = z.object({
   error: z.literal('frame_unavailable'),
@@ -101,17 +106,27 @@ export const FrameError = z.object({
   message: z.string(),
   /** Declared content type of a refused non-image answer (sanitised `type/subtype`), else null. */
   upstreamType: z.string().nullable(),
-  fetchedAt: IsoTime,
+  /**
+   * When this server requested the frame from the operator; null when no request was made (a
+   * link-out-only provider, a camera without a still, an address refused before connecting, or a
+   * request that never left this server's queue).
+   */
+  fetchedAt: IsoTime.nullable(),
 });
 
 /**
  * Frame availability of one provider over the last `windowS` seconds, from the frames this server
- * actually relayed (bytes are never kept, only success/failure and the frame time). Per camera the
- * latest attempt counts: `unavailable` = at least 3 cameras tried and more than 90 % of them failing
- * (FRAMES UNAVAILABLE), `failing` = fewer than 3 tried and all failing, `available` = otherwise with
- * at least one frame relayed, `unchecked` = no frame requested in the window.
+ * actually requested (bytes are never kept, only success/failure and the frame time). Per camera the
+ * latest attempt counts, and only operator-wide failures (a web page instead of an image, a 5xx, a
+ * network failure, an operator timeout) count against the operator — a missing image (404/410, no
+ * snapshot), an address off the allow-list or this server's own queue are per camera or ours.
+ * `unavailable` = at least 5 distinct cameras tried and more than 90 % of them failing operator-wide
+ * (FRAMES UNAVAILABLE); `failing` = at least 5 tried and more than half failing operator-wide;
+ * `available` = otherwise, with at least one camera's latest frame relayed; `inconclusive` = cameras
+ * tried, none relayed, but too few (or only per-camera failures) to judge the operator;
+ * `unchecked` = no frame requested in the window.
  */
-export const FrameHealthState = z.enum(['unchecked', 'available', 'failing', 'unavailable']);
+export const FrameHealthState = z.enum(['unchecked', 'available', 'failing', 'unavailable', 'inconclusive']);
 
 export const FrameHealth = z.object({
   state: FrameHealthState,
@@ -122,6 +137,8 @@ export const FrameHealth = z.object({
   /** Distinct cameras tried in the window, and how many of them failed on their latest attempt. */
   cameras: z.number().int().nonnegative(),
   camerasFailing: z.number().int().nonnegative(),
+  /** Of `camerasFailing`, the cameras whose latest failure points at the operator rather than the camera. */
+  camerasOperatorFault: z.number().int().nonnegative().optional(),
   /** Failure reasons in the window (`not_an_image`, `upstream_404`, `timeout`…). */
   errors: z.record(z.string(), z.number().int().nonnegative()),
   lastOkAt: IsoTime.nullable(),

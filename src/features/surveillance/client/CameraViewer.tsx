@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePanelChip, type ChipTone } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
 import type { Camera, CameraResolveResponse, StreamStatusResponse } from '@/lib/types';
-import { cameraTag, frameAge, frameHealthLabel, MIN_STILL_REFRESH_S, readFrameFailure, STREAM_LABEL, type FrameFailure } from '../shared';
+import { cameraTag, FRAME_REASON_LABEL, frameAge, frameHealthLabel, MIN_STILL_REFRESH_S, readFrameFailure, STREAM_LABEL, type FrameFailure } from '../shared';
 import { isoShort, OutLink, ProviderBlock, ReportLink, Row } from './parts';
 import { useSurveillanceUi } from './store';
 import { refreshSeconds, useFrameHealth } from './useProviders';
@@ -185,14 +185,13 @@ function HlsPlayer({ url, onState }: { url: string; onState: (v: View) => void }
   return <video ref={ref} muted playsInline controls className="h-full w-full object-contain" aria-label="Live camera video" />;
 }
 
-const REASON_LABEL: Record<string, string> = { not_an_image: 'NOT AN IMAGE', upstream_404: 'NO FRAME (404)', upstream_410: 'NO FRAME (410)', no_snapshot: 'NO SNAPSHOT', timeout: 'TIMEOUT' };
-
 export function statusText(s: StreamStatusResponse | undefined, pending: boolean): { text: string; tone: ChipTone } {
   if (pending) return { text: 'PROBING…', tone: 'busy' };
   if (!s) return { text: 'NOT CHECKED', tone: 'idle' };
   if (s.status === 'online') return { text: 'SOURCE ONLINE', tone: 'live' };
-  if (s.status === 'offline') return { text: s.reason && REASON_LABEL[s.reason] ? `CAMERA OFFLINE · ${REASON_LABEL[s.reason]}` : 'CAMERA OFFLINE', tone: 'error' };
-  return { text: 'STATUS UNKNOWN', tone: 'warn' };
+  const why = s.reason ? FRAME_REASON_LABEL[s.reason] : undefined;
+  if (s.status === 'offline') return { text: why ? `CAMERA OFFLINE · ${why}` : 'CAMERA OFFLINE', tone: 'error' };
+  return { text: why ? `STATUS UNKNOWN · ${why}` : 'STATUS UNKNOWN', tone: 'warn' };
 }
 
 const TIME_SOURCE_LABEL: Record<FrameInfo['timeSource'], string> = { operator: 'Operator timestamp', 'last-modified': 'File Last-Modified', none: 'Not published' };

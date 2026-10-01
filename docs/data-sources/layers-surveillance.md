@@ -131,7 +131,7 @@ Frame time vs fetch time (item 1) and HTML frames (item 2). One official still p
 | HK TD `tdcctv.data.one.gov.hk/H429F.JPG` | 200 · 1.54 s · image/jpeg 22.9 kB | `*` | Last-Modified | 68 s | `X-Frame-Observed-At` = Last-Modified, `X-Frame-Time-Source: last-modified`, `X-Frame-Fetched-At` separate. |
 | Caltrans `cwwp2.dot.ca.gov/data/d7/cctv/image/i110196avenue26offramp/…jpg` | 200 · 0.49 s · image/jpeg 27.3 kB | `*` | Last-Modified | 91 s | same |
 | Fintraffic `weathercam.digitraffic.fi/C0150301.jpg` | 200 · 0.54 s · image/jpeg 318 kB (CloudFront `RefreshHit`) | `*` | Last-Modified (= `x-amz-meta-last-modified`) | **61 min** | Shown as a 1 h-old frame (was the concern: an age near 0 would have been the fetch time). |
-| NSW `webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/5_ways_miranda.jpeg`, `airport_dr_mascot.jpeg` | 200 · 1.31–1.38 s · **text/html 307 B** (`x-cache: Error from cloudfront`, Last-Modified 2023-08-30) | none | — | — | Refused by declared Content-Type before any byte is inspected → 502 `{detail: not_an_image, state: offline, upstreamType: text/html}`; HTML never parsed or relayed; frame-health ledger marks NSW **FRAMES UNAVAILABLE** once ≥ 3 cameras fail. |
+| NSW `webcams.transport.nsw.gov.au/livetraffic-webcams/cameras/5_ways_miranda.jpeg`, `airport_dr_mascot.jpeg` | 200 · 1.31–1.38 s · **text/html 307 B** (`x-cache: Error from cloudfront`, Last-Modified 2023-08-30) | none | — | — | Refused by declared Content-Type before any byte is inspected → 502 `{detail: not_an_image, state: offline, upstreamType: text/html}`; HTML never parsed or relayed; frame-health ledger marks NSW **FRAMES UNAVAILABLE** once ≥ 5 cameras fail operator-wide (rule tightened in the round-4 fix pass, below). |
 | Ottawa `traffic.ottawa.ca/map/camera?id=148` | 200 · 0.50 s · image/jpg | none | **none** | unknown | `X-Frame-Time-Source: none`; viewer reads UNTIMED + fetch time, never LIVE. |
 | THB `cctv-ss06.thb.gov.tw/T3-262K+800/snapshot` | 200 · 1.75 s · image/jpeg (no `Date` either) | none | **none** | unknown | same |
 | Via Lietuva `eismoinfo.lt/…/camera/last?id=305` | 200 · 0.77 s · image/jpeg 151 kB | `*` | **none** | unknown | same |
@@ -143,3 +143,23 @@ Frame time vs fetch time (item 1) and HTML frames (item 2). One official still p
 
 `/api/cctv` `providers.*.age_s` (R2 MINOR-2): the precompressed payload's version now carries a minute bucket, so
 `age_s` = seconds since that provider's inventory fetch (± 60 s), no longer frozen at the first request's 0–3 s.
+
+### Phase 3 round 4 fix pass (2026-10-01 10:35–10:37 UTC, same honest UA, `Accept: FRAME_ACCEPT`)
+
+Which failures are the operator's (frame-health review). Recorded `__fixtures__/livetraffic-livecams.2026-10-01.json`
+(first six `liveCams` features of the NSW feed).
+
+| Request | Status · latency · type | CORS | Effect |
+|---|---|---|---|
+| NSW `www.livetraffic.com/datajson/all-feeds-web.json` | 200 · 3.65 s · application/json 1.78 MB (2 829 features, 241 `liveCams`) | none | Inventory unchanged (`ok: true`, 241 cameras). |
+| NSW stills `5_ways_miranda`, `airport_dr_mascot`, `alison_road_randwick` `.jpeg` | 200 · 0.62–1.18 s · **text/html 307 B** (Last-Modified 2023-08-30) | none | Outage continues → `not_an_image`, operator-wide. |
+| HK TD `tdcctv.data.one.gov.hk/H429F.JPG` | 200 · 0.24 s · image/jpeg 17.4 kB · Last-Modified 2 min | `*` | Frame relayed. |
+| HK TD `tdcctv.data.one.gov.hk/ZZZZZ.JPG` (no such camera) | **404** · 1.20 s · text/html 236 B | — | `upstream_404`: the camera's, never counted against the operator. |
+| Caltrans `cwwp2.dot.ca.gov/data/d7/cctv/image/i110196avenue26offramp/…jpg` | 200 · 0.56 s · image/jpeg 27.6 kB · Last-Modified 1 min | `*` | Frame relayed. |
+| Caltrans `…/cctv/image/doesnotexist/doesnotexist.jpg` | **500** · 0.58 s · text/html 193 B | — | Caltrans answers 5xx for a missing image, so a 5xx is not always operator-wide: the verdict needs ≥ 5 distinct cameras and > 90 % of them failing (one dead camera cannot mark Caltrans unavailable). |
+
+Rule now: only `not_an_image`, 5xx, network, `parse`, `redirect` and operator timeouts (the operator had its full
+8 s request time) count against an operator; `upstream_404/410`/other 4xx, `no_snapshot`, `too_large` and `blocked` are
+per camera; a request still waiting in this server's per-operator limiter (or cut short by the 15 s deadline because of
+that wait) is `queued` (503, `Retry-After: 15`) and never recorded. A failure answered without any request to the
+operator carries `fetchedAt: null` and no `X-Frame-Fetched-At`.

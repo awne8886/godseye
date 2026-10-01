@@ -186,12 +186,31 @@ export function readFrameFailure(status: number, body: unknown): FrameFailure {
   return { state, detail, message };
 }
 
-/** Card / tile wording for a provider's frame availability (/api/cctv/providers `frames`). */
-export function frameHealthLabel(h: Pick<FrameHealth, 'state' | 'cameras' | 'camerasFailing'> | null | undefined): { text: string; tone: 'ok' | 'warn' | 'error' | 'idle' } {
+/** Short HUD wording for a frame failure reason (proxy `detail`, stream-status `reason`). */
+export const FRAME_REASON_LABEL: Record<string, string> = {
+  not_an_image: 'NOT AN IMAGE',
+  upstream_404: 'NO FRAME (404)',
+  upstream_410: 'NO FRAME (410)',
+  no_snapshot: 'NO SNAPSHOT',
+  timeout: 'TIMEOUT',
+  queued: 'SERVER BUSY',
+  too_large: 'FILE TOO LARGE',
+  blocked: 'OFF ALLOW-LIST',
+  network: 'UNREACHABLE',
+};
+
+/**
+ * Card / viewer wording for a provider's frame availability (/api/cctv/providers `frames`). FAILING
+ * and UNAVAILABLE count operator-wide failures over at least 5 cameras; a handful of failed cameras
+ * is only ever "NO FRAME RELAYED", never a verdict on the operator.
+ */
+export function frameHealthLabel(h: Pick<FrameHealth, 'state' | 'cameras' | 'camerasFailing' | 'camerasOperatorFault'> | null | undefined): { text: string; tone: 'ok' | 'warn' | 'error' | 'idle' } {
   if (!h || h.state === 'unchecked') return { text: 'NOT CHECKED YET', tone: 'idle' };
-  if (h.state === 'unavailable') return { text: `UNAVAILABLE · ${h.camerasFailing}/${h.cameras} FAILING`, tone: 'error' };
-  if (h.state === 'failing') return { text: `FAILING · ${h.camerasFailing}/${h.cameras} TRIED`, tone: 'warn' };
-  return { text: h.camerasFailing ? `AVAILABLE · ${h.camerasFailing}/${h.cameras} FAILING` : 'AVAILABLE', tone: 'ok' };
+  const down = h.camerasOperatorFault ?? h.camerasFailing;
+  if (h.state === 'unavailable') return { text: `UNAVAILABLE · ${down}/${h.cameras} FAILING`, tone: 'error' };
+  if (h.state === 'failing') return { text: `FAILING · ${down}/${h.cameras} CAMERAS`, tone: 'warn' };
+  if (h.state === 'inconclusive') return { text: `NO FRAME RELAYED · ${h.cameras} TRIED`, tone: 'idle' };
+  return { text: h.camerasFailing ? `AVAILABLE · ${h.camerasFailing}/${h.cameras} WITHOUT FRAME` : 'AVAILABLE', tone: 'ok' };
 }
 
 /** One plain sentence for an operator whose frames are unavailable (null otherwise). */
@@ -199,6 +218,11 @@ export function frameHealthNote(h: Pick<FrameHealth, 'state' | 'errors' | 'faile
   if (!h || h.state !== 'unavailable') return null;
   const pages = (h.errors.not_an_image ?? 0) * 2 > h.failed;
   return pages
-    ? 'This operator is answering with web pages instead of camera images for almost every camera tried in the last 10 minutes (a fault on the operator side). Frames cannot be shown until it recovers.'
-    : 'Almost every camera of this operator tried in the last 10 minutes returned no frame. Frames cannot be shown until it recovers.';
+    ? 'This operator is answering with web pages instead of camera images for almost every camera tried in the last 10 minutes (a fault on the operator side). Each camera is still retried at the operator’s interval.'
+    : 'This operator failed with server errors, timeouts or connection failures for almost every camera tried in the last 10 minutes. Each camera is still retried at the operator’s interval.';
+}
+
+/** `hh:mmZ` of an ISO time (HUD clock), or null. */
+export function hhmmZ(iso: string | null | undefined): string | null {
+  return iso && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(iso) ? `${iso.slice(11, 16)}Z` : null;
 }
