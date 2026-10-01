@@ -4,7 +4,7 @@
  * Owner: design-system-hud.
  */
 import { useQuery } from '@tanstack/react-query';
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore, type RefObject } from 'react';
 import { panelFor } from '@/features/registry';
 import { visibleLayers, type LayerDef } from '@/lib/layer-registry';
 import type { PanelId } from '@/lib/tool-registry';
@@ -85,4 +85,45 @@ export function useHasBluetooth(): boolean {
 export function isPanelAvailable(id: PanelId, hasBluetooth: boolean): boolean {
   if (id === 'remote' && !hasBluetooth) return false;
   return panelFor(id) !== null;
+}
+
+/**
+ * Space (px from the viewport bottom to the element's top edge) a bottom sheet occupies, ignoring
+ * its slide transform: offsetHeight + the resolved CSS `bottom`. Null when it cannot be measured.
+ */
+export function occupiedFromBottom(el: HTMLElement): number | null {
+  const bottom = Number.parseFloat(getComputedStyle(el).bottom);
+  if (!Number.isFinite(bottom)) return null;
+  return Math.round(el.offsetHeight + bottom);
+}
+
+/**
+ * Publish how much of the screen bottom a phone sheet covers as a CSS custom property on <html>
+ * (`--sheet-occupied`, `--card-occupied`), so base.css lifts MapLibre's attribution and imagery
+ * chips above it (the attribution stays visible). Cleared as soon as `active` turns false (exit
+ * starts), not when the exit animation ends.
+ */
+export function useBottomReserve(ref: RefObject<HTMLElement | null>, name: '--sheet-occupied' | '--card-occupied', active: boolean) {
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = ref.current;
+    if (!active || !el) {
+      root.style.removeProperty(name);
+      return;
+    }
+    const write = () => {
+      const px = occupiedFromBottom(el);
+      if (px === null) root.style.removeProperty(name);
+      else root.style.setProperty(name, `${px}px`);
+    };
+    write();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(write);
+    ro?.observe(el);
+    window.addEventListener('resize', write);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', write);
+      root.style.removeProperty(name);
+    };
+  }, [ref, name, active]);
 }

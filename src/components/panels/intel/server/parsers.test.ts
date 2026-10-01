@@ -4,6 +4,7 @@ import { parseFeed } from '@/lib/rss';
 import { FX, fixtureJson, fixtureText } from '../__fixtures__';
 import { alertKind, classify, riskScore } from './classify';
 import { buildAlertBrief, buildThreads, primaryTheatre } from './digest';
+import { hasStopTerm, leadEligible } from './lead-filter';
 import { geoparse } from './gazetteer';
 import { WIRE_FEEDS, TELEGRAM_CHANNELS, POSTS_PER_CHANNEL, fromTelegram, fromWire, latestChannelPosts, mergeCrossPosts } from './news';
 import { isOpen, nextChange, sessionsAt, EXCHANGES } from './sessions';
@@ -146,6 +147,25 @@ describe('alert digest (dossier 14 algorithm)', () => {
     expect(threads.find((t) => t.id === 'israel-gaza-lebanon')!.lead!.id).toBe('h1');
     expect(threads.find((t) => t.id === 'us-policy')!.lead!.id).toBe('u1');
     expect(primaryTheatre('Washington says Hezbollah must disarm', ['israel-gaza-lebanon', 'us-policy'])).toBe('us-policy');
+  });
+
+  it('never promotes a report with a slur as a lead, keeps its text, prefers wire headlines (R3 round-2 m6)', () => {
+    const slur = 'My Salute to the Indian Pajeet* army on the LoC';
+    const news = [
+      { ...mk('s1', slur, 'russian', 'Intel Slava Z', 0), alsoReportedBy: [{ sourceName: 'X', source: 'x', bloc: 'russian', link: 'https://t.me/s/x' }] as never },
+      mk('s2', 'Pakistan and India exchange fire across the LoC in Kashmir', 'independent', 'Some Channel', 1),
+      { ...mk('s3', 'India and Pakistan trade artillery fire in Kashmir', 'western', 'BBC News', 2), sourceKind: 'wire' as const },
+    ];
+    const threads = buildThreads(news);
+    const t = threads.find((x) => x.itemIds.includes('s1'))!;
+    expect(t.lead!.id).toBe('s3'); // wire beats the channel post; the slur post is never the lead
+    expect(news[0]!.title).toBe(slur); // original text untouched
+    expect(buildThreads([news[0]!]).every((x) => x.lead === null)).toBe(true);
+    expect(hasStopTerm(slur)).toBe(true);
+    expect(hasStopTerm('Хохлы опять')).toBe(true);
+    // Ordinary words and surnames that merely contain a term are not hits.
+    expect(hasStopTerm('A chink in the armour; Moskalenko spoke; spices; Khokhloma art; хохлома')).toBe(false);
+    expect(leadEligible({ title: 'Kashmir ceasefire holds', summary: null })).toBe(true);
   });
 
   it('keeps the 8 newest posts of a full t.me/s page (R3-m2)', () => {

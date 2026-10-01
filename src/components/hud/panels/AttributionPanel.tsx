@@ -14,9 +14,9 @@ import { REPO_URL } from '@/lib/config';
 import type { PanelProps } from '@/lib/feature-module';
 import { LAYER_GROUPS, type LayerDef, type LayerId } from '@/lib/layer-registry';
 import { useLayerStatusStore } from '@/lib/layer-host';
-import { SOURCES, sourcesByGroup, sourcesForLayer, type SourceEntry } from '@/lib/sources';
+import { SOURCES, sourcesByGroup, sourcesForLayer, type SourceEntry, type SourceGate } from '@/lib/sources';
 import { useUiStore } from '@/lib/store';
-import { useVisibleLayers } from '../hooks';
+import { useHealth, useVisibleLayers, type Caps } from '../hooks';
 import { AttributionLine, FreshnessLed, statusAttribution } from '../LayerRows';
 import { usePanelChip } from '../PanelChrome';
 import { refreshLabel } from '../status-logic';
@@ -41,6 +41,16 @@ export function layerCadenceLabel(l: LayerDef): string {
   return refreshLabel(l.refreshMs, l.transport);
 }
 
+/**
+ * Gate line for a source (n3): once /api/health has answered, a gated source whose capability is
+ * off reads "NOT ENABLED ON THIS SERVER"; one that is on reads "ENABLED"; before that, "GATED".
+ */
+export function gateLabel(gate: SourceGate, caps: Caps | undefined): string {
+  const state = gate.capability && caps ? caps[gate.capability] : undefined;
+  if (!state) return `GATED · ${gate.note}`;
+  return state.enabled ? `ENABLED · ${gate.note}` : `NOT ENABLED ON THIS SERVER · ${gate.note}`;
+}
+
 function Ext({ href, children }: { href: string; children: ReactNode }) {
   return /^https?:\/\//.test(href) ? (
     <a href={href} target="_blank" rel="noopener noreferrer" className="underline decoration-[var(--border-active)] underline-offset-2 hover:text-[var(--gold-light)]">
@@ -55,13 +65,14 @@ function LayerItem({ l }: { l: LayerDef }) {
   const st = useLayerStatusStore((s) => s.status[l.id as LayerId]);
   const attr = st ? statusAttribution(st) : [];
   const registry = sourcesForLayer(l.id);
+  const caps = useHealth().data?.capabilities;
   return (
     <li>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span className="hud-text text-[11px] text-[var(--text-primary)]">{l.label}</span>
         <span className="instrument-chip text-[var(--text-secondary)]">{layerKindLabel(l.kind)}</span>
         <span className="hud-micro text-[var(--text-muted)]">{layerCadenceLabel(l)}</span>
-        {st && <FreshnessLed layer={l} status={st} />}
+        {st && <FreshnessLed layer={l} status={st} omitReference />}
       </div>
       {l.description && <p className="font-sans text-[var(--text-secondary)]">{l.description}</p>}
       {registry.length > 0 && (
@@ -71,6 +82,7 @@ function LayerItem({ l }: { l: LayerDef }) {
             <span key={s.id}>
               {i > 0 && ' · '}
               <Ext href={s.url}>{s.name}</Ext> <span className="text-[var(--text-muted)]">({s.licence.split(';')[0]})</span>
+              {s.gate?.capability && caps?.[s.gate.capability]?.enabled === false && <span className="text-[var(--text-muted)]"> (not enabled on this server)</span>}
             </span>
           ))}
         </p>
@@ -87,7 +99,9 @@ function LayerItem({ l }: { l: LayerDef }) {
 export default function AttributionPanel(_: PanelProps) {
   const layers = useVisibleLayers();
   const basemap = useUiStore((s) => s.basemap);
-  usePanelChip(`${layers.length} LAYERS · ${SOURCES.length} SOURCES`, 'idle');
+  // A bare count fits beside the long title without truncating (n2); the body spells it out.
+  usePanelChip(String(SOURCES.length), 'idle');
+  const caps = useHealth().data?.capabilities;
   return (
     <div className="space-y-5 text-[12px]">
       <p className="hud-micro text-[var(--text-secondary)] tabular-nums">
@@ -142,7 +156,7 @@ export default function AttributionPanel(_: PanelProps) {
                   <p className="font-sans text-[var(--text-secondary)]">
                     {s.usedFor}. <span className="text-[var(--text-primary)]">{s.licence}</span>
                   </p>
-                  {s.gate && <p className="hud-micro text-[var(--alert-orange)]">GATED · {s.gate.note}</p>}
+                  {s.gate && <p className="hud-micro text-[var(--alert-orange)]">{gateLabel(s.gate, caps)}</p>}
                 </li>
               ))}
             </ul>

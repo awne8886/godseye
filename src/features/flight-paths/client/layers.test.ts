@@ -2,7 +2,24 @@ import { describe, expect, it } from 'vitest';
 import type { Layer } from '@deck.gl/core';
 import { greatCircle } from '../lib/geometry';
 import type { Flight, Live, Plan } from './api';
-import { ALT_RAMP_FT, altitudeColor, buildRouteAnimLayers, buildRouteLayers, cameraFor, flownSegments, framePadding, PULSE_RINGS, progressChip, routeFrame, TRACK_GAP_MS } from './layers';
+import {
+  ALT_RAMP_FT,
+  altitudeColor,
+  buildRouteAnimLayers,
+  buildRouteLayers,
+  cameraFor,
+  CHIP_MAX,
+  flownSegments,
+  frameBounds,
+  framePadding,
+  globeCamera,
+  PULSE_RINGS,
+  progressChip,
+  routeFrame,
+  screenProjector,
+  selectChips,
+  TRACK_GAP_MS,
+} from './layers';
 import { codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
 
 const gc = greatCircle([140.386, 35.7647], [-118.408, 33.9425]);
@@ -13,16 +30,46 @@ const plan = {
   destination: endpoint('KLAX', 'LAX', -118.408, 33.9425),
   greatCircle: gc,
   diversionAirports: [{ code: 'ANC', name: 'Anchorage', runwayM: 3300, distanceFromPathKm: 150, alongPathKm: 4000, lat: 61.17, lng: -150.0 }],
-  filedPlans: [{ id: 'fpdb:1', waypoints: [{ ident: 'A', type: 'FIX', lat: 35, lng: 141, altFt: null, via: null }, { ident: 'B', type: 'FIX', lat: 40, lng: 170, altFt: null, via: null }], distanceNm: 100, source: 'FlightPlanDatabase', disclaimer: 'sim only' }],
+  filedPlans: [
+    {
+      id: 'fpdb:1',
+      waypoints: [
+        { ident: 'A', type: 'FIX', lat: 35, lng: 141, altFt: null, via: null },
+        { ident: 'B', type: 'FIX', lat: 40, lng: 170, altFt: null, via: null },
+      ],
+      distanceNm: 100,
+      source: 'FlightPlanDatabase',
+      disclaimer: 'sim only',
+    },
+  ],
 } as unknown as Plan;
 
 const ids = (layers: unknown[]) => (layers as Layer[]).map((l) => l.id);
 
 describe('buildRouteLayers', () => {
   it('plan: glow + arc on the unwrapped great circle, filed plans, endpoints, diversions, live aircraft', () => {
-    const live = { aircraft: [{ hex: 'abc123', callsign: 'JAL62', lat: 45, lng: 170, basis: 'matched' }, { hex: 'abc124', callsign: null, lat: 45, lng: 175, basis: 'inferred' }] } as unknown as Live;
+    const live = {
+      aircraft: [
+        { hex: 'abc123', callsign: 'JAL62', lat: 45, lng: 170, basis: 'matched' },
+        { hex: 'abc124', callsign: null, lat: 45, lng: 175, basis: 'inferred' },
+      ],
+    } as unknown as Live;
     const layers = buildRouteLayers({ plan, live, flight: null, globe: false, center: [0, 0], theme: 0 });
-    expect(ids(layers)).toEqual(['route-planned-glow', 'route-planned-arc', 'route-filed', 'route-filed-waypoints', 'route-endpoints', 'route-endpoint-labels', 'route-diversions', 'route-live-aircraft']);
+    expect(ids(layers)).toEqual([
+      'route-planned-glow',
+      'route-planned-arc',
+      'route-filed',
+      'route-filed-waypoints',
+      'route-endpoints',
+      'route-endpoint-labels',
+      'route-diversions',
+      'route-inferred-aircraft',
+      'route-live-aircraft',
+    ]);
+    // R2-M2: the inferred aircraft is a dotted-ring glyph, not the solid MATCHED ring.
+    const inferred = (layers as Layer[]).find((l) => l.id === 'route-inferred-aircraft')!;
+    expect(inferred.props.data).toHaveLength(1);
+    expect((layers as Layer[]).find((l) => l.id === 'route-live-aircraft')!.props.data).toHaveLength(1);
     const arc = (layers as Layer[])[1]!;
     const data = arc.props.data as { path: number[][] }[];
     // Dashed: several pieces whose vertices are exactly the server's unwrapped points.
@@ -39,13 +86,19 @@ describe('buildRouteLayers', () => {
       resolved: { callsign: 'BAW117', hex: '4ca1fa', iataFlight: null, registration: null },
       origin: endpoint('EGLL', 'LHR', -0.46, 51.47),
       destination: endpoint('KJFK', 'JFK', -73.78, 40.64),
-      plannedArc: [[-0.46, 51.47], [-73.78, 40.64]],
+      plannedArc: [
+        [-0.46, 51.47],
+        [-73.78, 40.64],
+      ],
       flownTrack: [
         { t: '2026-09-30T20:00:00Z', lat: 51.47, lng: -0.46, altFt: null, onGround: true, gsKt: 10, trackDeg: 270 },
         { t: '2026-09-30T20:05:00Z', lat: 51.6, lng: -2, altFt: 20000, onGround: false, gsKt: 400, trackDeg: 280 },
         { t: '2026-09-30T20:09:00Z', lat: 52, lng: -5, altFt: 37000, onGround: false, gsKt: 480, trackDeg: 280 },
       ],
-      remainingLeg: [[-5, 52], [-73.78, 40.64]],
+      remainingLeg: [
+        [-5, 52],
+        [-73.78, 40.64],
+      ],
       position: { lat: 52, lng: -5, altFt: 37000, gsKt: 480, trackDeg: 280, observedAt: '2026-09-30T20:20:00Z' },
     } as unknown as Flight;
     const layers = buildRouteLayers({ plan: null, live: null, flight, globe: true, center: [-5, 52], theme: 1 });
@@ -107,11 +160,111 @@ describe('buildRouteLayers', () => {
     expect(buildRouteAnimLayers({ frame, globe: false, phase: 0.5, reducedMotion: true, theme: 0 })).toEqual([]);
   });
 
-  it('fit padding: 80 px plus the docked panel, capped to leave room for the route', () => {
-    expect(framePadding({ width: 1440, height: 900 }, null)).toEqual({ top: 80, right: 80, bottom: 80, left: 80 });
-    expect(framePadding({ width: 1440, height: 900 }, { side: 'right', size: 424 })).toEqual({ top: 80, right: 504, bottom: 80, left: 80 });
-    expect(framePadding({ width: 800, height: 900 }, { side: 'right', size: 424 }).right).toBe(440);
-    expect(framePadding({ width: 390, height: 844 }, { side: 'bottom', size: 380 }).bottom).toBe(460);
+  it('fit padding: HUD chrome (header, status bar, left rail) + 40 px, plus the docked panel, capped', () => {
+    expect(framePadding({ width: 1440, height: 900 }, null)).toEqual({ top: 104, right: 40, bottom: 68, left: 88 });
+    expect(framePadding({ width: 1440, height: 900 }, { side: 'right', size: 424 })).toEqual({ top: 104, right: 464, bottom: 68, left: 88 });
+    expect(framePadding({ width: 800, height: 900 }, { side: 'right', size: 424 }).right).toBe(464);
+    expect(framePadding({ width: 600, height: 900 }, { side: 'right', size: 424 }).right).toBe(410); // capped: ¾ of the width minus the left side
+    // Phone: no rail; the bottom sheet.
+    expect(framePadding({ width: 390, height: 844 }, { side: 'bottom', size: 380 })).toEqual({ top: 104, right: 40, bottom: 420, left: 40 });
+  });
+});
+
+describe('route-progress chips declutter (R2-M3)', () => {
+  const JFK: [number, number] = [-73.7781, 40.6413];
+  const LHR: [number, number] = [-0.4619, 51.47];
+  const ac = (id: string, lng: number, lat: number, progress = 0.5) => ({ id, label: id, position: [lng, lat] as [number, number], progress, matched: true });
+
+  it('drops chips on top of an endpoint label and chips that overlap one already placed; caps the count', () => {
+    const project = screenProjector(false, [-40, 50], 2.5);
+    const cands = [
+      ac('NEARJFK1', -73.6, 40.7, 0.99), // inside the endpoint clearance at z 2.5
+      ac('NEARJFK2', -73.9, 40.5, 0.98),
+      ac('MID1', -40, 52),
+      ac('MID2', -40.2, 52.05), // a few px from MID1 → overlapping box
+      ac('EAST', -15, 53),
+    ];
+    const out = selectChips(cands, [JFK, LHR], project);
+    expect(out.map((a) => a.id)).toEqual(['MID1', 'EAST']);
+    // Zoomed in, the near-JFK aircraft separate from the airport and from each other.
+    const close = selectChips(cands, [JFK, LHR], screenProjector(false, JFK, 9));
+    expect(close.map((a) => a.id)).toContain('NEARJFK1');
+    const many = Array.from({ length: 20 }, (_, i) => ac(`A${i}`, -60 + i * 2.5, 48 + (i % 2) * 6));
+    expect(selectChips(many, [JFK, LHR], project).length).toBeLessThanOrEqual(CHIP_MAX);
+  });
+
+  it('globe projection: far-side points never get a chip; inferred aircraft never get one', () => {
+    const project = screenProjector(true, [-40, 50], 2);
+    expect(project([140, -30])).toBeNull();
+    expect(selectChips([ac('FAR', 140, -30)], [], project)).toEqual([]);
+    const live = { aircraft: [{ hex: 'a', callsign: 'JAL62', lat: 45, lng: 170, basis: 'inferred', direction: 'forward', progress: 0.5 }] } as unknown as Live;
+    const layers = buildRouteLayers({ plan, live, flight: null, globe: false, center: [170, 45], zoom: 4, theme: 0 });
+    expect(ids(layers)).not.toContain('route-progress-chips');
+    expect(ids(layers)).toContain('route-inferred-aircraft');
+  });
+
+  it('endpoint chips pile-up at a busy endpoint reduces to a readable few', () => {
+    // Ten matched aircraft within ~150 km of JFK at the zoom that frames LHR–JFK.
+    const pile = Array.from({ length: 10 }, (_, i) => ac(`P${i}`, -73.8 + (i % 5) * 0.35, 40.7 + Math.floor(i / 5) * 0.35, 0.9));
+    const out = selectChips(pile, [JFK, LHR], screenProjector(true, [-41.3, 52.2], 2.3));
+    expect(out).toEqual([]);
+  });
+});
+
+describe('globe framing (R2-M4)', () => {
+  const ep = (ident: string, iata: string, lng: number, lat: number) => endpoint(ident, iata, lng, lat);
+  const viewport = { width: 1440, height: 900 };
+  const padding = framePadding(viewport, { side: 'right', size: 424 });
+  const projectFits = (cam: { center: [number, number]; zoom: number }, pts: [number, number][]) => {
+    const project = screenProjector(true, cam.center, cam.zoom);
+    const halfW = (viewport.width - padding.left - padding.right) / 2;
+    const halfH = (viewport.height - padding.top - padding.bottom) / 2;
+    return pts.every((p) => {
+      const xy = project(p);
+      return xy !== null && Math.abs(xy[0]) <= halfW + 1 && Math.abs(xy[1]) <= halfH + 1;
+    });
+  };
+
+  it('SVO→LAX (polar): centred near the arc midpoint in the Arctic, every arc point on the near side and inside the padded viewport', () => {
+    const g = greatCircle([37.4146, 55.9726], [-118.408, 33.9425]);
+    const frame = routeFrame(
+      { ...plan, origin: ep('UUEE', 'SVO', 37.4146, 55.9726), destination: ep('KLAX', 'LAX', -118.408, 33.9425), greatCircle: g, filedPlans: [], diversionAirports: [] } as unknown as Plan,
+      null,
+      null,
+    )!;
+    const cam = globeCamera(frame, viewport, padding)!;
+    expect(cam.center[1]).toBeGreaterThan(70);
+    expect(Math.abs(cam.center[0] - g.midpoint[0])).toBeLessThan(2);
+    expect(cam.zoom).toBeGreaterThan(0);
+    expect(projectFits(cam, frame.arc)).toBe(true);
+    // The naive lng/lat box is centred at ~57° N, -40° — well away from the arc's 80° N apex.
+    const b = frameBounds(frame)!;
+    expect(b[1][0] - b[0][0]).toBeGreaterThan(150);
+  });
+
+  it('NRT→LAX (antimeridian): centre over the North Pacific, the whole arc fits', () => {
+    const frame = routeFrame(plan, null, null)!;
+    const cam = globeCamera(frame, viewport, padding)!;
+    expect(cam.center[1]).toBeGreaterThan(40);
+    expect(Math.abs(cam.center[0])).toBeGreaterThan(160); // near ±180, normalised
+    expect(projectFits(cam, frame.arc)).toBe(true);
+  });
+
+  it('LHR→JFK fits too and zooms in further than the long polar route', () => {
+    const g = greatCircle([-0.4619, 51.47], [-73.7781, 40.6413]);
+    const frame = routeFrame(
+      { ...plan, origin: ep('EGLL', 'LHR', -0.4619, 51.47), destination: ep('KJFK', 'JFK', -73.7781, 40.6413), greatCircle: g, filedPlans: [], diversionAirports: [] } as unknown as Plan,
+      null,
+      null,
+    )!;
+    const cam = globeCamera(frame, viewport, padding)!;
+    expect(projectFits(cam, frame.arc)).toBe(true);
+    const svo = globeCamera(
+      routeFrame({ ...plan, greatCircle: greatCircle([37.4146, 55.9726], [-118.408, 33.9425]), filedPlans: [], diversionAirports: [] } as unknown as Plan, null, null)!,
+      viewport,
+      padding,
+    )!;
+    expect(cam.zoom).toBeGreaterThan(svo.zoom - 0.5);
   });
 });
 

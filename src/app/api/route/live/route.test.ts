@@ -5,6 +5,7 @@ import type { FlightRecord } from '@/features/aviation/adsb';
 import type { FeedResult } from '@/lib/feeds';
 import type { FlightsSnapshot } from '@/features/aviation/server/sweep';
 import { greatCircle } from '@/features/flight-paths/lib/geometry';
+import { initialBearing } from '@/lib/geo';
 
 const state = vi.hoisted(() => ({ result: null as unknown }));
 
@@ -53,7 +54,8 @@ function rec(id: string, callsign: string | null, at: [number, number], over: Pa
 // Synthetic snapshot (positions computed on the LHR–JFK great circle); callsigns from the VRS table.
 const records: FlightRecord[] = [
   rec('4ca1fa', 'BAW117', path[128]!, { trackDeg: 268 }), // VRS EGLL-KJFK service, mid-route
-  rec('a1b2c3', 'XYZ999', path[64]!, { trackDeg: 283 }), // unknown callsign flying the corridor
+  rec('a1b2c3', 'XYZ999', path[64]!, { trackDeg: Math.round(initialBearing(path[64]!, JFK)) }), // unknown callsign flying the corridor straight at JFK
+  rec('e0e0e0', 'RPA5593', path[200]!, { typeCode: 'E75L', altFt: 24300, trackDeg: Math.round(initialBearing(path[200]!, JFK)) }), // regional jet on a domestic leg: never inferred
   rec('a0a0a0', 'DAL1', path[190]!, { trackDeg: 60 }), // VRS KJFK-EGLL service heading east
   rec('b0b0b0', 'LOW1', path[100]!, { altFt: 3000 }), // too low to infer
   rec('c0c0c0', 'BAW117X', [10, 10]), // far away
@@ -102,6 +104,7 @@ describe('GET /api/route/live', () => {
     expect(byCs.get('XYZ999')).toMatchObject({ basis: 'inferred', direction: 'forward' });
     expect(byCs.has('DAL1')).toBe(false); // reverse only with reverse=1
     expect(byCs.has('LOW1')).toBe(false);
+    expect(byCs.has('RPA5593')).toBe(false);
     expect(byCs.has('BAW117X')).toBe(false);
     expect(byCs.has('BAW115')).toBe(false);
     expect(body.aircraft[0]!.callsign).toBe('BAW117'); // matched before inferred

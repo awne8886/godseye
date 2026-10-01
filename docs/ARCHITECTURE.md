@@ -218,7 +218,9 @@ Preferences persist in `localStorage` (`godseye:settings`, `godseye:theme`), rea
   `.next/static` + `public/`, non-root user `godseye` (uid 1001, no login shell, npm/corepack removed),
   `HEALTHCHECK` on `/api/health`). `docker-compose.yml` runs it behind Caddy (automatic TLS,
   `header_up X-Forwarded-For {remote_host}`, zstd/gzip for JSON and HTML but never
-  `text/event-stream`, no access log) with a snapshot volume, and an optional `redis` profile. Every
+  `text/event-stream`, request bodies capped at 64 KB on `/api/ai/*` and 1 MB elsewhere in front of the
+  app's own 32 KiB / 256 KiB caps, no access log) with a snapshot volume, and an optional `redis`
+  profile. The Caddy and Redis images are pinned by digest like the app's base image. Every
   service has `read_only: true`, `no-new-privileges`, `cap_drop: [ALL]` (Caddy adds back only
   `NET_BIND_SERVICE`) and a PID limit; the app writes only to `/data` and tmpfs mounts at `/tmp` and
   `/app/.next/cache`. The app port is never published.

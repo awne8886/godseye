@@ -5,13 +5,13 @@
  * (palette, help, Style Studio) render their own dialogs. Components come from panelFor(id).
  * Owner: design-system-hud.
  */
-import { AnimatePresence, motion, useIsPresent } from 'motion/react';
+import { AnimatePresence, m, useIsPresent } from 'motion/react';
 import { createElement, useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { panelFor } from '@/features/registry';
 import { MOBILE_SHEETS, type PanelId } from '@/lib/tool-registry';
 import { useUiStore } from '@/lib/store';
 import { useShallow } from 'zustand/react/shallow';
-import { isPanelAvailable, useHasBluetooth, useIsMobile } from './hooks';
+import { isPanelAvailable, useBottomReserve, useHasBluetooth, useIsMobile } from './hooks';
 import { InstrumentFrame } from './PanelChrome';
 import { MODAL_PANELS, panelLabel, tabForPanel } from './panel-meta';
 
@@ -59,7 +59,7 @@ function SidePanel({ id, pinned }: { id: PanelId; pinned: boolean }) {
 function DockedPanel({ id, style, handle }: { id: PanelId; style: CSSProperties; handle: ReturnType<typeof useDockWidth>['handle'] }) {
   const present = useIsPresent();
   return (
-    <motion.div
+    <m.div
       custom={false}
       variants={DOCK_VARIANTS}
       initial="enter"
@@ -73,7 +73,7 @@ function DockedPanel({ id, style, handle }: { id: PanelId; style: CSSProperties;
     >
       <div {...handle} className="absolute -left-1.5 top-1/2 z-10 h-16 w-3 -translate-y-1/2 cursor-ew-resize rounded-full hover:bg-[rgba(var(--gold-rgb),0.25)] focus-visible:bg-[rgba(var(--gold-rgb),0.25)]" />
       <SidePanel id={id} pinned={false} />
-    </motion.div>
+    </m.div>
   );
 }
 
@@ -220,52 +220,60 @@ export default function PanelHost() {
 }
 
 function MobileSheet({ id }: { id: PanelId | null }) {
+  return <AnimatePresence>{id && <MobileSheetBody key="sheet" id={id} />}</AnimatePresence>;
+}
+
+/**
+ * The phone sheet. Like DockedPanel, it turns `inert` + `aria-hidden` the moment its exit starts so
+ * a closing sheet leaves the accessibility tree and tab order at once (m5), and it reserves its
+ * height for MapLibre's attribution while open so the credits stay visible above it (m2).
+ */
+export function MobileSheetBody({ id }: { id: PanelId }) {
   const setOpenPanel = useUiStore((s) => s.setOpenPanel);
   const closeDossier = useUiStore((s) => s.closeDossier);
   const bt = useHasBluetooth();
+  const present = useIsPresent();
+  const ref = useRef<HTMLDivElement>(null);
+  useBottomReserve(ref, '--sheet-occupied', present);
   const tab = tabForPanel(id);
-  const siblings = (tab ? (MOBILE_SHEETS[tab] as readonly PanelId[]) : id ? [id] : []).filter((p) => isPanelAvailable(p, bt));
+  const siblings = (tab ? (MOBILE_SHEETS[tab] as readonly PanelId[]) : [id]).filter((p) => isPanelAvailable(p, bt));
   const close = () => (id === 'dossier' ? closeDossier() : setOpenPanel(null));
   return (
-    <AnimatePresence>
-      {id && (
-        <motion.div
-          key="sheet"
-          initial={{ y: '100%' }}
-          animate={{ y: 0 }}
-          exit={{ y: '100%' }}
-          transition={{ type: 'spring', stiffness: 380, damping: 36 }}
-          className="fixed inset-x-0 z-[var(--z-docked)] flex max-h-[55vh] min-h-[40vh] flex-col"
-          style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
-        >
-          <div className="glass-3 flex min-h-0 flex-1 flex-col rounded-b-none">
-            <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--gold-dim)]" aria-hidden />
-            {siblings.length > 1 && (
-              <div
-                role="tablist"
-                aria-label="Sheet sections"
-                className="hud-fade-right flex shrink-0 scroll-px-4 gap-1 overflow-x-auto px-3 pr-8 pt-2"
+    <m.div
+      ref={ref}
+      initial={{ y: '100%' }}
+      animate={{ y: 0 }}
+      exit={{ y: '100%' }}
+      transition={{ type: 'spring', stiffness: 380, damping: 36 }}
+      inert={!present}
+      aria-hidden={present ? undefined : true}
+      data-exiting={present ? undefined : ''}
+      data-testid="mobile-sheet"
+      className="fixed inset-x-0 z-[var(--z-docked)] flex max-h-[55vh] min-h-[40vh] flex-col"
+      style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
+    >
+      <div className="glass-3 flex min-h-0 flex-1 flex-col rounded-b-none">
+        <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--gold-dim)]" aria-hidden />
+        {siblings.length > 1 && (
+          <div role="tablist" aria-label="Sheet sections" className="hud-fade-right flex shrink-0 scroll-px-4 gap-1 overflow-x-auto px-3 pr-8 pt-2">
+            {siblings.map((p) => (
+              <button
+                key={p}
+                role="tab"
+                type="button"
+                aria-selected={p === id}
+                onClick={() => setOpenPanel(p)}
+                className={`hud-micro hud-control min-h-[44px] shrink-0 border px-3 ${p === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
               >
-                {siblings.map((p) => (
-                  <button
-                    key={p}
-                    role="tab"
-                    type="button"
-                    aria-selected={p === id}
-                    onClick={() => setOpenPanel(p)}
-                    className={`hud-micro hud-control min-h-[44px] shrink-0 border px-3 ${p === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
-                  >
-                    {panelLabel(p)}
-                  </button>
-                ))}
-              </div>
-            )}
-            <InstrumentFrame key={id} title={panelLabel(id)} onClose={close} sheet={siblings.length > 1} className="min-h-0 flex-1">
-              <PanelBody id={id} onClose={close} />
-            </InstrumentFrame>
+                {panelLabel(p)}
+              </button>
+            ))}
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+        <InstrumentFrame key={id} title={panelLabel(id)} onClose={close} sheet={siblings.length > 1} className="min-h-0 flex-1">
+          <PanelBody id={id} onClose={close} />
+        </InstrumentFrame>
+      </div>
+    </m.div>
   );
 }

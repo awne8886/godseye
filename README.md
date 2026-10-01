@@ -71,8 +71,10 @@ environment variables. Compose runs every container with a read-only root filesy
 `no-new-privileges` and all Linux capabilities dropped (Caddy keeps only `NET_BIND_SERVICE`; Redis runs
 as its own user); the app writes only to the `snapshots` volume (feed snapshots survive restarts) and
 two small tmpfs mounts. The app container is never published directly; Caddy (`Caddyfile`) terminates
-TLS, overwrites `X-Forwarded-For` / `X-Real-IP`, compresses JSON and HTML with zstd/gzip, streams
-Server-Sent Events unbuffered and keeps no access log.
+TLS, overwrites `X-Forwarded-For` / `X-Real-IP`, caps request bodies (64 KB on `/api/ai/*`, 1 MB
+elsewhere), compresses JSON and HTML with zstd/gzip, streams Server-Sent Events unbuffered and keeps no
+access log. The Caddy and Redis images are pinned by digest too; refresh the digests with
+`docker buildx imagetools inspect caddy:2-alpine` (or `redis:8-alpine`) when you update.
 
 ## Configuration
 

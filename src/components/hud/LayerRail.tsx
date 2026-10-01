@@ -5,7 +5,7 @@
  * dialogs. The rail bottom holds the rail-bottom launchers (Settings, Style Studio) and Ghost
  * Protocol. Owner: design-system-hud.
  */
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import { Ghost, Settings2, SlidersHorizontal } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { LAYER_GROUPS, type LayerGroupId, type LayerId } from '@/lib/layer-registry';
@@ -78,7 +78,7 @@ export default function LayerRail() {
             </button>
             <AnimatePresence>
               {expanded && (
-                <motion.div
+                <m.div
                   id={panelId}
                   key={panelId}
                   initial={{ opacity: 0, x: -8, filter: 'blur(4px)' }}
@@ -100,7 +100,7 @@ export default function LayerRail() {
                     </button>
                   </div>
                   <LayerList layers={inGroup} />
-                </motion.div>
+                </m.div>
               )}
             </AnimatePresence>
           </div>

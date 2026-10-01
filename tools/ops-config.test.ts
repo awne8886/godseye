@@ -183,6 +183,28 @@ describe('docker-compose.yml, Caddyfile and Dockerfile', () => {
     expect(caddyfile).not.toMatch(/^\s*log\b/m);
   });
 
+  it('Caddy caps request bodies: 64 KB on /api/ai/*, 1 MB elsewhere, above the app caps (SEC2-m8)', () => {
+    const caddyfile = read('Caddyfile');
+    expect(caddyfile).toMatch(/^\s*@ai_body path \/api\/ai\/\*$/m);
+    expect(caddyfile).toMatch(/request_body @ai_body \{\s*max_size 64KB\s*\}/);
+    expect(caddyfile).toMatch(/^\s*@other_body not path \/api\/ai\/\*$/m);
+    expect(caddyfile).toMatch(/request_body @other_body \{\s*max_size 1MB\s*\}/);
+    // The proxy limit must never be tighter than what the app itself accepts (Caddy units are decimal).
+    const ai = read('src/components/panels/intel/server/ai-route.ts').match(/MAX_BODY_BYTES = (\d+) \* 1024/);
+    const sdk = read('src/features/network/server/sdk.ts').match(/MAX_BODY_BYTES = (\d+) \* 1024/);
+    expect(Number(ai?.[1]) * 1024).toBeLessThanOrEqual(64_000);
+    expect(Number(sdk?.[1]) * 1024).toBeLessThanOrEqual(1_000_000);
+  });
+
+  it('pins the Caddy and Redis images by digest (SEC2-m9)', () => {
+    const { caddy, redis } = compose.services;
+    expect(caddy?.image).toMatch(/^caddy:2-alpine@sha256:[0-9a-f]{64}$/);
+    expect(redis?.image).toMatch(/^redis:8-alpine@sha256:[0-9a-f]{64}$/);
+    // Every digest is recorded in the probe log with its resolution date.
+    const log = read('docs/data-sources/pages-docs-privacy-ops.md');
+    for (const img of [caddy?.image, redis?.image]) expect(log).toContain(img?.split('@')[1]);
+  });
+
   it('Dockerfile: frozen install, `pnpm build`, standalone + static + public, non-root, healthcheck, no secrets', () => {
     const df = read('Dockerfile');
     expect(df).toContain('corepack enable');

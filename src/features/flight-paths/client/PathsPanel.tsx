@@ -367,6 +367,12 @@ export function PlanView({ plan }: { plan: Plan }) {
   );
 }
 
+/** Header chip for the live tab (R2-M2): matched and inferred are never summed into one count. */
+export function liveCounts(aircraft: readonly { basis: 'matched' | 'inferred' }[]): string {
+  const m = aircraft.filter((a) => a.basis === 'matched').length;
+  return `${m} MATCHED · ${aircraft.length - m} INFERRED`;
+}
+
 export function LiveView({ live, error }: { live: Live | undefined; error: unknown }) {
   if (error instanceof ApiFailure && error.status === 503) {
     const last = error.meta?.lastGoodAt;
@@ -374,31 +380,41 @@ export function LiveView({ live, error }: { live: Live | undefined; error: unkno
   }
   if (!live) return <Note>Loading live aircraft…</Note>;
   if (!live.aircraft.length) return <Note>No aircraft on this pair in the current snapshot ({fmtUtc(live.snapshotAt)}).</Note>;
+  const anyInferred = live.aircraft.some((a) => a.basis === 'inferred');
   return (
-    <ul className="flex flex-col gap-2" aria-label="Live aircraft on the route">
-      {live.aircraft.map((a) => (
-        <li key={a.hex} className="flex flex-col gap-1 border-b border-[var(--border-secondary)] pb-1.5">
-          <div className="hud-text flex items-center gap-2 text-[11px]">
-            <span className="text-[var(--text-primary)]">{a.callsign ?? a.hex}</span>
-            <span
-              className="hud-chip hud-micro border px-1"
-              style={{ borderColor: a.basis === 'matched' ? 'var(--alert-green)' : 'var(--alert-orange)', color: a.basis === 'matched' ? 'var(--alert-green)' : 'var(--alert-orange)' }}
-              title={a.basis === 'matched' ? 'Callsign is a known service on this pair (VRS standing data)' : 'Inferred from position, heading and altitude only'}
-            >
-              {a.basis === 'matched' ? 'MATCHED' : 'INFERRED'}
+    <div className="flex flex-col gap-2">
+      <p className="hud-micro text-[var(--text-secondary)]" data-testid="paths-live-counts">
+        {liveCounts(live.aircraft)}
+      </p>
+      {anyInferred && <Note>~ INFERRED: no known route for the callsign; position, track and altitude fit the corridor only. Shown as a dotted ring (◌) on the map, without a progress chip.</Note>}
+      <ul className="flex flex-col gap-2" aria-label="Live aircraft on the route">
+        {live.aircraft.map((a) => (
+          <li key={a.hex} className="flex flex-col gap-1 border-b border-[var(--border-secondary)] pb-1.5">
+            <div className="hud-text flex items-center gap-2 text-[11px]">
+              <span className={a.basis === 'matched' ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}>
+                {a.basis === 'matched' ? '' : '~'}
+                {a.callsign ?? a.hex}
+              </span>
+              <span
+                className="hud-chip hud-micro border px-1"
+                style={{ borderColor: a.basis === 'matched' ? 'var(--alert-green)' : 'var(--alert-orange)', color: a.basis === 'matched' ? 'var(--alert-green)' : 'var(--alert-orange)' }}
+                title={a.basis === 'matched' ? 'Callsign is a known service on this pair (VRS standing data)' : 'Inferred from position, heading and altitude only'}
+              >
+                {a.basis === 'matched' ? 'MATCHED' : 'INFERRED'}
+              </span>
+              <span className="text-[var(--text-muted)]">{a.direction === 'forward' ? '→' : '←'}</span>
+              <span className="ml-auto text-[var(--text-secondary)]">ETA {fmtLocal(a.etaLocal)}</span>
+            </div>
+            <div className="h-1 w-full rounded-full bg-[var(--bg-tertiary)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(a.progress * 100)} aria-label={`${a.callsign ?? a.hex} progress`}>
+              <div className={`h-1 rounded-full ${a.basis === 'matched' ? 'bg-[var(--gold-primary)]' : 'bg-[var(--text-muted)]'}`} style={{ width: `${Math.round(a.progress * 100)}%` }} />
+            </div>
+            <span className="hud-micro text-[var(--text-muted)]">
+              {a.altFt !== null ? `${Math.round(a.altFt / 100)} FL` : 'ALT —'} · {a.gsKt !== null ? `${Math.round(a.gsKt)} KT` : 'GS —'} · {Math.round(a.remainingKm)} KM TO GO · OBS {fmtUtc(a.observedAt)}
             </span>
-            <span className="text-[var(--text-muted)]">{a.direction === 'forward' ? '→' : '←'}</span>
-            <span className="ml-auto text-[var(--text-secondary)]">ETA {fmtLocal(a.etaLocal)}</span>
-          </div>
-          <div className="h-1 w-full rounded-full bg-[var(--bg-tertiary)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(a.progress * 100)} aria-label={`${a.callsign ?? a.hex} progress`}>
-            <div className="h-1 rounded-full bg-[var(--gold-primary)]" style={{ width: `${Math.round(a.progress * 100)}%` }} />
-          </div>
-          <span className="hud-micro text-[var(--text-muted)]">
-            {a.altFt !== null ? `${Math.round(a.altFt / 100)} FL` : 'ALT —'} · {a.gsKt !== null ? `${Math.round(a.gsKt)} KT` : 'GS —'} · {Math.round(a.remainingKm)} KM TO GO · OBS {fmtUtc(a.observedAt)}
-          </span>
-        </li>
-      ))}
-    </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -510,7 +526,7 @@ export default function PathsPanel(_props: PanelProps) {
         ? ['PLOTTING', 'busy']
         : plan.data
           ? mode === 'live' && live.data
-            ? [`${live.data.aircraft.length} AIRBORNE`, 'live']
+            ? [liveCounts(live.data.aircraft), 'live']
             : [`${Math.round(plan.data.greatCircle.distanceKm).toLocaleString('en-US')} KM`, 'idle']
           : plan.error
             ? ['ERROR', 'error']
