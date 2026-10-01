@@ -3,8 +3,11 @@
  * snapshot (never a second adsb.lol poller):
  *  - `matched`: the callsign is a VRS standing-data service for A→B (or B→A with reverse=1) and
  *    the aircraft is airborne inside the corridor (detour ≤ direct × 1.15 + 150 km);
- *  - `inferred`: no callsign match, but cross-track ≤ 100 km, track within ±35° of the local path
- *    bearing, above 8,000 ft, 2–98 % along, and inside the corridor.
+ *  - `inferred` (R2-M2): no callsign match AND no known route elsewhere (a VRS route for the
+ *    callsign that is not this pair rejects it), not military / business / private / helicopter,
+ *    not an all-cargo operator, not a short-range type on a long route; then the geometric
+ *    corridor test (`corridorReject`: ≤ 100 km off the great circle, track within ±20° of the
+ *    local bearing, cruise altitude for the route length, ≥ 400 km from both endpoints, 5–95 %).
  * Progress, remaining km and ETA (with the destination's UTC offset) per aircraft. Server-only.
  */
 import 'server-only';
@@ -12,13 +15,53 @@ import type { z } from 'zod';
 import type { LngLatTuple } from '@/lib/geo';
 import type { LiveRouteAircraft } from '@/lib/schemas/flight-paths';
 import type { FlightRecord } from '@/features/aviation/adsb';
-import { corridorMatch, etaMs, onCorridor, progressOn } from '../lib/geometry';
+import { distanceKm } from '@/lib/geo';
+import { airlineCodeOf } from '@/features/aviation/classify';
+import { corridorReject, etaMs, onCorridor, progressOn } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import type { AirportRecord, VrsIndex } from './data';
 import { icaoOf } from './plan';
 
 export type LiveAircraft = z.infer<typeof LiveRouteAircraft>;
 export const MAX_LIVE = 200;
+
+/**
+ * All-cargo operators (ICAO airline designators). Their flights are not passenger services on the
+ * pair a planner asks about; without a VRS match they are never inferred.
+ */
+export const CARGO_OPERATORS: ReadonlySet<string> = new Set(['ABW', 'ABX', 'ATN', 'BCS', 'BOX', 'CAO', 'CKK', 'CKS', 'CLX', 'DHK', 'DHX', 'FDX', 'GEC', 'GTI', 'MPH', 'NCR', 'PAC', 'UPS']);
+
+/**
+ * ICAO type designators of regional jets and turboprops: never inferred on a route longer than
+ * `SHORT_RANGE_MAX_KM` — near a long-haul path they are domestic/regional legs crossing it.
+ */
+export const SHORT_RANGE_TYPES: ReadonlySet<string> = new Set([
+  'AT43', 'AT45', 'AT46', 'AT72', 'AT73', 'AT75', 'AT76', 'B190', 'CRJ1', 'CRJ2', 'CRJ7', 'CRJ9', 'CRJX', 'D328', 'DH8A', 'DH8B',
+  'DH8C', 'DH8D', 'E135', 'E145', 'E170', 'E75L', 'E75S', 'E190', 'E195', 'E290', 'E295', 'F100', 'F70', 'J328', 'JS41', 'SF34', 'SB20',
+]);
+export const SHORT_RANGE_MAX_KM = 3_500;
+
+export type InferReject = 'known-route' | 'category' | 'no-airline-callsign' | 'cargo' | 'short-range-type' | NonNullable<ReturnType<typeof corridorReject>>;
+
+/**
+ * Why a record without a callsign match is NOT inferred onto a→b (null = inferred). `knownChain`
+ * is the callsign's own VRS route (ICAO stops in order), when it has one: a known route that does
+ * not fly a then b rejects the aircraft outright.
+ */
+export function inferReject(r: FlightRecord, a: LngLatTuple, b: LngLatTuple, aIcao: string | null, bIcao: string | null, knownChain: readonly string[] | undefined): InferReject | null {
+  if (knownChain) {
+    const i = aIcao ? knownChain.indexOf(aIcao) : -1;
+    const j = bIcao ? knownChain.lastIndexOf(bIcao) : -1;
+    if (!(i >= 0 && j > i)) return 'known-route';
+  }
+  if (r.isHelicopter || r.bucket !== 'commercial' || (r.dbFlags ?? 0) & 1) return 'category';
+  // Scheduled services fly airline callsigns (3-letter ICAO designator + flight number).
+  const op = airlineCodeOf(r.callsign);
+  if (!op) return 'no-airline-callsign';
+  if (CARGO_OPERATORS.has(op)) return 'cargo';
+  if (r.typeCode && SHORT_RANGE_TYPES.has(r.typeCode) && distanceKm(a, b) > SHORT_RANGE_MAX_KM) return 'short-range-type';
+  return corridorReject({ lat: r.lat, lng: r.lng, altFt: r.altFt, gsKt: r.gsKt, trackDeg: r.trackDeg, vrFpm: r.vrFpm }, a, b);
+}
 
 export function aircraftOnRoute(
   records: readonly FlightRecord[],
@@ -41,8 +84,11 @@ export function aircraftOnRoute(
     let basis: LiveAircraft['basis'] = 'matched';
     if (r.callsign && fwd.has(r.callsign) && onCorridor(p, A, B)) direction = 'forward';
     else if (r.callsign && rev.has(r.callsign) && onCorridor(p, B, A)) direction = 'reverse';
-    else if (corridorMatch(state, A, B)) [direction, basis] = ['forward', 'inferred'];
-    else if (opts.reverse && corridorMatch(state, B, A)) [direction, basis] = ['reverse', 'inferred'];
+    else {
+      const known = r.callsign ? opts.vrs.chainOf.get(r.callsign) : undefined;
+      if (inferReject(r, A, B, a, b, known) === null) [direction, basis] = ['forward', 'inferred'];
+      else if (opts.reverse && inferReject(r, B, A, b, a, known) === null) [direction, basis] = ['reverse', 'inferred'];
+    }
     if (!direction) continue;
     const [from, to, dest] = direction === 'forward' ? [A, B, d] : [B, A, o];
     const { progress, remainingKm } = progressOn(p, from, to);

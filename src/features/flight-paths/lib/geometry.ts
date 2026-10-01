@@ -159,7 +159,34 @@ export function selectDiversions(a: LngLatTuple, b: LngLatTuple, candidates: rea
 }
 
 // ── Live aircraft on a route ─────────────────────────────────────────────────────
-export const CORRIDOR = { maxOffKm: 100, maxTrackDiffDeg: 35, minAltFt: 8000, minFraction: 0.02, maxFraction: 0.98 } as const;
+/**
+ * Corridor inference thresholds (R2-M2: tightened after live LHR→JFK showed domestic legs, cargo and
+ * military traffic near the endpoints being inferred). An inferred aircraft must be near the great
+ * circle, tracking along it, at cruise level for the route length, and well clear of both
+ * endpoints (where every arrival/departure converges regardless of its real route).
+ */
+export const CORRIDOR = {
+  maxOffKm: 100,
+  maxTrackDiffDeg: 20,
+  minFraction: 0.05,
+  maxFraction: 0.95,
+  /** Never closer than this to either endpoint (capped at 15 % of the route for short routes). */
+  minEndKm: 400,
+  minEndFraction: 0.15,
+  /** Shortest route considered at all. */
+  minRouteKm: 300,
+  /** The present course, extended, must pass within this of the destination … */
+  courseMissKm: 80,
+  /** … with at least this much angular slack (oceanic tracks are not great circles). */
+  minCourseDeg: 6,
+} as const;
+
+/** Minimum barometric altitude for an inferred aircraft: cruise band scaled by route length. */
+export function corridorMinAltFt(routeKm: number): number {
+  if (routeKm >= 1500) return 25_000;
+  if (routeKm >= 700) return 18_000;
+  return 10_000;
+}
 export const CRUISE_BLEND_KTS = 480;
 export const APPROACH_MIN = 10;
 
@@ -189,24 +216,40 @@ export function progressOn(p: LngLatTuple, a: LngLatTuple, b: LngLatTuple): { pr
   return { progress: round(Math.min(1, Math.max(0, progress)), 4), remainingKm: round(distanceKm(p, b), 1), alongKm: along, totalKm };
 }
 
+
+export type CorridorReject = 'no-state' | 'short-route' | 'altitude' | 'off-path' | 'near-endpoint' | 'heading' | 'course' | 'detour';
+
 /**
- * Corridor inference for an aircraft without a callsign match: close to the path, heading along
- * it, at cruise-ish altitude, not at either end, and passing the detour test.
+ * Corridor inference for an aircraft without a callsign match: close to the path, tracking along
+ * it (±20° of the local great-circle bearing), at cruise level for the route length, clear of both
+ * endpoints, and passing the detour test. Returns null on a match, else the first failed test.
  */
-export function corridorMatch(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean {
-  if (s.altFt === null || s.altFt <= CORRIDOR.minAltFt || s.trackDeg === null) return false;
-  const p: LngLatTuple = [s.lng, s.lat];
+export function corridorReject(s: LiveState, a: LngLatTuple, b: LngLatTuple): CorridorReject | null {
+  if (s.altFt === null || s.trackDeg === null) return 'no-state';
   const total = distanceKm(a, b);
-  if (total < 100) return false;
+  if (total < CORRIDOR.minRouteKm) return 'short-route';
+  if (s.altFt < corridorMinAltFt(total)) return 'altitude';
+  const p: LngLatTuple = [s.lng, s.lat];
   const { offKm, alongKm } = positionOnPath(p, a, b);
-  if (offKm > CORRIDOR.maxOffKm) return false;
+  if (offKm > CORRIDOR.maxOffKm) return 'off-path';
   const f = alongKm / total;
-  if (f < CORRIDOR.minFraction || f > CORRIDOR.maxFraction) return false;
+  if (f < CORRIDOR.minFraction || f > CORRIDOR.maxFraction) return 'near-endpoint';
+  const endKm = Math.min(CORRIDOR.minEndKm, total * CORRIDOR.minEndFraction);
+  if (distanceKm(p, a) < endKm || distanceKm(p, b) < endKm) return 'near-endpoint';
   // Local bearing of the path at the aircraft's along-track point.
   const here = interpolate(a, b, f);
   const local = initialBearing(here, b);
-  if (angleDiff(s.trackDeg, local) > CORRIDOR.maxTrackDiffDeg) return false;
-  return onCorridor(p, a, b);
+  if (angleDiff(s.trackDeg, local) > CORRIDOR.maxTrackDiffDeg) return 'heading';
+  // The aircraft's present course must pass within `courseMissKm` of the destination (an
+  // eastbound flight off Ireland heading for Paris tracks ~15° right of London).
+  const toB = distanceKm(p, b);
+  const tol = Math.max(CORRIDOR.minCourseDeg, (Math.asin(Math.min(1, CORRIDOR.courseMissKm / toB)) * 180) / Math.PI);
+  if (angleDiff(s.trackDeg, initialBearing(p, b)) > tol) return 'course';
+  return onCorridor(p, a, b) ? null : 'detour';
+}
+
+export function corridorMatch(s: LiveState, a: LngLatTuple, b: LngLatTuple): boolean {
+  return corridorReject(s, a, b) === null;
 }
 
 /**

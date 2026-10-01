@@ -48,6 +48,7 @@ function fakeMap(opts: { styleLoaded?: boolean; center?: [number, number] } = {}
     },
     off: (e: string, f: Handler) => void handlers.get(e)?.delete(f),
     fitBounds: vi.fn(),
+    easeTo: vi.fn(),
     fire: (e: string, x?: unknown) => [...(handlers.get(e) ?? [])].forEach((f) => f(x)),
   };
   return map;
@@ -73,7 +74,8 @@ describe('RouteLayer', () => {
     vi.unstubAllGlobals();
   });
 
-  it('?route= restores the PATHS panel, draws the great circle and fits it with 80 px padding plus the panel', async () => {
+  it('?route= restores the PATHS panel, draws the great circle and fits it padded by the HUD chrome and the panel (mercator)', async () => {
+    useMapInstanceStore.setState({ projection: 'mercator' });
     useUiStore.setState({ plannedRoute: { from: 'LHR', to: 'JFK' } });
     await act(async () => {
       mount();
@@ -86,14 +88,30 @@ describe('RouteLayer', () => {
     const [bounds, opts] = map.fitBounds.mock.calls[0]! as [[[number, number], [number, number]], { padding: Record<string, number> }];
     expect(bounds[0][0]).toBeCloseTo(-73.7781, 3); // west = JFK
     expect(bounds[1][0]).toBeCloseTo(-0.461941, 3); // east = LHR
-    expect(opts.padding).toMatchObject({ top: 80, left: 80, bottom: 80 });
-    expect(opts.padding.right).toBeGreaterThan(80); // docked PATHS panel
+    // Header row + margin on top, status bar + margin below, the 48 px left rail + margin (R2-M4).
+    expect(opts.padding).toMatchObject({ top: 104, left: 88, bottom: 68 });
+    expect(opts.padding.right).toBeGreaterThan(400); // docked PATHS panel
     // A rebuilt map (new instance) is framed again.
     const next = fakeMap({ center: [0, 0] });
     await act(async () => {
       useMapInstanceStore.setState({ map: next as never });
     });
     await waitFor(() => expect(next.fitBounds).toHaveBeenCalledTimes(1));
+  });
+
+  it('on the globe a route is framed by its arc midpoint and angular extent, not a lng/lat box', async () => {
+    useUiStore.setState({ plannedRoute: { from: 'LHR', to: 'JFK' } });
+    await act(async () => {
+      mount();
+    });
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(1));
+    expect(map.fitBounds).not.toHaveBeenCalled();
+    const [opts] = map.easeTo.mock.calls[0]! as [{ center: [number, number]; zoom: number; padding: Record<string, number> }];
+    expect(opts.center[1]).toBeGreaterThan(50); // LHR–JFK arc bulges north of both ends
+    expect(opts.center[0]).toBeLessThan(-30);
+    expect(opts.center[0]).toBeGreaterThan(-45);
+    expect(opts.zoom).toBeGreaterThan(0.5);
+    expect(opts.padding.right).toBeGreaterThan(400);
   });
 
   it('a route restored after mount still opens PATHS (no first-render latch)', async () => {
@@ -115,11 +133,11 @@ describe('RouteLayer', () => {
       mount();
     });
     await waitFor(() => expect(useDeckLayerStore.getState().entries['flight-paths']).toBeDefined());
-    expect(map.fitBounds).not.toHaveBeenCalled();
+    expect(map.easeTo).not.toHaveBeenCalled();
     await act(async () => map.fire('style.load'));
-    expect(map.fitBounds).toHaveBeenCalledTimes(1);
+    expect(map.easeTo).toHaveBeenCalledTimes(1);
     await act(async () => useMapInstanceStore.setState({ ready: true }));
-    expect(map.fitBounds).toHaveBeenCalledTimes(2);
+    expect(map.easeTo).toHaveBeenCalledTimes(2);
   });
 
   it('a viewer drag cancels the re-frame at idle', async () => {
@@ -128,10 +146,10 @@ describe('RouteLayer', () => {
     await act(async () => {
       mount();
     });
-    await waitFor(() => expect(map.fitBounds).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalledTimes(1));
     await act(async () => map.fire('movestart', { originalEvent: {} }));
     await act(async () => useMapInstanceStore.setState({ ready: true }));
-    expect(map.fitBounds).toHaveBeenCalledTimes(1);
+    expect(map.easeTo).toHaveBeenCalledTimes(1);
   });
 
   it('?flight= draws the planned arc of the tracked flight and frames it', async () => {
@@ -141,6 +159,6 @@ describe('RouteLayer', () => {
     });
     await waitFor(() => expect(useDeckLayerStore.getState().entries['flight-paths']).toBeDefined());
     expect(useUiStore.getState().openPanel).toBe('paths');
-    await waitFor(() => expect(map.fitBounds).toHaveBeenCalled());
+    await waitFor(() => expect(map.easeTo).toHaveBeenCalled());
   });
 });

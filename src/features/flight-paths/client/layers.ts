@@ -2,7 +2,8 @@
  * Deck layers for the Flight Path Planner (§8 rendering): planned great circle (glow + dashed arc,
  * a dimmer return-leg line when reverse traffic is live), filed plans (dotted, diamond waypoints,
  * idents at z ≥ 5), flown track coloured by altitude (short data-driven segments on the FR24-style
- * ramp), dashed remaining leg, endpoints with labels, live aircraft with progress chips and
+ * ramp), dashed remaining leg, endpoints with labels, live aircraft (MATCHED: solid ring + a
+ * decluttered progress chip; INFERRED: dotted ◌ ring, no chip) and
  * diversion airports; plus the animated layers (≤ 3 pulse rings on the endpoints and a comet head
  * along the planned arc), which are omitted under reduced motion.
  *
@@ -327,18 +328,38 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
   }
 
   const aircraft = frame.aircraft.filter((p) => vis(p.position));
-  if (aircraft.length) {
-    const ring = color('--map-flight-watch');
+  const ring = color('--map-flight-watch');
+  // R2-M2: corridor-inferred aircraft are secondary — a small dotted ring (◌), dimmer, no progress
+  // chip — so they never read like a MATCHED service on the pair. Matched keep the solid ring.
+  const inferred = aircraft.filter((a) => !a.matched);
+  if (inferred.length) {
+    out.push(
+      new TextLayer<Aircraft>({
+        id: 'route-inferred-aircraft',
+        data: inferred,
+        getPosition: (d) => d.position,
+        getText: () => INFERRED_GLYPH,
+        characterSet: [INFERRED_GLYPH],
+        getColor: [ring[0], ring[1], ring[2], 170],
+        getSize: 18,
+        billboard: true,
+        parameters: { ...NO_CULL, depthCompare: 'always' },
+        updateTriggers: trigger,
+      }),
+    );
+  }
+  const matched = aircraft.filter((a) => a.matched);
+  if (matched.length) {
     out.push(
       new ScatterplotLayer<Aircraft>({
         id: 'route-live-aircraft',
-        data: aircraft,
+        data: matched,
         getPosition: (d) => d.position,
         getRadius: 9,
         radiusUnits: 'pixels',
         filled: false,
         stroked: true,
-        getLineColor: (d) => (d.matched ? ring : [ring[0], ring[1], ring[2], 140]),
+        getLineColor: ring,
         getLineWidth: 2,
         lineWidthUnits: 'pixels',
         billboard: true,
@@ -346,7 +367,14 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         updateTriggers: trigger,
       }),
     );
-    const chips = aircraft.filter((a) => typeof a.progress === 'number');
+    // R2-M3: chips only for matched aircraft, decluttered in screen space (none on top of an
+    // endpoint label, no two overlapping, at most CHIP_MAX).
+    const project = screenProjector(o.globe, o.center, o.zoom ?? 2);
+    const chips = selectChips(
+      matched.filter((a) => typeof a.progress === 'number'),
+      endpoints.map((e) => e.position),
+      project,
+    );
     if (chips.length) {
       out.push(
         new TextLayer<Aircraft>({
@@ -358,7 +386,7 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
           getColor: uiColor('--text-primary'),
           background: true,
           getBackgroundColor: uiColor('--bg-primary', 0.85),
-          getBorderColor: (d) => (d.matched ? ring : [ring[0], ring[1], ring[2], 140]),
+          getBorderColor: ring,
           getBorderWidth: 1,
           backgroundPadding: [4, 2],
           getSize: 10,
@@ -370,6 +398,75 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         }),
       );
     }
+  }
+  return out;
+}
+
+// ── Label declutter (R2-M3) ───────────────────────────────────────────────────────
+/** Dotted-circle glyph marking an INFERRED (corridor-heuristic) aircraft on the map. */
+export const INFERRED_GLYPH = '◌';
+/** At most this many progress chips at once. */
+export const CHIP_MAX = 6;
+/** No chip whose anchor is within this many px of an endpoint (its label sits there). */
+export const ENDPOINT_CLEAR_PX = 48;
+/** Chip box estimate: 10 px JetBrains Mono ≈ 6.2 px per character, plus padding. */
+const CHIP_CHAR_PX = 6.2;
+const CHIP_H_PX = 16;
+const CHIP_OFFSET_Y = 20;
+const TILE_PX = 512;
+
+export type Projector = (p: LngLatTuple) => [number, number] | null;
+
+/**
+ * Approximate screen-pixel projection for decluttering (pitch ignored): web-mercator world pixels,
+ * or on the globe an orthographic view around the camera centre whose radius follows MapLibre's
+ * globe scale (`worldSize / 2π / cos(centre lat)`). Far-side points project to null.
+ */
+export function screenProjector(globe: boolean, center: LngLatTuple, zoom: number): Projector {
+  const world = TILE_PX * 2 ** zoom;
+  if (!globe) {
+    return ([lng, lat]) => {
+      const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180);
+      return [(world * (lng + 180)) / 360, world * (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI))];
+    };
+  }
+  const rad = Math.PI / 180;
+  const lat0 = center[1] * rad;
+  const lng0 = center[0] * rad;
+  const R = world / (2 * Math.PI) / Math.max(0.05, Math.cos(lat0));
+  return ([lng, lat]) => {
+    const φ = lat * rad;
+    const dλ = lng * rad - lng0;
+    const cosc = Math.sin(lat0) * Math.sin(φ) + Math.cos(lat0) * Math.cos(φ) * Math.cos(dλ);
+    if (cosc < 0) return null;
+    return [R * Math.cos(φ) * Math.sin(dλ), -R * (Math.cos(lat0) * Math.sin(φ) - Math.sin(lat0) * Math.cos(φ) * Math.cos(dλ))];
+  };
+}
+
+/**
+ * Greedy chip placement in priority order (the server's order: forward, then by progress; a
+ * tracked flight first): skip chips anchored within `ENDPOINT_CLEAR_PX` of an endpoint, chips whose
+ * box overlaps one already placed, and everything past `CHIP_MAX`. The aircraft rings stay.
+ */
+export function selectChips<T extends { position: LngLatTuple; label: string; progress: number | null }>(
+  candidates: readonly T[],
+  endpoints: readonly LngLatTuple[],
+  project: Projector,
+  max = CHIP_MAX,
+): T[] {
+  const ends = endpoints.map(project).filter((p): p is [number, number] => p !== null);
+  const boxes: [number, number, number, number][] = [];
+  const out: T[] = [];
+  for (const c of candidates) {
+    if (out.length >= max) break;
+    const p = project(c.position);
+    if (!p) continue;
+    if (ends.some(([x, y]) => Math.hypot(x - p[0], y - p[1]) < ENDPOINT_CLEAR_PX)) continue;
+    const w = progressChip(c.label, c.progress ?? 0).length * CHIP_CHAR_PX + 8;
+    const box: [number, number, number, number] = [p[0] - w / 2, p[1] + CHIP_OFFSET_Y - CHIP_H_PX / 2, p[0] + w / 2, p[1] + CHIP_OFFSET_Y + CHIP_H_PX / 2];
+    if (boxes.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
+    boxes.push(box);
+    out.push(c);
   }
   return out;
 }
@@ -448,9 +545,7 @@ export function cameraFor(plan: Pick<Plan, 'greatCircle'>): { lng: number; lat: 
 
 /** Bounds of everything framed for a route/flight (unwrapped; MapLibre handles lng outside ±180). */
 export function frameBounds(frame: RouteFrame): [[number, number], [number, number]] | null {
-  const pts: LngLatTuple[] = [...frame.arc, ...frame.flown.map((s) => s.to), ...frame.endpoints.map((e) => e.position), ...frame.aircraft.filter((a) => a.matched).map((a) => a.position)];
-  if (frame.flown[0]) pts.push(frame.flown[0].from);
-  return pathBounds(pts);
+  return pathBounds(framePoints(frame));
 }
 
 export interface Padding {
@@ -460,13 +555,66 @@ export interface Padding {
   left: number;
 }
 
+/** Breathing room between the route and the HUD chrome / viewport edge. */
+export const FRAME_MARGIN_PX = 40;
 /**
- * Fit-bounds padding (§8: 80 px), plus room for the docked panel on the right (desktop) or the
- * bottom sheet (phone), capped so at least a quarter of the viewport stays for the route.
+ * Fixed HUD chrome over the map (R2-M4): header row (top-16 = 64 px), status bar (28 px), and on
+ * ≥ 768 px the left layer rail (w-12 = 48 px). The docked panel is passed separately.
+ */
+export function hudChrome(viewport: { width: number }): { top: number; bottom: number; left: number } {
+  return { top: 64, bottom: 28, left: viewport.width >= 768 ? 48 : 0 };
+}
+
+/**
+ * Fit padding: the HUD chrome (header, status bar, left rail) plus a 40 px margin, plus the docked
+ * panel on the right (desktop) or the bottom sheet (phone); the panel share is capped so at least
+ * a quarter of the viewport stays for the route.
  */
 export function framePadding(viewport: { width: number; height: number }, panel: { side: 'right' | 'bottom'; size: number } | null): Padding {
-  const p: Padding = { top: 80, right: 80, bottom: 80, left: 80 };
-  if (panel?.side === 'right') p.right = Math.min(80 + panel.size, Math.max(80, viewport.width * 0.75 - 160));
-  if (panel?.side === 'bottom') p.bottom = Math.min(80 + panel.size, Math.max(80, viewport.height * 0.75 - 160));
+  const c = hudChrome(viewport);
+  const m = FRAME_MARGIN_PX;
+  const p: Padding = { top: c.top + m, right: m, bottom: c.bottom + m, left: c.left + m };
+  if (panel?.side === 'right') p.right = Math.max(m, Math.min(m + panel.size, viewport.width * 0.75 - p.left));
+  if (panel?.side === 'bottom') p.bottom = Math.max(p.bottom, Math.min(m + panel.size, viewport.height * 0.75 - p.top));
   return p;
+}
+
+const D2R = Math.PI / 180;
+const toVec = ([lng, lat]: LngLatTuple): [number, number, number] => [Math.cos(lat * D2R) * Math.cos(lng * D2R), Math.cos(lat * D2R) * Math.sin(lng * D2R), Math.sin(lat * D2R)];
+const angleDeg = (a: LngLatTuple, b: LngLatTuple) => {
+  const [x1, y1, z1] = toVec(a);
+  const [x2, y2, z2] = toVec(b);
+  return Math.acos(Math.max(-1, Math.min(1, x1 * x2 + y1 * y2 + z1 * z2))) / D2R;
+};
+
+/** Every point that must be on screen for a route/flight (arc, flown track, endpoints, matched aircraft). */
+export function framePoints(frame: RouteFrame): LngLatTuple[] {
+  const pts: LngLatTuple[] = [...frame.arc, ...frame.flown.map((s) => s.to), ...frame.endpoints.map((e) => e.position), ...frame.aircraft.filter((a) => a.matched).map((a) => a.position)];
+  if (frame.flown[0]) pts.push(frame.flown[0].from);
+  return pts;
+}
+
+/**
+ * Globe framing (R2-M4). A lng/lat bounding box is meaningless for polar or antimeridian routes
+ * (SVO→LAX's box spans 156° of longitude while the arc passes 80° N), so on the globe the camera
+ * centres on the arc's midpoint (else the spherical centroid) and zooms so the farthest framed
+ * point — at angular distance θ — fits the padded viewport: MapLibre's globe radius in px is
+ * `512·2^z / 2π / cos(centre lat)` and a point θ from the centre sits `R·sin θ` from it.
+ */
+export function globeCamera(frame: RouteFrame, viewport: { width: number; height: number }, padding: Padding, maxZoom = 8): { center: LngLatTuple; zoom: number } | null {
+  const pts = framePoints(frame);
+  if (!pts.length) return null;
+  let center: LngLatTuple;
+  if (frame.arc.length > 1) center = pointAlong(frame.arc, 0.5)!;
+  else {
+    const s = pts.map(toVec).reduce((acc, v) => [acc[0] + v[0], acc[1] + v[1], acc[2] + v[2]] as [number, number, number], [0, 0, 0]);
+    const n = Math.hypot(...s) || 1;
+    center = [Math.atan2(s[1], s[0]) / D2R, Math.asin(s[2] / n) / D2R];
+  }
+  center = [((((center[0] + 180) % 360) + 360) % 360) - 180, center[1]];
+  const theta = Math.max(0.05, ...pts.map((p) => angleDeg(center, p)));
+  const avail = Math.max(60, Math.min(viewport.width - padding.left - padding.right, viewport.height - padding.top - padding.bottom) / 2);
+  const sinT = theta >= 90 ? 1 : Math.sin(theta * D2R);
+  const zoom = Math.log2((avail * 2 * Math.PI * Math.cos(center[1] * D2R)) / (TILE_PX * sinT));
+  return { center, zoom: Math.max(0, Math.min(maxZoom, zoom)) };
 }

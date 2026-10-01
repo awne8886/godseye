@@ -4,8 +4,9 @@
  * (`?route=` / store.plannedRoute) and the tracked flight (`?flight=` / store.flightIdent) with
  * the live aircraft on the pair, re-reads colours on theme changes, filters billboards to the
  * visible hemisphere on the globe, animates the endpoint pulse and the comet head (not under
- * reduced motion) and frames each new route/flight with fit-bounds (80 px padding plus the docked
- * panel). Every new route/flight (deep link, palette, card button) opens the PATHS panel.
+ * reduced motion) and frames each new route/flight: fit-bounds in mercator, midpoint + angular
+ * extent on the globe, padded by the HUD chrome (header, status bar, left rail) and the docked
+ * panel. Every new route/flight (deep link, palette, card button) opens the PATHS panel.
  *
  * Framing (R4-B2): the fit is issued as soon as the style is parsed (camera moves need no tiles)
  * and issued once more at the map's first `idle` if the camera was moved by something other than
@@ -19,7 +20,7 @@ import { styleParsed } from '@/lib/map/ready';
 import { useUiStore } from '@/lib/store';
 import type { LngLatTuple } from '@/lib/geo';
 import { useFlight, useLive, usePlan } from './api';
-import { buildRouteAnimLayers, buildRouteLayers, frameBounds, framePadding, routeFrame } from './layers';
+import { buildRouteAnimLayers, buildRouteLayers, frameBounds, framePadding, globeCamera, routeFrame } from './layers';
 
 /** Above aviation (80–83) so the route and its aircraft rings sit on top. */
 const Z = 90;
@@ -117,8 +118,14 @@ export default function RouteLayer() {
     const reduced = motion === 'reduced' || (motion === 'system' && prefersReducedMotion());
     const fit = (animate: boolean) => {
       if (done || viewerMoved) return;
-      const padding = framePadding({ width: window.innerWidth, height: window.innerHeight }, panelGeometry(true));
-      m.fitBounds(bounds, { padding, maxZoom: 8, duration: animate && !reduced ? FIT_DURATION_MS : 0, essential: false });
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const padding = framePadding(viewport, panelGeometry(true));
+      const duration = animate && !reduced ? FIT_DURATION_MS : 0;
+      // Globe (R2-M4): centre on the arc midpoint and zoom by angular extent — a lng/lat box cannot
+      // frame polar or antimeridian routes. Mercator: fit the unwrapped bounds.
+      const cam = useMapInstanceStore.getState().projection === 'globe' ? globeCamera(fr, viewport, padding) : null;
+      if (cam) m.easeTo({ center: cam.center, zoom: cam.zoom, padding, bearing: 0, pitch: 0, duration, essential: false });
+      else m.fitBounds(bounds, { padding, maxZoom: 8, duration, essential: false });
     };
     const onMoveStart = (e: { originalEvent?: unknown }) => {
       if (e.originalEvent) viewerMoved = true;

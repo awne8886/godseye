@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { interpolate, type LngLatTuple } from '@/lib/geo';
+import { initialBearing, interpolate, type LngLatTuple } from '@/lib/geo';
 import {
   APPROACH_MIN,
   blockMinutes,
   corridorMatch,
+  corridorMinAltFt,
+  corridorReject,
   daylightSamples,
   estimatesByClass,
   etaMs,
@@ -144,7 +146,8 @@ describe('selectDiversions', () => {
 
 describe('live helpers', () => {
   const mid = greatCircle(LHR, JFK).points[128]!;
-  const bearing = 270;
+  // Tracking straight at JFK from mid-route (the local great-circle bearing, ≈ 260°).
+  const bearing = Math.round(initialBearing(mid, JFK));
   it('progressOn: mid-route ≈ 0.5 and remaining ≈ half', () => {
     const p = progressOn(mid, LHR, JFK);
     expect(p.progress).toBeGreaterThan(0.45);
@@ -164,6 +167,19 @@ describe('live helpers', () => {
     expect(corridorMatch(base, LHR, [-0.2, 51.2])).toBe(false); // too short a route
     expect(onCorridor(mid, LHR, JFK)).toBe(true);
     expect(onCorridor([100, 0], LHR, JFK)).toBe(false);
+  });
+
+  it('corridorReject names the failed test (R2-M2 tightening)', () => {
+    const base = { lat: mid[1], lng: mid[0], altFt: 37000, gsKt: 480, trackDeg: bearing, vrFpm: 0 };
+    expect(corridorReject(base, LHR, JFK)).toBeNull();
+    expect(corridorMinAltFt(5500)).toBe(25_000);
+    expect(corridorReject({ ...base, altFt: 22_000 }, LHR, JFK)).toBe('altitude'); // below the long-haul cruise band
+    expect(corridorReject({ ...base, trackDeg: bearing + 25 }, LHR, JFK)).toBe('heading');
+    expect(corridorReject({ ...base, trackDeg: bearing + 12 }, LHR, JFK)).toBe('course'); // along the path, not at JFK
+    expect(corridorReject({ ...base, trackDeg: (bearing + 180) % 360 }, LHR, JFK)).toBe('heading'); // opposite direction
+    // 250 km short of JFK on the arc: every arrival converges here, so nothing is inferred.
+    const nearJfk = interpolate(LHR, JFK, 0.955);
+    expect(corridorReject({ ...base, lat: nearJfk[1], lng: nearJfk[0], trackDeg: Math.round(initialBearing(nearJfk, JFK)) }, LHR, JFK)).toBe('near-endpoint');
   });
 
   it('etaMs: steady cruise, blended when slow/climbing, null without speed', () => {
