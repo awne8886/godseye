@@ -3,9 +3,9 @@
  * quakes from the USGS 2.5_day feed, each with its own observedAt. Server-side so browsers never
  * call CoinGecko/USGS. Owner: panels-alerts-markets-dossier-graph.
  */
-import { tickerFeed } from '@/components/panels/intel/feeds';
+import { getTicker } from '@/components/panels/intel/feeds';
 import { feedJson, withRoute } from '@/lib/respond';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withRoute('/api/ticker', async (req) => feedJson(req, await tickerFeed.get(), (d) => ({ crypto: d.crypto, quakes: d.quakes })));
+export const GET = withRoute('/api/ticker', async (req) => feedJson(req, await getTicker(), (d) => ({ crypto: d.crypto, quakes: d.quakes })));

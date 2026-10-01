@@ -979,7 +979,7 @@ Note `data-post` keeps the channel's own capitalisation (`OSINTdefender`), which
 | Times of Israel | `https://www.timesofisrael.com/feed/` | **403** | 0.48 s | none | Bot wall; shown as SOURCE OFFLINE in the sources list, never hidden |
 | TASS | `https://tass.com/rss/v2.xml` | **403** | 1.02 s | none | As above |
 | Anadolu | `https://www.aa.com.tr/en/rss/default?cat=world` | **connection reset** | 7.9 s | — | Reported per source as failed |
-| SCMP | `https://www.scmp.com/rss/91/feed` | **301 → http://** | 0.82 s | none | `http.ts` refuses the https→http downgrade; not worked around (SOURCE OFFLINE) |
+| SCMP | `https://www.scmp.com/rss/91/feed/` | 200 | 0.48 s | none | Re-probed 2026-10-01 05:38 UTC: 83 kB, 50 items, newest `pubDate` Thu, 01 Oct 2026 05:18:44 +0000. Without the trailing slash SCMP answers 301 → `http://…/feed/`, which `http.ts` refuses (downgrade), so the URL carries the slash |
 | CNA | `https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6311` | 200 | 0.64 s | `*` | |
 | Africanews | `https://www.africanews.com/feed/rss` | 200 | 0.66 s | none | |
 
@@ -1076,6 +1076,20 @@ Honest UA `GODSEYE/0.1.0 (+repo; contact …/issues)`, no key.
 |---|---|---|---|---|---|
 | `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` | 200 | 0.56 s | none | none (public domain, US Gov) | 1.76 MB; `catalogVersion` 2026.09.30, `dateReleased` 2026-09-30T16:59:23.0688Z, `count` 1730; `vulnerabilities[].dateAdded` is a **date only** (`2026-09-30`), so Intel Feed rows render the date, never an age or 00:00Z. ETag + Last-Modified |
 | `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2021-44228` | 200 | 0.46 s | `*` | none (keyless 5 req / 30 s; `NVD_API_KEY` in the `apiKey` header → 50 / 30 s) | 87 kB; `metrics` keys `cvssMetricV31` (baseScore 10), `cvssMetricV2`, `ssvcV203`. Lookups now run in a background batch through the shared `nvdBucket()`; `/api/cyber-threats` answers with KEV at once and `providers.nvd.error: "pending"` while the batch runs |
+
+### Probes 2026-10-01 05:38–05:40 UTC (Phase 3 round 4: degraded inputs, dated population, SCMP)
+
+Honest UA `GODSEYE/0.1.0 (+https://github.com/awne8886/godseye; contact …/issues)`, no key, one request each,
+`Origin: https://example.org` for the CORS column.
+
+| URL | Status | Latency | CORS | Auth | Licence / notes |
+|---|---|---|---|---|---|
+| `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson` | 200 | 0.30 s | `*` | none | Public domain. `/api/scm-suppliers` now checks sites only on fresh USGS data; while the quake feed is stale/offline the last-good checks are served STALE → OFFLINE with `hazardsAsOf` and `providers.usgs.ok:false` |
+| `https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1d&interval=15m` | 200 | 0.28 s | none | none (unofficial endpoint) | 3.5 kB. When it fails, the last-good quotes stay on the board with `lastGoodAt`, `providers.yahoo.age_s` keeps growing and the chip reads SOURCE OFFLINE + time |
+| `https://api.worldbank.org/v2/country/UA/indicator/SP.POP.TOTL?format=json&mrnev=1` | 200 | 0.34 s | `*` | none | CC BY 4.0 (World Bank WDI). `[meta, [{date:"2025", value:38980376, countryiso3code:"UKR"}]]`, `lastupdated` 2026-07-13, `cache-control: max-age=82398`. Dossier population source (shown with its year); bucket `worldbank` 2/s |
+| `https://api.worldbank.org/v2/country/TW/indicator/SP.POP.TOTL?format=json&mrnev=1` | 200 | 0.23 s | `*` | none | `[{"page":0,…,"total":0}, null]`: economy not covered → no figure (provider ok, count 0); the dossier keeps Wikidata's figure with its own year |
+| `https://query.wikidata.org/sparql` (country query, best-rank `p:P1082/ps:P1082` + `pq:P585 ?popDate`) | 200 | 0.33 s | `*` | none | CC0. UA → `pop 41167335`, `popDate 2022-01-01T00:00:00Z`: the old figure is a 2022 value, now shown with that year when the World Bank has no figure |
+| `https://www.scmp.com/rss/91/feed/` | 200 | 0.48 s | none | none | 50 items; the slash-less URL → 301 to `http://` (0.55 s) |
 
 ### panels-recon
 

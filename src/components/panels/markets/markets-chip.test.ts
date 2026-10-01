@@ -23,6 +23,22 @@ describe('MARKETS chip (visual-qa M6)', () => {
   });
 });
 
+describe('MARKETS chip with Yahoo offline (R3 round-4 MAJOR-2)', () => {
+  const at = Date.parse('2026-10-01T14:00:00Z'); // NYSE open
+  const prov = (ok: boolean) => ({ yahoo: { ok, count: ok ? 26 : 0, ms: 5, age_s: 600, ...(ok ? {} : { error: 'http_429' }) } });
+  it('reads SOURCE OFFLINE with the same-day last-good time, never DELAYED', () => {
+    const kept = { ...q('indices', true), lastGoodAt: '2026-10-01T13:50:00.000Z' };
+    const chip = marketsChip({ meta: meta('live'), sessions: sessionsAt(at), quotes: [kept, q('crypto', false)], providers: prov(false) }, at);
+    expect(chip).toEqual({ text: 'SOURCE OFFLINE · 13:50Z', tone: 'error', title: 'Yahoo chart endpoint offline (http_429) — last good 13:50 UTC' });
+  });
+  it('reads SOURCE OFFLINE without a time when Yahoo never answered', () => {
+    expect(marketsChip({ meta: meta('live'), sessions: sessionsAt(at), quotes: [q('crypto', false)], providers: prov(false) }, at)).toMatchObject({ text: 'SOURCE OFFLINE', tone: 'error' });
+  });
+  it('keeps DELAYED when Yahoo answered', () => {
+    expect(marketsChip({ meta: meta('live'), sessions: sessionsAt(at), quotes: [q('indices', true)], providers: prov(true) }, at).text).toBe('DELAYED');
+  });
+});
+
 describe('exchange holidays (R3-m6)', () => {
   it('closes SSE for Golden Week and HKEX on National Day; reopening is found after the break', () => {
     const oct1 = Date.parse('2026-10-01T02:00:00Z'); // 10:00 Shanghai / Hong Kong, a Thursday

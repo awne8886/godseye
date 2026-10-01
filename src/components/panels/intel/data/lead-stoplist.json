@@ -2,7 +2,7 @@
   "purpose": "Lead-quality filter for the ANALYST alert digest: a report whose title or summary contains one of these terms is never promoted as a theatre lead. The report itself stays in the feed with its original, unaltered text (attributed to its channel); only the server-chosen lead skips it.",
   "source": "Curated from Wikipedia, 'List of ethnic slurs' (https://en.wikipedia.org/wiki/List_of_ethnic_slurs, CC BY-SA 4.0) and 'List of ethnic slurs by ethnicity', restricted to unambiguous slurs and hate terms likely in English, Russian and Ukrainian OSINT channels. Terms that are also ordinary words or common surnames (e.g. 'chink' in 'chink in the armour', the surname Moskalenko) are matched as whole words only or left out.",
   "reviewed": "2026-10-01",
-  "match": "Case-insensitive. 'word': the whole word, optionally with a plural/case ending listed in 'endings'. 'prefix': any word starting with the term.",
+  "match": "Case-insensitive, whole words only. word: the term, optionally with one of the listed endings. forms: the term or one of the listed inflected forms (explicit, so surnames and place names that share the stem pass: Moskalkova, Moskalenko, Moskalivka, Rusnyak). prefix: any word starting with the term (only where no ordinary word or name does). case=lower: the term is also a surname or place name when capitalised (Moskal, Khokhol, Khokhlov) and matches only in lower case. Mixed-script words (Latin with Cyrillic look-alikes) are folded to each script before matching. Bare укроп (dill) is never listed; only the plural slur forms.",
   "terms": [
     {
       "term": "pajeet",
@@ -69,10 +69,6 @@
       "match": "prefix"
     },
     {
-      "term": "khokhol",
-      "match": "prefix"
-    },
-    {
       "term": "khokhly",
       "match": "word"
     },
@@ -81,44 +77,8 @@
       "match": "prefix"
     },
     {
-      "term": "moskal",
-      "match": "word",
-      "endings": [
-        "s",
-        "i",
-        "y"
-      ]
-    },
-    {
-      "term": "хохол",
-      "match": "word"
-    },
-    {
-      "term": "хохл",
-      "match": "word",
-      "endings": [
-        "ы",
-        "ов",
-        "ам",
-        "ами",
-        "ах"
-      ]
-    },
-    {
       "term": "кацап",
       "match": "prefix"
-    },
-    {
-      "term": "москаль",
-      "match": "word"
-    },
-    {
-      "term": "москали",
-      "match": "word"
-    },
-    {
-      "term": "москалей",
-      "match": "word"
     },
     {
       "term": "жиды",
@@ -141,16 +101,105 @@
       "match": "word"
     },
     {
-      "term": "москал",
-      "match": "prefix"
-    },
-    {
       "term": "укры",
       "match": "word"
     },
     {
+      "term": "khokhol",
+      "match": "prefix",
+      "case": "lower"
+    },
+    {
+      "term": "moskal",
+      "match": "word",
+      "case": "lower"
+    },
+    {
+      "term": "moskals",
+      "match": "forms",
+      "forms": [
+        "moskali",
+        "moskaly"
+      ]
+    },
+    {
+      "term": "хохол",
+      "match": "word",
+      "case": "lower"
+    },
+    {
+      "term": "хохлы",
+      "match": "forms",
+      "forms": [
+        "хохлам",
+        "хохлами",
+        "хохлах"
+      ]
+    },
+    {
+      "term": "хохлов",
+      "match": "word",
+      "case": "lower"
+    },
+    {
+      "term": "хохлушка",
+      "match": "forms",
+      "forms": [
+        "хохлушки",
+        "хохлушку",
+        "хохлушке",
+        "хохлушкой",
+        "хохлушек",
+        "хохлушкам",
+        "хохлушками",
+        "хохлушках"
+      ]
+    },
+    {
+      "term": "москаль",
+      "match": "forms",
+      "forms": [
+        "москаля",
+        "москалю",
+        "москалем"
+      ],
+      "case": "lower"
+    },
+    {
+      "term": "москалі",
+      "match": "forms",
+      "forms": [
+        "москали",
+        "москалів",
+        "москалей",
+        "москалям",
+        "москалями",
+        "москалях"
+      ]
+    },
+    {
       "term": "русня",
-      "match": "prefix"
+      "match": "forms",
+      "forms": [
+        "русню",
+        "русні",
+        "русни",
+        "русне",
+        "русней",
+        "руснёй"
+      ]
+    },
+    {
+      "term": "укропы",
+      "match": "forms",
+      "forms": [
+        "укропов",
+        "укропам",
+        "укропами",
+        "укропах",
+        "укропи",
+        "укропів"
+      ]
     }
   ]
 }

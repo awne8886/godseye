@@ -1,0 +1,52 @@
+{
+  "head" : {
+    "vars" : [ "c", "cLabel", "capitalLabel", "pop", "popDate", "area", "hosLabel", "regionLabel", "langs" ]
+  },
+  "results" : {
+    "bindings" : [ {
+      "c" : {
+        "type" : "uri",
+        "value" : "http://www.wikidata.org/entity/Q212"
+      },
+      "cLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Ukraine"
+      },
+      "capitalLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Kyiv"
+      },
+      "pop" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "41167335"
+      },
+      "popDate" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#dateTime",
+        "type" : "literal",
+        "value" : "2022-01-01T00:00:00Z"
+      },
+      "area" : {
+        "datatype" : "http://www.w3.org/2001/XMLSchema#decimal",
+        "type" : "literal",
+        "value" : "603550"
+      },
+      "hosLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Volodymyr Zelenskyy"
+      },
+      "regionLabel" : {
+        "xml:lang" : "en",
+        "type" : "literal",
+        "value" : "Europe"
+      },
+      "langs" : {
+        "type" : "literal",
+        "value" : "Ukrainian"
+      }
+    } ]
+  }
+}

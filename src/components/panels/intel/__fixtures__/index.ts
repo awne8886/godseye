@@ -32,6 +32,11 @@ export const FX = {
   wiki: 'wikipedia-summary-kyiv.2026-09-30.json',
   photon: 'photon-reverse-kyiv.2026-09-30.json',
   sparqlUA: 'wikidata-sparql-country-UA.2026-09-30.json',
+  /** Round 4 (captured 2026-10-01 05:40 UTC): the country query with the best-rank P1082 and its P585 date. */
+  sparqlUAPopDate: 'wikidata-sparql-country-UA-popdate.2026-10-01.json',
+  /** World Bank SP.POP.TOTL, mrnev=1 (captured 2026-10-01 05:38 UTC): UA 2025 = 38 980 376; TW = not covered. */
+  worldBankUA: 'worldbank-pop-UA.2026-10-01.json',
+  worldBankTW: 'worldbank-pop-TW.2026-10-01.json',
   wdQ95: 'wikidata-entity-Q95.2026-09-30.json',
   ripeWhois: 'ripe-whois-8.8.8.8.2026-09-30.json',
   ripeNetInfo: 'ripe-network-info-8.8.8.8.2026-09-30.json',
