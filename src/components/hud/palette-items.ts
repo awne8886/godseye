@@ -3,7 +3,7 @@
  * Command palette entries: tools, panels, layers, region presets and map actions (incl. "Dossier
  * at map centre"). Pure over its inputs so the list is unit-tested. Owner: design-system-hud.
  */
-import { setPathsDraft } from '@/features/flight-paths/client/draft';
+import { resolvePlace, routeOrDraft, setPathsDraft } from '@/features/flight-paths/client/draft';
 import { KEY_BINDINGS, type KeyAction } from '@/lib/keyboard';
 import type { LayerDef, LayerId } from '@/lib/layer-registry';
 import { REGION_PRESETS } from '@/lib/presets';
@@ -149,14 +149,15 @@ export function queryItems(query: string, available: (id: PanelId) => boolean, f
       keywords: [q, 'route', 'plan', 'flight path'],
       run: () => {
         ui().setOpenPanel('paths');
-        void Promise.all([resolveAirport(route.from, fetchImpl), resolveAirport(route.to, fetchImpl)]).then(([from, to]) => {
-          if (from && to && from !== to) {
+        void Promise.all([resolvePlace(route.from, fetchImpl), resolvePlace(route.to, fetchImpl)]).then(([a, b]) => {
+          const { route: planned, draft } = routeOrDraft(route.from, route.to, a, b);
+          if (planned) {
             setPathsDraft(null);
             ui().setFlightIdent(null);
-            ui().setPlannedRoute({ from, to });
-          } else {
-            // Tell the planner which names did not resolve instead of failing silently.
-            setPathsDraft({ from: from ?? route.from, to: to ?? route.to, unresolved: [!from && route.from, !to && route.to].filter((n): n is string => !!n) });
+            ui().setPlannedRoute(planned);
+          } else if (draft) {
+            // Tell the planner which names did not resolve (or whose search failed) instead of failing silently.
+            setPathsDraft(draft);
           }
         });
       },

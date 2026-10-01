@@ -215,6 +215,8 @@ export default function MapView() {
     if (cam) ui.requestFlyTo(cam);
   }, [loaded]);
 
+  // Phones can zoom further out so long polar routes (SIN–JFK, HEL–ANC) fit above the sheet.
+  const minZoom = useMemo(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 0.3 : 1.2), []);
   const labelAnchor = useMemo(() => (style ? firstLabelLayerId(style) : undefined), [style]);
   const imageryAnchor = useMemo(() => (style?.layers.some((l) => l.id === IMAGERY_BEFORE_ID) ? IMAGERY_BEFORE_ID : labelAnchor), [style, labelAnchor]);
   const hasStyle = style !== null;
@@ -539,7 +541,7 @@ export default function MapView() {
         initialViewState={initialView}
         projection={projectionSpec}
         sky={GLOBE_SKY}
-        minZoom={1.2}
+        minZoom={minZoom}
         maxZoom={18}
         maxPitch={terrainOn && terrainEngaged ? TERRAIN_MAX_PITCH : DEFAULT_MAX_PITCH}
         canvasContextAttributes={CONTEXT_ATTRIBUTE_LADDER[attempt]}
