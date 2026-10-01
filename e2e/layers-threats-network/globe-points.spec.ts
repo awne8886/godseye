@@ -35,17 +35,18 @@ const host = (i: number, lat: number, lng: number) => ({
 const HOSTS = Array.from({ length: 12 }, (_, i) => host(i + 1, CENTER.lat + (Math.floor(i / 4) - 1) * 0.12, CENTER.lng + ((i % 4) - 1.5) * 0.12));
 const CLIP = { x0: 0.3, y0: 0.3, x1: 0.7, y1: 0.7 };
 
-async function openMalware(page: Page, proj: 'globe' | 'mercator', camera: { lat: number; lng: number; zoom: number }) {
+async function openMalware(page: Page, proj: 'globe' | 'mercator', camera: { lat: number; lng: number; zoom: number }, hosts = HOSTS) {
   const meta = { feed: 'malware', state: 'live', fetchedAt: '2026-09-30T20:00:00.000Z', observedAt: '2026-09-30T19:54:23.000Z', lastGoodAt: '2026-09-30T20:00:00.000Z', stale: false, ttlSeconds: 300, kind: 'live', attribution: [] };
-  const snap = JSON.stringify({ items: HOSTS, meta, providers: {} });
+  const snap = JSON.stringify({ items: hosts, meta, providers: {} });
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
   await page.route('**/api/malware/stream', (route) => route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: `retry: 600000\n\nevent: snapshot\ndata: ${snap}\n\n` }));
   await gotoMap(page, { camera, params: { proj, layers: 'malware' } });
   await waitForMapIdle(page);
   await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-projection', proj, { timeout: 30_000 });
   await expect(page.locator(MAP)).toHaveAttribute('data-admission-pending', '0', { timeout: 120_000 });
-  // The snapshot landed: the rail counts the twelve hosts.
+  // The snapshot landed: the rail counts the hosts.
   await page.getByRole('button', { name: 'NETWORK INTEL' }).click();
-  await expect(page.getByRole('button', { name: /Live Malware/ })).toContainText('12', { timeout: 60_000 });
+  await expect(page.getByRole('button', { name: /Live Malware/ })).toContainText(String(hosts.length), { timeout: 60_000 });
   await page.keyboard.press('Escape');
   await waitForCameraIdle(page);
 }
@@ -77,14 +78,21 @@ test.describe('point markers on the globe (visual-qa r5 MAJOR-1)', () => {
 
   test('hosts on the far side of the globe draw nothing through it', async ({ page }, info) => {
     test.skip(info.project.name === 'mobile', 'desktop pixel check (1600×1000)');
-    test.setTimeout(300_000);
+    test.setTimeout(360_000);
     await openMalware(page, 'globe', { ...CENTER, zoom: 2 });
     await expect.poll(() => tokenPixels(page, '--map-malware', CLIP), { timeout: 60_000 }).toBeGreaterThan(10);
     const near = await sample(page, 2);
     // Camera over the antipode: the hosts sit exactly behind the globe's centre.
-    await openMalware(page, 'globe', { lat: -CENTER.lat, lng: CENTER.lng - 180, zoom: 2 });
+    const antipode = { lat: -CENTER.lat, lng: CENTER.lng - 180, zoom: 2 };
+    await openMalware(page, 'globe', antipode);
     const far = await sample(page, 4);
-    console.log(`malware px at z2: facing=${near} far side=${far}`);
-    expect(far).toBeLessThan(5);
+    await page.screenshot({ path: info.outputPath('far-side-with-hosts.png') });
+    // Control: the same view with no hosts at all (basemap reds that match the token).
+    await openMalware(page, 'globe', antipode, []);
+    const control = await sample(page, 4);
+    await page.screenshot({ path: info.outputPath('far-side-control.png') });
+    console.log(`malware px at z2: facing=${near} far side=${far} control=${control}`);
+    expect(near).toBeGreaterThan(far + 10);
+    expect(far).toBeLessThanOrEqual(control + 3);
   });
 });
