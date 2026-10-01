@@ -2,7 +2,8 @@
 /**
  * USGS earthquakes: magnitude-scaled deck points plus magnitude rings drawn as geodesic outlines in a
  * native MapLibre line layer (draped on the globe without z-fighting; never a deck "big circle").
- * Significant quakes go to the Intel Feed.
+ * Significant quakes go to the Intel Feed. On the globe the markers draw without the depth test (the
+ * surface clipped them into half-discs) and only on the camera-facing side (globe.tsx).
  * Owner: layers-hazards.
  */
 import { ScatterplotLayer } from '@deck.gl/layers';
@@ -14,6 +15,7 @@ import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { Earthquake, EarthquakesResponse } from '@/lib/types';
 import { magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken } from '../shared';
 import { nearestPoint, useHitTester } from './hit-test';
+import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from './globe';
 import { entitySelection } from './pick';
 import { useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
@@ -48,10 +50,13 @@ export default function EarthquakeLayer() {
   }, [items]);
   useGeoJsonLayers('hazards-quake-rings', rings, RING_LAYERS);
 
+  // Largest first so small quakes draw on top and stay clickable.
+  const sorted = useMemo(() => (items ? [...items].sort((a, b) => b.magnitude - a.magnitude) : undefined), [items]);
+  const camera = useFarSideCamera();
+  const points = useFacing(sorted, camera);
+
   const layers = useMemo(() => {
-    if (!items) return null;
-    // Largest first so small quakes draw on top and stay clickable.
-    const points = [...items].sort((a, b) => b.magnitude - a.magnitude);
+    if (!points) return null;
     return [
       new ScatterplotLayer<Earthquake>({
         id: 'hazards-quakes',
@@ -64,16 +69,18 @@ export default function EarthquakeLayer() {
         stroked: true,
         lineWidthUnits: 'pixels',
         getLineWidth: 1,
+        billboard: true,
+        parameters: GLOBE_POINT_PARAMETERS,
         pickable: true,
         autoHighlight: true,
       }),
     ];
-  }, [items]);
+  }, [points]);
 
   useDeckLayers('hazards:earthquakes', layers, Z);
   useHitTester('earthquakes', (map, e) => {
     const hit = items && nearestPoint(map, e, items, (q) => [q.lng, q.lat], (q) => quakeRadiusPx(q.magnitude));
     return hit ? { layer: 'earthquakes', distancePx: hit.distancePx, selection: entitySelection('earthquake', 'earthquakes', hit.item, hit.item as unknown as Record<string, unknown>) } : null;
   });
-  return null;
+  return <DrawnStatus layer="earthquakes" drawn={points?.length ?? 0} total={items?.length ?? 0} camera={camera} />;
 }

@@ -2,7 +2,8 @@
 /**
  * Severe weather: every event as a deck point (EONET, NWS, GDACS, NHC, GVP) plus native MapLibre
  * fill/line footprints for NWS alert areas and NHC forecast cones. High-severity events go to the
- * Intel Feed. Owner: layers-hazards.
+ * Intel Feed. On the globe the markers draw without the depth test (the surface clipped them) and
+ * only on the camera-facing side (globe.tsx). Owner: layers-hazards.
  */
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { useEffect, useMemo, useRef } from 'react';
@@ -12,6 +13,7 @@ import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { WeatherEvent, WeatherResponse } from '@/lib/types';
 import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken } from '../shared';
 import { nearestPoint, useHitTester } from './hit-test';
+import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from './globe';
 import { entitySelection } from './pick';
 import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
@@ -55,12 +57,15 @@ export default function WeatherLayer() {
 
   useGeoJsonLayers('hazards-weather-areas', areas, nativeLayers);
 
+  const camera = useFarSideCamera();
+  const points = useFacing(items, camera);
+
   const layers = useMemo(() => {
-    if (!items) return null;
+    if (!points) return null;
     return [
       new ScatterplotLayer<WeatherEvent>({
         id: 'hazards-weather-points',
-        data: items,
+        data: points,
         getPosition: (e) => [e.lng, e.lat],
         getRadius: (e) => SEVERITY_RADIUS_PX[e.severity],
         radiusUnits: 'pixels',
@@ -69,11 +74,13 @@ export default function WeatherLayer() {
         stroked: true,
         lineWidthUnits: 'pixels',
         getLineWidth: 1,
+        billboard: true,
+        parameters: GLOBE_POINT_PARAMETERS,
         pickable: true,
         autoHighlight: true,
       }),
     ];
-  }, [items]);
+  }, [points]);
 
   useDeckLayers('hazards:weather', layers, Z);
   useHitTester('weather', (map, e) => {
@@ -84,5 +91,5 @@ export default function WeatherLayer() {
     if (!ev) return null;
     return { layer: 'weather', distancePx: pt?.distancePx ?? 12, selection: entitySelection('weather_event', 'weather', ev, ev as unknown as Record<string, unknown>) };
   });
-  return null;
+  return <DrawnStatus layer="weather" drawn={points?.length ?? 0} total={items?.length ?? 0} camera={camera} />;
 }
