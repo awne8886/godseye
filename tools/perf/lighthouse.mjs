@@ -13,6 +13,7 @@
  */
 import { readdirSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
@@ -86,6 +87,8 @@ function digest(lhr) {
       .map((r) => a[r.id])
       .filter((x) => x && x.score === 0)
       .map((x) => ({ id: x.id, n: x.details?.items?.length ?? 0, sample: x.details?.items?.[0]?.node?.snippet?.slice(0, 160) })),
+    benchmarkIndex: lhr.environment?.benchmarkIndex ?? null,
+    loadAvg: os.loadavg().map((x) => Number(x.toFixed(2))),
     runtimeError: lhr.runtimeError?.code ?? null,
     warnings: lhr.runWarnings,
   };
@@ -103,7 +106,7 @@ for (const p of PATHS) {
       runs.push(d);
       const slug = `${PRESET}-${p.replace(/[^a-z0-9]+/gi, '_') || 'root'}-${i}`;
       writeFileSync(path.join(OUT, `${slug}.json`), res.report);
-      console.log(`${PRESET} ${p} run ${i}: perf ${d.perf} a11y ${d.a11y} LCP ${Math.round(d.lcp)} TBT ${Math.round(d.tbt)} CLS ${d.cls?.toFixed(3)} FCP ${Math.round(d.fcp)} mainThread ${Math.round(d.mainThreadMs)}ms`);
+      console.log(`${PRESET} ${p} run ${i}: perf ${d.perf} a11y ${d.a11y} LCP ${Math.round(d.lcp)} TBT ${Math.round(d.tbt)} CLS ${d.cls?.toFixed(3)} FCP ${Math.round(d.fcp)} mainThread ${Math.round(d.mainThreadMs)}ms bench ${d.benchmarkIndex} load ${d.loadAvg.join('/')}`);
       i++;
     } catch (e) {
       // Recorded, not hidden: a crashed/aborted run is retried and reported in the log.
@@ -121,7 +124,7 @@ for (const p of PATHS) {
   const med = sorted[Math.floor(sorted.length / 2)];
   const ok = PRESET !== 'desktop' || (med.perf >= THRESH.perf && med.a11y >= THRESH.a11y && med.lcp <= THRESH.lcp && med.cls <= THRESH.cls && med.tbt <= THRESH.tbt);
   if (!ok) fail++;
-  summary.push({ path: p, preset: PRESET, median: med, runs: runs.map((r) => ({ perf: r.perf, a11y: r.a11y, lcp: r.lcp, tbt: r.tbt, cls: r.cls, fcp: r.fcp })), passes: ok });
+  summary.push({ path: p, preset: PRESET, median: med, runs: runs.map((r) => ({ perf: r.perf, a11y: r.a11y, lcp: r.lcp, tbt: r.tbt, cls: r.cls, fcp: r.fcp, benchmarkIndex: r.benchmarkIndex, loadAvg: r.loadAvg })), passes: ok });
 }
 writeFileSync(path.join(OUT, `summary-${PRESET}.json`), JSON.stringify(summary, null, 2));
 console.log('\npath                 perf  a11y   LCP ms  TBT ms   CLS    FCP ms  pass');

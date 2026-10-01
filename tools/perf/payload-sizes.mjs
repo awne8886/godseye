@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Payload-size checker (perf-auditor). Fetches every bulk /api route against a running server and
- * reports wire bytes with and without `Accept-Encoding: br, gzip`, the decoded size, status and time.
+ * reports wire bytes with no Accept-Encoding, `br, gzip` and `gzip` only (`*` = gzip not honoured), the decoded size, status and time.
  * Contract §10: every /api response must stay < 4 MB (checked on the *decoded* body, which is what a
  * client without compression receives and what the browser has to parse).
  *
@@ -51,7 +51,7 @@ function get(path, encoding) {
         } catch {
           /* keep raw */
         }
-        resolve({ status: res.statusCode, enc, wire: raw.length, decoded: decoded.length, ms: Math.round(performance.now() - t0), type: res.headers['content-type'] ?? '' });
+        resolve({ status: res.statusCode, vary: res.headers.vary ?? '', enc, wire: raw.length, decoded: decoded.length, ms: Math.round(performance.now() - t0), type: res.headers['content-type'] ?? '' });
       });
     });
     req.on('error', (e) => resolve({ status: 0, enc: '-', wire: 0, decoded: 0, ms: Math.round(performance.now() - t0), error: String(e.message) }));
@@ -65,6 +65,7 @@ let over = 0;
 for (const path of ROUTES) {
   const plain = await get(path, null);
   const br = await get(path, 'br, gzip');
+  const gz = await get(path, 'gzip');
   const row = {
     path,
     status: plain.status,
@@ -72,6 +73,9 @@ for (const path of ROUTES) {
     identityEncoding: plain.enc,
     brEncoding: br.enc,
     brBytes: br.wire,
+    gzipEncoding: gz.enc,
+    gzipBytes: gz.wire,
+    vary: br.vary,
     decodedBytes: Math.max(plain.decoded, br.decoded),
     msIdentity: plain.ms,
     msBr: br.ms,
@@ -81,7 +85,7 @@ for (const path of ROUTES) {
   rows.push(row);
 }
 rows.sort((a, b) => b.decodedBytes - a.decodedBytes);
-console.log('route'.padEnd(26), 'st ', 'identity KB'.padStart(12), 'id-enc'.padStart(8), 'br/gz KB'.padStart(10), 'enc'.padStart(8), 'decoded KB'.padStart(11), 'ms(id/br)'.padStart(12), ' <4MB');
+console.log('route'.padEnd(26), 'st ', 'identity KB'.padStart(12), 'id-enc'.padStart(8), 'br/gz KB'.padStart(10), 'enc'.padStart(8), 'gzip KB'.padStart(9), 'decoded KB'.padStart(11), 'ms(id/br)'.padStart(12), ' <4MB');
 for (const r of rows) {
   console.log(
     r.path.padEnd(26),
@@ -90,6 +94,7 @@ for (const r of rows) {
     r.identityEncoding.padStart(8),
     kb(r.brBytes).padStart(10),
     r.brEncoding.padStart(8),
+    `${kb(r.gzipBytes)}${r.gzipEncoding === 'gzip' ? '' : '*'}`.padStart(9),
     kb(r.decodedBytes).padStart(11),
     `${r.msIdentity}/${r.msBr}`.padStart(12),
     r.decodedBytes < LIMIT ? '  ok' : '  FAIL',
