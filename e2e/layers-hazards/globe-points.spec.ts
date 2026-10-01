@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { countTokenPixels, decodePng, MAP, tokenRgb, waitForCameraIdle } from '../map-engine/helpers';
+import { countTokenPixels, decodePng, MAP, nudgeMap, tokenRgb, waitForCameraIdle } from '../map-engine/helpers';
 import { openMap } from './helpers';
 
 /**
@@ -83,8 +83,9 @@ test.describe('hazards markers on the globe', () => {
     }
     test.info().annotations.push({ type: 'pixels', description: `M${q.magnitude} ${token}: mercator ${px.mercator} px, globe ${px.globe} px` });
     expect(px.globe!).toBeGreaterThanOrEqual(0.5 * px.mercator!);
-    test.skip(info.project.name === 'mobile', 'the pick half is a desktop pointer test');
-    // Globe picking: the marker under the pointer opens its card (still the globe page from above).
+    // Globe picking (desktop pointer; the phone layout is covered by the pixel half above): the
+    // marker under the pointer opens its card (still the globe page from the loop).
+    if (info.project.name === 'mobile') return;
     const v = page.viewportSize()!;
     await page.mouse.click(v.width / 2, v.height / 2);
     const card = page.getByTestId('hazard-card').filter({ visible: true }).first();
@@ -100,7 +101,10 @@ test.describe('hazards markers on the globe', () => {
     await openQuake(page, q, 'globe', 2.5);
     const status = page.getByTestId('hazards-drawn-earthquakes');
     await expect(status).toHaveAttribute('data-camera', /^-?\d/, { timeout: 30_000 });
-    // The filter camera is the camera the map settled on (data-far-side, written at moveend).
+    // A small drag: the layer must refilter with the camera the map settles on (the host writes
+    // data-far-side at moveend only, so the initial ?c= camera has none to compare with).
+    await nudgeMap(page);
+    await waitForCameraIdle(page);
     const near = (a: string | null, b: string | null) => {
       const x = (a ?? '').split(',').map(Number);
       const y = (b ?? '').split(',').map(Number);
