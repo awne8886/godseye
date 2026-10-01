@@ -1,0 +1,17 @@
+{
+  "note": "HUD overlay boxes over the map, Desktop Chrome at 1600x1000, ?route=LHR-JFK with the PATHS panel docked (--panel-width 360px). Measured with getBoundingClientRect() on this app's build on 2026-10-01 07:43Z (insets.ts selector list); the BASEMAP INCOMPLETE chip was showing.",
+  "viewport": { "width": 1600, "height": 1000 },
+  "panel": { "side": "right", "size": 424 },
+  "rects": [
+    { "name": "header", "rect": { "left": 64, "top": 16, "right": 768, "bottom": 76 } },
+    { "name": "telemetry", "rect": { "left": 884, "top": 16, "right": 1584, "bottom": 31 } },
+    { "name": "rail", "rect": { "left": 0, "top": 0, "right": 48, "bottom": 972 } },
+    { "name": "tools", "rect": { "left": 1538, "top": 277, "right": 1592, "bottom": 724 } },
+    { "name": "readout-row", "rect": { "left": 288, "top": 945, "right": 738, "bottom": 968 } },
+    { "name": "status-bar", "rect": { "left": 0, "top": 972, "right": 1600, "bottom": 1000 } },
+    { "name": "view-controls", "rect": { "left": 120, "top": 858, "right": 460, "bottom": 900 } },
+    { "name": "imagery-chip-basemap", "rect": { "left": 1209, "top": 873, "right": 1584, "bottom": 899 } },
+    { "name": "imagery-chip-blackmarble", "rect": { "left": 1346, "top": 903, "right": 1584, "bottom": 929 } },
+    { "name": "attribution", "rect": { "left": 754, "top": 939, "right": 1594, "bottom": 972 } }
+  ]
+}

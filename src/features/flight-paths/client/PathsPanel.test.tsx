@@ -38,6 +38,7 @@ const live = (await import('@/app/api/route/live/route')).GET;
 const search = (await import('@/app/api/airports/search/route')).GET;
 const flight = (await import('@/app/api/flight/[ident]/route')).GET;
 const { default: PathsPanel } = await import('./PathsPanel');
+const { fitState, obscuredFitText, setFitNotice } = await import('./fit');
 
 async function serve(input: string | URL | Request): Promise<Response> {
   const url = new URL(String(input instanceof Request ? input.url : input), 'http://localhost');
@@ -117,6 +118,24 @@ describe('PATHS panel', () => {
     expect(screen.getByText('5,540 KM')).toBeTruthy();
     expect(screen.getByText('2,991 NM')).toBeTruthy();
   }, 40_000); // first test loads the bundled airport/route indexes cold; slow on a loaded 4-vCPU box
+
+  it('names the endpoints the framing could not keep clear of the map controls, and drops the line once they are clear (round 4 fix pass)', async () => {
+    useUiStore.setState({ plannedRoute: { from: 'PER', to: 'LHR' } });
+    await act(async () => {
+      renderPanel();
+    });
+    expect(screen.queryByTestId('paths-fit-obscured')).toBeNull();
+    await act(async () => setFitNotice({ key: 'route:YPPH-EGLL', fits: true, hidden: ['PER'] }));
+    expect(screen.getByTestId('paths-fit-obscured').textContent).toBe(obscuredFitText(['PER']));
+    expect(obscuredFitText(['PER'])).toMatch(/the PER endpoint could not be kept clear of the map controls — drag or zoom the map to see it\./);
+    expect(obscuredFitText(['PER', 'LHR'])).toMatch(/the PER and LHR endpoints .* see them\./);
+    expect(fitState({ key: 'k', fits: true, hidden: ['PER'] })).toBe('full-obscured');
+    expect(fitState({ key: 'k', fits: true, hidden: [] })).toBe('full');
+    expect(fitState({ key: 'k', fits: false, hidden: ['PER'] })).toBe('partial');
+    await act(async () => setFitNotice({ key: 'route:YPPH-EGLL', fits: true, hidden: [] }));
+    expect(screen.queryByTestId('paths-fit-obscured')).toBeNull();
+    await act(async () => setFitNotice(null));
+  });
 
   it('ALL AIRFIELDS is a labelled button with the switch track inside (visual-qa M3); short placeholders (m3)', async () => {
     await act(async () => {

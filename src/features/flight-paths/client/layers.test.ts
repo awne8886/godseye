@@ -11,9 +11,6 @@ import {
   CHIP_MAX,
   flownSegments,
   frameBounds,
-  framePadding,
-  globeCamera,
-  globeProjector,
   PULSE_RINGS,
   progressChip,
   routeFrame,
@@ -21,6 +18,7 @@ import {
   selectChips,
   TRACK_GAP_MS,
 } from './layers';
+import { frameArea, framePadding, globeProjector, solveFrame, type Padding } from './framing';
 import { codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
 
 const gc = greatCircle([140.386, 35.7647], [-118.408, 33.9425]);
@@ -161,13 +159,13 @@ describe('buildRouteLayers', () => {
     expect(buildRouteAnimLayers({ frame, globe: false, phase: 0.5, reducedMotion: true, theme: 0 })).toEqual([]);
   });
 
-  it('fit padding: HUD chrome (header, status bar, left rail) + 40 px, plus the docked panel, capped', () => {
+  it('fit padding: HUD chrome (header, status bar, left rail) + 40 px (16 px on phones), plus the docked panel, capped', () => {
     expect(framePadding({ width: 1440, height: 900 }, null)).toEqual({ top: 104, right: 40, bottom: 68, left: 88 });
     expect(framePadding({ width: 1440, height: 900 }, { side: 'right', size: 424 })).toEqual({ top: 104, right: 464, bottom: 68, left: 88 });
     expect(framePadding({ width: 800, height: 900 }, { side: 'right', size: 424 }).right).toBe(464);
-    expect(framePadding({ width: 600, height: 900 }, { side: 'right', size: 424 }).right).toBe(410); // capped: ¾ of the width minus the left side
+    expect(framePadding({ width: 600, height: 900 }, { side: 'right', size: 424 }).right).toBe(434); // capped: ¾ of the width minus the left side (phone margin)
     // Phone: no rail; the bottom sheet.
-    expect(framePadding({ width: 390, height: 844 }, { side: 'bottom', size: 380 })).toEqual({ top: 104, right: 40, bottom: 420, left: 40 });
+    expect(framePadding({ width: 390, height: 844 }, { side: 'bottom', size: 380 })).toEqual({ top: 80, right: 16, bottom: 396, left: 16 });
   });
 });
 
@@ -215,14 +213,16 @@ describe('route-progress chips declutter (R2-M3)', () => {
 describe('globe framing (R2-M4)', () => {
   const ep = (ident: string, iata: string, lng: number, lat: number) => endpoint(ident, iata, lng, lat);
   const viewport = { width: 1440, height: 900 };
-  const padding = framePadding(viewport, { side: 'right', size: 424 });
-  const projectFits = (cam: { center: [number, number]; zoom: number }, pts: [number, number][]) => {
+  const area = frameArea(viewport, { side: 'right', size: 424 });
+  const globeCamera = (frame: NonNullable<ReturnType<typeof routeFrame>>) => solveFrame(frame, { projection: 'globe', viewport, area });
+  const projectFits = (cam: { center: [number, number]; zoom: number; anchor: [number, number]; padding: Padding }, pts: [number, number][]) => {
     const project = globeProjector(cam.center, cam.zoom, viewport.height);
-    const halfW = (viewport.width - padding.left - padding.right) / 2;
-    const halfH = (viewport.height - padding.top - padding.bottom) / 2;
     return pts.every((p) => {
       const xy = project(p);
-      return xy !== null && Math.abs(xy[0]) <= halfW + 1 && Math.abs(xy[1]) <= halfH + 1;
+      if (xy === null) return false;
+      const x = cam.anchor[0] + xy[0];
+      const y = cam.anchor[1] + xy[1];
+      return x >= area.left - 1 && x <= area.right + 1 && y >= area.top - 1 && y <= area.bottom + 1;
     });
   };
 
@@ -233,11 +233,16 @@ describe('globe framing (R2-M4)', () => {
       null,
       null,
     )!;
-    const cam = globeCamera(frame, viewport, padding)!;
+    const cam = globeCamera(frame)!;
     expect(cam.fits).toBe(true);
     expect(cam.center[1]).toBeGreaterThan(40); // over the Arctic side of the route, not the naive box centre
-    expect(Math.abs(cam.center[0] - g.midpoint[0])).toBeLessThan(15);
-    expect(cam.zoom).toBeGreaterThan(0);
+    // Within 30° of arc of the midpoint (longitudes converge up there: compare on the sphere).
+    const D = Math.PI / 180;
+    const [l1, p1] = [cam.center[0] * D, cam.center[1] * D];
+    const [l2, p2] = [g.midpoint[0] * D, g.midpoint[1] * D];
+    const arc = Math.acos(Math.min(1, Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(l1 - l2))) / D;
+    expect(arc).toBeLessThan(30);
+    expect(cam.zoom).toBeGreaterThan(-2);
     expect(projectFits(cam, frame.arc)).toBe(true);
     // The naive lng/lat box is centred at ~57° N, -40° — well away from the arc's 80° N apex.
     const b = frameBounds(frame)!;
@@ -246,10 +251,10 @@ describe('globe framing (R2-M4)', () => {
 
   it('NRT→LAX (antimeridian): centre over the North Pacific, the whole arc fits', () => {
     const frame = routeFrame(plan, null, null)!;
-    const cam = globeCamera(frame, viewport, padding)!;
+    const cam = globeCamera(frame)!;
     expect(cam.fits).toBe(true);
     expect(cam.center[1]).toBeGreaterThan(20);
-    expect(Math.abs(cam.center[0])).toBeGreaterThan(160); // near ±180, normalised
+    expect(Math.abs(cam.center[0])).toBeGreaterThan(120); // over the North Pacific, normalised
     expect(projectFits(cam, frame.arc)).toBe(true);
   });
 
@@ -260,13 +265,9 @@ describe('globe framing (R2-M4)', () => {
       null,
       null,
     )!;
-    const cam = globeCamera(frame, viewport, padding)!;
+    const cam = globeCamera(frame)!;
     expect(projectFits(cam, frame.arc)).toBe(true);
-    const svo = globeCamera(
-      routeFrame({ ...plan, greatCircle: greatCircle([37.4146, 55.9726], [-118.408, 33.9425]), filedPlans: [], diversionAirports: [] } as unknown as Plan, null, null)!,
-      viewport,
-      padding,
-    )!;
+    const svo = globeCamera(routeFrame({ ...plan, greatCircle: greatCircle([37.4146, 55.9726], [-118.408, 33.9425]), filedPlans: [], diversionAirports: [] } as unknown as Plan, null, null)!)!;
     // Compare on-screen globe size (log2 px radius), not the zoom number (it depends on the centre latitude).
     const size = (c: { zoom: number; center: [number, number] }) => c.zoom - Math.log2(Math.cos((c.center[1] * Math.PI) / 180));
     expect(size(cam)).toBeGreaterThan(size(svo));

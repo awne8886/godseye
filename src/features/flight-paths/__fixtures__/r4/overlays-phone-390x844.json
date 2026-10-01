@@ -1,0 +1,15 @@
+{
+  "note": "HUD overlay boxes over the map, Pixel 7 at 390x844, ?route=LHR-JFK with the PATHS sheet open (--sheet-occupied 520px). Measured with getBoundingClientRect() on this app's build on 2026-10-01 07:42Z (insets.ts selector list). The BASEMAP INCOMPLETE chip was not showing then; its box is taken from the round-4 visual-qa capture lhr-jfk-route-globe-mobile.png (05:14Z), where it sat above the BLACK MARBLE chip.",
+  "viewport": { "width": 390, "height": 844 },
+  "panel": { "side": "bottom", "size": 520 },
+  "rects": [
+    { "name": "header", "rect": { "left": 16, "top": 16, "right": 185, "bottom": 54 } },
+    { "name": "telemetry", "rect": { "left": 271, "top": 16, "right": 374, "bottom": 31 } },
+    { "name": "view-controls", "rect": { "left": 12, "top": 64, "right": 320, "bottom": 118 } },
+    { "name": "imagery-chip-basemap", "rect": { "left": 5, "top": 205, "right": 385, "bottom": 231 } },
+    { "name": "imagery-chip-blackmarble", "rect": { "left": 142, "top": 237, "right": 380, "bottom": 263 } },
+    { "name": "attribution", "rect": { "left": 12, "top": 273, "right": 390, "bottom": 320 } },
+    { "name": "mobile-sheet", "rect": { "left": 0, "top": 324, "right": 390, "bottom": 788 } },
+    { "name": "mobile-nav", "rect": { "left": 0, "top": 787, "right": 390, "bottom": 844 } }
+  ]
+}
