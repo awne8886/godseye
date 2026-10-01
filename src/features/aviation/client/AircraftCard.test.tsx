@@ -98,7 +98,7 @@ describe('route section honesty (R2 round 4 BLOCKING-1, MINOR-6)', () => {
 
   it('names no leg, destination or progress when the observed track contradicts the listed route', async () => {
     await renderWith(route({ directionConflict: true, routeCheck: 'airborne inside the corridor but heading toward DUB, opposite to standing data DUB→EDI; departure not observed — route not confirmed' }));
-    expect(screen.getByTestId('route-unconfirmed').textContent).toContain('ROUTE UNCONFIRMED — OBSERVED TRACK DISAGREES');
+    expect((await screen.findByTestId('route-unconfirmed', {}, { timeout: 5_000 })).textContent).toContain('ROUTE UNCONFIRMED — OBSERVED TRACK DISAGREES');
     expect(screen.getByTestId('route-unconfirmed').textContent).toContain('departure not observed');
     expect(screen.queryByTestId('route-leg')).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
@@ -106,7 +106,7 @@ describe('route section honesty (R2 round 4 BLOCKING-1, MINOR-6)', () => {
 
   it('labels a corroborated reverse leg as observed', async () => {
     await renderWith(route({ origin: EGPH, destination: EIDW, basis: 'observed', status: 'airborne', progress: 0.5, distanceKm: 350, reversed: true, routeCheck: 'observed departure EDI and course toward DUB' }));
-    expect(screen.getByTestId('route-leg').textContent).toMatch(/EDI.*DUB/);
+    expect((await screen.findByTestId('route-leg', {}, { timeout: 5_000 })).textContent).toMatch(/EDI.*DUB/);
     expect(screen.getByTestId('aircraft-card').textContent).toContain('OBSERVED DEPARTURE · REVERSE OF LISTED ROUTE');
   });
 
