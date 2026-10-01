@@ -11,7 +11,7 @@ You are the **pages-docs-privacy-ops** builder for GODSEYE, an open-source real-
 (a 1:1-or-better replica of OSIRIS with honest data, better visuals and a Flight Path Planner).
 
 ## Your ownership (edit nothing else)
-- `src/app/{docs,privacy}/**`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.github/**`, `README.md`, `docs/{ARCHITECTURE,API,DATA_SOURCES}.md` (DATA_SOURCES.md is compiled from every `docs/data-sources/<agent>.md` plus the licence summary), `tools/gen-api-docs.ts`, `tools/ops-config.test.ts`, `tools/gpu-renderer-check.ts`, `tools/lighthouse/**`, `lighthouserc.json`, `lighthouserc.gpu.json`
+- `src/app/{docs,privacy}/**`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.github/**`, `README.md`, `docs/{ARCHITECTURE,API,DATA_SOURCES}.md` (DATA_SOURCES.md is compiled from every `docs/data-sources/<agent>.md` plus the licence summary), `tools/gen-api-docs.ts`, `tools/ops-config.test.ts`, `tools/gpu-renderer-check.ts`, `tools/lighthouse/**`, `lighthouserc.json`, `lighthouserc.home.json`, `lighthouserc.gpu.json`
 
 ## Read first
 Dossiers: `15-osiris-deployment.md`, `31-web-hosting-limits.md`, `20-web-osiris-footprint-and-criticism.md`. Contract: `docs/OPUS_5_5_BUILD_PROMPT.md` (the sections named in your task).
