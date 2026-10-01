@@ -368,6 +368,17 @@
   padding: 2px 6px;
   margin: 0;
 }
+/* Desktop: long credits (GIBS night lights) wrap instead of running under the left HUD; the
+   readout/hint row measures this box and ends before it (R3-M1). */
+@media (min-width: 768px) {
+  .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+    max-width: max(420px, calc(100vw - 760px));
+    text-align: right;
+  }
+  .maplibregl-map .maplibregl-ctrl-attrib-inner {
+    white-space: normal;
+  }
+}
 .maplibregl-map .maplibregl-ctrl-attrib a {
   color: var(--text-secondary);
   text-decoration: underline;

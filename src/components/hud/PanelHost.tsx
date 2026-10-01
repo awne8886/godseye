@@ -17,6 +17,14 @@ import { MODAL_PANELS, panelLabel, tabForPanel } from './panel-meta';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
+/** Modal on desktop, but the bottom sheet on phones like every other panel (R3-m2). */
+export const SHEET_ON_PHONE: ReadonlySet<PanelId> = new Set<PanelId>(['style-studio']);
+
+/** Whether a panel renders as its own modal dialog (else the docked column / phone sheet). */
+export function isModalPanel(id: PanelId, mobile: boolean): boolean {
+  return MODAL_PANELS.has(id) && !(mobile && SHEET_ON_PHONE.has(id));
+}
+
 /** Registered components are static module exports; createElement keeps the lookup out of JSX. */
 function PanelBody({ id, onClose }: { id: PanelId; onClose: () => void }) {
   const comp = panelFor(id);
@@ -171,8 +179,9 @@ export default function PanelHost() {
   const mobile = useIsMobile();
   const bt = useHasBluetooth();
 
-  const modal = openPanel && MODAL_PANELS.has(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
-  const side = openPanel && !MODAL_PANELS.has(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
+  const isModal = (id: PanelId) => isModalPanel(id, mobile);
+  const modal = openPanel && isModal(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
+  const side = openPanel && !isModal(openPanel) && isPanelAvailable(openPanel, bt) ? openPanel : null;
   const pinnedShown = pinned.filter((p) => !MODAL_PANELS.has(p) && isPanelAvailable(p, bt));
   const dock = useDockWidth();
   const clearance = useBottomRightClearance();

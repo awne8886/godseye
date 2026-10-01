@@ -1,6 +1,6 @@
 'use client';
 /**
- * Style Studio (modal, focus-trapped): nine presets (writes `godseye:theme`), Ghost Protocol,
+ * Style Studio (desktop: non-blocking dialog; phones: the bottom sheet): nine presets (writes `godseye:theme`), Ghost Protocol,
  * accent/signal/text colours, per-class map colours, knobs (panel/border alpha, glow, blur, radius,
  * tracking, motion, scanlines, grain, vignette; AUTO = the preset's own value), a live contrast
  * readout, and sanitised JSON export/import. Presets do not touch map colours: those carry meaning.
@@ -12,6 +12,7 @@ import type { PanelProps } from '@/lib/feature-module';
 import { MAP_TOKENS, type MapToken } from '@/lib/tokens';
 import { useUiStore } from '@/lib/store';
 import { useStudioStore } from '../hud-store';
+import { useIsMobile } from '../hooks';
 import ModalShell from '../ModalShell';
 import {
   GHOST, KNOBS, PRESETS, PRESET_IDS, SIGNAL_DEFAULTS, effectivePalette, exportStudioJson, isPresetId, paletteContrast, parseStudioJson,
@@ -113,6 +114,7 @@ function autoValue(k: KnobKey, theme: PresetId, ghost: boolean): number {
 }
 
 export default function StyleStudioPanel({ onClose }: PanelProps) {
+  const embedded = useIsMobile();
   const themeRaw = useUiStore((s) => s.theme);
   const theme: PresetId = isPresetId(themeRaw) ? themeRaw : 'HORUS';
   const setTheme = useUiStore((s) => s.setTheme);
@@ -187,158 +189,187 @@ export default function StyleStudioPanel({ onClose }: PanelProps) {
     return (base as unknown as Record<string, string>)[k] ?? '#000000';
   };
 
+  const tools = (
+    <>
+      <button type="button" onClick={() => void paste()} aria-label="Import theme JSON from clipboard" title="Paste theme JSON" className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+        <ClipboardPaste size={14} />
+      </button>
+      <button type="button" onClick={() => void copy()} aria-label="Copy theme JSON" title="Copy theme JSON" className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+        <Copy size={14} />
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          resetStudio();
+          setMsg({ text: 'CUSTOM EDITS CLEARED', tone: 'ok' });
+        }}
+        aria-label="Reset custom edits"
+        title="Reset custom edits"
+        className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]"
+      >
+        <RotateCcw size={14} />
+      </button>
+    </>
+  );
+  const status = (
+    <>
+      {msg && (
+      <p role="status" className="hud-micro px-4 pt-2" style={{ color: msg.tone === 'ok' ? 'var(--alert-green)' : 'var(--alert-red)' }}>
+        {msg.text}
+      </p>
+      )}
+    </>
+  );
+  const sections = (
+    <>
+      <Section title="PRESET">
+        <div role="radiogroup" aria-label="Theme preset" className="grid grid-cols-3 gap-1">
+          {PRESET_IDS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={theme === id}
+              disabled={ghost}
+              onClick={() => choosePreset(id)}
+              className={`hud-micro hud-control flex min-h-[44px] md:min-h-[32px] items-center gap-1.5 border px-2 disabled:opacity-60 ${theme === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+            >
+              <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: PRESETS[id].accent, boxShadow: `0 0 6px ${PRESETS[id].accent}` }} />
+              {id}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          aria-pressed={ghost}
+          onClick={() => setGhost(!ghost)}
+          className={`hud-micro hud-control flex min-h-[44px] md:min-h-[32px] w-full items-center justify-center gap-2 border ${ghost ? 'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)]'}`}
+        >
+          GHOST PROTOCOL {ghost ? 'ON' : 'OFF'}
+        </button>
+        {ghost && <p className="font-sans text-[12px] text-[var(--text-secondary)]">Ghost Protocol is applied last and overrides presets and custom colours; knobs still apply.</p>}
+      </Section>
+
+      <Section title="CONTRAST (WCAG AA 4.5:1)">
+        <ul className="space-y-0.5" aria-label="Live contrast readout">
+          {contrast.map((r) => (
+            <li key={r.label} className="flex items-center gap-2">
+              {r.pass ? <Check size={12} aria-hidden className="text-[var(--alert-green)]" /> : <TriangleAlert size={12} aria-hidden className="text-[var(--alert-orange)]" />}
+              <span className="hud-micro flex-1 text-[var(--text-secondary)]">{r.label}</span>
+              <span className="font-mono text-[11px] tabular-nums" style={{ color: r.pass ? 'var(--text-primary)' : 'var(--alert-orange)' }}>
+                {r.ratio.toFixed(2)}:1 {r.pass ? 'PASS' : 'FAIL'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Section>
+
+      <Section title="ACCENT">
+        <Swatch label="PRIMARY" value={colourValue('accent')} onChange={(v) => setColour('accent', v)} onReset={studio.colours.accent ? () => unsetColour('accent') : undefined} />
+        <Swatch label="SECONDARY" value={colourValue('accent2')} onChange={(v) => setColour('accent2', v)} onReset={studio.colours.accent2 ? () => unsetColour('accent2') : undefined} />
+      </Section>
+
+      <Section title="SIGNAL">
+        {(['alertRed', 'alertOrange', 'alertGreen', 'alertBlue'] as const).map((k) => (
+          <Swatch
+            key={k}
+            label={{ alertRed: 'CRITICAL', alertOrange: 'WARNING', alertGreen: 'NOMINAL', alertBlue: 'INFO' }[k]}
+            value={colourValue(k)}
+            onChange={(v) => setColour(k, v)}
+            onReset={studio.colours[k] ? () => unsetColour(k) : undefined}
+          />
+        ))}
+      </Section>
+
+      <Section title="SURFACE · TEXT">
+        <Swatch label="BACKGROUND" value={colourValue('bg')} onChange={(v) => setColour('bg', v)} onReset={studio.colours.bg ? () => unsetColour('bg') : undefined} />
+        {(['textPrimary', 'textSecondary', 'textMuted', 'textHeading'] as const).map((k) => (
+          <Swatch key={k} label={k.replace('text', 'TEXT ').toUpperCase()} value={colourValue(k)} onChange={(v) => setColour(k, v)} onReset={studio.colours[k] ? () => unsetColour(k) : undefined} />
+        ))}
+      </Section>
+
+      <Section title="MAP LAYERS">
+        <p className="font-sans text-[12px] text-[var(--text-secondary)]">Presets never change these: map colours carry meaning. Changing one recolours that class everywhere.</p>
+        {MAP_SECTIONS.map((sec) => (
+          <div key={sec.title} className="space-y-1">
+            <div className="hud-micro text-[var(--text-muted)]">{sec.title}</div>
+            {sec.keys.map((k) => (
+              <Swatch key={k} label={mapLabel(k)} value={studio.map[k] ?? MAP_TOKENS[k]} onChange={(v) => edit({ map: { [k]: v } })} onReset={studio.map[k] ? () => unsetMap(k) : undefined} />
+            ))}
+          </div>
+        ))}
+      </Section>
+
+      <Section title="GLASS · TYPE · MOTION · FX">
+        {(Object.keys(KNOBS) as KnobKey[]).map((k) => (
+          <Knob
+            key={k}
+            k={k}
+            value={studio.knobs[k] ?? autoValue(k, theme, ghost)}
+            auto={!(k in studio.knobs)}
+            onChange={(v) => edit({ knobs: { [k]: v } })}
+            onAuto={() => toggleAuto(k)}
+          />
+        ))}
+      </Section>
+
+      <Section title="IMPORT JSON">
+        <textarea
+          value={importText}
+          onChange={(e) => setImportText(e.target.value)}
+          rows={3}
+          aria-label="Theme JSON to import"
+          placeholder='{"theme":"EMBER","colours":{},"map":{},"knobs":{}}'
+          className="hud-control w-full border border-[var(--border-primary)] bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
+        />
+        <button
+          type="button"
+          disabled={!importText.trim()}
+          onClick={() => importJson(importText)}
+          className="hud-micro hud-control min-h-[44px] md:min-h-[32px] w-full border border-[var(--border-active)] text-[var(--gold-light)] disabled:opacity-60"
+        >
+          IMPORT
+        </button>
+      </Section>
+      <p className="font-sans text-[12px] text-[var(--text-muted)]">Saved in this browser. AUTO keeps the preset&apos;s own value. Imported JSON is checked: unknown keys are dropped, colours must be hex and numbers are clamped.</p>
+    </>
+  );
+
+  // Phones: the bottom sheet (PanelHost) supplies the title, close button and scroll area, like
+  // every other phone panel, so the studio never floats over the header controls (R3-m2).
+  if (embedded) {
+    return (
+      <div className="space-y-4" data-testid="style-studio-sheet">
+        <div className="flex items-center justify-end gap-1">{tools}</div>
+        {status}
+        {sections}
+      </div>
+    );
+  }
+
   return (
     <ModalShell
-      title="Style Studio"
+      title="STYLE STUDIO"
       description="Live UI tokens: presets, colours, map colours and effects. Saved in this browser."
       onClose={onClose}
       overlay={false}
       hideTitle
       className="bottom-10 left-3 right-3 top-20 md:bottom-[150px] md:left-[58px] md:right-auto md:top-auto md:max-h-[min(calc(100dvh-230px),760px)] md:w-[360px]"
     >
-      <div className="flex items-center gap-1 px-4 pb-2 pt-3">
-        <span className="instrument-accent mr-1" aria-hidden />
-        <span className="hud-title flex-1">STYLE STUDIO</span>
-        <button type="button" onClick={() => void paste()} aria-label="Import theme JSON from clipboard" title="Paste theme JSON" className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
-          <ClipboardPaste size={14} />
-        </button>
-        <button type="button" onClick={() => void copy()} aria-label="Copy theme JSON" title="Copy theme JSON" className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
-          <Copy size={14} />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            resetStudio();
-            setMsg({ text: 'CUSTOM EDITS CLEARED', tone: 'ok' });
-          }}
-          aria-label="Reset custom edits"
-          title="Reset custom edits"
-          className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]"
-        >
-          <RotateCcw size={14} />
-        </button>
-        <button type="button" onClick={onClose} aria-label="Close Style Studio" className="hud-control grid h-8 w-8 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
-          <X size={15} />
-        </button>
-      </div>
-      <div className="instrument-rule mx-4" aria-hidden />
-      {msg && (
-        <p role="status" className="hud-micro px-4 pt-2" style={{ color: msg.tone === 'ok' ? 'var(--alert-green)' : 'var(--alert-red)' }}>
-          {msg.text}
-        </p>
-      )}
-      <div className="hud-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
-        <Section title="PRESET">
-          <div role="radiogroup" aria-label="Theme preset" className="grid grid-cols-3 gap-1">
-            {PRESET_IDS.map((id) => (
-              <button
-                key={id}
-                type="button"
-                role="radio"
-                aria-checked={theme === id}
-                disabled={ghost}
-                onClick={() => choosePreset(id)}
-                className={`hud-micro hud-control flex min-h-[32px] items-center gap-1.5 border px-2 disabled:opacity-60 ${theme === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
-              >
-                <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: PRESETS[id].accent, boxShadow: `0 0 6px ${PRESETS[id].accent}` }} />
-                {id}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            aria-pressed={ghost}
-            onClick={() => setGhost(!ghost)}
-            className={`hud-micro hud-control flex min-h-[32px] w-full items-center justify-center gap-2 border ${ghost ? 'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-[var(--border-secondary)] text-[var(--text-secondary)]'}`}
-          >
-            GHOST PROTOCOL {ghost ? 'ON' : 'OFF'}
+      {/* Named region like every docked panel, so "STYLE STUDIO" resolves the same way everywhere (R3-m1). */}
+      <section aria-label="STYLE STUDIO" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center gap-1 px-4 pb-2 pt-3">
+          <span className="instrument-accent mr-1" aria-hidden />
+          <span className="hud-title flex-1">STYLE STUDIO</span>
+          {tools}
+          <button type="button" onClick={onClose} aria-label="Close Style Studio" className="hud-control grid h-11 w-11 place-items-center md:h-8 md:w-8 text-[var(--text-secondary)] hover:text-[var(--gold-light)]">
+            <X size={15} />
           </button>
-          {ghost && <p className="font-sans text-[12px] text-[var(--text-secondary)]">Ghost Protocol is applied last and overrides presets and custom colours; knobs still apply.</p>}
-        </Section>
-
-        <Section title="CONTRAST (WCAG AA 4.5:1)">
-          <ul className="space-y-0.5" aria-label="Live contrast readout">
-            {contrast.map((r) => (
-              <li key={r.label} className="flex items-center gap-2">
-                {r.pass ? <Check size={12} aria-hidden className="text-[var(--alert-green)]" /> : <TriangleAlert size={12} aria-hidden className="text-[var(--alert-orange)]" />}
-                <span className="hud-micro flex-1 text-[var(--text-secondary)]">{r.label}</span>
-                <span className="font-mono text-[11px] tabular-nums" style={{ color: r.pass ? 'var(--text-primary)' : 'var(--alert-orange)' }}>
-                  {r.ratio.toFixed(2)}:1 {r.pass ? 'PASS' : 'FAIL'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Section>
-
-        <Section title="ACCENT">
-          <Swatch label="PRIMARY" value={colourValue('accent')} onChange={(v) => setColour('accent', v)} onReset={studio.colours.accent ? () => unsetColour('accent') : undefined} />
-          <Swatch label="SECONDARY" value={colourValue('accent2')} onChange={(v) => setColour('accent2', v)} onReset={studio.colours.accent2 ? () => unsetColour('accent2') : undefined} />
-        </Section>
-
-        <Section title="SIGNAL">
-          {(['alertRed', 'alertOrange', 'alertGreen', 'alertBlue'] as const).map((k) => (
-            <Swatch
-              key={k}
-              label={{ alertRed: 'CRITICAL', alertOrange: 'WARNING', alertGreen: 'NOMINAL', alertBlue: 'INFO' }[k]}
-              value={colourValue(k)}
-              onChange={(v) => setColour(k, v)}
-              onReset={studio.colours[k] ? () => unsetColour(k) : undefined}
-            />
-          ))}
-        </Section>
-
-        <Section title="SURFACE · TEXT">
-          <Swatch label="BACKGROUND" value={colourValue('bg')} onChange={(v) => setColour('bg', v)} onReset={studio.colours.bg ? () => unsetColour('bg') : undefined} />
-          {(['textPrimary', 'textSecondary', 'textMuted', 'textHeading'] as const).map((k) => (
-            <Swatch key={k} label={k.replace('text', 'TEXT ').toUpperCase()} value={colourValue(k)} onChange={(v) => setColour(k, v)} onReset={studio.colours[k] ? () => unsetColour(k) : undefined} />
-          ))}
-        </Section>
-
-        <Section title="MAP LAYERS">
-          <p className="font-sans text-[12px] text-[var(--text-secondary)]">Presets never change these: map colours carry meaning. Changing one recolours that class everywhere.</p>
-          {MAP_SECTIONS.map((sec) => (
-            <div key={sec.title} className="space-y-1">
-              <div className="hud-micro text-[var(--text-muted)]">{sec.title}</div>
-              {sec.keys.map((k) => (
-                <Swatch key={k} label={mapLabel(k)} value={studio.map[k] ?? MAP_TOKENS[k]} onChange={(v) => edit({ map: { [k]: v } })} onReset={studio.map[k] ? () => unsetMap(k) : undefined} />
-              ))}
-            </div>
-          ))}
-        </Section>
-
-        <Section title="GLASS · TYPE · MOTION · FX">
-          {(Object.keys(KNOBS) as KnobKey[]).map((k) => (
-            <Knob
-              key={k}
-              k={k}
-              value={studio.knobs[k] ?? autoValue(k, theme, ghost)}
-              auto={!(k in studio.knobs)}
-              onChange={(v) => edit({ knobs: { [k]: v } })}
-              onAuto={() => toggleAuto(k)}
-            />
-          ))}
-        </Section>
-
-        <Section title="IMPORT JSON">
-          <textarea
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-            rows={3}
-            aria-label="Theme JSON to import"
-            placeholder='{"theme":"EMBER","colours":{},"map":{},"knobs":{}}'
-            className="hud-control w-full border border-[var(--border-primary)] bg-[rgba(0,0,0,0.3)] p-2 font-mono text-[11px] text-[var(--text-primary)] placeholder:text-[var(--text-muted)]"
-          />
-          <button
-            type="button"
-            disabled={!importText.trim()}
-            onClick={() => importJson(importText)}
-            className="hud-micro hud-control min-h-[32px] w-full border border-[var(--border-active)] text-[var(--gold-light)] disabled:opacity-60"
-          >
-            IMPORT
-          </button>
-        </Section>
-        <p className="font-sans text-[12px] text-[var(--text-muted)]">Saved in this browser. AUTO keeps the preset&apos;s own value. Imported JSON is checked: unknown keys are dropped, colours must be hex and numbers are clamped.</p>
-      </div>
+        </div>
+        <div className="instrument-rule mx-4" aria-hidden />
+        {status}
+        <div className="hud-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">{sections}</div>
+      </section>
     </ModalShell>
   );
 }

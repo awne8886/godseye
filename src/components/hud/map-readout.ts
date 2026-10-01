@@ -50,3 +50,20 @@ export function formatLatLng(lat: number, lng: number): string {
 export function geoCell(lat: number, lng: number): string {
   return `${(Math.round(lat * 10) / 10).toFixed(1)},${(Math.round(lng * 10) / 10).toFixed(1)}`;
 }
+
+/** Right inset (px) the readout row keeps when no attribution is measured (44rem). */
+export const READOUT_BASE_RIGHT_PX = 704;
+/** Gap (px) kept between the readout row and the attribution box (R3-M1). */
+export const READOUT_ATTRIB_GAP_PX = 16;
+/** Below this row width the hint line is hidden rather than truncated to a stub (R3-M1). */
+export const HINT_MIN_ROW_PX = 520;
+
+/**
+ * Right inset for the desktop readout/hint row so it ends before MapLibre's attribution box
+ * whatever its width (the GIBS night-lights credit makes it ~850 px wide). `attribLeft` is the
+ * attribution's left edge in viewport px, or null when it is not on screen.
+ */
+export function readoutRightInset(viewportW: number, attribLeft: number | null): number {
+  if (attribLeft === null || !Number.isFinite(attribLeft)) return READOUT_BASE_RIGHT_PX;
+  return Math.max(READOUT_BASE_RIGHT_PX, Math.ceil(viewportW - attribLeft + READOUT_ATTRIB_GAP_PX));
+}
