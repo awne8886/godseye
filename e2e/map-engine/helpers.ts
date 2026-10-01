@@ -124,7 +124,12 @@ export function collectErrors(page: Page): string[] {
     if (sandbox && /net::ERR_/.test(text)) return;
     try {
       const u = new URL(url);
-      if (/404/.test(text) && ['127.0.0.1', 'localhost'].includes(u.hostname) && PENDING_ROUTES.some((r) => r.test(u.pathname + u.search))) return;
+      const local = ['127.0.0.1', 'localhost'].includes(u.hostname);
+      if (/404/.test(text) && local && PENDING_ROUTES.some((r) => r.test(u.pathname + u.search))) return;
+      // An upstream that is down makes our own route answer 503 SOURCE OFFLINE (§0: never an empty
+      // 200); Chrome logs every non-2xx fetch as a console error. That is the app being honest about a
+      // third party, not an app error — the layer's own spec checks how it is shown.
+      if (/status of 503/.test(text) && local && u.pathname.startsWith('/api/')) return;
     } catch {
       /* no location: keep the error */
     }
