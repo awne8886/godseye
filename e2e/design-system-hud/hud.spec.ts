@@ -203,9 +203,12 @@ test.describe('mobile HUD', () => {
     await tabs.getByRole('tab', { name: 'SETTINGS' }).click();
     await expect(page.getByRole('region', { name: 'SETTINGS' })).toBeVisible();
     await tabs.getByRole('tab', { name: 'STYLE STUDIO' }).click();
-    await expect(page.getByRole('dialog', { name: 'Style Studio' })).toBeVisible();
-    await page.getByRole('button', { name: 'Close Style Studio' }).click();
-    await expect(page.getByRole('dialog', { name: 'Style Studio' })).toBeHidden();
+    // Phones show Style Studio inside the bottom sheet (R3-m2), never as a dialog over the map.
+    const sheet = page.getByTestId('mobile-sheet');
+    await expect(sheet.getByTestId('style-studio-sheet')).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Style Studio' })).toHaveCount(0);
+    await sheet.getByRole('button', { name: 'Close STYLE STUDIO', exact: true }).click();
+    await expect(page.getByTestId('style-studio-sheet')).toHaveCount(0);
     await nav.getByRole('button', { name: 'SEARCH' }).or(nav.getByRole('button', { name: 'LAYERS' })).first().click();
   });
 });
