@@ -241,6 +241,34 @@ export function parseMdot(raw: { route?: string; location?: string; county?: str
 }
 
 // ── Canada ──────────────────────────────────────────────────────────────────────
+interface IndotFeature {
+  uri?: string;
+  title?: string;
+  active?: boolean;
+  features?: { geometry?: { type?: string; coordinates?: unknown } }[];
+  views?: { category?: string; url?: string }[];
+}
+
+/** INDOT poster frames on the CARS program image host (`…/cameras/IN/INDOT_<n>_<token>.flv.png`, served as JPEG). */
+const INDOT_STILL = /^https:\/\/public\.carsprogram\.org\/cameras\/IN\/(?:INDOT|InDOT)_\d{1,6}_[\w-]{4,40}\.flv\.png$/;
+
+/**
+ * INDOT 511in.org GraphQL `mapFeaturesQuery` (keyless, probed 2026-10-01): active cameras with a
+ * poster frame. Closed cameras carry a site icon instead of a frame and are skipped. The HLS edge
+ * is not used: its first ~20 s are a pre-roll filler.
+ */
+export function parseIndot(raw: { data?: { mapFeaturesQuery?: { mapFeatures?: IndotFeature[] } } }): Row[] {
+  const out: Row[] = [];
+  for (const f of raw?.data?.mapFeaturesQuery?.mapFeatures ?? []) {
+    const id = f.uri?.match(/^camera\/(\d{1,9})$/)?.[1];
+    const still = f.views?.[0]?.url;
+    const pt = pointOf(f.features?.[0]?.geometry);
+    if (!id || f.active !== true || !still || !INDOT_STILL.test(still) || !pt) continue;
+    out.push(cam({ id: `indot-${id}`, lat: pt[1], lng: pt[0], source: 'indot', providerId: 'indot', name: text(f.title) || `INDOT camera ${id}`, country: 'US', streamType: 'jpg', stillUrl: still }));
+  }
+  return out;
+}
+
 export function parseOttawa(raw: { number?: number; latitude?: number; longitude?: number; description?: string; type?: string }[]): Row[] {
   const out: Row[] = [];
   for (const r of raw ?? []) {
@@ -538,6 +566,60 @@ export function parseThb(raw: { id?: string; stakenumber?: string; gisx?: number
     const u = new URL(base);
     if (!/^cctv-ss\d{2}\.thb\.gov\.tw$/.test(u.hostname)) continue;
     out.push(cam({ id: `thb-${c.id}`, lat, lng: lng!, source: 'thb', providerId: 'thb', name: text(c.stakenumber) || c.id, country: 'TW', streamType: 'jpg', stillUrl: `${u.origin}${u.pathname.replace(/\/$/, '')}/snapshot` }));
+  }
+  return out;
+}
+
+interface ViaLietuvaInfo {
+  id?: number;
+  name?: string;
+  roadName?: string;
+  roadNr?: string;
+  km?: number;
+  date?: number;
+}
+
+/** A Via Lietuva camera whose last frame is older than this is treated as offline and not listed. */
+export const VIA_LIETUVA_MAX_FRAME_AGE_MS = 6 * 3600_000;
+
+/**
+ * Via Lietuva (eismoinfo.lt, keyless, probed 2026-10-01): `layer-static-features/VKR?lks=false`
+ * gives WGS84 points (`[lat, lng]`), `camera-info-table` gives road, km and the last frame time.
+ * Joined on id. The list's frame time goes stale between inventory refreshes, so it only filters
+ * dead cameras (no frame for 6 h) and is not shown as `observedAt`.
+ */
+export function parseViaLietuva(
+  layers: { layer?: string; features?: { id?: string; name?: string; points?: { point?: unknown }[] }[] }[],
+  info: ViaLietuvaInfo[],
+  now: number = Date.now(),
+): Row[] {
+  const byId = new Map<string, ViaLietuvaInfo>();
+  for (const i of info ?? []) if (Number.isInteger(i.id)) byId.set(String(i.id), i);
+  const out: Row[] = [];
+  for (const f of (layers ?? []).find((l) => l.layer === 'VKR')?.features ?? []) {
+    if (!f.id || !/^\d{1,6}$/.test(f.id)) continue;
+    const i = byId.get(f.id);
+    if (!i || typeof i.date !== 'number' || now - i.date > VIA_LIETUVA_MAX_FRAME_AGE_MS) continue;
+    const p = f.points?.[0]?.point;
+    if (!Array.isArray(p)) continue;
+    const lat = num(p[0]);
+    const lng = num(p[1]);
+    if (!validLatLng(lat, lng) || lat < 53.8 || lat > 56.5 || lng! < 20.8 || lng! > 26.9) continue;
+    const road = [text(i.roadNr), text(i.roadName)].filter(Boolean).join(' ');
+    out.push(
+      cam({
+        id: `vialietuva-${f.id}`,
+        lat,
+        lng: lng!,
+        source: 'vialietuva',
+        providerId: 'vialietuva',
+        name: text(i.name) || text(f.name) || `Via Lietuva camera ${f.id}`,
+        city: road || null,
+        country: 'LT',
+        streamType: 'jpg',
+        stillUrl: `https://eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=${f.id}`,
+      }),
+    );
   }
   return out;
 }

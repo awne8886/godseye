@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { PROVIDERS } from '@/features/surveillance/server/registry';
+import { NOT_WIRED_SOURCES, PROVIDERS } from '@/features/surveillance/server/registry';
 import CamerasNotice from './CamerasNotice';
 import CamerasNoticePage, { dynamic, metadata } from './page';
 
@@ -12,7 +12,8 @@ const decoded = decode(html);
 
 describe('/cameras-notice', () => {
   it('states purpose, no recording/archiving and no face/plate/object recognition', () => {
-    for (const id of ['purpose', 'not-done', 'sources', 'link-out', 'removal', 'rights']) expect(html).toContain(`id="${id}"`);
+    for (const id of ['purpose', 'not-done', 'sources', 'not-wired', 'link-out', 'removal', 'rights']) expect(html).toContain(`id="${id}"`);
+    for (const s of NOT_WIRED_SOURCES) expect(decoded).toContain(s.operator);
     expect(decoded).toContain('Situational and traffic awareness');
     expect(decoded).toContain('No recording and no archiving');
     expect(decoded).toContain('No face, licence-plate or object recognition');

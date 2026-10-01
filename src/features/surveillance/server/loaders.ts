@@ -53,6 +53,14 @@ export function tflKeyHeaders(env: Record<string, string | undefined> = process.
   return key ? { app_key: key } : {};
 }
 
+export const INDOT_GRAPHQL_URL = 'https://511in.org/api/graphql';
+/** Indiana's bounding box at the zoom where the map lists individual cameras. */
+export const INDOT_QUERY = {
+  query:
+    'query MapFeatures($input: MapFeaturesArgs!) { mapFeaturesQuery(input: $input) { mapFeatures { uri title features { geometry } ... on Camera { active views(limit: 1) { category ... on CameraView { url } } } } } }',
+  variables: { input: { north: 41.8, south: 37.7, east: -84.7, west: -88.2, zoom: 16, layerSlugs: ['normalCameras'] } },
+} as const;
+
 type In<F extends (raw: never, ...rest: never[]) => unknown> = Parameters<F>[0];
 
 export const LOADERS: Record<string, Loader> = {
@@ -73,6 +81,14 @@ export const LOADERS: Record<string, Loader> = {
       ),
     ),
   mdot: async (signal) => A.parseMdot(await getJson<In<typeof A.parseMdot>>('https://mdotjboss.state.mi.us/MiDrive/camera/list', opts(signal))),
+  // One statewide query (probed 2026-10-01: 748 features in ~1 s); the site's own map query.
+  indot: async (signal) =>
+    A.parseIndot(
+      await getJson<In<typeof A.parseIndot>>(
+        INDOT_GRAPHQL_URL,
+        opts(signal, { method: 'POST', body: JSON.stringify(INDOT_QUERY), headers: { 'content-type': 'application/json' }, retries: 0 }),
+      ),
+    ),
   ottawa: async (signal) => A.parseOttawa(await getJson<In<typeof A.parseOttawa>>('https://traffic.ottawa.ca/beta/camera_list', opts(signal))),
   quebec: async (signal) =>
     A.parseQuebec(
@@ -104,6 +120,13 @@ export const LOADERS: Record<string, Loader> = {
     return A.parseTrafikverket(
       await getJson<In<typeof A.parseTrafikverket>>('https://api.trafikinfo.trafikverket.se/v2/data.json', opts(signal, { method: 'POST', body, headers: { 'content-type': 'text/xml' }, retries: 0 })),
     );
+  },
+  vialietuva: async (signal) => {
+    const [layers, info] = await Promise.all([
+      getJson<Parameters<typeof A.parseViaLietuva>[0]>('https://eismoinfo.lt/eismoinfo-backend/layer-static-features/VKR?lks=false', opts(signal)),
+      getJson<Parameters<typeof A.parseViaLietuva>[1]>('https://eismoinfo.lt/eismoinfo-backend/camera-info-table', opts(signal)),
+    ]);
+    return A.parseViaLietuva(layers, info);
   },
   hktd: async (signal) => A.parseHongKong(await getText('https://static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_En.xml', opts(signal))),
   lta: async (signal) => A.parseLta(await getJson<In<typeof A.parseLta>>('https://api.data.gov.sg/v1/transport/traffic-images', opts(signal))),

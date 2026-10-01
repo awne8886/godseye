@@ -93,3 +93,29 @@ allow embedding (OSIRIS's verified split); the other 7 open on YouTube. RT is ex
 | THB list; `cctv-ss02.thb.gov.tw/T74-3+903/snapshot` | 200 · 2.23 s · 430 kB (ss01–ss08 only); 200 · 1.01 s · 10 kB image/jpeg | Exact `/<stake>/snapshot` rule on ss01–ss08 (was `/`). |
 | Trafikverket `api.trafikinfo.trafikverket.se/v2/Images/data/road.infrastructure.camera/TrafficFlowCamera_39636115.jpg` | 200 · 1.43 s · 29 kB · image/jpeg | Rule unchanged (directory prefix). |
 | `open.toronto.ca/open-data-license/` vs `/open-data-licence/` | 404 · 0.44 s vs 200 · 0.49 s | Toronto `terms_url` fixed to `open-data-licence`. |
+
+### Phase 3 round 2 re-probes (2026-10-01 02:00–02:15 UTC, same honest UA)
+
+MAJOR-B: every keyless list was downloaded in full, parsed by the shipped adapters and every
+still URL checked against `rulesFor()` (14 793 URLs; recorded in
+`__fixtures__/catalogue-stills.2026-10-01.json.gz`, enforced by `allow-list.test.ts`).
+
+| Upstream | Result | Finding / change |
+|---|---|---|
+| HK list; `tdcctv.data.one.gov.hk/TDSCPRHSK10001.JPG` | 200 · 0.61 s · 405 kB (1 013 keys, 4–14 chars); 200 · 1.11 s · 8.5 kB image/jpeg · ACAO `*` · no redirect | 40 keys longer than 12 were blocked → rule `/[A-Z0-9]{3,16}.JPG`. |
+| THB list; `cctv-ss03.thb.gov.tw/T9-109K+286(N)/snapshot` | 200 · 2.28 s · 429 kB (2 199 on ss01–ss08); 200 · 1.75 s · 17 kB image/jpeg · no redirect | 166 stakes with `(N)`/`(S)` were blocked → charset adds `(` `)`. |
+| WSDOT KML; `images.wsdot.wa.gov/traffic/FeltsField.jpg`, `/wsf/lopez/approach.jpg` | 200 · 1.04 s · 568 kB; 200 · 0.54 s · 6 kB / 200 · 0.61 s · 37 kB image/jpeg | 2 airport stills live in `/traffic/` → exact-file rule `/traffic/[A-Za-z]{1,40}.jpg` (directory stays closed). |
+| NSW feed; `data.livetraffic.com/cameras/victoriapass_3.jpg` | 200 · 2.85 s · 2.0 MB; 200 · 1.83 s · 756 kB image/jpeg | 1 camera on the data host → rule `data.livetraffic.com/cameras/`. `webcams.transport.nsw.gov.au/…/5_ways_miranda.jpeg` still 200 text/html "temporarily unavailable" (refused by the image check). |
+| Other lists (Caltrans D4/D7, ODOT, TxDOT AUS, MDOT, Ottawa, Toronto, DriveBC, DGT, Digitraffic, Vegagerðin, LTA, NZTA) | all 200, 0.3–6.7 s | 0 misses. Digitraffic answers 406 without `Accept: application/json` (the loader sends it). |
+
+MAJOR-D:
+
+| Upstream | Result | Decision |
+|---|---|---|
+| INDOT `POST 511in.org/api/graphql` `mapFeaturesQuery` (Indiana bbox, zoom 16, `normalCameras`) | 200 · 0.98 s · 209 kB · ACAO `*` · no key · robots.txt disallows `/images/` only | **Wired** (`indot`, us-midwest): 748 features, 712 active with `views[0].url` `public.carsprogram.org/cameras/IN/INDOT_<n>_<token>.flv.png`; 35 closed (site icon) + 1 inactive skipped. Fields `uri, title, features[].geometry, active, views[].{category,url}`. |
+| `public.carsprogram.org/cameras/IN/INDOT_409_Cjk7MdIeCiKwICHh.flv.png` | 200 · 0.57 s · 135 kB · **image/jpeg** · Last-Modified 2 min old | Rule `public.carsprogram.org/cameras/IN/`; viewer time from Last-Modified. HLS (pre-roll filler) not used. Licence: operator terms, not separately published. |
+| Via Lietuva `eismoinfo.lt/eismoinfo-backend/layer-static-features/VKR?lks=false` + `/camera-info-table` | 200 · 0.67 s · 47 kB (321 points) + 200 · 0.79 s · 71 kB (300 rows) · ACAO `*` · no key · robots.txt allows all | **Wired** (`vialietuva`, nordics box widened to 53.8° N): joined on id → 300; `{id,name,roadName,roadNr,km,date(epoch ms),image}`. `date` only filters cameras dead > 6 h (not shown as observedAt). Reuse terms not verified from a primary source (dossier 29 §17) — licence text says so. |
+| `eismoinfo.lt/eismoinfo-backend/image-provider/camera/last?id=72` | 200 · 0.73 s · 32 kB image/jpeg · ACAO `*` · no Last-Modified · no redirect | Rule `eismoinfo.lt/eismoinfo-backend/image-provider/camera/last` (no Referer sent). |
+| Edmonton `POST edmontontrafficcam.com/Default.aspx/GetCameras` `{}`; `edmonton.ca/conditionsofuse` | 200 · 0.85 s · 23 kB (58, all Status 1; HLS on `cityed1-winkcdn1.winkcdn.com`); terms: "only … personal, educational or non-commercial purposes" | **Not wired** (`NOT_WIRED_SOURCES`): non-commercial-only terms need a deployment gate. |
+| IBI 511: `511ga.org/developers/doc`; `prod-ut.ibi511.com/api/v2/get/cameras`; `511ga.org/List/GetData/Cameras` | 200 (key required, 10 calls/60 s); 400 "Invalid Key" · 0.42 s; 200 internal DataTables endpoint (recordsTotal 4 331) | **Not wired**: the official API is keyed; the internal endpoint is not used. |
+| MLIT `cam.river.go.jp/` and `/cam/now/` | 200 · 1.27 s · 0 B; 200 · 0.71 s · PNG placeholder | **Not wired**: no machine-readable catalogue. |
