@@ -20,7 +20,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useMapInstanceStore } from '@/lib/layer-host';
-import { cameraFromMap, horizonAngleDeg, type FarSideCamera } from '@/lib/map/far-side';
+import { horizonAngleDeg, type FarSideCamera } from '@/lib/map/far-side';
+import { hazardsCamera } from './camera';
 
 /** GPU state for every hazards deck layer on the globe (and harmless in mercator). */
 export const GLOBE_POINT_PARAMETERS = { cullMode: 'none', depthCompare: 'always' } as const;
@@ -98,7 +99,7 @@ export function useFarSideCamera(): FarSideCamera | null {
     let seen: FarSideCamera | null = null;
     const read = () => {
       last = Date.now();
-      const next = cameraFromMap(map);
+      const next = hazardsCamera(map);
       if (sameCamera(seen, next)) return;
       seen = next;
       setTick((t) => t + 1);
@@ -129,7 +130,7 @@ export function useFarSideCamera(): FarSideCamera | null {
     };
   }, [map, globe]);
   // `tick` is the camera version: a new value only after a camera event saw a different camera.
-  return useMemo(() => (tick >= 0 && globe && map ? cameraFromMap(map) : null), [tick, globe, map]);
+  return useMemo(() => (tick >= 0 && globe && map ? hazardsCamera(map) : null), [tick, globe, map]);
 }
 
 /** Memoised camera-facing subset of `items` (unit vectors once per snapshot, a dot product per camera). */

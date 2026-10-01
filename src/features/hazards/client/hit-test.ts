@@ -12,7 +12,8 @@ import type { Map as MapLibreMap, MapMouseEvent } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import type { LayerId } from '@/lib/layer-registry';
 import type { Selection } from '@/lib/layer-host';
-import { cameraFromMap, isFacing, type FarSideCamera } from '@/lib/map/far-side';
+import { isFacing, type FarSideCamera } from '@/lib/map/far-side';
+import { hazardsCamera } from './camera';
 import { registerHitTester, type HitTestMap, type PickCandidate } from '@/lib/map/picking';
 
 export interface Hit {
@@ -48,7 +49,7 @@ export function useHitTester(key: string, tester: HitTester): void {
  * their drawn subsets with (globe.tsx), so a point that is not drawn is never hit either.
  */
 export function hitCamera(map: MapLibreMap): FarSideCamera | null {
-  return map.getProjection?.()?.type === 'globe' ? cameraFromMap(map) : null;
+  return map.getProjection?.()?.type === 'globe' ? hazardsCamera(map) : null;
 }
 
 /**

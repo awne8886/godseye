@@ -26,6 +26,7 @@ import { normalizeUsgs, type UsgsCollection } from '../server/usgs-parse';
 import { decodeXml, normalizeGdacs, normalizeGvp } from '../server/weather-parse';
 import { FIRE_ROW_FIELDS } from '../shared';
 import { GLOBE_POINT_PARAMETERS, facingIndices, pickIndices, unitVectors } from './globe';
+import { pitchedCamera } from './camera';
 import { hazardsCandidates } from './hit-test';
 
 const bodies = vi.hoisted(() => new Map<string, unknown>());
@@ -239,6 +240,24 @@ describe('far-side filter (depthCompare is off, so this is all that hides points
       expect(drawnPositions(mainLayer).map(key)).not.toContain(key(c.binary === main ? f32(first) : first));
     });
   }
+
+  it('a tilted globe on a map without `transform` (MapLibre 6.11) filters with the pitched camera, not the map centre', () => {
+    const map = fakeMap('globe');
+    Object.assign(map.cam, { lng: -51.286, lat: -3.926 });
+    const live = { ...map, transform: undefined, getZoom: () => 3, getPitch: () => 60, getBearing: () => 0, getCanvas: () => ({ clientHeight: 1000 }) };
+    mount(live as unknown as FakeMap, 'globe', FireLayer);
+    const cam = pitchedCamera({ lng: -51.286, lat: -3.926 }, 3, 60, 0, 1000);
+    expect(cam.lat).toBeLessThan(-40);
+    const all = CASES.find((c) => c.name === 'fires')!.points['hazards-fires']!;
+    const want = all.filter((p) => isFacing(p, cam));
+    const got = drawnPositions(deckLayers('hazards:fires').find((l) => l.id === 'hazards-fires')!);
+    expect(sorted(got)).toEqual(sorted(want.map(f32)));
+    // The unpitched centre camera would have drawn a different subset (the round-5 bug).
+    const centre = { lng: -51.286, lat: -3.926, altitude: pitchedCamera({ lng: -51.286, lat: -3.926 }, 3, 0, 0, 1000).altitude };
+    expect(sorted(all.filter((p) => isFacing(p, centre)).map(f32))).not.toEqual(sorted(got));
+    const status = document.querySelector('[data-testid="hazards-drawn-fires"]')!;
+    expect(status.getAttribute('data-camera')).toBe(`${cam.lng.toFixed(3)},${cam.lat.toFixed(3)},${Math.round(cam.altitude)}`);
+  });
 
   it('mercator has no far side: every entity is drawn', () => {
     for (const c of CASES) {
