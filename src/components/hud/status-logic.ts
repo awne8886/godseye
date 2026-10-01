@@ -6,7 +6,16 @@
 import { entityFreshness, formatAge, freshnessLabel } from '@/lib/freshness';
 import { OBSERVATION_CADENCE_MS, getLayer, type LayerId } from '@/lib/layer-registry';
 import type { LayerStatus } from '@/lib/layer-host';
-import type { FreshnessState } from '@/lib/types';
+import { eventTime } from '@/components/panels/intel/event-time';
+import type { FeedEvent, FreshnessState } from '@/lib/types';
+
+/**
+ * Ticker time for a feed event: its observed instant, or null for date-only sources (CISA KEV
+ * `dateAdded` is a calendar day; its 00:00 UTC sort key must never be shown as an age).
+ */
+export function eventTickerAt(e: Pick<FeedEvent, 'layer' | 'observedAt'>): string | null {
+  return eventTime(e, 0).text.endsWith('ago') ? e.observedAt : null;
+}
 
 export type HudStatus = 'LIVE' | 'DELAYED' | 'ACQUIRING' | 'OFFLINE' | 'STANDBY' | 'CONNECTING';
 
