@@ -499,6 +499,14 @@ not grounded"). In the recorded Gulf fixture the only NACp-0 aircraft of the for
 excluded. The position window is **60 s** (was 300 s), and positions of unknown age are skipped.
 Both rules are stated in the `/api/gps-interference` `meta.note` and on the card.
 
+#### Re-probe 2026-10-01 06:23 UTC (Phase 3 round 4, same UA, `Origin: https://example.org`)
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| RainViewer `api.rainviewer.com/public/weather-maps.json` | 200 · 0.47–0.69 s · 818 B | `*` | `cache-control: no-cache`; `radar.past[13]` (10-min spacing, newest 06:20 UTC, `generated` 06:20:25 UTC), `radar.nowcast=[]`; shape unchanged. The frame time is shown in the map's bottom-right control stack (visual-qa r4 M2). |
+| USGS `…/summary/2.5_day.geojson` | 200 · 0.47 s · 27 kB (38 quakes) | `*` | `cache-control: public, max-age=60`, `Last-Modified` set; shape unchanged. |
+| OpenFreeMap `tiles.openfreemap.org/styles/dark` (basemap style, map-engine; checked for the e2e skip rule) | 200 · 0.67 s | n/a | Reachable now. The round-4 e2e failure of `earthquakes.spec.ts:65` was this style failing at the sandbox proxy (`net::ERR_TOO_MANY_RETRIES`, trace): BASEMAP UNAVAILABLE, no map canvas. Map steps now skip with that reason. |
+
 ## layers-space — probe log
 
 All probes 2026-09-30 18:05–18:10 UTC from the build sandbox with the honest UA

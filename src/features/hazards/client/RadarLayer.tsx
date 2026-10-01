@@ -3,13 +3,17 @@
  * RainViewer past-radar animation as native MapLibre raster layers (tiles straight from
  * tilecache.rainviewer.com, max zoom 7, overzoomed beyond). One raster source per frame; only the
  * current frame is visible. Animation pauses while the tab is hidden and, under
- * prefers-reduced-motion, the newest frame is shown still. A chip names the frame's UTC time.
+ * prefers-reduced-motion, the newest frame is shown still. A chip names the frame's UTC time; it
+ * is a MapLibre control in the bottom-right stack with the imagery chips and the attribution
+ * (radar-chip.ts), so the HUD's safe areas place it clear of every other piece of chrome.
  * Owner: layers-hazards.
  */
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMapInstance } from '@/lib/layer-host';
 import type { RadarFramesResponse } from '@/lib/types';
+import { RADAR_CHIP_POSITION, RadarChipControl, radarFrameLabel } from './radar-chip';
 import { useHazardData } from './useHazardData';
 
 const count = (b: RadarFramesResponse) => b.frames.length;
@@ -85,16 +89,32 @@ export default function RadarLayer() {
     }
   }, [map, frames, frame]);
 
+  // The frame-time chip joins the bottom-right control stack only while there is a frame to name
+  // (an empty control would still take a stack margin).
+  const [chip] = useState(() => new RadarChipControl());
   const current = frames?.[frame];
-  if (!current) return null;
-  const t = new Date(current.time);
-  return (
-    <div
-      className="glass-panel pointer-events-none absolute bottom-10 left-1/2 z-[3] -translate-x-1/2 px-3 py-1 font-mono text-[10px] uppercase tracking-[.16em] tabular-nums text-[var(--text-secondary)]"
+  const shown = current !== undefined;
+  useEffect(() => {
+    if (!map || !shown) return;
+    map.addControl(chip, RADAR_CHIP_POSITION);
+    return () => {
+      try {
+        map.removeControl(chip);
+      } catch {
+        // Map torn down (its controls are already removed).
+      }
+    };
+  }, [map, chip, shown]);
+
+  if (!map || !current) return null;
+  return createPortal(
+    <p
+      className="hud-micro max-w-[calc(100vw-20px)] rounded-md border border-[var(--border-primary)] bg-[var(--bg-panel)] px-2 py-0.5 text-right text-[var(--text-secondary)]"
       aria-live="off"
       data-testid="radar-frame-chip"
     >
-      RADAR · RAINVIEWER · {t.toISOString().slice(0, 10)} {t.toISOString().slice(11, 16)} UTC
-    </div>
+      {radarFrameLabel(current.time)}
+    </p>,
+    chip.el,
   );
 }

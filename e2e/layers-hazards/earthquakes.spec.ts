@@ -1,11 +1,14 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { openMap } from './helpers';
 
 /**
  * Earthquakes layer (layers-hazards): renders ≥ 1 quake when USGS is live, and clicking one opens
  * its card with source, observed time and freshness. Runs against the live /api/earthquakes; when
  * the upstream is offline the route must say SOURCE OFFLINE (503) and the render checks are skipped.
+ * When the basemap style is unreachable (BASEMAP UNAVAILABLE, no map canvas) the map steps skip with
+ * that reason (round-4 e2e [45] was this environment, not a pick/card bug: see helpers.ts).
  */
 
 interface Quake {
@@ -42,12 +45,13 @@ async function liveQuakes(page: Page): Promise<Quake[] | null> {
 }
 
 async function openAt(page: Page, q: Quake, zoom = 5) {
-  await page.goto(`/?c=${q.lat.toFixed(4)},${q.lng.toFixed(4)},${zoom}&layers=earthquakes`);
-  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 20_000 });
+  await openMap(page, `c=${q.lat.toFixed(4)},${q.lng.toFixed(4)},${zoom}&layers=earthquakes`);
 }
 
 test.describe('earthquakes layer', () => {
+  // needsBasemap() may wait out the style's retry/backoff before it can tell.
+  test.beforeEach(() => test.setTimeout(180_000));
+
   test('renders at least one quake when USGS is live (rail count)', async ({ page }, info) => {
     test.skip(info.project.name === 'mobile', 'the layer rail flyout is desktop-only');
     const quakes = await liveQuakes(page);
