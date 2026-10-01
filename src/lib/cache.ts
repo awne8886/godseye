@@ -182,7 +182,14 @@ export class FileStore implements SnapshotStore {
     const lru = path.join(this.dir, 'lru');
     let names: string[];
     try {
-      names = (await readdir(lru)).filter((n) => n.endsWith('.json'));
+      const all = await readdir(lru);
+      names = all.filter((n) => n.endsWith('.json'));
+      // Temp files left by a crash mid-write (renamed into place on success) older than an hour.
+      for (const n of all.filter((x) => x.endsWith('.tmp'))) {
+        const f = path.join(lru, n);
+        const st = await stat(f).catch(() => null);
+        if (st && now - st.mtimeMs > 3_600_000) await rm(f, { force: true });
+      }
     } catch {
       return 0;
     }
@@ -235,7 +242,7 @@ export class FileStore implements SnapshotStore {
     await mkdir(path.dirname(target), { recursive: true });
     const expires = Date.now() + retentionMs;
     const body = JSON.stringify({ key, expires, v: value });
-    if (!pinned && body.length > this.maxBytes / 16) return; // too large for the per-query tier
+    if (!pinned && Buffer.byteLength(body) > this.maxBytes / 16) return; // too large for the per-query tier
     const tmp = `${target}.${randomUUID()}.tmp`;
     await writeFile(tmp, body);
     if (!pinned) await utimes(tmp, new Date(), new Date(expires)); // mtime = expiry (sweeps stat only)

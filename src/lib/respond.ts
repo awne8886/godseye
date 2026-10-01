@@ -105,7 +105,7 @@ function encodeFor(req: Request, etag: string, raw: Buffer): { bytes: Buffer; en
   const enc = accepted.has('br') ? 'br' : accepted.has('gzip') ? 'gzip' : null;
   if (!enc) return { bytes: raw, enc: null };
   // Keyed by the body itself: per-request fields (providers' age_s) differ within one ETag.
-  const key = `${enc}|${etag}|${createHash('sha1').update(raw).digest('base64')}`;
+  const key = `${enc}|${createHash('sha1').update(raw).digest('base64')}`; // body-only: junk query strings share it
   const hit = ENCODED.get(key);
   if (hit) {
     ENCODED.delete(key);
