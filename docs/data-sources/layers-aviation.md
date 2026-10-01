@@ -55,3 +55,16 @@ GODSEYE servers were sweeping from the same sandbox egress IP at the same time; 
 carried `Retry-After` was not captured. The exponential back-off (15 s … 5 min) then dominates the sweep. A single
 deployment per IP should see fewer 429s. This was not measured here. Sparse regions (Africa interior, oceans outside the
 NAT tracks, Russia, South America outside the south-east) are not covered by the keyless path.
+
+Re-probed 2026-10-01 02:08–02:09 UTC (Phase 3 round 2), same UA, `Origin: https://example.org`:
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/point/51.5/-0.1/100` ×6, ~1.7 s apart | 200 ×6 | 0.46–0.70 s | none (no ACAO) | no `Retry-After` / rate-limit headers |
+| same, ×20, ~1.3 s apart | 200 ×20 | 0.46–0.71 s | none | no 429 from this client alone; 19 aircraft at night, `seen_pos` median 0.29 s, max 33.8 s, none > 60 s |
+
+So the upstream positions are fresh; the share of aircraft older than the 60 s cap comes from the
+sweep period (86 tiles × ≥ 1.2 s ≥ 103 s) plus 429 back-off when several servers share an egress IP.
+The spacing stays at the contract's 1.2 s (faster would only invite more 429s). Since round 2 the
+rail reports it honestly: each aviation layer publishes `staleCount` ("N OLDER THAN 60 S") and reads
+RECENT when more than half its positions are past the cap, STALE at ≥ 90 % (`client/stale.ts`).

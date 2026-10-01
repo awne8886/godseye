@@ -6,7 +6,7 @@ import { createElement, type ReactNode } from 'react';
 import { MAX_WATCHED_FLIGHTS, useUiStore } from '@/lib/store';
 import { useLayerStatusStore } from '@/lib/layer-host';
 import type { FlightRecord } from '../adsb';
-import AircraftCard from './AircraftCard';
+import AircraftCard, { flightRouteQuery } from './AircraftCard';
 
 const NOW = Date.parse('2026-09-30T18:07:00Z');
 const rec: FlightRecord = {
@@ -68,6 +68,30 @@ describe('aircraft card', () => {
     expect(useUiStore.getState().openPanel).toBe('flight-watch');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: /unwatch/i })));
     expect(useUiStore.getState().watchedFlights).toEqual([]);
+  });
+});
+
+describe('flight-route query key (MINOR-4)', () => {
+  it('is stable across poll-to-poll position and speed changes', () => {
+    const a = flightRouteQuery('RYR19WT', { lat: 52.83451, lng: -6.64775, gsKt: 367.3 });
+    const b = flightRouteQuery('RYR19WT', { lat: 52.9, lng: -6.62, gsKt: 371 });
+    expect(b.key).toEqual(a.key);
+    expect(a.key).toEqual(['flight-route', 'RYR19WT', 53, -6.5, 350]);
+    expect(a.url).toBe('/api/flight-route?callsign=RYR19WT&lat=53&lng=-6.5&speed=350');
+  });
+
+  it('changes once the aircraft moves to another 0.5° cell (the plausibility gate still gets a position)', () => {
+    const a = flightRouteQuery('RYR19WT', { lat: 52.83, lng: -6.64, gsKt: 367 });
+    const c = flightRouteQuery('RYR19WT', { lat: 53.4, lng: -6.64, gsKt: 367 });
+    expect(c.key).not.toEqual(a.key);
+    expect(c.url).toContain('lat=53.5');
+  });
+
+  it('keeps coordinates in range at the poles and the antimeridian; no position → callsign only', () => {
+    expect(flightRouteQuery('ABC1', { lat: 89.9, lng: 179.9, gsKt: null }).url).toBe('/api/flight-route?callsign=ABC1&lat=90&lng=180');
+    expect(flightRouteQuery('ABC1', { lat: -0.1, lng: -179.9, gsKt: 1990 }).url).toBe('/api/flight-route?callsign=ABC1&lat=0&lng=180&speed=2000');
+    expect(flightRouteQuery('ABC1', { lat: -0.1, lng: 0.1, gsKt: 10 }).key).toEqual(['flight-route', 'ABC1', 0, 0, 0]);
+    expect(flightRouteQuery('ABC1', null)).toEqual({ key: ['flight-route', 'ABC1', null, null, null], url: '/api/flight-route?callsign=ABC1' });
   });
 });
 
