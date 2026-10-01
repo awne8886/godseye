@@ -104,7 +104,7 @@ export const API_CATALOG = [
 
   // ── space ──────────────────────────────────────────────────────────────────────
   {
-    method: 'GET', path: '/api/satellites', group: 'space', summary: 'CelesTrak OMM catalogue (columnar) with mission colours and categories',
+    method: 'GET', path: '/api/satellites', group: 'space', summary: 'CelesTrak OMM catalogue (columnar; epoch column in integer ms, epochUnit) with mission colours and categories; SatNOGS fallback named in providers',
     params: [q('category', 'enum', false, 'Restrict to one category', 'navigation', ['comms', 'military', 'navigation', 'earth_obs', 'science', 'other']), q('id', 'number', false, 'One NORAD id (narrows the catalogue to that satellite)', '25544')],
     ttlSeconds: 7200, responseSchema: 'SatellitesResponse', upstreams: ['celestrak.org', 'db.satnogs.org'], forwardsUserInput: false, example: '?category=navigation', osiris: true, owner: 'layers-space',
   },

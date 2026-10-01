@@ -150,7 +150,7 @@ Satellite catalogue (OMM), orbit tracks, space weather and the ISS position.
 
 ### `GET /api/satellites`
 
-CelesTrak OMM catalogue (columnar) with mission colours and categories
+CelesTrak OMM catalogue (columnar; epoch column in integer ms, epochUnit) with mission colours and categories; SatNOGS fallback named in providers
 
 | | |
 |---|---|
