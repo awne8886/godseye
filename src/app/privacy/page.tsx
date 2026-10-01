@@ -119,6 +119,15 @@ export default function PrivacyPage() {
               ))}
             </tbody>
           </table>
+          {hosts.includes('ip-api.com') && (
+            <p className={prose}>
+              One provider is reached over plain HTTP: <Code>ip-api.com</Code>, whose free tier has no HTTPS. While non-commercial
+              sources are enabled (the default; <Code>COMMERCIAL_DEPLOYMENT=true</Code> turns them off), an IP address you look up
+              in <Code>/api/osint/ip</Code> travels unencrypted between this server and ip-api.com to fetch its proxy, hosting and
+              mobile flags. Every other named provider in the table is called over HTTPS; the run-time hosts in parentheses use the
+              scheme you or the operator supplied.
+            </p>
+          )}
         </section>
 
         <section aria-labelledby="browser" className="mt-12">
@@ -241,7 +250,8 @@ export default function PrivacyPage() {
             <li>
               Lookups are passive and about infrastructure: domains, IP addresses, certificates, networks, vulnerabilities. There is no
               people search; username, email, phone and identity fingerprinting tools are{' '}
-              <TextLink href="/docs#excluded">deliberately not included</TextLink>.
+              <TextLink href="/docs#excluded">deliberately not included</TextLink>. Sanctions-list screening and the entity graph cover
+              listed or public entities only, never private individuals.
             </li>
             <li>
               Active scanning exists only if the operator connects a separate scanner backend. Scans are restricted to allow-listed

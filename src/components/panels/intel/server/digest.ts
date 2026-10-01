@@ -8,6 +8,7 @@
  */
 import type { AlertItem } from '@/lib/types';
 import { THEATRES, TOPICS, classify } from './classify';
+import { leadEligible, sourceRank } from './lead-filter';
 
 export type Bloc = AlertItem['bloc'];
 
@@ -140,15 +141,17 @@ export function buildThreads(reports: readonly AlertItem[], limit = 6): AlertThr
   const ranked = threads.sort((a, b) => b.count - a.count || b.sources.length - a.sources.length || Date.parse(b.latest ?? '0') - Date.parse(a.latest ?? '0')).slice(0, limit);
   // Leads in rank order: never reuse a report that already leads another theatre, and prefer
   // reports whose first theatre is this one (a Lebanon post that also mentions the U.S. must not
-  // lead "U.S. policy"). No unused report → no lead, rather than a misleading one.
+  // lead "U.S. policy"), then wire headlines over channel posts. Reports with a slur or hate term
+  // are never promoted (lead-filter.ts; their text is left untouched in the feed). No eligible
+  // report → no lead, rather than a misleading one.
   const used = new Set<string>();
   const byId = new Map(reports.map((r) => [r.id, r]));
   for (const t of ranked) {
     const lead =
       t.itemIds
         .map((id) => byId.get(id)!)
-        .filter((r) => !used.has(r.id))
-        .sort((a, b) => Number(primary.get(b.id) === t.id) - Number(primary.get(a.id) === t.id) || b.alsoReportedBy.length - a.alsoReportedBy.length || Date.parse(b.publishedAt) - Date.parse(a.publishedAt))[0] ?? null;
+        .filter((r) => !used.has(r.id) && leadEligible(r))
+        .sort((a, b) => Number(primary.get(b.id) === t.id) - Number(primary.get(a.id) === t.id) || sourceRank(a) - sourceRank(b) || b.alsoReportedBy.length - a.alsoReportedBy.length || Date.parse(b.publishedAt) - Date.parse(a.publishedAt))[0] ?? null;
     if (lead) {
       used.add(lead.id);
       t.lead = { id: lead.id, title: lead.title, source: lead.sourceName, link: lead.link, publishedAt: lead.publishedAt };

@@ -841,13 +841,14 @@ Same honest User-Agent; `curl -I -L` (HEAD), falling back to GET where HEAD is r
 | `https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html` | 200 | 0.38 s | "You may not in connection with the Services engage in commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" |
 | `https://libre.space/licenses/` | 200 (redirects to `www.libre.space/`) | 1.04 s | home page, no licence text; not linked |
 
-### Container images pinned in the Dockerfile and CI (resolved 2026-09-30)
+### Container images pinned in the Dockerfile, CI and compose (resolved 2026-09-30 and 2026-10-01)
 
 | Image | Digest | How resolved |
 |---|---|---|
 | `node:22-alpine` | `sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402` | `registry-1.docker.io` manifest HEAD (multi-arch index), 22:53 UTC |
 | `mcr.microsoft.com/playwright:v1.63.0-noble` | `sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27` | `mcr.microsoft.com` manifest HEAD, 22:56 UTC |
-| `caddy:2-alpine`, `redis:8-alpine` | not pinned | Docker Hub answered 429 (anonymous pull-rate limit) from the sandbox; compose comments say how to pin |
+| `caddy:2-alpine` (docker-compose.yml) | `sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b` | 2026-10-01 02:28 UTC: anonymous token from `auth.docker.io`, then `HEAD registry-1.docker.io/v2/library/caddy/manifests/2-alpine` → 200 in 0.38 s, `application/vnd.oci.image.index.v1+json` (multi-arch index), `ratelimit-limit: 100;w=3600`; matches the Hub tag API digest of 2026-09-30 |
+| `redis:8-alpine` (docker-compose.yml) | `sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0` | 2026-10-01 02:28 UTC: same method → 200 in 0.18 s, OCI image index; matches the Hub tag API digest of 2026-09-30 |
 
 ## panels-alerts-markets-dossier-graph — probe log
 
@@ -983,6 +984,15 @@ exchange reports `holidaysModelled: false` and the panel marks it with `*`.
 Region Dossier live layers read other owners' feeds in-process (no HTTP): `cctv:<region>` (the regions
 whose box, grown by 150 km, holds the point), `maritime` (ports + chokepoints REFERENCE; vessels only
 with `AIS_API_KEY`), `cables` (TeleGeography REFERENCE, CC BY-NC-SA, only with `nc_sources`).
+
+### Probes 2026-10-01 (Phase 3 round-2b: KEV date-only rows, background NVD scoring)
+
+Honest UA `GODSEYE/0.1.0 (+repo; contact …/issues)`, no key.
+
+| URL | Status | Latency | CORS | Auth | Notes |
+|---|---|---|---|---|---|
+| `https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json` | 200 | 0.56 s | none | none (public domain, US Gov) | 1.76 MB; `catalogVersion` 2026.09.30, `dateReleased` 2026-09-30T16:59:23.0688Z, `count` 1730; `vulnerabilities[].dateAdded` is a **date only** (`2026-09-30`), so Intel Feed rows render the date, never an age or 00:00Z. ETag + Last-Modified |
+| `https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2021-44228` | 200 | 0.46 s | `*` | none (keyless 5 req / 30 s; `NVD_API_KEY` in the `apiKey` header → 50 / 30 s) | 87 kB; `metrics` keys `cvssMetricV31` (baseScore 10), `cvssMetricV2`, `ssvcV203`. Lookups now run in a background batch through the shared `nvdBucket()`; `/api/cyber-threats` answers with KEV at once and `providers.nvd.error: "pending"` while the batch runs |
 
 ### panels-recon
 

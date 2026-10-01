@@ -1057,7 +1057,7 @@ IP intel: geolocation, ASN, hosting/proxy flags, OFAC cross-check
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `ip` | query | string | yes | public IPv4/IPv6 (the ip-api.com fallback is plain HTTP: its free tier has no HTTPS) (e.g. `8.8.8.8`) |
+| `ip` | query | string | yes | public IPv4/IPv6 (sent to ip-api.com over plain HTTP while nc_sources is on: its free tier has no HTTPS) (e.g. `8.8.8.8`) |
 
 ### `GET /api/osint/bgp`
 
