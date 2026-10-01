@@ -58,7 +58,7 @@ export default function Telemetry() {
   const kpColor = typeof kp === 'number' ? (kp >= 5 ? 'var(--alert-red)' : kp >= 4 ? 'var(--alert-orange)' : 'var(--alert-green)') : 'var(--text-secondary)';
 
   return (
-    <div className="hud-micro fixed right-4 top-4 z-[var(--z-hud)] flex items-center gap-3 text-[var(--text-secondary)]" aria-label="Telemetry" role="group">
+    <div className="hud-micro fixed right-4 top-4 z-[var(--z-hud)] flex items-center gap-3 text-[var(--text-secondary)]" aria-label="Telemetry" role="group" data-map-inset="telemetry">
       <span className="hidden font-bold text-[var(--cyan-primary)] md:inline">ZULU {zulu}Z</span>
       <span aria-live="polite" className="flex items-center gap-1.5" style={{ color: STATUS_COLOR[st] }}>
         <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[st], boxShadow: st === 'LIVE' ? '0 0 6px var(--alert-green)' : undefined }} />

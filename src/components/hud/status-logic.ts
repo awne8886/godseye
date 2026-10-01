@@ -85,7 +85,8 @@ export function cardBadge(opts: {
   const kind = def?.kind ?? 'live';
   const cadence = opts.layer ? (OBSERVATION_CADENCE_MS as Record<string, number | null>)[opts.layer] ?? null : null;
   const feedState = feedStateOf(opts.feed) ?? 'recent';
-  let state = entityFreshness({ kind, at: atMs, observationCadenceMs: cadence, feedState, now });
+  // No published time: inherit the feed state and read UNTIMED below (never LIVE, never a false OFFLINE).
+  let state = entityFreshness({ kind, at: atMs, observationCadenceMs: atMs === null ? null : cadence, feedState, now });
   // Event layers (no per-entity cadence) inherit the feed state, but an event older than one
   // refresh interval was not observed live (a 16 h-old quake in a LIVE feed is RECENT).
   if (cadence === null && state === 'live' && atMs !== null && def?.refreshMs && now - atMs > def.refreshMs) state = 'recent';

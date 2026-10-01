@@ -51,7 +51,7 @@ export default function LayerRail() {
   };
 
   return (
-    <nav ref={railRef} aria-label="Map layers" className="glass-rail fixed bottom-7 left-0 top-0 z-[var(--z-rail)] hidden w-12 flex-col items-center gap-1 pb-3 pt-24 md:flex">
+    <nav ref={railRef} data-map-inset="rail" aria-label="Map layers" className="glass-rail fixed bottom-7 left-0 top-0 z-[var(--z-rail)] hidden w-12 flex-col items-center gap-1 pb-3 pt-24 md:flex">
       {groups.map((g) => {
         const Icon = iconFor(g.icon);
         const inGroup = layers.filter((l) => l.group === g.id);

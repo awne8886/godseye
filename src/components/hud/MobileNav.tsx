@@ -29,7 +29,7 @@ export default function MobileNav() {
   );
   if (!tabs.length) return null;
   return (
-    <nav
+    <nav data-map-inset="mobile-nav"
       aria-label="Main"
       className="glass-1 fixed inset-x-0 bottom-0 z-[var(--z-mobile-nav)] flex border-t border-[var(--border-primary)] md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}

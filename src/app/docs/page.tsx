@@ -229,9 +229,11 @@ export default function DocsPage() {
                 <code className="font-mono">500 internal_error</code> without stack traces.
               </li>
               <li>
-                GET responses send <code className="font-mono">Cache-Control: public, s-maxage=TTL, stale-while-revalidate=2×TTL</code>{' '}
-                and weak ETags; <code className="font-mono">If-None-Match</code> returns 304. Snapshots served after a failed refresh get
-                an edge TTL of at most 15 s.
+                GET responses send <code className="font-mono">Cache-Control: public, max-age=0, must-revalidate, s-maxage=TTL</code>{' '}
+                (browsers revalidate every poll, so they never show the previous snapshot),{' '}
+                <code className="font-mono">CDN-Cache-Control: public, s-maxage=TTL, stale-while-revalidate=2×TTL</code> for CDNs, and
+                weak ETags; <code className="font-mono">If-None-Match</code> returns 304. Snapshots served after a failed refresh get an
+                edge TTL of at most 15 s.
               </li>
               <li>
                 Bulk layers (aircraft, satellites, cameras) are columnar <code className="font-mono">{'{fields, rows}'}</code>,

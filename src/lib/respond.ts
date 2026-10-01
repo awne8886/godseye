@@ -21,15 +21,28 @@ export interface JsonOptions {
   headers?: Record<string, string>;
 }
 
+/**
+ * Browsers: max-age=0 + must-revalidate, so every poll revalidates (ETag → 304) and never gets the
+ * previous snapshot back. With a stale-while-revalidate window a browser answers fetch() from the
+ * stale copy and refetches in the background: each poll cost two requests and showed data one poll
+ * old. Shared caches keep the edge TTL (s-maxage); CDNs that honour CDN-Cache-Control (RFC 9213)
+ * also get stale-while-revalidate there.
+ */
 export function cacheControl(ttl: number | undefined): string {
   if (!ttl || ttl <= 0) return 'no-store, max-age=0';
-  return `public, s-maxage=${Math.round(ttl)}, stale-while-revalidate=${Math.round(ttl * 2)}`;
+  return `public, max-age=0, must-revalidate, s-maxage=${Math.round(ttl)}`;
+}
+
+/** RFC 9213 CDN-Cache-Control: the edge may serve stale while revalidating; browsers never see it. */
+export function cdnCacheControl(ttl: number | undefined): Record<string, string> {
+  if (!ttl || ttl <= 0) return {};
+  return { 'CDN-Cache-Control': `public, s-maxage=${Math.round(ttl)}, stale-while-revalidate=${Math.round(ttl * 2)}` };
 }
 
 export function json(data: unknown, { status = 200, ttl, headers = {} }: JsonOptions = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cacheControl(ttl), ...headers },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': cacheControl(ttl), ...cdnCacheControl(ttl), ...headers },
   });
 }
 
@@ -75,7 +88,7 @@ export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T)
   // Stale/failed snapshots get a short edge TTL so a CDN never pins an outage.
   const edgeTtl = result.meta.state === 'live' || result.meta.state === 'reference' || result.meta.state === 'recent' ? ttl : Math.min(ttl, 15);
   const etag = weakEtag(result.meta.feed, result.meta.fetchedAt, result.meta.state, variant);
-  const headers = { 'Cache-Control': cacheControl(edgeTtl), ETag: etag };
+  const headers = { 'Cache-Control': cacheControl(edgeTtl), ...cdnCacheControl(edgeTtl), ETag: etag };
   const nm = notModified(req, etag, headers);
   if (nm) return nm;
   const raw = Buffer.from(JSON.stringify({ ...body(result.data), meta: result.meta, providers: result.providers }));
@@ -177,7 +190,7 @@ export function compressedJson(req: Request, key: string, version: string, build
   if (c.raw.length > MAX_RESPONSE_BYTES) {
     return apiError(500, 'payload_too_large', `${key} exceeds the 4 MB response cap; split it by region/group.`);
   }
-  const base = { 'Cache-Control': cacheControl(ttl), ETag: c.etag, Vary: 'Accept-Encoding' };
+  const base = { 'Cache-Control': cacheControl(ttl), ...cdnCacheControl(ttl), ETag: c.etag, Vary: 'Accept-Encoding' };
   const nm = notModified(req, c.etag, base);
   if (nm) return nm;
   const accepted = acceptedEncodings(req.headers.get('accept-encoding'));

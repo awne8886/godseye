@@ -10,10 +10,14 @@ const meta = (over: Partial<FeedResult<unknown>['meta']> = {}): FeedResult<unkno
 });
 
 describe('response helpers', () => {
-  it('uses s-maxage + 2× stale-while-revalidate', () => {
-    expect(cacheControl(60)).toBe('public, s-maxage=60, stale-while-revalidate=120');
+  it('browsers revalidate every poll (no stale-while-revalidate); shared caches keep s-maxage; CDNs get SWR', () => {
+    expect(cacheControl(60)).toBe('public, max-age=0, must-revalidate, s-maxage=60');
+    expect(cacheControl(60)).not.toMatch(/stale-while-revalidate/);
     expect(cacheControl(0)).toBe('no-store, max-age=0');
-    expect(json({ a: 1 }, { ttl: 15 }).headers.get('cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');
+    const r = json({ a: 1 }, { ttl: 15 });
+    expect(r.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate, s-maxage=15');
+    expect(r.headers.get('cdn-cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');
+    expect(json({ a: 1 }, { ttl: 0 }).headers.get('cdn-cache-control')).toBeNull();
   });
 
   it('returns {error, detail} errors with no-store', async () => {
@@ -71,7 +75,8 @@ describe('response helpers', () => {
 
   it('shortens the edge TTL for stale snapshots', () => {
     const r = feedJson(new Request('http://x/'), { data: [1], meta: meta({ state: 'stale', stale: true, ttlSeconds: 900 }), providers: {} }, (d) => ({ items: d }));
-    expect(r.headers.get('cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');
+    expect(r.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate, s-maxage=15');
+    expect(r.headers.get('cdn-cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');
   });
 
   it('precompresses bulk payloads once per version and negotiates encoding', async () => {

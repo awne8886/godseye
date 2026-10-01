@@ -44,7 +44,7 @@ export function formatCache(e: Pick<ApiEndpoint, 'ttlSeconds' | 'stream' | 'meth
   if (e.stream === 'sse') return 'Not cached: text/event-stream';
   if (e.stream === 'text') return 'Not cached: streamed text';
   if (e.ttlSeconds === null) return e.method === 'POST' ? 'Not cached (POST)' : 'Not cached (no-store)';
-  return `s-maxage ${formatDuration(e.ttlSeconds)}, stale-while-revalidate ${formatDuration(e.ttlSeconds * 2)}`;
+  return `Browser revalidates every request (ETag); shared caches s-maxage ${formatDuration(e.ttlSeconds)}, CDN stale-while-revalidate ${formatDuration(e.ttlSeconds * 2)}`;
 }
 
 export interface RateLimitSpec {

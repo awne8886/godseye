@@ -89,7 +89,7 @@ export default function StatusBar() {
   const items = useTickerItems();
 
   return (
-    <footer className="hud-micro fixed inset-x-0 bottom-0 z-[var(--z-status)] hidden h-7 items-center gap-3 border-t border-[var(--border-secondary)] bg-[var(--glass-3)] px-3 text-[var(--text-secondary)] md:flex">
+    <footer data-map-inset="status-bar" className="hud-micro fixed inset-x-0 bottom-0 z-[var(--z-status)] hidden h-7 items-center gap-3 border-t border-[var(--border-secondary)] bg-[var(--glass-3)] px-3 text-[var(--text-secondary)] md:flex">
       <span className="flex items-center gap-1.5" style={{ color: online ? 'var(--alert-green)' : 'var(--alert-red)' }} role="status">
         <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: 'currentColor' }} />
         {online ? 'ONLINE' : 'OFFLINE'}

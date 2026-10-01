@@ -274,6 +274,7 @@ export function MobileSheetBody({ id }: { id: PanelId }) {
       aria-hidden={present ? undefined : true}
       data-exiting={present ? undefined : ''}
       data-testid="mobile-sheet"
+      data-map-inset="sheet"
       className="fixed inset-x-0 z-[var(--z-docked)] flex max-h-[55vh] min-h-[40vh] flex-col"
       style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
     >

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { API_CATALOG, upstreamsReceivingUserInput, type ApiEndpoint } from '@/lib/api-catalog';
 import { CAPABILITIES, evaluateCapability, type CapabilityId, type CapabilitySpec } from '@/lib/capabilities';
-import { cacheControl } from '@/lib/respond';
+import { cacheControl, cdnCacheControl } from '@/lib/respond';
 import {
   GROUP_META,
   anchorId,
@@ -44,8 +44,11 @@ describe('formatCache', () => {
   it('matches cacheControl() for every cached GET', () => {
     for (const e of CATALOG.filter((x) => x.ttlSeconds !== null && !x.stream)) {
       const header = cacheControl(e.ttlSeconds!);
-      const [, s, swr] = /s-maxage=(\d+), stale-while-revalidate=(\d+)/.exec(header)!;
-      expect(formatCache(e)).toBe(`s-maxage ${formatDuration(Number(s))}, stale-while-revalidate ${formatDuration(Number(swr))}`);
+      const cdn = cdnCacheControl(e.ttlSeconds!)['CDN-Cache-Control']!;
+      expect(header).toMatch(/max-age=0, must-revalidate/);
+      const [, s] = /s-maxage=(\d+)/.exec(header)!;
+      const [, swr] = /stale-while-revalidate=(\d+)/.exec(cdn)!;
+      expect(formatCache(e)).toBe(`Browser revalidates every request (ETag); shared caches s-maxage ${formatDuration(Number(s))}, CDN stale-while-revalidate ${formatDuration(Number(swr))}`);
     }
   });
   it('labels streams and POSTs as not cached', () => {

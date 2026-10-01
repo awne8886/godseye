@@ -7,7 +7,7 @@ import GodseyeMark from './GodseyeMark';
  */
 export default function Header() {
   return (
-    <header className="pointer-events-none fixed left-4 top-4 z-[var(--z-hud)] flex items-center gap-3 md:left-16">
+    <header data-map-inset="header" className="pointer-events-none fixed left-4 top-4 z-[var(--z-hud)] flex items-center gap-3 md:left-16">
       <GodseyeMark size={38} className="drop-shadow-[0_0_8px_var(--gold-glow)]" />
       <div className="hud-legible">
         <h1 className="font-mono text-[17px] font-bold tracking-[0.4em] text-[var(--gold-primary)] md:text-xl">{APP_NAME}</h1>

@@ -27,6 +27,7 @@ export default function ToolStrip() {
   if (!tools.length) return null;
   return (
     <nav
+      data-map-inset="tools"
       aria-label="Tools"
       className="glass-1 fixed right-2 top-1/2 z-[var(--z-tool-strip)] hidden -translate-y-1/2 flex-col items-center gap-1 rounded-[var(--radius-panel)] border border-[var(--border-secondary)] p-1 md:flex"
     >

@@ -40,6 +40,7 @@ export default function ImageryChips({ chips }: { chips: readonly ImageryChip[] 
         <li
           key={c.id}
           data-testid={`imagery-chip-${c.id}`}
+          data-map-inset="imagery-chip"
           data-tone={imageryChipTone(c)}
           className="hud-micro rounded-md border border-[var(--border-primary)] bg-[var(--bg-panel)] px-2 py-0.5 text-[var(--text-secondary)]"
         >
