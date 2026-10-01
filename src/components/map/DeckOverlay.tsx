@@ -13,24 +13,26 @@
  * and is reused by the host's hover cursor instead of a second pick.
  *
  * Startup cost (perf B2): layers that were never visible are not instantiated and new layer
- * classes are admitted one per idle slot (`admitLayers`), so program links do not pile up in one
- * task. Owner: map-engine.
+ * classes are admitted one per quiet slot (`admitLayers` + `afterQuietSlot`: idle main thread, then
+ * a drained GPU queue), so each program link runs alone instead of blocking behind queued map
+ * frames. Owner: map-engine.
  */
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useControl, useMap } from 'react-map-gl/maplibre';
 import { orderedDeckLayers, useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
 import { admitLayers, createAdmissionState, flattenLayers } from '@/lib/map/deck-admission';
-import { afterIdle } from '@/lib/map/defer';
-import { type DeckLike, detachDeckPressPicking } from '@/lib/map/deck-events';
+import { afterQuietSlot, canvasGl } from '@/lib/map/gpu-drain';
+import { type DeckLike, detachDeckPressPicking, initPendingLayers } from '@/lib/map/deck-events';
 import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
 /** `beforeId` is a MapLibreOverlay-specific layer prop (not in deck's LayerProps typings). */
 type WithBeforeId = { beforeId?: string };
 
-/** Longest wait for an idle slot before the next layer class is admitted anyway. */
-const ADMIT_IDLE_TIMEOUT_MS = 400;
+/** Longest wait (per phase) for a quiet slot before the next layer class is admitted anyway. */
+const ADMIT_IDLE_TIMEOUT_MS = 1500;
 
 function withBeforeId(layers: readonly Layer[], beforeId: string | undefined): LayersList {
   if (!beforeId) return [...layers];
@@ -52,16 +54,7 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     // `admittedVersion` re-runs admission when a class was admitted.
   }, [entries, admittedVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   const layers = useMemo(() => withBeforeId(pass, beforeId), [pass, beforeId]);
-
-  // Admit the next waiting layer class when the main thread is idle (one program link per slot).
-  const nextClass = waiting[0];
-  useEffect(() => {
-    if (!nextClass) return;
-    return afterIdle(() => {
-      admission.admitted.add(nextClass);
-      setAdmittedVersion((v) => v + 1);
-    }, ADMIT_IDLE_TIMEOUT_MS);
-  }, [nextClass, admittedVersion, admission]);
+  const { current: mapRef } = useMap();
 
   const overlay = useControl(() => {
     const box: { overlay?: MapLibreOverlay } = {};
@@ -82,17 +75,33 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     layersRef.current = layers;
     overlay.setProps({ layers });
   }, [overlay, layers]);
-  // After a WebGL context restore MapLibre rebuilds its style; hand deck its layers again.
-  const { current } = useMap();
+  // Admit the next waiting layer class in a quiet slot (one program link per slot, GPU drained).
+  const nextClass = waiting[0];
   useEffect(() => {
-    const map = current?.getMap();
+    if (!nextClass) return;
+    return afterQuietSlot(
+      () => canvasGl(mapRef?.getMap().getCanvas()),
+      () => {
+        admission.admitted.add(nextClass);
+        // Commit + effects (overlay.setProps) synchronously, then initialise the new layers here:
+        // their program link must not wait behind a map frame queued after the drain.
+        flushSync(() => setAdmittedVersion((v) => v + 1));
+        initPendingLayers(deckOf(overlay));
+      },
+      ADMIT_IDLE_TIMEOUT_MS,
+    );
+  }, [nextClass, admittedVersion, admission, mapRef, overlay]);
+
+  // After a WebGL context restore MapLibre rebuilds its style; hand deck its layers again.
+  useEffect(() => {
+    const map = mapRef?.getMap();
     if (!map) return;
     const reapply = () => overlay.setProps({ layers: layersRef.current });
     map.on('webglcontextrestored', reapply);
     return () => {
       map.off('webglcontextrestored', reapply);
     };
-  }, [current, overlay]);
+  }, [mapRef, overlay]);
   useEffect(() => {
     // A deck already initialised (StrictMode re-run, device reuse) has its EventManager now.
     detachDeckPressPicking(deckOf(overlay));

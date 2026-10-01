@@ -38,3 +38,14 @@ Basemap tile failures in the browser (e.g. the sandbox proxy's `net::ERR_TOO_MAN
 surface as a `BASEMAP OFFLINE · [LAST TILE hh:mm UTC ·] RETRYING` chip and
 `data-basemap-state="offline"` on the map container after 3 consecutive failed tiles, with
 `map.refreshTiles('openmaptiles')` retried at 2 s × 2ⁿ (≤ 60 s) until a tile arrives.
+
+## Phase 3 round-1 perf re-probe (2026-10-01 01:02Z, curl, honest UA, `Origin: http://localhost:3000`)
+
+| URL | Status | Latency | Size | CORS | Notes |
+|---|---|---|---|---|---|
+| `https://tiles.openfreemap.org/styles/dark` | 200 | 0.23 s | 20,959 B | `*` | unchanged; still names `https://tiles.openfreemap.org/planet` as the vector TileJSON |
+| `https://tiles.openfreemap.org/planet` | 200 | 0.27 s | 19,254 B | `*` | unchanged; now requested in parallel with the style (`src/lib/map/basemap-fetch.ts`), used only when the style names exactly this URL |
+| GIBS `VIIRS_Black_Marble/default/2016-01-01/GoogleMapsCompatible_Level8/3/2/4.png` | 200 | 0.68 s | 88,471 B | `*` | unchanged |
+
+Browser requests now use `credentials: 'same-origin'` (sends nothing cross-origin, same as `omit`)
+so an app-shell `<link rel="preload" as="fetch" crossorigin>` for the two URLs above can be reused.

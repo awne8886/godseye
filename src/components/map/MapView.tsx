@@ -27,23 +27,21 @@ import { geometryClient } from '@/lib/map/geometry-client';
 import { installNightProtocol, nightLightsSupported } from '@/lib/map/night-lights';
 import { collectCandidates, routePick, setHoverPointer, type PickMap } from '@/lib/map/picking';
 import { basemapChipText, createBasemapHealth, type BasemapHealth } from '@/lib/map/basemap-health';
+import { fetchBasemapStyle } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
 import { onceStyleLoaded, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
-import { useAfterIdle, useSticky } from '@/lib/map/defer';
+import { useSticky } from '@/lib/map/defer';
+import { canvasGl, useAfterQuietSlot } from '@/lib/map/gpu-drain';
 import { installMissingImageResolver } from '@/lib/map/style-images';
 import {
   BASEMAP_ATTRIBUTION,
   BASEMAP_SOURCE_ID,
-  BASEMAP_STYLE_URL,
   IMAGERY_BEFORE_ID,
   firstLabelLayerId,
-  inlineTileJson,
   paintDiff,
-  parseTileJson,
   themedBasemap,
-  tileJsonUrl,
   transformStyle,
 } from '@/lib/map/style-transform';
 import { attachTerrain, TERRAIN_MAX_PITCH, TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
@@ -83,16 +81,8 @@ function hasWebGL2(): boolean {
 const cssVar = (name: string) => (typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(name));
 
 async function loadBasemap(signal: AbortSignal): Promise<StyleSpecification> {
-  const res = await fetch(BASEMAP_STYLE_URL, { signal, credentials: 'omit' });
-  if (!res.ok) throw new Error(`basemap style HTTP ${res.status}`);
-  let raw = (await res.json()) as StyleSpecification;
-  // Inline the vector TileJSON so its failure is retried with the style (no blank globe).
-  const tj = tileJsonUrl(raw);
-  if (tj) {
-    const r = await fetch(tj, { signal, credentials: 'omit' });
-    if (!r.ok) throw new Error(`basemap TileJSON HTTP ${r.status}`);
-    raw = inlineTileJson(raw, parseTileJson(await r.json(), tj));
-  }
+  // Style and vector TileJSON (inlined, so its failure is retried with the style: no blank globe).
+  const raw = await fetchBasemapStyle(signal);
   rawBasemap = raw;
   return transformStyle(raw, themedBasemap(cssVar));
 }
@@ -425,12 +415,15 @@ export default function MapView() {
     [setMap],
   );
 
-  // Feature modules (and their first fetches) and the deck overlay start once the style is parsed
-  // (the globe's first paint) and the main thread is idle, so the first paint never waits for them
-  // and a slow tile host (which delays `load`) never delays the data layers.
-  const deferred = useAfterIdle(loaded, 1500);
+  // Feature modules (and their first fetches) start once the style is parsed (the globe's first
+  // paint) in a quiet slot (idle main thread, drained GPU), so the first paint never waits for them
+  // and a slow tile host (which delays `load`) never delays the data layers. The deck overlay
+  // (whose device set-up queries the GPU synchronously) gets its own quiet slot once a layer exists.
+  const getGl = useCallback(() => canvasGl(mapRef.current?.getMap().getCanvas()), []);
+  const deferred = useAfterQuietSlot(loaded, getGl, 1500);
   // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
   const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
+  const deckSlot = useAfterQuietSlot(deferred && hasDeckLayers, getGl, 1500);
 
   // Honest basemap state: repeated tile failures → BASEMAP OFFLINE (last observed tile) + backoff retry.
   const [basemapHealth, setBasemapHealth] = useState<BasemapHealth | null>(null);
@@ -522,7 +515,7 @@ export default function MapView() {
             under the deck layers inserted later at the same label anchor. */}
         <BuildingsLayer beforeId={labelAnchor} visible={buildings} />
         <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
-        {deferred && hasDeckLayers && <DeckOverlay beforeId={labelAnchor} />}
+        {deckSlot && <DeckOverlay beforeId={labelAnchor} />}
         {deferred && <FeatureLayers />}
         <ImageryChips chips={chips} />
       </Map>

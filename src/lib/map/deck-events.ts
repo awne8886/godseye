@@ -17,6 +17,8 @@ export interface DeckEventManagerLike {
 /** The part of a deck.gl `Deck` instance this module touches (private fields, read-only). */
 export interface DeckLike {
   eventManager?: DeckEventManagerLike | null;
+  /** deck's (protected) LayerManager: `updateLayers()` initialises layers handed over by setProps. */
+  layerManager?: { updateLayers?: () => void } | null;
   _onPointerDown?: (e: never) => void;
   _onEvent?: (e: never) => void;
 }
@@ -44,4 +46,13 @@ export function isPrimaryClick(e: { button?: number } | null | undefined): boole
 /** Hover picking is skipped while any button is held (drag, rotate, right-press). */
 export function hoverAllowed(e: { buttons?: number } | null | undefined): boolean {
   return !e || !e.buttons;
+}
+
+/**
+ * Initialise the layers just handed to deck (`setProps`) now instead of in deck's next animation
+ * frame, so the program links they need run inside the current (GPU-drained) task rather than
+ * behind the map frame queued meanwhile. A no-op before deck has initialised.
+ */
+export function initPendingLayers(deck: DeckLike | null | undefined): void {
+  deck?.layerManager?.updateLayers?.();
 }

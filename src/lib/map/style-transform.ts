@@ -12,7 +12,7 @@
  */
 import type { FillExtrusionLayerSpecification, LayerSpecification, StyleSpecification } from 'maplibre-gl';
 
-export const BASEMAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/dark';
+export { BASEMAP_STYLE_URL } from './basemap-urls';
 export const BASEMAP_ATTRIBUTION = '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> Data from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>';
 
 export interface BasemapPalette {
