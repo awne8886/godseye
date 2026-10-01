@@ -11,7 +11,7 @@
  */
 import { MAP_TOKENS, type MapToken } from '@/lib/tokens';
 import { normalizeUtc } from '@/lib/freshness';
-import { SATELLITE_FIELDS } from './fields';
+import { SATELLITE_FIELDS } from '@/lib/schemas/space-fields';
 import type { Mission, Omm, SatCategory } from '@/lib/types';
 
 export const SAT_CATEGORIES = ['comms', 'military', 'navigation', 'earth_obs', 'science', 'other'] as const satisfies readonly SatCategory[];

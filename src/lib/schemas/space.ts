@@ -5,7 +5,7 @@
  * NORAD ids are therefore plain integers that may exceed 99999.
  */
 import { z } from 'zod';
-import { SATELLITE_FIELDS } from '@/features/space/lib/fields';
+import { SATELLITE_FIELDS } from './space-fields';
 import { Envelope, IsoTime, Lat, Lng, Providers, columnarResponse } from './common';
 
 export const SatCategory = z.enum(['comms', 'military', 'navigation', 'earth_obs', 'science', 'other']);

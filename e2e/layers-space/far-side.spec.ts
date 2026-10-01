@@ -143,11 +143,26 @@ test('globe z4: clicks on drawn satellites open them, and never one behind the g
   const norad = async () => (await card.isVisible()) ? Number((await card.locator('dt', { hasText: /^NORAD ID$/ }).locator('xpath=following-sibling::dd[1]').innerText()).trim()) : null;
   const tried: { x: number; y: number }[] = [];
   let opened = 0;
-  for (let attempt = 0; attempt < 10; attempt++) {
+  let confirmed = 0;
+  let unconfirmed = 0;
+  for (let attempt = 0; attempt < 14; attempt++) {
     // LEO markers move ~2 px/s at z4: locate them afresh right before every click.
     const t = (await satelliteMarkers(page)).find((m) => tried.every((o) => Math.hypot(o.x - m.x, o.y - m.y) > 40));
     if (!t) break;
     tried.push(t);
+    // Confirm the target is still a pickable marker before clicking: the pixel detector can match
+    // terrain or a marker that moved off the spot between the screenshot and now (seconds under
+    // load). The hover pick runs through the same router as the click and sets the pointer cursor.
+    await page.mouse.move(t.x, t.y);
+    const hovered = await expect
+      .poll(() => page.locator('canvas.maplibregl-canvas').first().evaluate((c) => (c as HTMLCanvasElement).style.cursor), { timeout: 1_500 })
+      .toBe('pointer')
+      .then(() => true, () => false);
+    if (!hovered) {
+      unconfirmed++;
+      continue;
+    }
+    confirmed++;
     // The camera the pick is judged against (a selection never moves the camera).
     const cam = (await readFarSideCamera(page))!;
     const before = await norad();
@@ -176,8 +191,9 @@ test('globe z4: clicks on drawn satellites open them, and never one behind the g
     // 0.5° of slack: a LEO satellite moves ~0.07°/s between the click and this check.
     expect(d, `NORAD ${id} is ${d.toFixed(1)}° from the camera, cap ${cap.toFixed(1)}°`).toBeLessThanOrEqual(cap + 0.5);
   }
-  test.info().annotations.push({ type: 'satellite markers clicked / opened', description: `${tried.length} / ${opened}` });
-  test.skip(tried.length < 3, `only ${tried.length} isolated satellite markers on screen`);
-  // The drawn markers are pickable (the far-side re-check never rejects a drawn, facing satellite).
-  expect(opened).toBeGreaterThanOrEqual(Math.ceil(tried.length / 2));
+  test.info().annotations.push({ type: 'pixel targets / hover-confirmed markers / opened', description: `${tried.length} / ${confirmed} / ${opened}` });
+  // Targets the hover pick did not confirm are "not a marker any more", not a failed open.
+  test.skip(confirmed < 3, `only ${confirmed} hover-confirmed satellite markers on screen (${unconfirmed} pixel targets unconfirmed)`);
+  // A hover-confirmed marker opens on click (the far-side re-check never rejects a drawn, facing satellite).
+  expect(opened).toBeGreaterThanOrEqual(Math.ceil(confirmed / 2));
 });
