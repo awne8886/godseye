@@ -6,8 +6,9 @@
  * finished before we subscribed): sources and layers can be added from then on. That is what
  * `useMapInstance()`, `data-map-ready` and `data-style-ready` mean; tiles may still be loading
  * (the basemap health chip reports that). `onceBasemapPainted` is the separate, capped "first
- * frame with basemap tiles" signal that gates feature start-up. Owner: map-engine. Unit-tested with
- * a fake map.
+ * frame with basemap tiles" signal that gates feature start-up; `onceFirstFrame` ("a globe frame
+ * has been drawn") gates the user's own focus layers (`focus.ts`). Owner: map-engine. Unit-tested
+ * with a fake map.
  */
 
 export interface StyleEventsMap {
@@ -103,6 +104,37 @@ export function onceBasemapPainted(map: PaintMap, sourceId: string, cb: () => vo
   timer = timers.setTimeout(finish, capMs);
   map.on('sourcedata', onData);
   map.on('render', onRender);
+  map.on('load', finish);
+  return cancel;
+}
+
+/**
+ * Call `cb` once the map has rendered a frame after this call (the globe's first frame needs the
+ * parsed style only, no tiles), immediately when everything has loaded, and never later than
+ * `capMs` (a still map renders nothing new). Focus work (the user's route) waits for this instead
+ * of the basemap's first painted tile: it must not starve the first globe frame (visual-qa R2-M6),
+ * but it need not wait for a tile host either. Returns cancel.
+ */
+export function onceFirstFrame(map: PaintMap, cb: () => void, capMs: number, timers: PaintTimers = realPaintTimers): () => void {
+  let done = false;
+  let timer: unknown = null;
+  const cancel = () => {
+    done = true;
+    if (timer !== null) timers.clearTimeout(timer);
+    map.off('render', finish);
+    map.off('load', finish);
+  };
+  function finish() {
+    if (done) return;
+    cancel();
+    cb();
+  }
+  if (map.loaded()) {
+    finish();
+    return cancel;
+  }
+  timer = timers.setTimeout(finish, capMs);
+  map.on('render', finish);
   map.on('load', finish);
   return cancel;
 }

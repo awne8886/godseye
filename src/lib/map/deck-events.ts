@@ -56,3 +56,34 @@ export function hoverAllowed(e: { buttons?: number } | null | undefined): boolea
 export function initPendingLayers(deck: DeckLike | null | undefined): void {
   deck?.layerManager?.updateLayers?.();
 }
+
+/**
+ * WebGL features luma tests on every program link (`compilation-status-async-webgl`) and every
+ * draw (`shader-clip-cull-distance-webgl`, in its parameter setter). The overlay's device tests
+ * features lazily (`_initializeFeatures: false`, instead of ~20 extension queries at attach); left
+ * lazy, these two were first asked at the route's first draw — a synchronous round trip behind the
+ * queued globe frames, 0.5–1.4 s on SwiftShader, on the critical path.
+ */
+export const LINK_DRAW_FEATURES = ['compilation-status-async-webgl', 'shader-clip-cull-distance-webgl'] as const;
+
+/** The part of a luma `Device` this module touches. */
+export interface FeatureDevice {
+  features?: { has(feature: string): boolean } | null;
+}
+
+/**
+ * Ask for LINK_DRAW_FEATURES once, right after the device was created (deck's
+ * `onDeviceInitialized`): the device's own set-up queries have just let the GPU process catch up, so
+ * each answer is immediate, and luma caches it for every later link and draw.
+ */
+export function primeLinkDrawFeatures(device: FeatureDevice | null | undefined): void {
+  const features = device?.features;
+  if (!features || typeof features.has !== 'function') return;
+  for (const name of LINK_DRAW_FEATURES) {
+    try {
+      features.has(name);
+    } catch {
+      // A lost context answers on first use instead; nothing to prime.
+    }
+  }
+}

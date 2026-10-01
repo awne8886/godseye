@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { installNativeAdmission, type NativeMapLike } from './native-admission';
-import { onceBasemapPainted, type PaintMap } from './ready';
+import { onceBasemapPainted, onceFirstFrame, type PaintMap } from './ready';
 
 type L = { id: string; type: string; layout?: Record<string, unknown> };
 
@@ -144,5 +144,53 @@ describe('onceBasemapPainted (visual-qa R2-M6: features wait for the first globe
     const done = vi.fn();
     onceBasemapPainted(paintMap(true).m, 'openmaptiles', done, 4000, timers().t);
     expect(done).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('onceFirstFrame (focus layers: the globe’s first frame, no tiles, capped)', () => {
+  function frameMap(loaded = false) {
+    const handlers = new Map<string, Set<() => void>>();
+    const m: PaintMap = {
+      on: (t, fn) => handlers.set(t, (handlers.get(t) ?? new Set()).add(fn as () => void)),
+      off: (t, fn) => handlers.get(t)?.delete(fn as () => void),
+      loaded: () => loaded,
+    };
+    const emit = (t: string) => [...(handlers.get(t) ?? [])].forEach((f) => f());
+    const count = () => [...handlers.values()].reduce((n, s) => n + s.size, 0);
+    return { m, emit, count };
+  }
+  const timers = () => {
+    const q: (() => void)[] = [];
+    return { q, t: { setTimeout: (cb: () => void) => q.push(cb), clearTimeout: () => void (q.length = 0) } };
+  };
+
+  it('fires on the first rendered frame without any basemap tile, once, then unsubscribes', () => {
+    const { m, emit, count } = frameMap();
+    const cb = vi.fn();
+    const { q, t } = timers();
+    onceFirstFrame(m, cb, 1000, t);
+    expect(cb).not.toHaveBeenCalled();
+    emit('render');
+    emit('render');
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(count()).toBe(0);
+    expect(q).toHaveLength(0); // the cap timer was cleared
+  });
+
+  it('fires at the cap on a still map, immediately when already loaded, never after cancel', () => {
+    const { m } = frameMap();
+    const cb = vi.fn();
+    const { q, t } = timers();
+    onceFirstFrame(m, cb, 1000, t);
+    q[0]!();
+    expect(cb).toHaveBeenCalledTimes(1);
+    const done = vi.fn();
+    onceFirstFrame(frameMap(true).m, done, 1000, timers().t);
+    expect(done).toHaveBeenCalledTimes(1);
+    const late = frameMap();
+    const never = vi.fn();
+    onceFirstFrame(late.m, never, 1000, timers().t)();
+    late.emit('render');
+    expect(never).not.toHaveBeenCalled();
   });
 });
