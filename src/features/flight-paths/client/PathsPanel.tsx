@@ -720,7 +720,7 @@ export default function PathsPanel(_props: PanelProps) {
             <div className="flex flex-wrap gap-1" data-testid="paths-draft-suggestions">
               {openSuggestions.map((sg) => (
                 <button
-                  key={sg.side}
+                  key={`${sg.side}:${sg.code}`}
                   type="button"
                   onClick={() => accept(sg)}
                   aria-label={`Use ${sg.code} (${sg.label}) as ${sg.side === 'from' ? 'origin' : 'destination'}`}

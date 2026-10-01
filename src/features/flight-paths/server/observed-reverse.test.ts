@@ -68,7 +68,7 @@ describe('observed-reverse relabel needs the reverse leg end to end (round 5 B1,
       // toward O but not consistently enough for the unlisted reverse leg (reverseLegReject).
       expect(d.routeCheck).toMatch(
         new RegExp(
-          `^observed departure ${c.routeD.iata}(; .+ — ${c.routeD.iata}→${c.routeO.iata} is not listed by any source and is not confirmed| contradicts standing data ${c.routeO.iata}→${c.routeD.iata}, and the aircraft is not on course for ${c.routeO.iata} — route not confirmed)`,
+          `^observed departure ${c.routeD.iata}(; .+ — ${c.routeD.iata}→${c.routeO.iata} is not listed by any source and is not confirmed| contradicts standing data ${c.routeO.iata}→${c.routeD.iata}, and (the aircraft is not on course for|course toward) ${c.routeO.iata}.* — route not confirmed)`,
         ),
       );
       // The observed track is still drawn (it is what was observed), only the route is withheld.
@@ -89,6 +89,8 @@ describe('observed-reverse relabel needs the reverse leg end to end (round 5 B1,
     const d = await detail(cases.find((x) => x.cs === 'SWT183')!);
     expect({ routeBasis: d.routeBasis, progress: d.progress, eta: d.eta }).toEqual({ routeBasis: null, progress: null, eta: null });
     expect(d.routeCheck).toMatch(/^observed departure MAD/);
+    expect(d.routeCheck).toContain('course toward TFN not yet established (no vertical rate observed near MAD)');
+    expect(d.routeCheck).not.toContain('not on course');
   });
 
   it('the reasons are specific: SWA2816 not on course for MDW; AAY83 (climbing 57 km out of LAS) not yet established', async () => {

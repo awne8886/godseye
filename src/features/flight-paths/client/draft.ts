@@ -10,10 +10,15 @@
  * the name as whole words AND is that name's main airport (scheduled service, large or medium, or
  * the town's own small scheduled field); a namesake minor field ("Sydney" → Bankstown, "Bali" →
  * Bali, Cameroon) is never planned silently: it is offered as "No main airport found for …".
+ * Round 5 follow-up: the main airport is ranked by how it carries the name (its town before a
+ * person's name in an airport name: "Sofia" is SOF, not Tenerife Sur's "Reina Sofía"); a name that
+ * points at several places ("Jackson": Jackson MS/WY/TN or Hartsfield–Jackson Atlanta; "goa": the
+ * code GOA or Goa's GOI) is asked, with one option per airport, never guessed (`lib/place-rank.ts`).
  * A tiny external store (UI hand-off only, no data). Client-only.
  */
 import { useSyncExternalStore } from 'react';
-import { foldName, nameMatch, sizeRank, wordNotCode } from '../lib/names';
+import { foldName, nameMatch, nameRank, NAME_RANK, townsOf, wordNotCode } from '../lib/names';
+import { exactOrName, farNamesakes, isMainAirport, mainAmong } from '../lib/place-rank';
 
 /** The search's best candidate for a name that did not resolve to an airport by itself. */
 export interface PlaceSuggestion {
@@ -25,6 +30,8 @@ export interface PlaceSuggestion {
    * service, or a minor field matched by its name only): "No main airport found for …".
    */
   named?: boolean;
+  /** One of several airports the typed name may mean ("Jackson", "goa"): offered side by side. */
+  ambiguous?: boolean;
 }
 
 /** A suggestion attached to one end of a draft. */
@@ -43,7 +50,7 @@ export interface PathsDraft {
   failed?: string[];
   /** Both names resolved to this one airport (e.g. "London to Heathrow"). */
   same?: string | null;
-  /** Best candidates for unresolved names, offered with a one-click accept (never planned silently). */
+  /** Best candidates for unresolved names (several for an ambiguous name), offered with a one-click accept (never planned silently). */
   suggestions?: DraftSuggestion[];
   /** Increments per hand-off so the same text twice still re-applies. */
   seq: number;
@@ -80,18 +87,28 @@ export function pendingSides(d: Pick<PathsDraft, 'from' | 'to' | 'unresolved' | 
   return out;
 }
 
-/** "Did you mean ACY (Atlantic City)?" */
-export const suggestionText = (s: PlaceSuggestion): string => `Did you mean ${s.code} (${s.label})?`;
+const option = (s: PlaceSuggestion) => `${s.code} (${s.label})`;
+
+/** "Did you mean ACY (Atlantic City)?"; several: "Did you mean JAN (…), JAC (…) or ATL (…)?" */
+export function suggestionText(s: PlaceSuggestion | readonly PlaceSuggestion[]): string {
+  const list = Array.isArray(s) ? (s as readonly PlaceSuggestion[]) : [s as PlaceSuggestion];
+  const head = list.slice(0, -1).map(option).join(', ');
+  return `Did you mean ${head ? `${head} or ` : ''}${option(list[list.length - 1]!)}?`;
+}
 
 /** The message shown in PATHS for a draft (round 3 m5: a failed search is not "no airport found"). */
 export function draftMessage(d: Pick<PathsDraft, 'unresolved' | 'failed' | 'same' | 'suggestions'>): string | null {
   const parts: string[] = [];
   const q = (names: readonly string[]) => names.map((n) => `"${n}"`).join(' or ');
   if (d.failed?.length) parts.push(`Airport search did not answer for ${q(d.failed)} — try again, or type an airport code.`);
-  const suggested = new Map((d.suggestions ?? []).map((s) => [s.text, s]));
+  const suggested = new Map<string, DraftSuggestion[]>();
+  for (const s of d.suggestions ?? []) suggested.set(s.text, [...(suggested.get(s.text) ?? []), s]);
   for (const name of d.unresolved) {
-    const s = suggested.get(name);
-    if (s) parts.push(`${s.named ? `No main airport found for "${name}".` : `No airport named "${name}".`} ${suggestionText(s)}`);
+    const list = suggested.get(name);
+    if (!list?.length) continue;
+    const first = list[0]!;
+    if (first.ambiguous) parts.push(`"${name}" names more than one airport. ${suggestionText(list)}`);
+    else parts.push(`${first.named ? `No main airport found for "${name}".` : `No airport named "${name}".`} ${suggestionText(first)}`);
   }
   const bare = d.unresolved.filter((n) => !suggested.has(n));
   if (bare.length) parts.push(`No airport found for ${q(bare)} — type a city, airport name or code and pick from the list.`);
@@ -99,7 +116,12 @@ export function draftMessage(d: Pick<PathsDraft, 'unresolved' | 'failed' | 'same
   return parts.length ? parts.join(' ') : null;
 }
 
-export type PlaceResolution = { kind: 'found'; code: string } | { kind: 'none'; suggestion?: PlaceSuggestion | null } | { kind: 'failed' };
+export type PlaceResolution =
+  | { kind: 'found'; code: string }
+  | { kind: 'none'; suggestion?: PlaceSuggestion | null }
+  /** The name may mean several airports ("Jackson"): the visitor picks one. */
+  | { kind: 'ambiguous'; options: PlaceSuggestion[] }
+  | { kind: 'failed' };
 
 interface SearchHit {
   iata: string | null;
@@ -111,6 +133,11 @@ interface SearchHit {
   matchedBy?: string;
   type?: string;
   scheduledService?: boolean;
+  lat?: number;
+  lng?: number;
+  country?: string | null;
+  region?: string | null;
+  services?: number;
 }
 
 /** Case-, accent- and punctuation-folded text ("St. Petersburg" ≡ "st petersburg", "Zürich" ≡ "zurich"). */
@@ -133,36 +160,12 @@ export function meansTyped(hit: SearchHit, typed: string): boolean {
 const codeOfHit = (a: SearchHit) => a.iata ?? a.icao ?? a.ident;
 
 /**
- * The name's main airport among hits that carry it: scheduled service, then size, then an IATA
- * code; the server's order (which also weighs the VRS services calling there) breaks ties.
+ * The name's main airport among hits that carry it (`mainAmong`: scheduled service → size → IATA
+ * code → its town > part of its town's name > elsewhere in its municipality > its airport name > a
+ * keyword → VRS services; then the busiest airport of that class in the area named for the place);
+ * the server's order breaks the remaining ties.
  */
-function mainOf(named: readonly SearchHit[]): SearchHit | null {
-  const rank = (a: SearchHit) => [Number(!!a.scheduledService), sizeRank(a.type ?? ''), Number(!!a.iata)];
-  let best: SearchHit | null = null;
-  for (const a of named) {
-    if (!best) {
-      best = a;
-      continue;
-    }
-    const [x, y] = [rank(a), rank(best)];
-    const d = x[0]! - y[0]! || x[1]! - y[1]! || x[2]! - y[2]!;
-    if (d > 0) best = a;
-  }
-  return best;
-}
-
-/**
- * Planned without asking: scheduled service and large or medium, or a small scheduled field whose
- * municipality is the typed name (a town's own airport, e.g. Lukla). Anything else is a namesake
- * minor field or a closed/unscheduled airport (round 5 B2: Bankstown for "Sydney"). The API always
- * sends `scheduledService` and `type`; an answer without them (an older recording trimmed to the
- * name fields) is judged by its order alone — the server ranks the main airport first.
- */
-function isMain(a: SearchHit, typed: string): boolean {
-  if (a.scheduledService === undefined || a.type === undefined) return true;
-  if (!a.scheduledService) return false;
-  return sizeRank(a.type) >= 2 || nameMatch({ municipality: a.municipality }, typed) !== null;
-}
+const mainOf = (named: readonly SearchHit[], typed: string): SearchHit | null => mainAmong(named, typed);
 
 function suggestionOf(a: SearchHit, typed: string, named: boolean): PlaceSuggestion {
   const code = codeOfHit(a);
@@ -172,10 +175,38 @@ function suggestionOf(a: SearchHit, typed: string, named: boolean): PlaceSuggest
 }
 
 /**
- * One airport code for a place name via /api/airports/search: the metro group's first airport, an
- * exact code, or the main airport among the hits that carry the name (`meansTyped`, `mainOf`,
- * `isMain`); otherwise `none` with the best candidate as a suggestion (round 4 M2: "Atlantis" is not
- * ACY; round 5 B2: "Sydney" is not Bankstown, "Lima" is not Torino's LIMA).
+ * Options for an ambiguous name: an airport in a town of that name is labelled by the town (with its
+ * country, or its region where two share a country: "Jackson, Mississippi"); any other by its own
+ * name ("Hartsfield Jackson Atlanta International Airport", "Genoa Cristoforo Colombo Airport").
+ */
+function optionsOf(hits: readonly SearchHit[], typed: string): PlaceSuggestion[] {
+  const town = (a: SearchHit) => (a.municipality && nameRank(a, typed) >= NAME_RANK.townPart ? townsOf(a.municipality).join('/') : null);
+  const towns = hits.map(town);
+  const countries = hits.map((a) => a.country ?? null);
+  return hits.map((a, i) => {
+    const code = codeOfHit(a);
+    const t = towns[i];
+    // An airport without scheduled service is offered only when the visitor picks it, and says so.
+    const note = a.scheduledService === false ? ' — no scheduled service' : '';
+    if (!t) return { code, label: `${a.name ?? code}${note}`, ambiguous: true };
+    const twin = towns.some((x, j) => j !== i && x === t && countries[j] === countries[i]);
+    const where = twin ? (a.region ?? a.country) : a.country;
+    return { code, label: `${where ? `${t}, ${where}` : t}${note}`, ambiguous: true };
+  });
+}
+
+/** At most this many options for an ambiguous name. */
+export const MAX_OPTIONS = 4;
+
+const EXACT_CODE: ReadonlySet<string> = new Set(['iata', 'icao', 'ident']);
+
+/**
+ * One airport code for a place name via /api/airports/search: the metro group's first airport; an
+ * exact code unless the name means another airport (`exactOrName`: "Goa" is GOI, not Genoa's GOA;
+ * "goa" asks); else the main airport among the hits that carry the name (`mainOf`, `isMainAirport`)
+ * unless scheduled airports in towns of that name lie elsewhere (`farNamesakes`: "Jackson" asks);
+ * otherwise `none` with the best candidate as a suggestion (round 4 M2: "Atlantis" is not ACY; round
+ * 5 B2: "Sydney" is not Bankstown, "Lima" is not Torino's LIMA).
  */
 export async function resolvePlace(name: string, fetchImpl: typeof fetch = fetch): Promise<PlaceResolution> {
   try {
@@ -185,11 +216,32 @@ export async function resolvePlace(name: string, fetchImpl: typeof fetch = fetch
     const metro = body.metro?.codes?.[0];
     if (metro) return { kind: 'found', code: metro };
     const results = body.results ?? [];
+    const metroHit = results.find((a) => a.matchedBy === 'metro');
+    if (metroHit) return { kind: 'found', code: codeOfHit(metroHit) };
+    // Hits that carry the typed name as whole words (geocoded Photon/Nominatim hits never do).
+    const named = results.filter((a) => meansTyped(a, name) && nameMatch(a, name) !== null);
     // An exact code — but an ordinary word is not an unscheduled airport's ICAO code ("Lima" ≠ LIMA).
-    const exact = results.find((a) => a.matchedBy !== undefined && EXACT.has(a.matchedBy) && (a.matchedBy === 'metro' || !wordNotCode(name) || a.scheduledService === true));
-    if (exact) return { kind: 'found', code: codeOfHit(exact) };
-    const main = mainOf(results.filter((a) => meansTyped(a, name)));
-    if (main && isMain(main, name)) return { kind: 'found', code: codeOfHit(main) };
+    const exact = results.find((a) => a.matchedBy !== undefined && EXACT_CODE.has(a.matchedBy) && (!wordNotCode(name) || a.scheduledService === true));
+    if (exact) {
+      const bearer = mainOf(
+        named.filter((a) => a.matchedBy === 'fuzzy'),
+        name,
+      );
+      const how = exactOrName(exact, bearer, name);
+      if (how === 'exact' || !bearer) return { kind: 'found', code: codeOfHit(exact) };
+      if (how === 'ask') return { kind: 'ambiguous', options: optionsOf([exact, bearer], name) };
+    }
+    const main = mainOf(named, name);
+    if (main && isMainAirport(main, name)) {
+      const far = farNamesakes(main, named, name);
+      if (!far.length) return { kind: 'found', code: codeOfHit(main) };
+      // The town of that name may have its own airport without scheduled service ("Cambridge":
+      // Cambridge City, CBG): offered too, labelled as such, when the scheduled ones leave room.
+      const scheduled = [...far.slice(0, MAX_OPTIONS - 1), main];
+      const ownField =
+        scheduled.length < MAX_OPTIONS ? mainOf(named.filter((a) => a.scheduledService === false && nameRank(a, name) >= NAME_RANK.town), name) : null;
+      return { kind: 'ambiguous', options: optionsOf(ownField ? [...scheduled, ownField] : scheduled, name) };
+    }
     if (main) return { kind: 'none', suggestion: suggestionOf(main, name, true) };
     const best = results[0];
     return best ? { kind: 'none', suggestion: suggestionOf(best, name, false) } : { kind: 'none' };
@@ -215,17 +267,20 @@ export function routeOrDraft(
     switch (r.kind) {
       case 'none':
         return r.suggestion ? [{ ...r.suggestion, side, text }] : [];
+      case 'ambiguous':
+        return r.options.map((o) => ({ ...o, side, text }));
       case 'found':
       case 'failed':
         return [];
     }
   };
+  const open = (r: PlaceResolution) => r.kind === 'none' || r.kind === 'ambiguous';
   return {
     route: null,
     draft: {
       from: pick(a, from),
       to: pick(b, to),
-      unresolved: [a.kind === 'none' && from, b.kind === 'none' && to].filter((n): n is string => !!n),
+      unresolved: [open(a) && from, open(b) && to].filter((n): n is string => !!n),
       failed: [a.kind === 'failed' && from, b.kind === 'failed' && to].filter((n): n is string => !!n),
       same: a.kind === 'found' && b.kind === 'found' ? a.code : null,
       suggestions: [...suggest(a, 'from', from), ...suggest(b, 'to', to)],

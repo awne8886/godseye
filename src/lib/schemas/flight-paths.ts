@@ -33,6 +33,11 @@ export const AirportMatch = Airport.extend({
   matchedBy: z.enum(['iata', 'icao', 'ident', 'fuzzy', 'metro', 'photon', 'nominatim']),
   /** OurAirports search keywords (alternative names, e.g. "LON, Londres"); lets a client tell a name match from a fuzzy guess. */
   keywords: z.string().nullable().optional(),
+  /**
+   * VRS standing-data services calling at the airport (bundled REFERENCE count, not live traffic):
+   * how the search tells a city's main airport from a smaller one serving the same place.
+   */
+  services: z.number().int().nonnegative().optional(),
 });
 
 /** GET /api/airports/search?q=&all=0|1 */

@@ -22,7 +22,7 @@ import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
 import { honestFlights } from '@/features/aviation/server/view';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
-import { angleDiff, etaMs, flyingRoute, onCorridor, pathIntoFrame, positionOnPath, progressOn, reverseLegReason, reverseLegReject } from '../lib/geometry';
+import { angleDiff, etaMs, flyingRoute, headingAlong, onCorridor, pathIntoFrame, positionOnPath, progressOn, reverseLegReason, reverseLegReject } from '../lib/geometry';
 import { localTimeIso } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { findAirport, openFlights, vrsIndex, type AirportRecord } from './data';
@@ -430,7 +430,17 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
         withhold(`observed departure ${codeD}; ${reverseLegReason(backReject, codeO)} — ${codeD}→${codeO} is not listed by any source and is not confirmed (standing data lists ${sched})`);
       } else if (latest === 'D') {
         flownTrack = back.track;
-        withhold(`observed departure ${codeD} contradicts standing data ${sched}, and the aircraft is not on course for ${codeO} — route not confirmed`);
+        // headingAlong is null when the course could not be judged (no track, or no vertical rate
+        // near an endpoint): say what was not observed, not "not on course" (round 5 minor, SWT183).
+        const along = onCorridor([live.lng, live.lat], D, O) ? headingAlong(s, D, O, { a: destination.elevationFt, b: origin.elevationFt }) : false;
+        const nearCode = distanceKm([live.lng, live.lat], D) <= distanceKm([live.lng, live.lat], O) ? codeD : codeO;
+        const why =
+          along !== null
+            ? `the aircraft is not on course for ${codeO}`
+            : s.trackDeg === null
+              ? `course toward ${codeO} not yet established (no track observed)`
+              : `course toward ${codeO} not yet established (no vertical rate observed near ${nearCode})`;
+        withhold(`observed departure ${codeD} contradicts standing data ${sched}, and ${why} — route not confirmed`);
       } else if (!traceEnded && leg.departure === 'elsewhere') {
         flownTrack = sinceLastTakeoff(flownTrack, ends);
         withhold(`observed departure is not ${codeO} — contradicts standing data ${sched}; route not confirmed`);

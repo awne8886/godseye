@@ -7,12 +7,16 @@
  *
  * Round 5 B2 (the palette planned BWU for "Sydney", AHN for "Athens", Torino's LIMA for "Lima"):
  *  - a fuzzy hit that carries the typed name as whole words (`nameMatch`) ranks above every hit that
- *    does not, and among those the city's main airport comes first: scheduled service, then size
- *    (large > medium > small), then VRS services calling there, then an IATA code — the MiniSearch
- *    score (20–120, which used to swamp the ≤ +9 boosts) only breaks the remaining ties;
+ *    does not, and among those the city's main airport comes first (`compareMain`): scheduled
+ *    service, then size (large > medium > small), then an IATA code, then how it carries the name
+ *    (its town > elsewhere in its municipality > its airport name or a keyword: "Sofia" is SOF, not
+ *    Tenerife Sur's keyword "Reina Sofía"), then VRS services calling there — the MiniSearch score
+ *    (20–120, which used to swamp the ≤ +9 boosts) only breaks the remaining ties;
  *  - an ordinary word is not an airport code: a 4+-letter word typed in lower or mixed case ("Lima",
  *    "Bali") matches an ICAO code / ident only when that airport has scheduled service ("egll" still
- *    finds EGLL); typed in capitals it is a code ("LIMA" is Torino-Aeritalia).
+ *    finds EGLL); typed in capitals it is a code ("LIMA" is Torino-Aeritalia);
+ *  - a word that is also a code ranks the airport bearing the name first when `exactOrName` says the
+ *    name wins ("Goa" → GOI before GOA Genoa, "Leh" → IXL before Le Havre's LEH), as the palette does.
  */
 import 'server-only';
 import MiniSearch from 'minisearch';
@@ -23,7 +27,8 @@ import { nominatimSearch, photonSearch } from '@/lib/geocode';
 import type { AirportMatch as AirportMatchSchema } from '@/lib/schemas/flight-paths';
 import type { Place } from '@/lib/types';
 import { metroFor, normalizePlace } from '../lib/metro';
-import { nameMatch, sizeRank, wordNotCode } from '../lib/names';
+import { nameMatch, nameRank, wordNotCode } from '../lib/names';
+import { compareRanked, exactOrName, mainAmong } from '../lib/place-rank';
 import { airportIndex, findAirport, servicesAt, type AirportIndex, type AirportRecord } from './data';
 
 export type AirportMatch = z.infer<typeof AirportMatchSchema>;
@@ -80,7 +85,7 @@ export function boost(a: AirportRecord, q: string): number {
 
 const match = (a: AirportRecord, score: number, matchedBy: MatchedBy): AirportMatch => {
   const { gps: _g, keywords, longestRunwayM: _r, ...rest } = a;
-  return { ...rest, keywords: keywords || null, score: Math.round(score * 100) / 100, matchedBy };
+  return { ...rest, keywords: keywords || null, services: servicesAt(a.icao), score: Math.round(score * 100) / 100, matchedBy };
 };
 
 /** Exact code matches in resolve order (IATA → ICAO → gps_code/ident), default index then all. */
@@ -105,27 +110,23 @@ export function exactMatches(q: string, all: boolean): AirportMatch[] {
   return out;
 }
 
-interface Scored {
-  a: AirportRecord;
+export interface Scored {
+  m: AirportMatch;
+  /** MiniSearch score + `boost`. */
   score: number;
-  named: boolean;
+  /** How the hit carries the typed name (`nameRank`: 5 its town … 1 a keyword, 0 not at all). */
+  rank: number;
 }
 
 /**
  * Fuzzy order (round 5 B2): hits carrying the typed name as whole words first; among those the
- * city's main airport (scheduled service → size → VRS services → IATA code); then the score.
+ * city's main airport (`compareRanked`: scheduled service → size → IATA code → town > part of a town
+ * name > municipality > airport name > keyword → VRS services calling there); then the score.
  */
 export function compareFuzzy(x: Scored, y: Scored): number {
-  if (x.named !== y.named) return x.named ? -1 : 1;
-  if (x.named) {
-    const d =
-      Number(y.a.scheduledService) - Number(x.a.scheduledService) ||
-      sizeRank(y.a.type) - sizeRank(x.a.type) ||
-      servicesAt(y.a.icao) - servicesAt(x.a.icao) ||
-      Number(!!y.a.iata) - Number(!!x.a.iata);
-    if (d) return d;
-  }
-  return y.score - x.score;
+  const [nx, ny] = [x.rank > 0, y.rank > 0];
+  if (nx !== ny) return nx ? -1 : 1;
+  return (nx ? compareRanked(x.m, x.rank, y.m, y.rank) : 0) || y.score - x.score;
 }
 
 export function fuzzyMatches(q: string, all: boolean, limit = MAX_RESULTS): AirportMatch[] {
@@ -133,10 +134,16 @@ export function fuzzyMatches(q: string, all: boolean, limit = MAX_RESULTS): Airp
   const hits = engine(idx).search(q);
   const scored: Scored[] = hits.slice(0, 200).map((h) => {
     const a = idx.list[h.id as number]!;
-    return { a, score: h.score + boost(a, q), named: nameMatch(a, q) !== null };
+    const score = h.score + boost(a, q);
+    return { m: match(a, score, 'fuzzy'), score, rank: nameRank(a, q) };
   });
   scored.sort(compareFuzzy);
-  return scored.slice(0, limit).map(({ a, score }) => match(a, score, 'fuzzy'));
+  const out = scored.map((s) => s.m);
+  // The busiest same-class airport of the area named for the place leads (`mainAmong`: Bucharest → OTP).
+  const named = scored.filter((s) => s.rank > 0).map((s) => s.m);
+  const main = mainAmong(named, q);
+  if (main && main !== out[0]) out.splice(out.indexOf(main), 1).forEach((m) => out.unshift(m));
+  return out.slice(0, limit);
 }
 
 /** Scheduled-service airports (default index) nearest to a point, within `radiusKm`. */
@@ -216,8 +223,13 @@ export async function searchAirports(q: string, opts: { all: boolean; submit: bo
       results.push(m);
     }
   };
-  push(exactMatches(query, opts.all));
-  push(fuzzyMatches(query, opts.all));
+  const exact = exactMatches(query, opts.all);
+  const fuzzy = fuzzyMatches(query, opts.all);
+  // "Goa", "Leh", "Sylt": the airport bearing the name before the code's namesake (as the palette decides).
+  const named = fuzzy.filter((m) => nameMatch(m, query) !== null);
+  if (exact[0] && exactOrName(exact[0], named[0] ?? null, query) === 'name') push(named);
+  push(exact);
+  push(fuzzy);
   if (results.length || query.length < 3) return { results, metro: null, providers };
 
   // No local match: Photon aerodromes, re-ranked against the local index.

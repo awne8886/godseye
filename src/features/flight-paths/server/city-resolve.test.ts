@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import { draftMessage, resolvePlace, routeOrDraft } from '../client/draft';
 import { compareFuzzy, exactMatches, fuzzyMatches, searchAirports } from './airports';
 import { findAirport, servicesAt } from './data';
+import { NAME_RANK } from '../lib/names';
 import bali from '../__fixtures__/r5/search-Bali.json';
 import bangalore from '../__fixtures__/r5/search-Bangalore.json';
 import kiev from '../__fixtures__/r5/search-Kiev.json';
@@ -79,10 +80,11 @@ describe('a city name resolves to its main airport (round 5 B2, bundled index)',
   it('same scheduled size class: the airport more VRS services call at wins (Santiago: SCL over SCU, STI, SCQ)', () => {
     const [scl, stI] = [findAirport('SCL')!, findAirport('STI')!];
     expect(servicesAt('SCEL')).toBeGreaterThan(servicesAt('MDST'));
-    const s = (a: typeof scl, score: number) => ({ a, score, named: true });
+    const m = (a: typeof scl) => ({ ...a, keywords: null, services: servicesAt(a.icao), score: 0, matchedBy: 'fuzzy' as const });
+    const s = (a: typeof scl, score: number) => ({ m: m(a), score, rank: NAME_RANK.town });
     expect(compareFuzzy(s(scl, 1), s(stI, 99))).toBeLessThan(0);
     // An unnamed hit never outranks a named one, whatever its score.
-    expect(compareFuzzy({ a: stI, score: 999, named: false }, s(scl, 1))).toBeGreaterThan(0);
+    expect(compareFuzzy({ m: m(stI), score: 999, rank: NAME_RANK.none }, s(scl, 1))).toBeGreaterThan(0);
   });
 
   it('an ordinary word is an ICAO code only for a scheduled airport, or typed in capitals', () => {
@@ -110,6 +112,107 @@ describe('a city name resolves to its main airport (round 5 B2, bundled index)',
     expect(kyiv.route).toBeNull();
     expect(kyiv.draft).toMatchObject({ from: 'Kiev', to: 'WAW', unresolved: ['Kiev'], suggestions: [{ side: 'from', code: 'IEV', named: true }] });
     expect(draftMessage(kyiv.draft!)).toBe('No main airport found for "Kiev". Did you mean IEV (Kyiv)?');
+  });
+});
+
+describe('a person\'s name in an airport name does not outrank the city (round 5 B2 follow-up)', () => {
+  // Reviewer sweep, worktree vs 4cc233a: these were planned to another country.
+  const CITY: [string, string, string][] = [
+    ['Sofia', 'SOF', 'TFS (Tenerife Sur, keyword "Reina Sofía")'],
+    ['Malmö', 'MMX', 'CPH (keyword)'],
+    ['Constantine', 'CZL', 'INI (Niš)'],
+    ['Sucre', 'SRE', 'UIO (Quito, Mariscal Sucre)'],
+    ['Windsor', 'YQG', 'NAS'],
+    ['Datong', 'DAT', 'LHW'],
+    ['Thompson', 'YTH', 'MHH'],
+    ['Esperance', 'EPR', 'SFG'],
+    ['Rivera', 'RVY', 'CPX'],
+    ['Lancaster', 'LNS', 'MDT'],
+  ];
+  for (const [name, code, was] of CITY) {
+    it(`"${name}" → ${code} (was ${was})`, async () => {
+      expect(await resolvePlace(name, live)).toEqual({ kind: 'found', code });
+    });
+  }
+
+  it('the type-ahead lists the city first too ("Sofia": SOF before TFS)', () => {
+    const sofia = fuzzyMatches('Sofia', false).map((a) => a.iata);
+    expect(sofia.indexOf('SOF')).toBeLessThan(sofia.indexOf('TFS'));
+  });
+
+  // The pick carries the name only in its airport name while scheduled airports in towns of that
+  // name lie elsewhere: asked, one option per airport, never planned.
+  const ASK: [string, string[]][] = [
+    ['Jackson', ['JAN', 'JAC', 'MKL', 'ATL']],
+    ['Nelson', ['NSN', 'RAI']],
+    ['Pereira', ['PEI', 'BVC']],
+    ['Bishop', ['BIH', 'GND']],
+    ['David', ['DAV', 'KUT']],
+    ['Hancock', ['CMX', 'SYR']],
+  ];
+  for (const [name, codes] of ASK) {
+    it(`"${name}" asks: ${codes.join(', ')}`, async () => {
+      const r = await resolvePlace(name, live);
+      expect(r.kind).toBe('ambiguous');
+      const got = r.kind === 'ambiguous' ? r.options.map((o) => o.code) : [];
+      expect(got).toEqual(expect.arrayContaining(codes));
+    });
+  }
+
+  it('"Cambridge" asks, and offers the town\'s own unscheduled field labelled as such (was HBA, Hobart)', async () => {
+    const r = await resolvePlace('Cambridge', live);
+    expect(r.kind).toBe('ambiguous');
+    const opts = r.kind === 'ambiguous' ? r.options : [];
+    expect(opts.find((o) => o.code === 'CBG')?.label).toBe('Cambridge, United Kingdom — no scheduled service');
+    expect(opts.map((o) => o.code)).toContain('HBA');
+  });
+
+  it('the draft states the choice and offers every option ("Jackson to Denver")', async () => {
+    const { route, draft } = routeOrDraft('Jackson', 'Denver', await resolvePlace('Jackson', live), await resolvePlace('Denver', live));
+    expect(route).toBeNull();
+    expect(draft).toMatchObject({ to: 'DEN', unresolved: ['Jackson'] });
+    expect(draft!.suggestions!.map((x) => x.code)).toEqual(['JAN', 'JAC', 'MKL', 'ATL']);
+    expect(draftMessage(draft!)).toBe(
+      '"Jackson" names more than one airport. Did you mean JAN (Jackson, Mississippi), JAC (Jackson, Wyoming), MKL (Jackson, Tennessee) or ATL (Hartsfield Jackson Atlanta International Airport)?',
+    );
+  });
+});
+
+describe('a short word that is also an airport code means the airport bearing the name (round 5 B2)', () => {
+  const WORD: [string, string, string][] = [
+    ['Goa', 'GOI', 'GOA Genoa'],
+    ['Kos', 'KGS', 'KOS Sihanoukville'],
+    ['Leh', 'IXL', 'LEH Le Havre, unscheduled'],
+    ['Osh', 'OSS', 'OSH Oshkosh, unscheduled'],
+    ['Nis', 'INI', 'NIS Simberi, unscheduled'],
+    ['Pau', 'PUF', 'PAU'],
+    ['Gao', 'GAQ', 'GAO'],
+    ['Hue', 'HUI', 'HUE Humera'],
+    ['Sylt', 'GWT', 'ICAO SYLT Lethem'],
+    ['Palu', 'PLW', 'LUR Cape Lisburne'],
+    ['Sari', 'SRY', 'IGR'],
+  ];
+  for (const [name, code, was] of WORD) {
+    it(`"${name}" → ${code} (was ${was})`, async () => {
+      expect(await resolvePlace(name, live)).toEqual({ kind: 'found', code });
+    });
+  }
+
+  it('a code typed as a code stays the code: "lhr", "LHR", "GOA", "Den" (no scheduled Den Helder)', async () => {
+    expect(await resolvePlace('lhr', live)).toEqual({ kind: 'found', code: 'LHR' });
+    expect(await resolvePlace('LHR', live)).toEqual({ kind: 'found', code: 'LHR' });
+    expect(await resolvePlace('GOA', live)).toEqual({ kind: 'found', code: 'GOA' });
+    expect(await resolvePlace('Den', live)).toEqual({ kind: 'found', code: 'DEN' });
+  });
+
+  it('"goa" in lower case could be either: asked (GOA Genoa or GOI Goa)', async () => {
+    const r = await resolvePlace('goa', live);
+    expect(r.kind === 'ambiguous' ? r.options.map((o) => o.code) : r).toEqual(['GOA', 'GOI']);
+  });
+
+  it('the search ranks the airport bearing the name first ("Goa": GOI before GOA)', async () => {
+    const r = await searchAirports('Goa', { all: false, submit: false }, offline);
+    expect(r.results.slice(0, 2).map((a) => a.iata)).toEqual(['GOI', 'GOA']);
   });
 });
 
