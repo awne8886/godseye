@@ -41,8 +41,9 @@ services:
     pids_limit: 512
 
   caddy:
-    # Pin by digest in production (docker buildx imagetools inspect caddy:2-alpine).
-    image: caddy:2-alpine
+    # Pinned by digest (multi-arch index, resolved 2026-10-01 from registry-1.docker.io; see
+    # docs/data-sources/pages-docs-privacy-ops.md). To update: docker buildx imagetools inspect caddy:2-alpine.
+    image: caddy:2-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
     restart: unless-stopped
     # Runs as root inside the container only to bind :80/:443; every other capability is dropped.
     read_only: true
@@ -70,8 +71,9 @@ services:
       - caddy_config:/config
 
   redis:
-    # Pin by digest in production (docker buildx imagetools inspect redis:8-alpine).
-    image: redis:8-alpine
+    # Pinned by digest (multi-arch index, resolved 2026-10-01 from registry-1.docker.io; see
+    # docs/data-sources/pages-docs-privacy-ops.md). To update: docker buildx imagetools inspect redis:8-alpine.
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
     profiles: ["redis"]
     restart: unless-stopped
     # Start directly as the image's redis user (uid 999) so the entrypoint needs no chown/setuid
