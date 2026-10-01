@@ -6,11 +6,12 @@
 import 'server-only';
 import { evaluateCapability, hasCapability } from '@/lib/capabilities';
 import { defineFeed, type Feed } from '@/lib/feeds';
-import type { Attribution } from '@/lib/types';
+import type { Attribution, FreshnessState, Providers } from '@/lib/types';
 import { coverageTiles, sweepOrder } from './tiles';
 import { fetchAdsbfiMil, fetchGlobal, fetchOpenSky, fetchReapi, fetchTile } from './server/providers';
 import { runSweep, type FlightsSnapshot } from './server/sweep';
 import { TileSweeper, type TileResult } from './server/tile-sweeper';
+import { flightsState } from './server/view';
 
 const SWEEP_TILES = sweepOrder(coverageTiles());
 /** On a cold start, let the worker read a first handful of tiles (≤ 8 s) before the first snapshot. */
@@ -50,6 +51,36 @@ function attributions(env: Record<string, string | undefined> = process.env): At
 }
 
 /**
+ * The cap `flightsState()` puts on the feed state, as a `stateCap`: null while the positions
+ * provider (re-api when configured, else the tile sweep) is ok; RECENT/STALE by its last-good age
+ * while it fails. Applied on every read, so /api/health agrees with /api/flights (R2 round 5
+ * MINOR-1).
+ */
+export function positionsCap(providers: Providers | null | undefined): FreshnessState | null {
+  if (!providers) return null;
+  const state = flightsState('live', providers);
+  return state === 'live' ? null : state;
+}
+
+let capping = false;
+
+/**
+ * The providers persisted with the current snapshot (`meta.providers` in the SnapshotStore), so the
+ * cap holds after a restart and on an instance that serves a snapshot another one wrote (round 5
+ * fix pass: an in-process "last run" was empty there). `peek()` evaluates this cap again; that
+ * inner read is uncapped (it only supplies the providers).
+ */
+function snapshotProviders(): Providers | null {
+  if (capping) return null;
+  capping = true;
+  try {
+    return flightsFeed.peek().providers;
+  } finally {
+    capping = false;
+  }
+}
+
+/**
  * Live aircraft. A background worker reads adsb.lol tiles back to back (≤ 1 in flight, one start
  * per 1.2 s; dense tiles more often, every tile within 165 s); each run, one TTL after the last,
  * merges the tiles that arrived plus the global lists (every 30 s). Every record carries its own
@@ -65,6 +96,7 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
   deadlineMs: 55_000,
   retryAfterErrorMs: 20_000,
   maxObservationAgeMs: 180_000,
+  stateCap: () => positionsCap(snapshotProviders()),
   count: (d) => d.records.length,
   run: async (ctx) => {
     const opensky = evaluateCapability('opensky');

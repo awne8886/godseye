@@ -96,8 +96,12 @@ const MS_TO_KT = 1.943844;
 const MS_TO_FPM = 196.8504;
 const POSITION_SOURCE: Record<number, FlightRecord['posSource']> = { 0: 'adsb', 1: 'other', 2: 'mlat', 3: 'other' };
 
-/** OpenSky state vectors → records (docs/reference/25 §0 mapping; metres/m·s⁻¹ converted to ft/kt). */
-export function mapOpenSkyStates(states: readonly unknown[]): NormalizedBatch {
+/**
+ * OpenSky state vectors → records (docs/reference/25 §0 mapping; metres/m·s⁻¹ converted to ft/kt).
+ * `time_position` is whole epoch seconds; it is never dated after `receivedAtMs` (our receipt).
+ */
+export function mapOpenSkyStates(states: readonly unknown[], receivedAtMs = Date.now()): NormalizedBatch {
+  const receivedS = Math.floor(receivedAtMs / 1000);
   const records: FlightRecord[] = [];
   const noPosition: string[] = [];
   for (const raw of states) {
@@ -137,7 +141,7 @@ export function mapOpenSkyStates(states: readonly unknown[]): NormalizedBatch {
       category: null,
       nacP: null,
       dbFlags: null,
-      seenAt: Math.round(seen),
+      seenAt: Math.min(Math.floor(seen), receivedS),
       source: 'opensky',
       posSource: POSITION_SOURCE[s[16]] ?? null,
     });
@@ -161,7 +165,7 @@ export async function fetchOpenSky(env: Record<string, string | undefined>, sign
       retries: 0,
       limiter: openskyBucket(),
     });
-    return mapOpenSkyStates(res.data?.states ?? []);
+    return mapOpenSkyStates(res.data?.states ?? [], Date.now());
   } catch (e) {
     if (e instanceof HttpError && e.status === 401) openskyToken = null;
     if (e instanceof HttpError && e.status === 429) throw new RateLimitedError(OPENSKY_STATES_URL, 15 * 60);

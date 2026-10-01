@@ -114,8 +114,10 @@ export function posSourceOf(row: Pick<AdsbRow, 'type' | 'mlat' | 'tisb'>): Fligh
 export type NormalizeResult = { kind: 'ok'; record: FlightRecord } | { kind: 'no-position'; id: string } | { kind: 'skip' };
 
 /**
- * Normalise one row. `nowMs` is the response's `now` (upstream clock) so `seenAt` is the
- * upstream's observation time, never our fetch time.
+ * Normalise one row. `nowMs` is the response's `now` (upstream clock, clamped to our receipt
+ * time by `normalizeAdsbResponse`) so `seenAt` is the upstream's observation time, never our
+ * fetch time. Whole seconds, rounded DOWN: an observation is never reported later than it was
+ * made, nor after the fetch that carried it (R2 round 5 MINOR-2).
  */
 export function normalizeAdsbRow(row: AdsbRow, nowMs: number, source: string): NormalizeResult {
   const id = (row.hex ?? '').trim().toLowerCase();
@@ -165,7 +167,7 @@ export function normalizeAdsbRow(row: AdsbRow, nowMs: number, source: string): N
       category,
       nacP: nacP !== null && Number.isInteger(nacP) && nacP >= 0 && nacP <= 11 ? nacP : null,
       dbFlags: dbFlags !== null && Number.isInteger(dbFlags) && dbFlags >= 0 ? dbFlags : null,
-      seenAt: Math.round((nowMs - seenPos * 1000) / 1000),
+      seenAt: Math.floor((nowMs - Math.max(0, seenPos) * 1000) / 1000),
       source,
       posSource: posSourceOf(row),
     },
@@ -178,8 +180,13 @@ export interface NormalizedBatch {
   noPosition: string[];
 }
 
-export function normalizeAdsbResponse(body: AdsbResponse | undefined, source: string, fallbackNowMs: number): NormalizedBatch {
-  const nowMs = num(body?.now) ?? fallbackNowMs;
+/**
+ * `receivedAtMs` is our clock when the response arrived. The upstream's `now` is used when it is
+ * not ahead of that (adsb.lol's clock ran up to ~1 s ahead of ours: observedAt 23–1067 ms after
+ * fetchedAt, R2 round 5 MINOR-2), so no position is dated after the fetch that carried it.
+ */
+export function normalizeAdsbResponse(body: AdsbResponse | undefined, source: string, receivedAtMs: number): NormalizedBatch {
+  const nowMs = Math.min(num(body?.now) ?? receivedAtMs, receivedAtMs);
   const records: FlightRecord[] = [];
   const noPosition: string[] = [];
   for (const row of body?.ac ?? []) {

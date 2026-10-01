@@ -35,6 +35,14 @@ describe('aviation icons on the globe', () => {
     expect(ICON_PARAMETERS).toEqual({ cullMode: 'none', depthCompare: 'always' });
   });
 
+  it('passes colours as a binary attribute (no getColor accessor or trigger to re-run per tick)', () => {
+    const icons = build(false).find((l) => l.id === 'aviation-icons') as unknown as { props: { data: { length: number; attributes?: { getColor?: { value: Uint8Array; size: number } } }; updateTriggers: Record<string, unknown> } };
+    expect(icons.props.data.length).toBe(2);
+    expect(icons.props.data.attributes?.getColor?.size).toBe(4);
+    expect(icons.props.data.attributes?.getColor?.value).toHaveLength(8);
+    expect(icons.props.updateTriggers.getColor).toBeUndefined();
+  });
+
   it('draws aircraft as billboard SDF icons with the globe-safe GPU state on both projections', () => {
     for (const globe of [true, false]) {
       const layers = build(globe);

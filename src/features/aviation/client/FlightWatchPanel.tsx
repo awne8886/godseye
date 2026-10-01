@@ -12,8 +12,9 @@ import { MAX_WATCHED_FLIGHTS, useUiStore } from '@/lib/store';
 import { entityFreshness } from '@/lib/freshness';
 import type { FreshnessState } from '@/lib/types';
 import type { FlightRecord } from '../adsb';
+import type { FlightRoute } from '../server/route-lookup';
 import { deadReckon } from '../codec';
-import { FreshnessBadge, useAircraftDetail, useFlightRoute } from './AircraftCard';
+import { FreshnessBadge, cardProgress, useAircraftDetail, useFlightRoute } from './AircraftCard';
 import { BUCKET_LAYER, useAviationPrefs, useFlights } from './useFlights';
 import { formatAlt, formatKt } from './format';
 
@@ -26,13 +27,27 @@ function useNow(ms = 1000) {
   return now;
 }
 
+/** One line of route for a watched aircraft: the same answer as its card (never a leg the card withholds). */
+export function watchRouteLine(route: FlightRoute | undefined, hasCallsign: boolean, loading: boolean, progress: number | null): string {
+  if (!hasCallsign) return 'NO CALLSIGN';
+  if (!route) return loading ? 'RESOLVING ROUTE…' : 'NO SCHEDULED ROUTE';
+  if (route.found && route.origin && route.destination) {
+    const leg = `${route.origin.iata ?? route.origin.icao} → ${route.destination.iata ?? route.destination.icao}`;
+    const how = route.reversed ? ' · REVERSE OF LISTED (OBSERVED)' : route.basis === 'observed' ? ' · NOT ON COURSE' : '';
+    return `${leg}${progress !== null ? ` · ${Math.round(progress * 100)}%` : ''}${how}${route.stale ? ' · STALE ROUTE RECORD' : ''}`;
+  }
+  if (route.found) return route.directionConflict ? 'ROUTE UNCONFIRMED — OBSERVED TRACK DISAGREES' : 'LEG NOT DETERMINED';
+  return route.implausible ? 'LISTED ROUTE DOES NOT MATCH POSITION' : 'NO SCHEDULED ROUTE';
+}
+
 const mono10 = 'font-mono text-[10px] uppercase tracking-[0.16em]';
 const mono11 = 'font-mono text-[11px] uppercase tabular-nums tracking-[0.08em]';
 
 /** `feed`: whether the flights feed answered (`live`), answered SOURCE OFFLINE, or has not answered yet. */
 function WatchRow({ hex, live, feed, feedState, now }: { hex: string; live: FlightRecord | null; feed: 'live' | 'offline' | 'pending'; feedState: FreshnessState; now: number }) {
   const detail = useAircraftDetail(/^[0-9a-f]{6}$/.test(hex) ? hex : null);
-  const route = useFlightRoute(live?.callsign ?? null, live && !live.onGround ? { lat: live.lat, lng: live.lng, gsKt: live.gsKt } : null);
+  // The card's exact query (track + hex): one cached answer, the same corroborated leg in both views.
+  const route = useFlightRoute(live?.callsign ?? null, live && !live.onGround ? { lat: live.lat, lng: live.lng, gsKt: live.gsKt, trackDeg: live.trackDeg } : null, live?.id ?? null);
   const unwatch = useUiStore((s) => s.unwatchFlight);
   const flyTo = useUiStore((s) => s.requestFlyTo);
   const id = detail.data?.identity ?? null;
@@ -47,7 +62,7 @@ function WatchRow({ hex, live, feed, feedState, now }: { hex: string; live: Flig
     <li className="flex flex-col gap-1 border-t border-[var(--text-muted)]/20 py-2 first:border-t-0">
       <div className="flex items-center gap-2">
         <Plane aria-hidden className="size-4 shrink-0 text-[var(--gold-primary)]" />
-        <span className={`${mono11} truncate text-[var(--text-heading)]`}>{title}</span>
+        <span className={`${mono11} min-w-0 wrap-anywhere text-[var(--text-heading)]`}>{title}</span>
         <span className={`${mono10} text-[var(--text-muted)]`}>{hex.toUpperCase()}</span>
         <span className="ml-auto" />
         <FreshnessBadge state={state} at={at} now={now} />
@@ -58,7 +73,7 @@ function WatchRow({ hex, live, feed, feedState, now }: { hex: string; live: Flig
           <X aria-hidden className="size-4" />
         </button>
       </div>
-      <p className="truncate text-[12px] text-[var(--text-secondary)]">
+      <p className="wrap-break-word text-[12px] text-[var(--text-secondary)]">
         {id ? [id.model, id.registration, id.typeCode, id.operator].filter(Boolean).join(' · ') : detail.isLoading ? 'Identifying airframe…' : 'Airframe not in registry'}
       </p>
       {live && (
@@ -67,14 +82,8 @@ function WatchRow({ hex, live, feed, feedState, now }: { hex: string; live: Flig
           {live.emergency ? <span className="text-[var(--alert-red)]"> · EMERGENCY {live.emergency}</span> : null}
         </p>
       )}
-      <p className={`${mono10} text-[var(--text-secondary)]`}>
-        {route.data?.found && route.data.origin && route.data.destination
-          ? `${route.data.origin.iata ?? route.data.origin.icao} → ${route.data.destination.iata ?? route.data.destination.icao}${route.data.progress !== null ? ` · ${Math.round(route.data.progress * 100)}%` : ''}${route.data.stale ? ' · STALE ROUTE RECORD' : ''}`
-          : live?.callsign
-            ? route.isLoading
-              ? 'RESOLVING ROUTE…'
-              : 'NO SCHEDULED ROUTE'
-            : 'NO CALLSIGN'}
+      <p className={`${mono10} text-[var(--text-secondary)]`} data-testid="watch-route">
+        {watchRouteLine(route.data, !!live?.callsign, route.isLoading, live ? cardProgress(route.data, live) : null)}
       </p>
       <p className={`${mono10} text-[var(--text-muted)]`}>
         {track.length} POINTS THIS LEG

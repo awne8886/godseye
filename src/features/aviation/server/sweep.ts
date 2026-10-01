@@ -224,5 +224,6 @@ export async function runSweep(prev: FlightsSnapshot | null, deps: SweepDeps, si
     if (!run) continue;
     providers[key] = run.status.skipped ? run : { ...run, status: { ...run.status, count: counts.get(key) ?? 0 } };
   }
-  return { snapshot: snap, providers, observedAt: newest ? newest * 1000 : null };
+  // The newest observation, never later than this run (the cache stamps fetchedAt after it).
+  return { snapshot: snap, providers, observedAt: newest ? Math.min(newest * 1000, now()) : null };
 }

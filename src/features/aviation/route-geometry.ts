@@ -1,18 +1,26 @@
 /**
  * Pure route geometry shared by GET /api/flight-route (server) and the aircraft card (client):
- * which leg of a standing-data route the aircraft is flying, whether its observed course
- * contradicts the listed direction, and progress along the great circle. No I/O.
+ * which leg of a standing-data route the aircraft is flying and progress along the great circle.
+ * No I/O. Whether the observed course contradicts the leg is decided in `corroborate.ts`.
  *
  * Honesty (§0.1, R2 round 4 BLOCKING-1): the observed direction beats the schedule. A leg is
  * chosen by a weighted score (corridor excess + a track term), never by a yes/no cut-off that a
- * perpendicular departure turn passes; a 2-airport route flown the other way is not shown as
- * listed (`directionConflict`).
+ * perpendicular departure turn passes. A leg is never one airport to itself (R2 round 5 MINOR-3).
+ * Progress needs the observed track to run along the leg, or no track at all (round 5 fix pass
+ * MINOR-1: the FLIGHT view's direction test, `headingAlong`).
  */
+import { headingAlong } from '@/features/flight-paths/lib/geometry';
 import { alongTrackKm, distanceKm, initialBearing, type LngLatTuple } from '@/lib/geo';
 
 export interface RoutePoint {
   lat: number;
   lng: number;
+}
+
+/** A route stop: a point with its codes when known. */
+export interface AirportPoint extends RoutePoint {
+  icao?: string | null;
+  iata?: string | null;
 }
 
 export interface RoutePosition {
@@ -21,6 +29,9 @@ export interface RoutePosition {
   speedKt: number | null;
   /** Observed track, degrees true (picks the leg of a multi-leg route; checks the direction). */
   trackDeg?: number | null;
+  /** Observed barometric altitude (ft) and vertical rate (ft/min), when known (near an end they decide the direction). */
+  altFt?: number | null;
+  vrFpm?: number | null;
 }
 
 const D2R = Math.PI / 180;
@@ -48,17 +59,19 @@ export function legScore(a: RoutePoint, b: RoutePoint, here: LngLatTuple, trackD
 
 /**
  * For a multi-stop route, the leg with the lowest score (ties: the earlier leg); first → last for
- * a 2-airport route or without a position. A round trip (KJFK-KSAN-KJFK) has two legs on one
- * corridor: the track term decides, and it still works while the aircraft has not yet turned on
- * course after take-off (DAL571 on runway heading 302 out of SAN).
+ * a 2-airport route or without a position. Callers withhold a first → last that is one airport
+ * (`sameAirport`: a round trip asked without a position). A round trip (KJFK-KSAN-KJFK) has two
+ * legs on one corridor: the track term decides, and it still works while the aircraft has not yet
+ * turned on course after take-off (DAL571 on runway heading 302 out of SAN).
  */
-export function pickLeg<A extends RoutePoint>(airports: readonly A[], here: LngLatTuple | null, trackDeg: number | null = null): [A, A] {
+export function pickLeg<A extends AirportPoint>(airports: readonly A[], here: LngLatTuple | null, trackDeg: number | null = null): [A, A] {
   const first = airports[0]!;
   const last = airports[airports.length - 1]!;
   if (!here || airports.length === 2) return [first, last];
   let best: [A, A] = [first, last];
   let bestScore = Infinity;
   for (let i = 0; i < airports.length - 1; i++) {
+    if (sameAirport(airports[i]!, airports[i + 1]!)) continue; // a repeated stop is not a leg
     const s = legScore(airports[i]!, airports[i + 1]!, here, trackDeg);
     if (s < bestScore) {
       bestScore = s;
@@ -66,6 +79,15 @@ export function pickLeg<A extends RoutePoint>(airports: readonly A[], here: LngL
     }
   }
   return best;
+}
+
+/**
+ * True when the route also lists the reverse of o→d as a leg (a round trip, KSEA-KMCI-KSEA): both
+ * legs lie on one corridor and score alike, so only an observed track tells them apart.
+ */
+export function listsReverse(airports: readonly AirportPoint[], o: AirportPoint, d: AirportPoint): boolean {
+  for (let i = 0; i < airports.length - 1; i++) if (sameAirport(airports[i]!, d) && sameAirport(airports[i + 1]!, o)) return true;
+  return false;
 }
 
 /** OSIRIS onCorridor rule: within 15 % + 150 km of the great-circle length. */
@@ -77,20 +99,11 @@ export function onRouteCorridor(o: RoutePoint, d: RoutePoint, here: LngLatTuple)
 /** Near an end the course is a departure turn or arrival vectors, not evidence of direction. */
 export const CONFLICT_END_KM = 60;
 
-/**
- * True when the observed track contradicts o→d: on the corridor, > 60 km from both ends, heading
- * toward o (within 60°: cos > 0.5) and away from d (cos < −0.3, i.e. > ~107° off). On 686 live
- * on-corridor 2-airport cases this flags exactly UAL1118 (KDEN-KCID flown westbound) and WZZ1738
- * (LFSB-LWSK flown toward Basel). False without a track.
- */
-export function directionConflict(o: RoutePoint, d: RoutePoint, pos: RoutePosition | null): boolean {
-  if (!pos || pos.trackDeg == null) return false;
-  const here: LngLatTuple = [pos.lng, pos.lat];
-  if (!onRouteCorridor(o, d, here)) return false;
-  if (distanceKm(here, ll(o)) <= CONFLICT_END_KM || distanceKm(here, ll(d)) <= CONFLICT_END_KM) return false;
-  const toO = Math.cos((pos.trackDeg - initialBearing(here, ll(o))) * D2R);
-  const toD = Math.cos((pos.trackDeg - initialBearing(here, ll(d))) * D2R);
-  return toO > 0.5 && toD < -0.3;
+/** The same airport (same ICAO or IATA code, or within 1 km): never a leg's two ends. */
+export function sameAirport(a: AirportPoint, b: AirportPoint): boolean {
+  if (a.icao && b.icao) return a.icao === b.icao;
+  if (a.iata && b.iata) return a.iata === b.iata;
+  return distanceKm(ll(a), ll(b)) < 1;
 }
 
 export interface RouteProgress {
@@ -100,7 +113,22 @@ export interface RouteProgress {
   distanceKm: number;
 }
 
-/** Progress along the great circle when the aircraft is on the corridor and moving (> 50 kt). */
+/**
+ * The observed track runs along o→d (`true`), across or against it (`false`), or that is unknown
+ * (`null`: no track; near an end without a vertical rate and nothing contradicting). The FLIGHT
+ * view's `headingAlong`: within 60° of the path's local bearing en route.
+ */
+export function trackAlong(pos: RoutePosition, o: RoutePoint, d: RoutePoint): boolean | null {
+  if (pos.trackDeg == null) return null;
+  return headingAlong({ lat: pos.lat, lng: pos.lng, altFt: pos.altFt ?? null, gsKt: pos.speedKt, trackDeg: pos.trackDeg, vrFpm: pos.vrFpm ?? null }, ll(o), ll(d));
+}
+
+/**
+ * Progress along the great circle when the aircraft is on the corridor, moving (> 50 kt) and not
+ * observed tracking across or against the leg. Round 5 fix pass MINOR-1: on the corridor with the
+ * track 60–107° off (DEN→ORD mid-route on a track 100° off), the leg is standing data only — the
+ * FLIGHT view's direction test rejects it, so no progress is claimed.
+ */
 export function routeProgress(o: RoutePoint, d: RoutePoint, pos: RoutePosition | null): RouteProgress {
   const A = ll(o);
   const B = ll(d);
@@ -108,7 +136,7 @@ export function routeProgress(o: RoutePoint, d: RoutePoint, pos: RoutePosition |
   const distance = Math.round(total);
   if (!pos) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
   const here: LngLatTuple = [pos.lng, pos.lat];
-  if (!onRouteCorridor(o, d, here) || total < 30) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
+  if (!onRouteCorridor(o, d, here) || total < 30 || trackAlong(pos, o, d) === false) return { basis: 'schedule', status: 'unknown', progress: null, distanceKm: distance };
   const along = Math.min(total, Math.max(0, alongTrackKm(here, A, B)));
   const moving = pos.speedKt !== null && pos.speedKt > 50;
   return { basis: 'corridor', status: moving ? 'airborne' : 'unknown', progress: moving ? Math.round((along / total) * 1000) / 1000 : null, distanceKm: distance };
@@ -133,23 +161,4 @@ export interface TrackSample {
   lng: number;
   altFt: number | null;
   onGround: boolean;
-}
-
-/**
- * Where the flown track (current leg, oldest first) last took off or landed: 'o' or 'd' when its
- * latest low point (on the ground, or < 3,000 ft above the nearer end's elevation) is within
- * CONFLICT_END_KM of that end; null when no low point was observed or it was elsewhere.
- */
-export function lastLowEnd(track: readonly TrackSample[], o: RoutePoint & { elevationFt?: number | null }, d: RoutePoint & { elevationFt?: number | null }): 'o' | 'd' | null {
-  for (let i = track.length - 1; i >= 0; i--) {
-    const p = track[i]!;
-    const here: LngLatTuple = [p.lng, p.lat];
-    const dO = distanceKm(here, ll(o));
-    const dD = distanceKm(here, ll(d));
-    const ground = (dO <= dD ? o.elevationFt : d.elevationFt) ?? 0;
-    const low = p.onGround || (p.altFt !== null && p.altFt - ground < LOW_AGL_FT);
-    if (!low) continue;
-    return dO <= CONFLICT_END_KM ? 'o' : dD <= CONFLICT_END_KM ? 'd' : null;
-  }
-  return null;
 }

@@ -62,6 +62,15 @@ describe('flights sweep', () => {
     expect(b.providers.adsblol_tiles!.okAt).toBe(T0 + 1200);
   });
 
+  it('meta.observedAt is never after the run that produced it (R2 round 5 MINOR-2)', async () => {
+    const clock = { t: T0, cursor: 0 };
+    // A row dated 30 s past our clock (e.g. a provider whose clock runs ahead).
+    const ahead = rec('cccccc', Math.floor(T0 / 1000) + 30);
+    const r = await runSweep(null, deps(clock, { drainTiles: async () => [{ index: 0, at: clock.t, batch: { records: [ahead], noPosition: [] }, error: null }] }), signal);
+    expect(r.observedAt).toBe(clock.t);
+    expect(r.observedAt!).toBeLessThanOrEqual(clock.t);
+  });
+
   it('reports a tile error, and keeps reporting it while nothing new arrives (back-off)', async () => {
     const clock = { t: T0, cursor: 0 };
     const a = await runSweep(null, deps(clock, { drainTiles: async () => [{ index: 0, at: clock.t, batch: null, error: Object.assign(new Error('HTTP 429'), { code: 'http', status: 429 }) }] }), signal);

@@ -52,10 +52,19 @@ export interface Frame {
   staleVisible: number;
   /** Bumped whenever the visible index list changes (per-index accessors must re-run). */
   visVersion: number;
-  /** Bumped whenever an aircraft crosses the 60 s cap (colours must re-run). */
-  frozenVersion: number;
-  /** Stable deck `data` for the icon layer; replaced only when the visible list changes. */
-  data: { length: number };
+  /**
+   * Stable deck `data` for the icon layer; replaced only when the visible list changes. Its
+   * `attributes.getColor` is the binary colour buffer (`syncColors`).
+   */
+  data: { length: number; attributes?: { getColor: ColorAttribute } };
+  /** RGBA per visible row (visible order), the 60 s dim baked in; the backing store of `colorAttr`. */
+  colors: Uint8Array;
+  /** What `colors` was last fully built for (snapshot, visible list, colour mode, theme). */
+  colorKey: string;
+  colorAttr: ColorAttribute | null;
+  /** Visible rows whose aircraft crossed the 60 s cap since the last `syncColors` (patched alone). */
+  newlyFrozen: Uint32Array;
+  newlyFrozenCount: number;
   // Per-record constants, computed once per snapshot (no per-tick objects).
   bucket: Uint8Array;
   /** Unit vector of the observed position (far-side test by dot product). */
@@ -71,6 +80,12 @@ export interface Frame {
   idIndex: Map<string, number> | null;
   /** Cached ring indices, keyed by visVersion + watched + selection. */
   rings: { key: string; emergencies: number[]; highlighted: number[] } | null;
+}
+
+/** A deck binary attribute: one RGBA (unorm8) per instance. A new object = re-upload this buffer only. */
+export interface ColorAttribute {
+  value: Uint8Array;
+  size: 4;
 }
 
 const BUCKET_INDEX = Object.fromEntries(BUCKETS.map((b, i) => [b, i])) as Record<Bucket, number>;
@@ -92,8 +107,12 @@ export function newFrame(records: FlightRecord[]): Frame {
     count: 0,
     staleVisible: 0,
     visVersion: 0,
-    frozenVersion: 0,
     data: { length: 0 },
+    colors: new Uint8Array(n * 4),
+    colorKey: '',
+    colorAttr: null,
+    newlyFrozen: new Uint32Array(n),
+    newlyFrozenCount: 0,
     bucket: new Uint8Array(n),
     unit: new Float64Array(n * 3),
     lift: new Float64Array(n * 2),
@@ -180,17 +199,16 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
   const nowS = now / 1000;
   let n = 0;
   let changed = false;
-  let froze = false;
   let stale = 0;
   for (let i = 0; i < f.records.length; i++) {
     const b = f.bucket[i]!;
     if (!want[b]) continue;
     if (globe && f.unit[i * 3]! * cx + f.unit[i * 3 + 1]! * cy + f.unit[i * 3 + 2]! * cz < cosCam * f.lift[i * 2]! - sinCam * f.lift[i * 2 + 1]!) continue;
-    if (f.visible[n] !== i) {
-      f.visible[n] = i;
+    const slot = n++;
+    if (f.visible[slot] !== i) {
+      f.visible[slot] = i;
       changed = true;
     }
-    n++;
     if (f.settled[i]) {
       if (f.frozen[i]) stale++;
       continue;
@@ -200,7 +218,8 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
     if (age > MAX_DEAD_RECKON_S) {
       f.frozen[i] = 1;
       f.settled[i] = 1;
-      froze = true;
+      // Only this row's colour changes (dimmed): `syncColors` patches it alone.
+      f.newlyFrozen[f.newlyFrozenCount++] = slot;
       stale++;
     }
   }
@@ -209,8 +228,55 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
     f.count = n;
     f.visVersion++;
     f.data = { length: n };
+    // The rows moved: the next `syncColors` rebuilds every colour from `frozen`.
+    f.newlyFrozenCount = 0;
   }
-  if (froze) f.frozenVersion++;
+}
+
+/** Past the 60 s dead-reckoning cap an aircraft is frozen and drawn at this brightness (stale). */
+export const FROZEN_DIM = 0.55;
+
+function writeColor(f: Frame, k: number, colorOf: (r: FlightRecord) => Rgba): void {
+  const i = f.visible[k]!;
+  const c = colorOf(f.records[i]!);
+  const o = k * 4;
+  if (f.frozen[i]) {
+    f.colors[o] = Math.round(c[0] * FROZEN_DIM);
+    f.colors[o + 1] = Math.round(c[1] * FROZEN_DIM);
+    f.colors[o + 2] = Math.round(c[2] * FROZEN_DIM);
+    f.colors[o + 3] = 255;
+  } else {
+    f.colors[o] = c[0];
+    f.colors[o + 1] = c[1];
+    f.colors[o + 2] = c[2];
+    f.colors[o + 3] = c[3];
+  }
+}
+
+/**
+ * The icon colours as a deck binary attribute, in visible order with the 60 s dim baked in
+ * (perf m-j). Rebuilt in full only when `key` changes (new snapshot, visible list, colour mode or
+ * theme); an aircraft crossing the cap patches its own four bytes, and a fresh descriptor object
+ * over the same bytes makes deck re-upload just this buffer: `data` keeps its identity, so no
+ * per-aircraft accessor re-runs. (It used to re-run getColor for every aircraft whenever any one
+ * froze, i.e. nearly every tick.) Returns the number of rows written.
+ */
+export function syncColors(f: Frame, key: string, colorOf: (r: FlightRecord) => Rgba): number {
+  if (f.colorKey !== key || !f.colorAttr) {
+    for (let k = 0; k < f.count; k++) writeColor(f, k, colorOf);
+    f.colorKey = key;
+    f.newlyFrozenCount = 0;
+    f.colorAttr = { value: f.colors.subarray(0, f.count * 4), size: 4 };
+    f.data.attributes = { getColor: f.colorAttr };
+    return f.count;
+  }
+  const n = f.newlyFrozenCount;
+  if (n === 0) return 0;
+  for (let j = 0; j < n; j++) writeColor(f, f.newlyFrozen[j]!, colorOf);
+  f.newlyFrozenCount = 0;
+  f.colorAttr = { value: f.colorAttr.value, size: 4 };
+  f.data.attributes = { getColor: f.colorAttr };
+  return n;
 }
 
 export interface H3Cell {
@@ -299,6 +365,7 @@ export function buildLayers(o: BuildOptions): LayersList | null {
   } else {
     const atlas = aircraftAtlas();
     if (atlas) {
+      syncColors(f, `${o.dataVersion}|${f.visVersion}|${o.colorMode}|${o.theme}`, colorOf);
       out.push(
         new SdfIconLayer({
           id: 'aviation-icons',
@@ -308,11 +375,7 @@ export function buildLayers(o: BuildOptions): LayersList | null {
           getIcon: (_: unknown, { index }: { index: number }) => iconFor(rec(index)),
           getPosition: (_: unknown, { index, target }: { index: number; target: number[] }) => at(index, target),
           getAngle: (_: unknown, { index }: { index: number }) => bearing - (rec(index).trackDeg ?? 0),
-          getColor: (_: unknown, { index }: { index: number }) => {
-            const c = colorOf(rec(index));
-            // Past the 60 s dead-reckoning cap the aircraft is frozen: drawn dimmer (stale).
-            return f.frozen[f.visible[index]!] ? ([Math.round(c[0] * 0.55), Math.round(c[1] * 0.55), Math.round(c[2] * 0.55), 255] as Rgba) : c;
-          },
+          // Colours come from `data.attributes.getColor` (syncColors above): no per-aircraft accessor.
           getSize: (_: unknown, { index }: { index: number }) => (rec(index).isHelicopter ? 26 : 24),
           sizeUnits: 'pixels',
           sizeScale: scale,
@@ -323,12 +386,11 @@ export function buildLayers(o: BuildOptions): LayersList | null {
           // Read by the map's click/hover router (src/lib/map/picking.ts); no own onClick handler,
           // so a GPU pick and the CPU hit-test of the same aircraft still open one card.
           toSelection: (info: PickingInfo) => (info.index < 0 ? null : o.toSelection(rec(info.index), at(info.index, [0, 0]))),
-          // Positions move every tick; everything else only when the snapshot, the visible list,
-          // the frozen set or the view settings change (no per-second O(n) accessor re-runs).
+          // Positions move every tick; everything else only when the snapshot, the visible list
+          // or the view settings change (no per-second O(n) accessor re-runs; colours are binary).
           updateTriggers: {
             getPosition: [o.tick],
             getAngle: [o.dataVersion, f.visVersion, bearing],
-            getColor: [o.dataVersion, f.visVersion, f.frozenVersion, o.colorMode, o.theme],
             getIcon: [o.dataVersion, f.visVersion],
             getSize: [o.dataVersion, f.visVersion],
           },
