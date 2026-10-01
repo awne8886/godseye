@@ -45,7 +45,11 @@ export const GdacsResponse = Envelope.extend({ items: z.array(GdacsIncident) });
 
 export const GdeltEvent = EntityBase.extend({
   globalEventId: z.string(),
-  /** GDELT DATEADDED (the 15-minute batch), ISO. `observedAt` is the event's SQLDATE when parseable. */
+  /**
+   * GDELT DATEADDED (the 15-minute batch), ISO, capped at the batch's observed publish time: GDELT
+   * labels batches ~10 min ahead of publication, and a time after the fetch is never served.
+   * `observedAt` is the event's SQLDATE when parseable.
+   */
   dateAdded: IsoTime,
   /** CAMEO QuadClass 1 verbal coop · 2 material coop · 3 verbal conflict · 4 material conflict. */
   quadClass: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
@@ -67,8 +71,12 @@ export const GdeltEvent = EntityBase.extend({
 
 export const GdeltEventsResponse = Envelope.extend({
   items: z.array(GdeltEvent).max(5_000),
-  /** 15-minute export windows aggregated, oldest → newest. */
-  window: z.object({ from: IsoTime, to: IsoTime, batches: z.number().int().positive() }),
+  /**
+   * 15-minute export windows aggregated, oldest → newest. `to` is the newest batch's observed
+   * publish time (≤ fetch time); `latestLabel` is GDELT's own quarter-hour label for that batch,
+   * which is usually later than its publication.
+   */
+  window: z.object({ from: IsoTime, to: IsoTime, batches: z.number().int().positive(), latestLabel: IsoTime.optional() }),
   /** Rows read before geo/quad filtering. */
   scanned: z.number().int().nonnegative(),
 });

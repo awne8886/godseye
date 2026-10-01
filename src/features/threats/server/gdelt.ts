@@ -6,6 +6,9 @@
  * gone (404) and DOC 2.0 is throttled to 1 req / 5 s, so events come only from these files.
  * Each refresh downloads only batches it has not parsed yet; the feed aggregates the newest
  * WINDOW_BATCHES batches (1 h). Events keep their own ActionGeo coordinates (never jittered).
+ * Times: GDELT labels a batch with a quarter-hour that is usually ~10 min AFTER it is published
+ * (re-probed 2026-10-01), so DATEADDED is capped at the batch's observed publish time and the
+ * feed's observedAt is never later than its fetch (R3 round-4 MINOR-4).
  */
 import 'server-only';
 import { defineFeed, runProvider, type ProviderRun } from '@/lib/feeds';
@@ -51,6 +54,23 @@ export function previousBatch(ts: string, n: number): string {
 
 export const batchUrl = (ts: string) => `${GDELT_BASE}${ts}.export.CSV.zip`;
 
+/** GDELT's publishing cadence (one export batch every 15 minutes). */
+export const GDELT_CADENCE_MS = 15 * 60_000;
+
+/**
+ * When a batch was observed published (ms epoch). GDELT labels each batch (file name and every
+ * row's DATEADDED) with a quarter-hour that is usually AFTER it is published: probed 2026-10-01,
+ * `20261001054500.export.CSV.zip` had Last-Modified 05:34:20 and was listed in lastupdate.txt at
+ * 05:35:25. The observed time is the earliest of the label, the file's Last-Modified and the moment
+ * we fetched it, so it is never later than the fetch. Pure; exported for tests.
+ */
+export function batchObservedAt(label: string, lastModified: string | null | undefined, fetchedAt: number): number {
+  const iso = gdeltTsToIso(label);
+  const lab = iso ? Date.parse(iso) : fetchedAt;
+  const lm = lastModified ? Date.parse(lastModified) : Number.NaN;
+  return Math.min(lab, Number.isFinite(lm) ? lm : fetchedAt, fetchedAt);
+}
+
 const num = (s: string | undefined): number | null => {
   if (s === undefined || s.trim() === '') return null;
   const n = Number(s);
@@ -75,14 +95,16 @@ function httpUrl(s: string | undefined): string | null {
 }
 
 /**
- * Parse one export CSV (tab-separated, no header). Column indices per the GDELT 2.0 Event codebook:
+ * Parse one export CSV (tab-separated, no header). `observedAt` (ms epoch, from batchObservedAt)
+ * caps each row's DATEADDED so no event is stamped later than its batch was observed. Column indices per the GDELT 2.0 Event codebook:
  * 0 GLOBALEVENTID · 1 SQLDATE · 6 Actor1Name · 16 Actor2Name · 26 EventCode · 28 EventRootCode ·
  * 29 QuadClass · 30 GoldsteinScale · 31 NumMentions · 32 NumSources · 33 NumArticles · 34 AvgTone ·
  * 51 ActionGeo_Type · 52 ActionGeo_FullName · 53 ActionGeo_CountryCode (FIPS 10-4) ·
  * 56 ActionGeo_Lat · 57 ActionGeo_Long · 59 DATEADDED · 60 SOURCEURL.
  * Rows without an action geolocation (type 0 or no coordinates) are counted but not returned.
  */
-export function parseExport(tsv: string): { events: GdeltEvent[]; scanned: number } {
+export function parseExport(tsv: string, observedAt: number | null = null): { events: GdeltEvent[]; scanned: number } {
+  const cap = observedAt !== null && Number.isFinite(observedAt) ? new Date(observedAt).toISOString() : null;
   const events: GdeltEvent[] = [];
   let scanned = 0;
   for (const line of tsv.split('\n')) {
@@ -94,7 +116,8 @@ export function parseExport(tsv: string): { events: GdeltEvent[]; scanned: numbe
     const lat = num(c[56]);
     const lng = num(c[57]);
     const quad = num(c[29]);
-    const dateAdded = gdeltTsToIso(c[59] ?? '');
+    const label = gdeltTsToIso(c[59] ?? '');
+    const dateAdded = label && cap && label > cap ? cap : label;
     if (!geoType || lat === null || lng === null || Math.abs(lat) > 90 || Math.abs(lng) > 180 || (lat === 0 && lng === 0)) continue;
     if (quad !== 1 && quad !== 2 && quad !== 3 && quad !== 4) continue;
     if (!dateAdded || !c[0]) continue;
@@ -128,13 +151,15 @@ export function parseExport(tsv: string): { events: GdeltEvent[]; scanned: numbe
 
 export interface GdeltData {
   items: GdeltEvent[];
-  window: { from: string; to: string; batches: number };
+  window: { from: string; to: string; batches: number; latestLabel?: string };
   scanned: number;
 }
 
 interface ParsedBatch {
   events: GdeltEvent[];
   scanned: number;
+  /** When the batch was observed published (batchObservedAt), ms epoch. */
+  observedAt: number;
 }
 
 // Parsed batches by timestamp (the newest WINDOW_BATCHES + 1 are kept).
@@ -149,7 +174,8 @@ async function loadBatch(ts: string, signal: AbortSignal): Promise<ParsedBatch> 
   if (hit) return hit;
   const res = await httpRequest(batchUrl(ts), { signal, timeoutMs: 20_000, family: 4, limiter: limiter(), maxBytes: 20 * 1024 * 1024 });
   if (!res.ok) throw new Error(`http_${res.status}`);
-  const parsed = parseExport(unzipFirst(res.body).data.toString('utf8'));
+  const observedAt = batchObservedAt(ts, res.lastModified, Date.now());
+  const parsed = { ...parseExport(unzipFirst(res.body).data.toString('utf8'), observedAt), observedAt };
   batches.set(ts, parsed);
   return parsed;
 }
@@ -169,10 +195,18 @@ export function aggregate(parsed: { ts: string; batch: ParsedBatch }[]): GdeltDa
   }
   // Newest batch first, then the most-reported events: the cap drops the least-covered old rows.
   items.sort((a, b) => Date.parse(b.dateAdded) - Date.parse(a.dateAdded) || b.numMentions - a.numMentions);
-  const tss = parsed.map((p) => p.ts).sort();
+  // Each batch covers the 15 min up to the moment it was observed published (never a future label).
+  const sorted = [...parsed].sort((a, b) => a.ts.localeCompare(b.ts));
+  const oldest = sorted[0]!;
+  const newest = sorted.at(-1)!;
   return {
     items: items.slice(0, MAX_EVENTS),
-    window: { from: gdeltTsToIso(tss[0]!)!, to: new Date(Date.parse(gdeltTsToIso(tss.at(-1)!)!) + 15 * 60_000).toISOString(), batches: tss.length },
+    window: {
+      from: new Date(oldest.batch.observedAt - GDELT_CADENCE_MS).toISOString(),
+      to: new Date(newest.batch.observedAt).toISOString(),
+      batches: sorted.length,
+      latestLabel: gdeltTsToIso(newest.ts) ?? undefined,
+    },
     scanned,
   };
 }
@@ -222,7 +256,8 @@ export const gdeltFeed = defineFeed<GdeltData>({
     for (const ts of [...batches.keys()]) if (!wanted.includes(ts)) batches.delete(ts);
     if (!exports.result?.length) return { data: { items: [], window: { from: new Date(0).toISOString(), to: new Date(0).toISOString(), batches: 1 }, scanned: 0 }, providers };
     const data = aggregate(exports.result);
-    return { data, providers, observedAt: Date.parse(data.items[0]?.dateAdded ?? '') || null };
+    // The newest batch's observed publish time (never GDELT's future quarter-hour label).
+    return { data, providers, observedAt: Date.parse(data.window.to) || null };
   },
 });
 

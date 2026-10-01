@@ -11,11 +11,11 @@
  *    buffer built from the GDELT batches this process has seen (meta.note states the span).
  */
 import 'server-only';
-import { defineFeed } from '@/lib/feeds';
+import { defineFeed, type FeedResult } from '@/lib/feeds';
 import { pointInPolygon } from '@/lib/geo';
-import type { ConflictEvent, ConflictZone, GdeltEvent } from '@/lib/types';
+import type { ConflictEvent, ConflictZone, FreshnessState, GdeltEvent } from '@/lib/types';
 import { gdeltTitle, precisionClass } from '../shared/gdelt';
-import { GDELT_ATTRIBUTION, gdeltFeed } from './gdelt';
+import { GDELT_ATTRIBUTION, GDELT_CADENCE_MS, gdeltFeed, type GdeltData } from './gdelt';
 import { readRef } from './refdata';
 
 type ZoneRef = Omit<ConflictZone, 'liveEventCount'>;
@@ -52,7 +52,9 @@ export function zoneFor(zones: readonly ZoneRef[], lng: number, lat: number, box
   return null;
 }
 
-export function toConflictEvent(e: GdeltEvent, zoneId: string | null): ConflictEvent {
+export function toConflictEvent(e: GdeltEvent, zoneId: string | null, now = Date.now()): ConflictEvent {
+  // dateAdded is already capped at the batch's observed publish time; never later than now either.
+  const added = Date.parse(e.dateAdded);
   return {
     id: e.id,
     lat: e.lat,
@@ -60,7 +62,7 @@ export function toConflictEvent(e: GdeltEvent, zoneId: string | null): ConflictE
     title: `${gdeltTitle(e)}${e.place ? ` · ${e.place}` : ''}`.slice(0, 240),
     source: 'gdelt',
     zoneId,
-    observedAt: e.dateAdded,
+    observedAt: Number.isFinite(added) && added > now ? new Date(now).toISOString() : e.dateAdded,
     url: e.sourceUrl,
     precision: precisionClass(e.geoPrecision),
   };
@@ -79,7 +81,7 @@ export function buildConflicts(zones: readonly ZoneRef[], buffer: Map<string, Co
     if (e.geoPrecision === 1 || e.geoPrecision === 0) continue;
     const zoneId = zoneFor(zones, e.lng, e.lat, boxes);
     if (!zoneId) continue;
-    buffer.set(e.id, toConflictEvent(e, zoneId));
+    buffer.set(e.id, toConflictEvent(e, zoneId, now));
   }
   for (const [id, ev] of buffer) if (now - Date.parse(ev.observedAt) > DAY_MS) buffer.delete(id);
   const counts = new Map<string, number>();
@@ -102,7 +104,8 @@ export const conflictsFeed = defineFeed<ConflictsData>({
   key: 'conflicts',
   ttlMs: 15 * 60_000,
   pollMs: 5 * 60_000,
-  // GDELT publishes every 15 min: events older than an hour mean the live part is not live.
+  // Backstop for snapshot readers (/api/health): newest in-zone event older than an hour → STALE.
+  // The route applies the tighter bound (boundByGdelt: GDELT's own state at its 15-min cadence).
   maxObservationAgeMs: 60 * 60_000,
   kind: 'mixed',
   attribution: [
@@ -137,6 +140,41 @@ export const conflictsFeed = defineFeed<ConflictsData>({
     };
   },
 });
+
+const RANK: Record<Exclude<FreshnessState, 'reference'>, number> = { live: 0, recent: 1, stale: 2, offline: 3 };
+
+/**
+ * Conflicts is built from GDELT, so at response time it is never fresher than GDELT itself (R3
+ * round-4 MINOR-1: it stayed LIVE for up to an hour while GDELT was down). When the GDELT feed is not
+ * LIVE, the state follows the age of the last good GDELT pull at GDELT's 15-minute cadence: RECENT
+ * up to 6 × 15 min, STALE after (the zones are REFERENCE and still served, so never OFFLINE here).
+ * `providers.gdelt` is restated from the GDELT feed as it is now. A conflicts snapshot with no live
+ * part (REFERENCE, GDELT never answered) is left as it is. Pure; exported for tests.
+ */
+export function boundByGdelt(c: FeedResult<ConflictsData>, g: FeedResult<GdeltData>, now = Date.now()): FeedResult<ConflictsData> {
+  if (c.data === null || c.meta.state === 'reference' || c.meta.state === 'offline') return c;
+  const lastPull = Date.parse(g.meta.lastGoodAt ?? '');
+  if (g.meta.state === 'live' || !Number.isFinite(lastPull)) return c;
+  const ageMs = Math.max(0, now - lastPull);
+  const cap: FreshnessState = ageMs <= 6 * GDELT_CADENCE_MS ? 'recent' : 'stale';
+  const state = RANK[cap] > RANK[c.meta.state] ? cap : c.meta.state;
+  const ok = g.meta.state === 'recent';
+  const prev = c.providers.gdelt;
+  return {
+    ...c,
+    meta: { ...c.meta, state, stale: c.meta.stale || state !== 'live' },
+    providers: {
+      ...c.providers,
+      gdelt: {
+        ok,
+        count: prev?.count ?? c.data.events.length,
+        ms: prev?.ms ?? 0,
+        age_s: Math.round(ageMs / 1000),
+        ...(ok ? {} : { error: g.providers.export?.error ?? g.providers.lastupdate?.error ?? g.meta.state }),
+      },
+    },
+  };
+}
 
 /** Test hook. */
 export function resetConflictBuffer(): void {

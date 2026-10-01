@@ -5,7 +5,7 @@ import { buildConflicts, loadZones, type toConflictEvent, zoneFor } from './conf
 import { joinRisk, latestWorkflow, RISK_METHOD } from './country-risk';
 import { normalizeDeepState } from './frontlines';
 import { normalizeGdacsIncidents } from './gdacs';
-import { aggregate, batchUrl, gdeltTsToIso, parseExport, parseLastUpdate, previousBatch, toHttps } from './gdelt';
+import { aggregate, batchObservedAt, batchUrl, gdeltTsToIso, parseExport, parseLastUpdate, previousBatch, toHttps } from './gdelt';
 import { CONFLICT_METHOD, curatedStatus, flagSites, mergeNuclear, parseWikidata, SEISMIC_METHOD, wikidataStatus } from './nuclear';
 import { unzipFirst } from './zip';
 
@@ -49,13 +49,39 @@ describe('GDELT export (fixtures 2026-09-30)', () => {
     const { events } = parseExport(unzipFirst(fixture(FX.gdeltZip)).data.toString('utf8'));
     const older = events.slice(0, 50).map((e) => ({ ...e, dateAdded: '2026-09-30T19:45:00.000Z' }));
     const agg = aggregate([
-      { ts: '20260930200000', batch: { events, scanned: 1233 } },
-      { ts: '20260930194500', batch: { events: older, scanned: 50 } },
+      { ts: '20260930200000', batch: { events, scanned: 1233, observedAt: Date.parse('2026-09-30T19:49:20Z') } },
+      { ts: '20260930194500', batch: { events: older, scanned: 50, observedAt: Date.parse('2026-09-30T19:34:10Z') } },
     ]);
-    expect(agg.window).toEqual({ from: '2026-09-30T19:45:00.000Z', to: '2026-09-30T20:15:00.000Z', batches: 2 });
+    // The window ends at the newest batch's observed publish time, never at a future label.
+    expect(agg.window).toEqual({ from: '2026-09-30T19:19:10.000Z', to: '2026-09-30T19:49:20.000Z', batches: 2, latestLabel: '2026-09-30T20:00:00.000Z' });
     expect(agg.scanned).toBe(1283);
     expect(agg.items.length).toBe(events.length); // the 50 older copies share event ids
     expect(agg.items.length).toBeLessThanOrEqual(5000);
+  });
+});
+
+describe('GDELT batch times (R3 round-4 MINOR-4: no future stamps)', () => {
+  // Live probe 2026-10-01: lastupdate.txt (Last-Modified 05:35:25) named batch 20261001054500,
+  // whose zip had Last-Modified 05:34:20 and every row DATEADDED 20261001054500.
+  it('uses the observed publish time, never after the fetch', () => {
+    const fetchedAt = Date.parse('2026-10-01T05:35:58Z');
+    expect(new Date(batchObservedAt('20261001054500', 'Thu, 01 Oct 2026 05:34:20 GMT', fetchedAt)).toISOString()).toBe('2026-10-01T05:34:20.000Z');
+    // No Last-Modified: the fetch time bounds it.
+    expect(batchObservedAt('20261001054500', null, fetchedAt)).toBe(fetchedAt);
+    // A bogus Last-Modified after the fetch is clamped to the fetch.
+    expect(batchObservedAt('20261001054500', 'Thu, 01 Oct 2026 06:00:00 GMT', fetchedAt)).toBe(fetchedAt);
+    // A batch published after its label keeps GDELT's (past) label.
+    expect(new Date(batchObservedAt('20261001050000', 'Thu, 01 Oct 2026 05:04:00 GMT', fetchedAt)).toISOString()).toBe('2026-10-01T05:00:00.000Z');
+  });
+
+  it('caps every row’s DATEADDED at the batch’s observed time', () => {
+    const tsv = unzipFirst(fixture(FX.gdeltZip)).data.toString('utf8');
+    const cap = Date.parse('2026-09-30T19:49:20Z');
+    const { events } = parseExport(tsv, cap);
+    expect(events.length).toBeGreaterThan(1100);
+    for (const e of events) expect(Date.parse(e.dateAdded)).toBeLessThanOrEqual(cap);
+    expect(events[0]!.dateAdded).toBe('2026-09-30T19:49:20.000Z');
+    for (const e of events.slice(0, 50)) expect(GdeltEvent.safeParse(e).success).toBe(true);
   });
 });
 

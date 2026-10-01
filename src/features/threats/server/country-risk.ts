@@ -73,6 +73,7 @@ export const countryRiskFeed = defineFeed<{ items: CountryRisk[] }>({
     { text: 'INFORM Risk Index, European Commission Joint Research Centre', url: 'https://drmkc.jrc.ec.europa.eu/inform-index', licence: 'CC BY 4.0 (JRC)' },
     { text: 'World Bank Worldwide Governance Indicators', url: 'https://www.worldbank.org/en/publication/worldwide-governance-indicators', licence: 'CC BY 4.0' },
   ],
+  note: 'The map shades every country with an INFORM score: its 1:110m outline, or a point at its label position for states too small to have one. Rows with only a WGI value have no INFORM score and are listed here but not shaded.',
   count: (d) => d.items.length,
   deadlineMs: 60_000,
   run: async ({ signal }) => {

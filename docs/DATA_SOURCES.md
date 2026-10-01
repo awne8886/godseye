@@ -742,6 +742,17 @@ Re-probe 2026-09-30 22:49 UTC (Phase 3 round-1 fixes; honest UA, `Origin: https:
 | IODA `v2/outages/events?from&until&limit=5` | 200 · 8.9 s · 1.8 kB | reflects Origin | Slow this time (8.9 s); within the feed timeout. |
 | TeleGeography `cable-geo.json` / `landing-point-geo.json` | 200 · 0.49 s · 751 kB / 200 · 0.54 s · 361 kB | none | Unchanged; bundled copy still current. |
 
+Re-probe 2026-10-01 05:35–05:48 UTC (Phase 3 round-4 fixes; UA `GODSEYE/0.1.0 (open-source monitor; layers-threats-network probe)`, `Origin: https://example.org`):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| GDELT `lastupdate.txt` | 200 · 0.30 s · 319 B | `*` | At 05:35:58 it named batch **`20261001054500`** (label 9.5 min in the future); its own Last-Modified 05:35:25. |
+| GDELT `…/20261001054500.export.CSV.zip` (HEAD + GET) | 200 · 0.25 s · 58.7 kB | `*` | **Last-Modified 05:34:20** for a batch labelled 05:45:00; all 945 rows carry DATEADDED `20261001054500`. → DATEADDED is capped at the batch's observed publish time (min of label, Last-Modified, fetch); `window.to` is that time and `window.latestLabel` keeps GDELT's label. |
+| NVD `cves/2.0?cveId=CVE-2021-44228` | 200 · 0.31 s · 87 kB | `*` | Keyless 5 / 30 s unchanged. Lookups are queued through `nvdBucket` and each response states `nvd.{queued, etaS, ratePer30s, lastLookupAt, awaitingAnalysis}`. |
+| IODA `v2/outages/events?from&until&entityType=country&limit=200` | 200 · 1.40 s · 4.9 kB (19 events) | reflects Origin | Ongoing events have `start + duration == until` (clipped to the query, not an observation) → `lastSignalAt` = onset for ongoing events, recovery for ended ones; `meta.observedAt` = newest of those. |
+| INFORM `Workflows/GetByYear/2026` | 200 · 1.22 s | `*` | Unchanged. |
+| World Bank `GOV_WGI_PV.EST?source=3&date=2023` | 200 · 6.92 s · 54 kB | `*` | Slow this time (6.9 s; was 0.47 s); within the 60 s feed deadline. Rows with a WGI value but no INFORM score are listed by `/api/country-risk` and not shaded; scored states without a 1:110m outline are drawn at their Natural Earth label point. |
+
 ## map-engine — probe log
 
 All map sources are fetched **by the browser, straight from the tile host** (hosts in
