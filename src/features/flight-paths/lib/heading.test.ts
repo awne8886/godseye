@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { initialBearing, interpolate, type LngLatTuple } from '@/lib/geo';
-import { flyingRoute, headingAlong } from './geometry';
+import { angleDiff, DIRECTION, flyingRoute, headingAlong } from './geometry';
 
 const LHR: LngLatTuple = [-0.461941, 51.4706];
 const JFK: LngLatTuple = [-73.7781, 40.6413];
@@ -10,12 +10,25 @@ describe('headingAlong / flyingRoute (round 3 B1/M1)', () => {
   const local = initialBearing(mid, JFK);
   const at = (p: LngLatTuple, trackDeg: number | null, vrFpm: number | null = 0) => ({ lng: p[0], lat: p[1], altFt: 37_000, gsKt: 480, trackDeg, vrFpm });
 
-  it('en route: within ±60° of the local bearing toward b', () => {
+  it('en route: within ±60° of the local path bearing AND ±45° of the direct bearing to b', () => {
     expect(headingAlong(at(mid, local), LHR, JFK)).toBe(true);
-    expect(headingAlong(at(mid, (local + 55) % 360), LHR, JFK)).toBe(true);
+    // On the great circle the two bearings agree: 40° off passes, 50° off does not (round 5).
+    expect(headingAlong(at(mid, (local + 40) % 360), LHR, JFK)).toBe(true);
+    expect(headingAlong(at(mid, (local + 50) % 360), LHR, JFK)).toBe(false);
     expect(headingAlong(at(mid, (local + 70) % 360), LHR, JFK)).toBe(false);
     expect(headingAlong(at(mid, (local + 180) % 360), LHR, JFK)).toBe(false);
     expect(headingAlong(at(mid, (local + 180) % 360), JFK, LHR)).toBe(true);
+  });
+
+  it('round 5: far off the great circle, a track near the path bearing but pointing away from b is not toward b (SWA2331)', () => {
+    // 600 km south of the LAS–LIT great circle over west Texas, tracking 130° (toward Laredo): 57° off
+    // the path's local bearing (within 60°) but LIT is ~70° off its nose.
+    const LAS: LngLatTuple = [-115.152, 36.08];
+    const LIT: LngLatTuple = [-92.224, 34.729];
+    const s = { lng: -101.67361, lat: 29.73747, altFt: 35000, gsKt: 483.5, trackDeg: 129.9, vrFpm: 64 };
+    expect(angleDiff(s.trackDeg, initialBearing([s.lng, s.lat], LIT))).toBeGreaterThan(DIRECTION.maxCourseDeg);
+    expect(headingAlong(s, LAS, LIT)).toBe(false);
+    expect(flyingRoute(s, LAS, LIT)).toBe(false);
   });
 
   it('no observed track: unknown, never a direction', () => {

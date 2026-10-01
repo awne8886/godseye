@@ -64,7 +64,13 @@ describe('observed-reverse relabel needs the reverse leg end to end (round 5 B1,
     it(`${c.cs}: departed ${c.routeD.iata}, flying elsewhere — not shown ${c.shownRound5} with progress/ETA; withheld with a reason`, async () => {
       const d = await detail(c);
       expect({ origin: d.origin, destination: d.destination, progress: d.progress, eta: d.eta, routeBasis: d.routeBasis }).toEqual({ origin: null, destination: null, progress: null, eta: null, routeBasis: null });
-      expect(d.routeCheck).toMatch(new RegExp(`^observed departure ${c.routeD.iata}; .+ — ${c.routeD.iata}→${c.routeO.iata} is not listed by any source and is not confirmed`));
+      // Withheld either as not on course for O at all (the en-route course test), or as heading back
+      // toward O but not consistently enough for the unlisted reverse leg (reverseLegReject).
+      expect(d.routeCheck).toMatch(
+        new RegExp(
+          `^observed departure ${c.routeD.iata}(; .+ — ${c.routeD.iata}→${c.routeO.iata} is not listed by any source and is not confirmed| contradicts standing data ${c.routeO.iata}→${c.routeD.iata}, and the aircraft is not on course for ${c.routeO.iata} — route not confirmed)`,
+        ),
+      );
       // The observed track is still drawn (it is what was observed), only the route is withheld.
       expect(d.flownTrack.length).toBeGreaterThan(0);
     });

@@ -253,6 +253,12 @@ export function corridorReject(s: LiveState, a: LngLatTuple, b: LngLatTuple): Co
 export const DIRECTION = {
   /** Track within this of the local great-circle bearing toward b (airways and oceanic tracks are not great circles). */
   maxTrackDiffDeg: 60,
+  /**
+   * … and within this of the direct bearing to b (round 5: SWA2331, 600 km south of the LAS–LIT
+   * great circle tracking 130° toward Laredo, was 57° off the path bearing — "on course" — while LIT
+   * was 70° off its nose). Live: every airliner shown on its standing-data route was ≤ 41° off.
+   */
+  maxCourseDeg: 45,
   /** Within this of an endpoint the path bearing says little (SIDs, holds, downwind legs): the vertical rate, the bearing to the endpoint and the height above it decide. */
   terminalKm: 150,
   /** Climbing faster than this near b is a departure from b; descending faster than this near a is an arrival at a. */
@@ -298,7 +304,8 @@ export interface EndElevations {
 /**
  * Is an airborne aircraft flying a→b (true), not (false), or is that unknown from what was observed
  * (null: no track; near an endpoint without a vertical rate and nothing contradicting)? En route:
- * the observed track within ±60° of the local great-circle bearing toward b. Within 150 km of an
+ * the observed track within ±60° of the local great-circle bearing toward b and ±45° of the direct
+ * bearing to b (round 5: a course that points well away from b is not "toward b"). Within 150 km of an
  * endpoint (round 4 M1, round 5 M1: cruise traffic passing abeam an endpoint is not arriving there):
  *  - near b (arriving): not climbing; unless descending, tracking within 60° of b; and no higher
  *    above b than `arrivalCeilingFt`;
@@ -336,8 +343,9 @@ export function headingAlong(s: LiveState, a: LngLatTuple, b: LngLatTuple, elev:
   }
   const f = total > 0 ? alongTrackKm(p, a, b) / total : 0;
   // Abeam the path: its local bearing; before a or past b: straight toward b.
-  const local = f > 0 && f < 1 ? initialBearing(interpolate(a, b, f), b) : initialBearing(p, b);
-  return angleDiff(s.trackDeg, local) <= DIRECTION.maxTrackDiffDeg;
+  const direct = initialBearing(p, b);
+  const local = f > 0 && f < 1 ? initialBearing(interpolate(a, b, f), b) : direct;
+  return angleDiff(s.trackDeg, local) <= DIRECTION.maxTrackDiffDeg && angleDiff(s.trackDeg, direct) <= DIRECTION.maxCourseDeg;
 }
 
 /** On a→b: inside the corridor AND heading toward b (an observed direction, never assumed). */
