@@ -134,6 +134,16 @@ test.describe('panels-recon', () => {
     // the clicks must land where the camera has stopped.
     await expect(canvas).toHaveCSS('cursor', 'crosshair', { timeout: 30_000 });
     await waitForCameraIdle(page);
+    // Count clicks that reach MapLibre's listener (bubble phase on the canvas container): while a
+    // DRAW tool is armed there must be none, so the click-to-select router never picks (r5 R4-M2).
+    await page.evaluate(() => {
+      const w = window as unknown as { __mapClicks: number };
+      w.__mapClicks = 0;
+      document.querySelector('.maplibregl-canvas-container')!.addEventListener('click', () => {
+        w.__mapClicks += 1;
+      });
+    });
+    const mapClicks = () => page.evaluate(() => (window as unknown as { __mapClicks: number }).__mapClicks);
     const box = (await canvas.boundingBox())!;
     await canvas.click({ position: { x: box.width * 0.35, y: box.height * 0.5 } });
     await canvas.click({ position: { x: box.width * 0.45, y: box.height * 0.5 } });
@@ -142,6 +152,19 @@ test.describe('panels-recon', () => {
     const measure = panel.getByTestId('draw-measure').first();
     await expect(measure).toHaveText(/\d[\d.,]* (NM|km|mi|ft|m)$/);
     await expect(panel.getByRole('button', { name: /Export/ })).toBeEnabled();
+    // Double-click still finishes on desktop (its second click is not a third vertex), and FINISH works.
+    await canvas.click({ position: { x: box.width * 0.35, y: box.height * 0.6 } });
+    await canvas.dblclick({ position: { x: box.width * 0.45, y: box.height * 0.6 } });
+    await expect(panel.getByTestId('draw-measure')).toHaveCount(2);
+    await canvas.click({ position: { x: box.width * 0.35, y: box.height * 0.4 } });
+    await canvas.click({ position: { x: box.width * 0.45, y: box.height * 0.4 } });
+    await panel.getByRole('button', { name: 'Finish' }).click();
+    await expect(panel.getByTestId('draw-measure')).toHaveCount(3);
+    expect(await mapClicks()).toBe(0);
+    await panel.getByRole('button', { name: 'Stop drawing' }).click();
+    await expect(canvas).not.toHaveCSS('cursor', 'crosshair');
+    await canvas.click({ position: { x: box.width * 0.55, y: box.height * 0.5 } });
+    await expect.poll(mapClicks).toBe(1);
   });
 
   test('RECON looks up example.com and lists every provider honestly', async ({ page }) => {
