@@ -9,6 +9,7 @@ import type { LayersList, PickingInfo } from '@deck.gl/core';
 import { latLngToCell } from 'h3-js';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
 import { splitAtAntimeridian, type LngLatTuple } from '@/lib/geo';
+import { horizonAngleDeg, type FarSideCamera } from '@/lib/map/far-side';
 import { readCssColor, type MapToken, type Rgba } from '@/lib/tokens';
 import type { Selection } from '@/lib/layer-host';
 import type { FlightRecord } from '../adsb';
@@ -59,6 +60,8 @@ export interface Frame {
   bucket: Uint8Array;
   /** Unit vector of the observed position (far-side test by dot product). */
   unit: Float64Array;
+  /** cos and sin of the aircraft's own horizon angle acos(R/(R+h)): it rises over the limb first. */
+  lift: Float64Array;
   seen: Float64Array;
   /** sinφ, cosφ, λ (rad), sinθ, cosθ, speed (km/s) for movers; speed 0 = never moves. */
   motion: Float64Array;
@@ -77,9 +80,7 @@ const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
 const EARTH_RADIUS_KM = 6371.0088;
 const KT_TO_KMS = 1.852 / 3600;
-/** Aircraft beyond this angle from the camera centre are on the far side of the globe. */
-const FACING_DEG = 88;
-const COS_FACING = Math.cos(FACING_DEG * D2R);
+const FT_TO_M = 0.3048;
 
 export function newFrame(records: FlightRecord[]): Frame {
   const n = records.length;
@@ -95,6 +96,7 @@ export function newFrame(records: FlightRecord[]): Frame {
     data: { length: 0 },
     bucket: new Uint8Array(n),
     unit: new Float64Array(n * 3),
+    lift: new Float64Array(n * 2),
     seen: new Float64Array(n),
     motion: new Float64Array(n * 6),
     settled: new Uint8Array(n),
@@ -112,6 +114,9 @@ export function newFrame(records: FlightRecord[]): Frame {
     f.unit[i * 3] = cφ * Math.cos(λ);
     f.unit[i * 3 + 1] = cφ * Math.sin(λ);
     f.unit[i * 3 + 2] = Math.sin(φ);
+    const h = r.onGround ? 0 : horizonAngleDeg(Math.max(0, r.altGeomFt ?? r.altFt ?? 0) * FT_TO_M) * D2R;
+    f.lift[i * 2] = Math.cos(h);
+    f.lift[i * 2 + 1] = Math.sin(h);
     f.seen[i] = r.seenAt;
     const moves = !r.onGround && r.gsKt !== null && r.trackDeg !== null && r.gsKt > 0;
     const m = i * 6;
@@ -152,14 +157,26 @@ function reckon(f: Frame, i: number, dt: number): void {
  * rebuild the visible index (active buckets, camera-facing side of the globe). Allocation-free per
  * tick: aircraft outside the active buckets or on the far side are not advanced, and aircraft past
  * the 60 s cap are settled once (frozen, drawn stale) and skipped afterwards.
+ *
+ * Far side (§3; R2 round 4 MAJOR-1): the icons draw with `depthCompare: 'always'`, so this filter
+ * is the ONLY thing hiding aircraft behind the globe — from drawing and from GPU and CPU picking
+ * (both read `visible`). Same test as `isFacing()` (src/lib/map/far-side.ts): visible when the
+ * central angle from the point under the camera is within acos(R/(R+h_cam)) + acos(R/(R+h_ac)),
+ * not a fixed angle from the map centre (at zoom 2–4 the camera sees only ~58–78°).
+ * `camera: null` (mercator) draws everything.
  */
-export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>, globe: boolean, center: LngLatTuple): void {
+export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>, camera: FarSideCamera | null): void {
   const want = WANT;
   for (let b = 0; b < BUCKETS.length; b++) want[b] = buckets.has(BUCKETS[b]!) ? 1 : 0;
-  const cφ = Math.cos(center[1] * D2R);
-  const cx = cφ * Math.cos(center[0] * D2R);
-  const cy = cφ * Math.sin(center[0] * D2R);
-  const cz = Math.sin(center[1] * D2R);
+  const globe = camera !== null;
+  const cφ = globe ? Math.cos(camera.lat * D2R) : 0;
+  const cx = globe ? cφ * Math.cos(camera.lng * D2R) : 0;
+  const cy = globe ? cφ * Math.sin(camera.lng * D2R) : 0;
+  const cz = globe ? Math.sin(camera.lat * D2R) : 0;
+  // cos(θcam + θac) = cosθcam·cosθac − sinθcam·sinθac (the aircraft's terms are precomputed).
+  const θcam = globe ? horizonAngleDeg(camera.altitude) * D2R : 0;
+  const cosCam = Math.cos(θcam);
+  const sinCam = Math.sin(θcam);
   const nowS = now / 1000;
   let n = 0;
   let changed = false;
@@ -168,7 +185,7 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
   for (let i = 0; i < f.records.length; i++) {
     const b = f.bucket[i]!;
     if (!want[b]) continue;
-    if (globe && f.unit[i * 3]! * cx + f.unit[i * 3 + 1]! * cy + f.unit[i * 3 + 2]! * cz < COS_FACING) continue;
+    if (globe && f.unit[i * 3]! * cx + f.unit[i * 3 + 1]! * cy + f.unit[i * 3 + 2]! * cz < cosCam * f.lift[i * 2]! - sinCam * f.lift[i * 2 + 1]!) continue;
     if (f.visible[n] !== i) {
       f.visible[n] = i;
       changed = true;
@@ -374,6 +391,8 @@ export function buildLayers(o: BuildOptions): LayersList | null {
         widthUnits: 'pixels',
         capRounded: true,
         jointRounded: true,
+        // Globe rules: no culling, analytic AA (MapLibre's context has antialias off; R1 m8).
+        antialiasing: true,
         parameters: { cullMode: 'none' },
         updateTriggers: { getPath: [o.tick], getColor: [o.theme] },
       }),

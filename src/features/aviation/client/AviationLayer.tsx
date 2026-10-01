@@ -14,8 +14,9 @@ import type { LayerComponentProps } from '@/lib/feature-module';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
 import { registerHitTester } from '@/lib/map/picking';
+import { cameraFromMap, getFarSideCamera } from '@/lib/map/far-side';
 import { useUiStore } from '@/lib/store';
-import type { FeedEvent } from '@/lib/types';
+import type { FeedEvent, FreshnessState } from '@/lib/types';
 import type { FlightRecord } from '../adsb';
 import type { Bucket } from '../classify';
 import type { TrackPoint } from '../trace';
@@ -24,10 +25,12 @@ import { AGGREGATE_ABOVE, AGGREGATE_BELOW_ZOOM, advanceFrame, aggregateH3, build
 import { BUCKET_LAYER, useAviationPrefs, useFlights } from './useFlights';
 import { EMERGENCY_LABEL } from './format';
 import { aircraftSelection, hitTestAircraft } from './select';
-import { countStaleByBucket, deriveLayerState, staleKey, type StaleCounts } from './stale';
+import { countStaleByBucket, deriveLayerState, staleKey, stalenessState, type StaleCounts } from './stale';
 
 const Z = getLayer('flights')?.z ?? 80;
 const TICK_MS = 1000;
+/** Camera-driven refilters while the map moves are at least this far apart (≤ 10 Hz, perf M5). */
+const CAMERA_REBUILD_MS = 100;
 const SEVERITY: Record<'7500' | '7600' | '7700', FeedEvent['severity']> = { '7500': 'critical', '7700': 'high', '7600': 'medium' };
 
 export default function AviationLayer({ active }: LayerComponentProps) {
@@ -81,22 +84,35 @@ export default function AviationLayer({ active }: LayerComponentProps) {
   const cells = useRef<H3Cell[] | null>(null);
   const [layers, setLayers] = useState<LayersList | null>(null);
   const [drawn, setDrawn] = useState(0);
+  const [cameraAttr, setCameraAttr] = useState('');
   /** Drawn aircraft past the 60 s dead-reckoning cap (frozen, dimmed): exposed for tests/QA. */
   const [stale, setStale] = useState(0);
   /** Per-bucket aircraft past the cap (all positions in the bucket, matching the rail count). */
   const [staleBy, setStaleBy] = useState<StaleCounts | null>(null);
   const staleByKey = useRef('');
+  /** Last own staleness per bucket (hysteresis input for deriveLayerState). */
+  const ownState = useRef<Partial<Record<Bucket, FreshnessState>>>({});
 
-  /** Advance positions to now, refilter, and republish the layers (called from effects only). */
+  /**
+   * Advance positions to now, refilter, and republish the layers (called from effects only).
+   * `data`: new snapshot (re-aggregate); `tick`: the 1 Hz dead-reckoning step; `camera`: a
+   * throttled refilter while the map moves (perf M5: no position re-upload, no React counts);
+   * `settle`: the camera stopped (counts published once).
+   */
   const rebuild = useCallback(
-    (reaggregate: boolean) => {
+    (kind: 'data' | 'tick' | 'camera' | 'settle') => {
       const f = frame.current;
       const globe = projection === 'globe';
-      advanceFrame(f, Date.now(), buckets, globe, view.current.center);
+      // The camera's ground point and altitude (pitch-aware), the same value the map host
+      // publishes for isFacing(); null in mercator. Hides AND unpicks aircraft behind the limb.
+      const camera = globe ? (map ? cameraFromMap(map) : getFarSideCamera()) : null;
+      advanceFrame(f, Date.now(), buckets, camera);
       const aggregate = globe && f.count > AGGREGATE_ABOVE && view.current.zoom < AGGREGATE_BELOW_ZOOM;
       if (!aggregate) cells.current = null;
-      else if (reaggregate || !cells.current) cells.current = aggregateH3(f);
-      tick.current++;
+      else if (kind === 'data' || !cells.current) cells.current = aggregateH3(f);
+      // Positions are re-uploaded only when time advanced (tick/data); a camera move re-runs the
+      // per-aircraft accessors only when the visible set changed (visVersion) or the bearing did.
+      if (kind === 'data' || kind === 'tick') tick.current++;
       setLayers(
         buildLayers({
           frame: f,
@@ -112,7 +128,10 @@ export default function AviationLayer({ active }: LayerComponentProps) {
           toSelection: aircraftSelection,
         }),
       );
+      if (kind === 'camera') return; // counts reach React on settled changes only
       setDrawn(f.count);
+      // The far-side camera (ground lng, lat, altitude m) the drawn count was filtered with (e2e).
+      setCameraAttr(camera ? `${camera.lng.toFixed(3)},${camera.lat.toFixed(3)},${Math.round(camera.altitude)}` : '');
       setStale(f.staleVisible);
       const by = countStaleByBucket(f.seen, f.bucket, Date.now());
       const key = staleKey(by);
@@ -121,42 +140,64 @@ export default function AviationLayer({ active }: LayerComponentProps) {
         setStaleBy(by);
       }
     },
-    [projection, buckets, colorMode, theme, watched, tracks, selectedId],
+    [map, projection, buckets, colorMode, theme, watched, tracks, selectedId],
   );
 
   // New snapshot → fresh typed arrays (re-aggregate once per snapshot, not per tick).
   useEffect(() => {
     frame.current = newFrame(data?.records ?? []);
     dataVersion.current++;
-    rebuild(true);
+    rebuild('data');
   }, [data, rebuild]);
 
-  // 1 Hz dead-reckoning, paused while the tab is hidden.
+  // 1 Hz dead-reckoning on wall-clock second boundaries (one redraw per second shared with other
+  // second-aligned layers, perf m-f), paused while the tab is hidden.
   useEffect(() => {
-    const id = setInterval(() => {
-      if (!document.hidden) rebuild(false);
-    }, TICK_MS);
-    return () => clearInterval(id);
+    const step = () => {
+      if (!document.hidden) rebuild('tick');
+    };
+    let id: ReturnType<typeof setInterval> | undefined;
+    const start = setTimeout(() => {
+      step();
+      id = setInterval(step, TICK_MS);
+    }, TICK_MS - (Date.now() % TICK_MS));
+    return () => {
+      clearTimeout(start);
+      if (id) clearInterval(id);
+    };
   }, [rebuild]);
 
-  // Camera moves: far-side filter, icon scale and bearing compensation (once per animation frame).
+  // Camera moves: far-side filter, icon scale and bearing compensation, at most CAMERA_REBUILD_MS
+  // apart while moving (perf M5: was every animation frame) and once more when the camera settles.
   useEffect(() => {
     if (!map) return;
-    let raf = 0;
-    const read = () => {
-      raf = 0;
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    let last = 0;
+    const read = (kind: 'camera' | 'settle') => {
       const c = map.getCenter();
       view.current = { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing() };
-      rebuild(false);
+      last = Date.now();
+      rebuild(kind);
     };
     const onMove = () => {
-      if (!raf) raf = requestAnimationFrame(read);
+      if (pending) return;
+      pending = setTimeout(() => {
+        pending = undefined;
+        read('camera');
+      }, Math.max(0, CAMERA_REBUILD_MS - (Date.now() - last)));
     };
-    read();
+    const onEnd = () => {
+      if (pending) clearTimeout(pending);
+      pending = undefined;
+      read('settle');
+    };
+    read('settle');
     map.on('move', onMove);
+    map.on('moveend', onEnd);
     return () => {
       map.off('move', onMove);
-      if (raf) cancelAnimationFrame(raf);
+      map.off('moveend', onEnd);
+      if (pending) clearTimeout(pending);
     };
   }, [map, rebuild]);
 
@@ -178,8 +219,11 @@ export default function AviationLayer({ active }: LayerComponentProps) {
       }
       const total = data.offline ? 0 : data.counts[bucket];
       const staleCount = data.offline ? 0 : (staleBy?.[bucket] ?? 0);
+      // Hysteresis on the stale share so the LED does not flap around 50 % between polls.
+      const prevOwn = ownState.current[bucket] ?? null;
+      ownState.current[bucket] = stalenessState(total, staleCount, prevOwn);
       updateStatus(id, {
-        state: deriveLayerState(data.meta.state, total, staleCount),
+        state: deriveLayerState(data.meta.state, total, staleCount, prevOwn),
         staleCount,
         count: data.offline ? null : data.counts[bucket],
         fetchedAt: data.meta.fetchedAt,
@@ -216,7 +260,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
 
   // Announces only the selection (not the per-second count); counts are data attributes for tests.
   return (
-    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-map-ready={map ? '1' : '0'} data-drawn={drawn} data-stale={stale} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
+    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-map-ready={map ? '1' : '0'} data-drawn={drawn} data-camera={cameraAttr} data-stale={stale} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
       {selectedLabel !== null ? `Selected aircraft ${selectedLabel}` : ''}
     </p>
   );

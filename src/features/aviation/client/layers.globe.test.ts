@@ -23,7 +23,7 @@ type Built = { id: string; props: { parameters?: Record<string, unknown>; billbo
 
 function build(globe: boolean) {
   const f = newFrame([rec('aaaaa1', 0, 51), rec('aaaaa2', 1, 51, { emergency: '7700', squawk: '7700' })]);
-  advanceFrame(f, 1000_000, new Set(['commercial']), globe, [0, 51]);
+  advanceFrame(f, 1000_000, new Set(['commercial']), globe ? { lng: 0, lat: 51, altitude: 1_000_000 } : null);
   return buildLayers({
     frame: f, view: { center: [0, 51], zoom: 6, bearing: 0 }, tick: 1, dataVersion: 1, colorMode: 'bucket', theme: 'HORUS',
     watched: ['aaaaa1'], tracks: new Map(), selectedId: null, cells: null, toSelection: aircraftSelection,

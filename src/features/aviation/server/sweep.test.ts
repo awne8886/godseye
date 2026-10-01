@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { HttpError } from '@/lib/http';
 import type { FlightRecord, NormalizedBatch } from '../adsb';
 import type { Tile } from '../tiles';
 import { PRUNE_AFTER_S, runSweep, type SweepDeps } from './sweep';
@@ -70,6 +71,28 @@ describe('flights sweep', () => {
     expect(b.providers.adsblol_tiles!.status.error).toBe(a.providers.adsblol_tiles!.status.error);
     const c = await runSweep(b.snapshot, deps(clock), signal);
     expect(c.providers.adsblol_tiles!.status).toMatchObject({ ok: true });
+  });
+
+  it('holds an ok sweep through one failed sweep period (429 burst), then reports the error', async () => {
+    const clock = { t: T0, cursor: 0 };
+    const e429 = () => new HttpError('HTTP 429', 'http', 'https://api.adsb.lol/v2/point/0/0/250', 429);
+    const a = await runSweep(null, deps(clock), signal);
+    expect(a.providers.adsblol_tiles!.status.ok).toBe(true);
+    // Successes then a 429 as the latest response: still reading tiles → ok (no flap).
+    const b = await runSweep(a.snapshot, deps(clock, { drainTiles: async () => [...drained(clock, [5, 6]), { index: 7, at: (clock.t += 1200), batch: null, error: e429() }] }), signal);
+    expect(b.providers.adsblol_tiles!.status).toMatchObject({ ok: true });
+    expect(b.providers.adsblol_tiles!.status.error).toBeUndefined();
+    // Only 429s this run, newest good tile < 165 s old: held, with the last-good age.
+    clock.t += 30_000;
+    const c = await runSweep(b.snapshot, deps(clock, { drainTiles: async () => [{ index: 8, at: clock.t, batch: null, error: e429() }] }), signal);
+    expect(c.providers.adsblol_tiles!.status.ok).toBe(true);
+    expect(c.providers.adsblol_tiles!.okAt).toBe(T0 + 1200);
+    // The worker backs off (nothing drained) past one sweep period: the error is reported.
+    clock.t += 170_000;
+    const d = await runSweep(c.snapshot, deps(clock, { drainTiles: async () => [{ index: 9, at: clock.t, batch: null, error: e429() }] }), signal);
+    expect(d.providers.adsblol_tiles!.status).toMatchObject({ ok: false, error: 'http_429' });
+    const e = await runSweep(d.snapshot, deps(clock, { drainTiles: async () => [] }), signal);
+    expect(e.providers.adsblol_tiles!.status).toMatchObject({ ok: false, error: 'http_429' });
   });
 
   it('prunes aircraft nobody has re-observed recently', async () => {

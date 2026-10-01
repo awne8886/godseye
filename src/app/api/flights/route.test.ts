@@ -10,7 +10,7 @@ import ladd from '@/features/aviation/__fixtures__/adsblol-ladd.json';
 import pia from '@/features/aviation/__fixtures__/adsblol-pia.json';
 
 // Upstream fixtures were recorded from live probes on 2026-09-30 (see `_captured`).
-const mode = vi.hoisted(() => ({ fail: false }));
+const mode = vi.hoisted(() => ({ fail: false, tilesFail: false }));
 
 vi.mock('@/lib/ratelimit', async (orig) => {
   const actual = await orig<typeof RateLimitModule>();
@@ -23,6 +23,7 @@ vi.mock('@/lib/http', async (orig) => {
     ...actual,
     httpJson: vi.fn(async (url: string) => {
       if (mode.fail) throw new actual.HttpError('HTTP 503', 'http', url, 503);
+      if (mode.tilesFail && url.includes('/v2/point/')) throw new actual.HttpError('HTTP 429', 'http', url, 429);
       const body = url.includes('/v2/mil') ? mil : url.includes('/v2/ladd') ? ladd : url.includes('/v2/pia') ? pia : url.includes('/v2/point/') ? point : null;
       if (!body) throw new actual.HttpError('HTTP 404', 'http', url, 404);
       return { data: structuredClone(body), status: 200, ok: true, notModified: false, headers: {}, body: Buffer.alloc(0), url, etag: null, lastModified: null, ms: 1, attempts: 1 };
@@ -43,6 +44,7 @@ describe('GET /api/flights', () => {
     clearL1();
     setStore(new MemoryStore());
     mode.fail = false;
+    mode.tilesFail = false;
     stopTileSweeper();
   });
 
@@ -84,6 +86,18 @@ describe('GET /api/flights', () => {
     expect(new Set(ids).size).toBe(ids.length); // deduped by hex
     const cs = body.fields.indexOf('callsign');
     expect(body.rows.every((r: unknown[]) => r[cs] === null || /^[A-Z0-9]{2,8}$/.test(r[cs] as string))).toBe(true);
+  });
+
+  it('never says LIVE while the tile sweep is failing (global lists alone do not make it live)', async () => {
+    mode.tilesFail = true;
+    const res = await call();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(FlightsResponse.safeParse(body).success).toBe(true);
+    expect(body.providers.adsblol_tiles).toMatchObject({ ok: false, error: 'http_429' });
+    expect(body.providers.adsblol_mil.ok).toBe(true);
+    // The sweep never produced data (age unknown): STALE, not LIVE.
+    expect(body.meta.state).toBe('stale');
   });
 
   it('filters by bucket and bbox, and rejects bad input with 400', async () => {

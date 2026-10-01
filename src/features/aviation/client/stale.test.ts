@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FlightRecord } from '../adsb';
 import { newFrame } from './layers';
-import { countStaleByBucket, deriveLayerState, staleKey } from './stale';
+import { countStaleByBucket, deriveLayerState, staleKey, stalenessState } from './stale';
 
 const NOW = Date.parse('2026-10-01T02:08:00Z');
 const rec = (id: string, ageS: number, bucket: FlightRecord['bucket'] = 'commercial'): FlightRecord => ({
@@ -36,6 +36,21 @@ describe('layer state from the stale share', () => {
     expect(deriveLayerState('live', 100, 51)).toBe('recent');
     expect(deriveLayerState('live', 100, 87)).toBe('recent');
     expect(deriveLayerState('live', 100, 90)).toBe('stale');
+  });
+
+  it('does not flap around 50 % (hysteresis: leave RECENT below 40 %, STALE below 80 %)', () => {
+    // R2 round 3: frozen share 0.57, 0.48, 0.53, 0.45 across polls toggled the LED every poll.
+    let own: ReturnType<typeof stalenessState> | null = null;
+    const states: string[] = [];
+    for (const share of [57, 48, 53, 45, 41, 39, 52]) {
+      states.push(deriveLayerState('live', 100, share, own));
+      own = stalenessState(100, share, own);
+    }
+    expect(states).toEqual(['recent', 'recent', 'recent', 'recent', 'recent', 'live', 'recent']);
+    expect(stalenessState(100, 85, 'stale')).toBe('stale');
+    expect(stalenessState(100, 79, 'stale')).toBe('recent');
+    expect(stalenessState(100, 85, 'recent')).toBe('recent');
+    expect(stalenessState(0, 0, 'stale')).toBe('live');
   });
 
   it('never upgrades the feed state', () => {

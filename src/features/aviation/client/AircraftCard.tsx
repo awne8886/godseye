@@ -19,6 +19,7 @@ import { airlineCodeOf } from '../classify';
 import { deadReckon } from '../codec';
 import type { AircraftDetail } from '../server/aircraft';
 import type { FlightRoute } from '../server/route-lookup';
+import { routeProgress } from '../route-geometry';
 import { BUCKET_LAYER, useFlights } from './useFlights';
 import { BUCKET_LABEL, EMERGENCY_LABEL, POS_SOURCE_LABEL, PROVIDER_LABEL, formatAlt, formatDeg, formatFpm, formatKt, traceSourceLabel } from './format';
 
@@ -51,12 +52,19 @@ const quantise = (v: number, step: number) => Math.round(v / step) * step || 0;
  * the speed to 50 kt bands so the key does not change on every poll (each change is a request to a
  * rate-limited route); the server's plausibility gate still sees a position within ~40 km.
  */
-export function flightRouteQuery(callsign: string, pos: { lat: number; lng: number; gsKt: number | null; trackDeg?: number | null } | null): { key: readonly unknown[]; url: string } {
+export function flightRouteQuery(
+  callsign: string,
+  pos: { lat: number; lng: number; gsKt: number | null; trackDeg?: number | null } | null,
+  icao24: string | null = null,
+): { key: readonly unknown[]; url: string } {
   const lat = pos ? Math.max(-90, Math.min(90, quantise(pos.lat, ROUTE_POS_STEP_DEG))) : null;
   let lng = pos ? quantise(pos.lng, ROUTE_POS_STEP_DEG) : null;
   if (lng !== null && (lng > 180 || lng <= -180)) lng = lng > 0 ? lng - 360 : lng + 360;
   const speed = pos?.gsKt != null ? Math.min(2000, quantise(pos.gsKt, ROUTE_SPEED_STEP_KT)) : null;
   const q = new URLSearchParams({ callsign });
+  // The hex lets the server judge the leg from the exact snapshot position and check the flown track.
+  const hex = icao24 && /^~?[0-9a-f]{6}$/.test(icao24) ? icao24 : null;
+  if (hex) q.set('icao24', hex);
   if (lat !== null && lng !== null) {
     q.set('lat', String(lat));
     q.set('lng', String(lng));
@@ -65,11 +73,14 @@ export function flightRouteQuery(callsign: string, pos: { lat: number; lng: numb
   // Track to 45° sectors: enough to tell the legs of a round trip apart without refetching per poll.
   const track = pos?.trackDeg != null ? (Math.round(pos.trackDeg / 45) * 45) % 360 : null;
   if (track !== null) q.set('track', String(track));
-  return { key: track === null ? ['flight-route', callsign, lat, lng, speed] : ['flight-route', callsign, lat, lng, speed, track], url: `/api/flight-route?${q}` };
+  const key: unknown[] = ['flight-route', callsign, lat, lng, speed];
+  if (track !== null) key.push(track);
+  if (hex) key.push(hex);
+  return { key, url: `/api/flight-route?${q}` };
 }
 
-export function useFlightRoute(callsign: string | null, pos: { lat: number; lng: number; gsKt: number | null; trackDeg?: number | null } | null) {
-  const { key, url } = callsign ? flightRouteQuery(callsign, pos) : { key: ['flight-route', null] as const, url: '' };
+export function useFlightRoute(callsign: string | null, pos: { lat: number; lng: number; gsKt: number | null; trackDeg?: number | null } | null, icao24: string | null = null) {
+  const { key, url } = callsign ? flightRouteQuery(callsign, pos, icao24) : { key: ['flight-route', null] as const, url: '' };
   return useQuery({
     queryKey: key,
     queryFn: ({ signal }) => getJson<FlightRoute>(url, signal),
@@ -79,6 +90,17 @@ export function useFlightRoute(callsign: string | null, pos: { lat: number; lng:
     // another aircraft's).
     placeholderData: (prev, prevQuery) => (prev && prevQuery?.queryKey[1] === callsign ? prev : undefined),
   });
+}
+
+/**
+ * Route progress for the bar, from the aircraft's exact OBSERVED position (R2 round 4 MINOR-6:
+ * the route answer is cached per 0.5° cell, so its own `progress` lags). Only when the server
+ * placed the aircraft on the leg's corridor (non-null progress); null when the latest observation
+ * has left the corridor or the aircraft is on the ground.
+ */
+export function cardProgress(route: FlightRoute | undefined, r: Pick<FlightRecord, 'lat' | 'lng' | 'gsKt' | 'onGround'>): number | null {
+  if (!route?.found || !route.origin || !route.destination || route.progress === null || r.onGround) return null;
+  return routeProgress(route.origin, route.destination, { lat: r.lat, lng: r.lng, speedKt: r.gsKt }).progress;
 }
 
 function useNow(ms = 1000) {
@@ -128,7 +150,8 @@ export default function AircraftCard({ selection }: CardProps) {
   const state = entityFreshness({ kind: 'live', at: observedMs, observationCadenceMs: OBSERVATION_CADENCE_MS[layer], feedState, now });
   const reckoned = deadReckon(r, now);
   const detail = useAircraftDetail(/^[0-9a-f]{6}$/.test(r.id) ? r.id : null);
-  const route = useFlightRoute(r.callsign, r.onGround ? null : { lat: r.lat, lng: r.lng, gsKt: r.gsKt, trackDeg: r.trackDeg });
+  const route = useFlightRoute(r.callsign, r.onGround ? null : { lat: r.lat, lng: r.lng, gsKt: r.gsKt, trackDeg: r.trackDeg }, r.id);
+  const shownProgress = cardProgress(route.data, r);
   const watched = useUiStore((s) => s.watchedFlights.includes(r.id));
   const watchCount = useUiStore((s) => s.watchedFlights.length);
   const watchFlight = useUiStore((s) => s.watchFlight);
@@ -203,22 +226,31 @@ export default function AircraftCard({ selection }: CardProps) {
           <p className="text-[var(--text-muted)]">RESOLVING ROUTE…</p>
         ) : route.isError ? (
           <p className="text-[var(--text-muted)]">ROUTE UNAVAILABLE</p>
+        ) : route.data?.found && route.data.directionConflict ? (
+          // The observed course contradicts the listed direction and no observed departure
+          // corroborates the reverse: no leg, destination or progress is named (§0.1).
+          <div data-testid="route-unconfirmed">
+            <p className="text-[var(--alert-orange)]">ROUTE UNCONFIRMED — OBSERVED TRACK DISAGREES</p>
+            {route.data.routeCheck && <p className="mt-1 font-sans text-[12px] normal-case tracking-normal text-[var(--text-secondary)]">{route.data.routeCheck}</p>}
+            <p className="mt-1 text-[10px] tracking-[0.16em] text-[var(--text-muted)]">STANDING DATA · {route.data.source?.toUpperCase()}</p>
+          </div>
         ) : route.data?.found && route.data.origin && route.data.destination ? (
           <>
-            <p className="flex items-center justify-between gap-2">
+            <p className="flex items-center justify-between gap-2" data-testid="route-leg">
               <span className="truncate">{route.data.origin.iata ?? route.data.origin.icao} {route.data.origin.city ?? ''}</span>
               <span aria-hidden className="text-[var(--text-muted)]">→</span>
               <span className="truncate text-right">{route.data.destination.iata ?? route.data.destination.icao} {route.data.destination.city ?? ''}</span>
             </p>
-            {route.data.progress !== null && (
-              <div className="mt-1 h-0.5 w-full rounded bg-[var(--text-muted)]/25" role="progressbar" aria-label="Route progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(route.data.progress * 100)}>
-                <div className="h-full rounded bg-[var(--gold-primary)]" style={{ width: `${Math.round(route.data.progress * 100)}%` }} />
+            {shownProgress !== null && (
+              <div className="mt-1 h-0.5 w-full rounded bg-[var(--text-muted)]/25" role="progressbar" aria-label="Route progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(shownProgress * 100)}>
+                <div className="h-full rounded bg-[var(--gold-primary)]" style={{ width: `${Math.round(shownProgress * 100)}%` }} />
               </div>
             )}
             <p className="mt-1 text-[10px] tracking-[0.16em] text-[var(--text-muted)]">
-              {route.data.basis === 'corridor' ? 'ON SCHEDULED CORRIDOR' : 'SCHEDULE (NOT CONFIRMED)'} · {route.data.source?.toUpperCase()}
+              {route.data.reversed ? 'OBSERVED DEPARTURE · REVERSE OF LISTED ROUTE' : route.data.basis === 'corridor' ? 'ON SCHEDULED CORRIDOR' : 'SCHEDULE (NOT CONFIRMED)'} · {route.data.source?.toUpperCase()}
               {route.data.stale && route.data.sourceUpdatedAt ? ` · STALE RECORD ${route.data.sourceUpdatedAt.slice(0, 10)}` : ''}
             </p>
+            {route.data.reversed && route.data.routeCheck && <p className="mt-1 font-sans text-[12px] normal-case tracking-normal text-[var(--text-secondary)]">{route.data.routeCheck}</p>}
           </>
         ) : route.data?.implausible ? (
           <p className="text-[var(--text-muted)]">LISTED ROUTE DOES NOT MATCH POSITION</p>

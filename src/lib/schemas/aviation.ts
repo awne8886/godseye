@@ -131,9 +131,11 @@ export const RouteAirport = z.object({
   country: z.string().nullable(),
   lat: Lat,
   lng: Lng,
+  /** Field elevation, ft AMSL (VRS `alt_feet`, adsbdb `elevation`): "low" near it is AGL, not MSL. */
+  elevationFt: z.number().nullable().optional(),
 });
 
-/** GET /api/flight-route?callsign=&icao24=&lat=&lng=&speed= */
+/** GET /api/flight-route?callsign=&icao24=&lat=&lng=&speed=&track= */
 export const FlightRouteResponse = z.object({
   callsign: z.string(),
   found: z.boolean(),
@@ -155,6 +157,19 @@ export const FlightRouteResponse = z.object({
    * route length from both endpoints (OSIRIS plausibility rule): `found` is false, no FROM/TO shown.
    */
   implausible: z.boolean().optional(),
+  /**
+   * True when the observed track heads toward the listed origin and away from the listed
+   * destination (on the corridor, > 60 km from both ends) and no observed departure from the
+   * listed destination corroborates the reverse leg: `origin`/`destination` are withheld (null)
+   * and `routeCheck` says why (R2 round 4 BLOCKING-1; same rule as the FLIGHT view).
+   */
+  directionConflict: z.boolean().optional(),
+  /** True when the leg shown is the REVERSE of the listed one, corroborated by an observed departure from its origin. */
+  reversed: z.boolean().optional(),
+  /** Plain-language corroboration result (why a leg is withheld, or why the reverse is shown). */
+  routeCheck: z.string().nullable().optional(),
+  /** Which position judged the leg: the exact snapshot record for `icao24`, or the query's (quantised) one. */
+  positionSource: z.enum(['snapshot', 'query']).nullable().optional(),
   providers: Envelope.shape.providers,
   timestamp: IsoTime,
 });

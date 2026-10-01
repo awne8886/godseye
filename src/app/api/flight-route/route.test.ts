@@ -70,6 +70,25 @@ describe('GET /api/flight-route', () => {
     expect(mode.calls.some((u) => u.includes('adsbdb'))).toBe(false);
   });
 
+  it('accepts icao24 (exact-position and flown-track corroboration) and validates it', async () => {
+    const res = await call('?callsign=BAW117&icao24=4CAFC4&lat=53.5&lng=-30&speed=480&track=270');
+    const body = await res.json();
+    expect(FlightRouteResponse.safeParse(body).success).toBe(true);
+    // No flights snapshot in this test: the query position is used, and says so.
+    expect(body).toMatchObject({ found: true, basis: 'corridor', positionSource: 'query' });
+    expect(body.providers.vrs.ok).toBe(true);
+    expect((await call('?callsign=BAW117&icao24=zzz')).status).toBe(400);
+  });
+
+  it('withholds a westbound-listed route flown eastbound mid-ocean, with a short cache', async () => {
+    const res = await call('?callsign=BAW117&lat=53.5&lng=-30&speed=480&track=80');
+    const body = await res.json();
+    expect(FlightRouteResponse.safeParse(body).success).toBe(true);
+    expect(body).toMatchObject({ found: true, origin: null, destination: null, progress: null, directionConflict: true });
+    expect(body.routeCheck).toMatch(/opposite to standing data LHR→JFK/);
+    expect(res.headers.get('cache-control')).toMatch(/s-maxage=120\b/);
+  });
+
   it('treats empty numeric params as not observed, never as 0', async () => {
     const body = await (await call('?callsign=BAW117&lat=&lng=&speed=&track=')).json();
     expect(body).toMatchObject({ found: true, basis: 'schedule', status: 'unknown' });

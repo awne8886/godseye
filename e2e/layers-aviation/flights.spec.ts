@@ -144,3 +144,45 @@ for (const proj of ['globe', 'mercator'] as const) {
     await expect(status).toContainText('Selected aircraft', { timeout: 10_000 });
   });
 }
+
+/** Central angle (deg) between two lng/lat points. */
+function centralDeg(aLng: number, aLat: number, bLng: number, bLat: number): number {
+  const r = Math.PI / 180;
+  const h = Math.sin(((bLat - aLat) * r) / 2) ** 2 + Math.cos(aLat * r) * Math.cos(bLat * r) * Math.sin(((bLng - aLng) * r) / 2) ** 2;
+  return (2 * Math.asin(Math.min(1, Math.sqrt(h)))) / r;
+}
+const horizonDeg = (m: number) => (m > 0 ? (Math.acos(6_371_008.8 / (6_371_008.8 + m)) * 180) / Math.PI : 0);
+
+test('globe: aircraft behind the limb are not drawn (camera horizon, not 88° from the centre)', async ({ page, request }, info) => {
+  // R2 round 4 MAJOR-1: icons draw with depthCompare 'always', so the far-side filter is the only
+  // thing hiding them; at zoom 4 over the US the camera sees ~59°, and Europe (70–85° away) was drawn.
+  test.skip(info.project.name === 'mobile', 'desktop draw check');
+  test.setTimeout(150_000);
+  const first = await liveFlights(request);
+  test.skip(first === null, 'adsb.lol is SOURCE OFFLINE right now: nothing live to draw');
+  await page.goto('/?proj=globe&layers=flights,private,jets,military&c=39.00000,-98.00000,4');
+  await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-projection', 'globe', { timeout: 30_000 });
+  const status = page.getByTestId('aviation-status');
+  await expect(status).toHaveAttribute('data-drawn', /^[1-9]\d*$/, { timeout: 45_000 });
+  await expect(status).toHaveAttribute('data-camera', /^-?\d/, { timeout: 30_000 });
+  const [camLng, camLat, camAlt] = (await status.getAttribute('data-camera'))!.split(',').map(Number) as [number, number, number];
+  const drawn = Number(await status.getAttribute('data-drawn'));
+  const f = (await liveFlights(request))!;
+  const i = (k: string) => f.fields.indexOf(k);
+  let facing = 0;
+  let within88 = 0;
+  for (const r of f.rows) {
+    const lng = r[i('lng')] as number;
+    const lat = r[i('lat')] as number;
+    const altM = r[i('onGround')] === 1 ? 0 : (((r[i('altGeomFt')] ?? r[i('altFt')]) as number | null) ?? 0) * 0.3048;
+    if (centralDeg(camLng, camLat, lng, lat) <= horizonDeg(camAlt) + horizonDeg(altM) + 0.5) facing++;
+    if (centralDeg(-98, 39, lng, lat) <= 88) within88++;
+  }
+  expect(horizonDeg(camAlt)).toBeLessThan(80);
+  // The old 88° cut would draw `within88`; the horizon filter draws at most the facing aircraft
+  // (10 % + 50 slack: the page's snapshot can be one poll older than ours).
+  expect(within88 - facing).toBeGreaterThan(100);
+  expect(drawn).toBeLessThanOrEqual(Math.ceil(facing * 1.1) + 50);
+  expect(drawn).toBeLessThan(within88 - (within88 - facing) / 2);
+});

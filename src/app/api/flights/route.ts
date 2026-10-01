@@ -10,7 +10,7 @@ import { compressedJson, feedJson, parseQuery, withRoute } from '@/lib/respond';
 import { parseBBox } from '@/lib/geo';
 import { AircraftBucket } from '@/lib/schemas/aviation';
 import { flightsFeed } from '@/features/aviation/feeds';
-import { flightsBody } from '@/features/aviation/server/view';
+import { flightsBody, honestFlights } from '@/features/aviation/server/view';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +35,8 @@ const Query = z.object({
 export const GET = withRoute('/api/flights', async (req: Request) => {
   const q = parseQuery(req, Query);
   if (!q.ok) return q.response;
-  const result = await flightsFeed.get();
+  // Never LIVE while the positions provider (tile sweep / re-api) is failing: last-good with its age.
+  const result = honestFlights(await flightsFeed.get());
   if (result.data === null) return feedJson(req, result, () => ({}));
   const data = result.data;
   const buckets = q.data.bucket ? [...new Set(q.data.bucket)].sort() : null;
