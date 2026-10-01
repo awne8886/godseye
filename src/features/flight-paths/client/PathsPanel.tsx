@@ -374,6 +374,21 @@ export function liveCounts(aircraft: readonly { basis: 'matched' | 'inferred' }[
   return `${m} MATCHED · ${aircraft.length - m} INFERRED`;
 }
 
+/**
+ * Compact header chip for the live tab (R3-m3): the panel header leaves ~14 characters, so a zero
+ * count is dropped ("2 MATCHED", "1 INFERRED") and, when both are present, the two counts are
+ * abbreviated ("1 M · 2 I") — still never summed. The full wording is the first line of the LIVE
+ * tab (`liveCounts`).
+ */
+export function liveChip(aircraft: readonly { basis: 'matched' | 'inferred' }[]): string {
+  const m = aircraft.filter((a) => a.basis === 'matched').length;
+  const i = aircraft.length - m;
+  if (m === 0 && i === 0) return '0 AIRCRAFT';
+  if (i === 0) return `${m} MATCHED`;
+  if (m === 0) return `${i} INFERRED`;
+  return `${m} M · ${i} I`;
+}
+
 export function LiveView({ live, error }: { live: Live | undefined; error: unknown }) {
   if (error instanceof ApiFailure && error.status === 503) {
     const last = error.meta?.lastGoodAt;
@@ -548,7 +563,7 @@ export default function PathsPanel(_props: PanelProps) {
         ? ['PLOTTING', 'busy']
         : plan.data
           ? mode === 'live' && live.data
-            ? [liveCounts(live.data.aircraft), 'live']
+            ? [liveChip(live.data.aircraft), live.data.aircraft.length ? 'live' : 'idle']
             : [`${Math.round(plan.data.greatCircle.distanceKm).toLocaleString('en-US')} KM`, 'idle']
           : plan.error
             ? ['ERROR', 'error']

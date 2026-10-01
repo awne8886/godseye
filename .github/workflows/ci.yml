@@ -40,7 +40,7 @@ jobs:
       # "TODO.md" as a file name is allowed). tools/ops-config.test.ts runs the same check.
       - name: No placeholders in LICENSE, README or docs
         run: |
-          if grep -rnP '(?i:none yet)|\bTODO\b(?!\.md)|\bFIXME\b|\bTBD\b|(?i:lorem ipsum)' LICENSE README.md docs \
+          if grep -rnIP '(?i:none yet)|\bTODO\b(?!\.md)|\bFIXME\b|\bTBD\b|(?i:lorem ipsum)' LICENSE README.md docs \
               --exclude-dir=reference --exclude=OPUS_5_5_BUILD_PROMPT.md; then
             echo "::error::placeholder text found (see lines above)"
             exit 1

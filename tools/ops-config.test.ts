@@ -80,7 +80,7 @@ describe('.github/workflows/ci.yml', () => {
 
   it('fails the build on placeholder text in LICENSE, README and docs', () => {
     const quality = wf.jobs.quality!.steps.map((s) => s.run ?? '').join('\n');
-    expect(quality).toContain(`grep -rnP ${PLACEHOLDER_PCRE_QUOTED}`);
+    expect(quality).toContain(`grep -rnIP ${PLACEHOLDER_PCRE_QUOTED}`);
     expect(quality).toContain('--exclude-dir=reference --exclude=OPUS_5_5_BUILD_PROMPT.md');
   });
 });
