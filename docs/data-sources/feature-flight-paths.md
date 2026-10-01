@@ -42,3 +42,14 @@ Same honest UA (`… probe`), `Origin: https://example.org` to read CORS.
 | `https://api.adsbdb.com/v0/callsign/BAW117` | 200 | 0.69 s | `*` | `response.flightroute{callsign_icao BAW117, callsign_iata BA117, airline{icao BAW, iata BA}, origin, destination}`; looked up per request, never bulk-stored |
 | `https://aviationweather.gov/api/data/metar?ids=EGLL&format=json` | 200 | 0.31 s | none | `obsTime 1790806800` (epoch s), `reportTime` rounded, `rawOb "METAR EGLL 302220Z AUTO …"` |
 | `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0/query?where=IDENT='J80'&outFields=IDENT,TYPE_CODE&returnGeometry=false&f=json` (FAA ADDS airways) | 200 (no quota error this time) | 0.94 s | `*` | `geometryType esriGeometryPolyline`, `wkid 4269` (NAD83), `Last-Modified: Thu, 03 Sep 2026`; public domain. **Not wired**: the earlier probe returned a 429 inside a 200 body, and `route-airways` is left out until a cached, quota-aware provider exists |
+
+### Re-probe 2026-10-01 02:1x UTC (Phase 3 round-2 fixes)
+
+Honest UA (`GODSEYE/0.1.0 (godseye open-source monitor; probe)`).
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://vrs-standing-data.adsb.lol/routes.csv.gz` | 200 | 0.33 s | `*` | 4,500,164 B, `Last-Modified: Sun, 20 Sep 2026 18:47:39 GMT`, ETag `"6ab02a4b-44aac4"`; `routes-vrs.json.gz` rebuilt from this download (99,295 chains) — provenance is now `source` = this URL + `lastModified` `2026-09-20T18:47:39.000Z` (no local path) |
+| `https://adsb.lol/data/traces/1a/trace_recent_a2551a.json` (N24990, B789, UAL61) | 200 | 0.51 s | none (server-side only) | gzip JSON `{icao, r, t, desc, timestamp, trace:[[Δs, lat, lon, alt, gs, track, flags, …]]}`; at 02:09Z the aircraft was climbing out of MEL at FL330 near 34.4°S 151.9°E — the leg after the parked-at-MEL observation that exposed R4-M1 |
+| `https://vrs-standing-data.adsb.lol/routes/UA/UAL61.json` | 200 | 0.28 s | `*` | `airport_codes "YMML-KSFO"`, `_airport_codes_iata "MEL-SFO"` |
+| `https://api.adsbdb.com/v0/callsign/UAL61` | 200 | 11.7 s (slow) | `*` | `flightroute` BRU → (EWR) → IAH — disagrees with VRS (MEL-SFO); the route chain prefers VRS, and the corroboration rule (observed departure beats schedule) arbitrates. Looked up per request, never bulk-stored |

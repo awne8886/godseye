@@ -14,6 +14,7 @@ import type { PanelProps } from '@/lib/feature-module';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import { useUiStore } from '@/lib/store';
 import { parseRouteParam } from '@/lib/url-state';
+import { draftMessage, setPathsDraft, usePathsDraft } from './draft';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
 import { FLT_TOKEN, PATH_TYPES, TWILIGHT_TOKEN, codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
@@ -481,6 +482,16 @@ export default function PathsPanel(_props: PanelProps) {
   const [to, setTo] = useState(route?.to ?? '');
   const [all, setAll] = useState(false);
   const [identText, setIdentText] = useState(ident ?? '');
+  // A typed route the palette could not resolve: pre-fill FROM/TO and say so (R4-m6).
+  const draft = usePathsDraft();
+  const [seenDraft, setSeenDraft] = useState(0);
+  if (draft && draft.seq !== seenDraft) {
+    setSeenDraft(draft.seq);
+    setFrom(draft.from);
+    setTo(draft.to);
+    setMode('route');
+  }
+  const draftNotice = draft && draft.seq === seenDraft ? draftMessage(draft) : null;
 
   const plan = usePlan(route);
   const live = useLive(route, mode === 'live');
@@ -509,6 +520,7 @@ export default function PathsPanel(_props: PanelProps) {
   const plot = (a = from, b = to) => {
     const r = parseRouteParam(`${a.trim()}~${b.trim()}`);
     if (!r) return;
+    setPathsDraft(null);
     setFlightIdent(null);
     setPlannedRoute(r);
     setMode('route');
@@ -579,6 +591,11 @@ export default function PathsPanel(_props: PanelProps) {
               <Route size={12} aria-hidden /> PLOT
             </button>
           </div>
+          {draftNotice && (
+            <p role="status" className="font-sans text-[12px] text-[var(--alert-orange)]">
+              {draftNotice}
+            </p>
+          )}
         </form>
       )}
 

@@ -24,7 +24,7 @@ function rawFlight(o: LngLatTuple, d: LngLatTuple, here: LngLatTuple, track: [nu
     origin: endpoint('YSSY', 'SYD', ...o),
     destination: endpoint('KLAX', 'LAX', ...d),
     plannedArc: greatCirclePoints(o, d, 128), // ends at 241.592 for SYD→LAX
-    flownTrack: track.map(([x, y], i) => tp(x, y, 38_000, `2026-09-30T${String(8 + i).padStart(2, '0')}:00:00Z`)),
+    flownTrack: track.map(([x, y], i) => tp(x, y, 38_000, new Date(Date.parse('2026-09-30T08:00:00Z') + i * 5 * 60_000).toISOString())),
     remainingLeg: greatCirclePoints(here, d, 64), // starts at the raw −119.9
     position: { lat: here[1], lng: here[0], altFt: 16325, gsKt: 356, trackDeg: 70, observedAt: '2026-09-30T21:40:00Z' },
     progress: 0.98,

@@ -73,6 +73,9 @@ export interface RunwayIndexFile {
 export interface VrsRoutesFile {
   version: 1;
   generatedAt: string;
+  /** Upstream URL the index was built from (older builds lack it). */
+  source?: string;
+  /** Upstream Last-Modified (ISO) or null when unknown. */
   lastModified: string | null;
   licence: 'CC0-1.0';
   chains: Record<string, string[]>;
@@ -84,6 +87,8 @@ export type HistoricalRow = [airline: string, codeshare: 0 | 1, stops: number, e
 export interface OpenFlightsFile {
   version: 1;
   generatedAt: string;
+  /** Upstream URLs the file was built from (older builds lack it). */
+  source?: { routes: string; airlines: string };
   licence: 'ODbL-1.0';
   note: string;
   routes: Record<string, HistoricalRow[]>;

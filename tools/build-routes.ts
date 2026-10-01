@@ -9,7 +9,9 @@
  *
  *   node --experimental-transform-types --import ./tools/ts-loader.mjs tools/build-routes.ts [--src DIR]
  *
- * `--src DIR` reads routes.csv.gz, routes.dat and airlines.dat from DIR. Owner: feature-flight-paths.
+ * `--src DIR` reads routes.csv.gz, routes.dat and airlines.dat from DIR (offline rebuilds);
+ * `--last-modified "<HTTP date>"` records the Last-Modified the copy was downloaded with (else null).
+ * Provenance always names the real upstream URLs, never the local directory. Owner: feature-flight-paths.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -40,7 +42,7 @@ export function buildVrsIndex(csv: string, lastModified: string | null, now = ne
     (chains[codes.join('-')] ??= []).push(cs);
   }
   for (const list of Object.values(chains)) list.sort();
-  return { version: 1, generatedAt: now.toISOString(), lastModified, licence: 'CC0-1.0', chains };
+  return { version: 1, generatedAt: now.toISOString(), source: VRS_ROUTES_URL, lastModified, licence: 'CC0-1.0', chains };
 }
 
 const nul = (v: string | undefined) => (v === undefined || v === '\\N' || v.trim() === '' || v === '-' ? null : v.trim());
@@ -74,6 +76,7 @@ export function buildOpenFlights(routesDat: string, airlinesDat: string, now = n
   return {
     version: 1,
     generatedAt: now.toISOString(),
+    source: { routes: `${OPENFLIGHTS}/routes.dat`, airlines: `${OPENFLIGHTS}/airlines.dat` },
     licence: 'ODbL-1.0',
     note: 'OpenFlights route data stopped updating in June 2014; historical value only.',
     routes,
@@ -90,14 +93,17 @@ async function main(argv: string[]) {
   if (srcIdx >= 0 && argv[srcIdx + 1]) {
     const dir = argv[srcIdx + 1]!.replace(/\/?$/, '/');
     vrsCsv = gunzipSync(readFileSync(`${dir}routes.csv.gz`)).toString('utf8');
-    vrsLm = `local copy (${dir})`;
+    const lmIdx = argv.indexOf('--last-modified');
+    const lm = lmIdx >= 0 ? argv[lmIdx + 1] : undefined;
+    vrsLm = lm && !Number.isNaN(Date.parse(lm)) ? new Date(lm).toISOString() : null;
     routesDat = readFileSync(`${dir}routes.dat`, 'utf8');
     airlinesDat = readFileSync(`${dir}airlines.dat`, 'utf8');
   } else {
     const headers = { 'User-Agent': buildUserAgent() };
     const vrs = await fetch(VRS_ROUTES_URL, { headers });
     if (!vrs.ok) throw new Error(`${VRS_ROUTES_URL}: HTTP ${vrs.status}`);
-    vrsLm = vrs.headers.get('last-modified');
+    const lm = vrs.headers.get('last-modified');
+    vrsLm = lm && !Number.isNaN(Date.parse(lm)) ? new Date(lm).toISOString() : null;
     const buf = Buffer.from(await vrs.arrayBuffer());
     // fetch() may already have decoded a Content-Encoding: gzip response; the file itself is gzip.
     vrsCsv = (buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf) : buf).toString('utf8');

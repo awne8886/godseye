@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Layer } from '@deck.gl/core';
 import { greatCircle } from '../lib/geometry';
 import type { Flight, Live, Plan } from './api';
-import { ALT_RAMP_FT, altitudeColor, buildRouteAnimLayers, buildRouteLayers, cameraFor, framePadding, PULSE_RINGS, progressChip, routeFrame } from './layers';
+import { ALT_RAMP_FT, altitudeColor, buildRouteAnimLayers, buildRouteLayers, cameraFor, flownSegments, framePadding, PULSE_RINGS, progressChip, routeFrame, TRACK_GAP_MS } from './layers';
 import { codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
 
 const gc = greatCircle([140.386, 35.7647], [-118.408, 33.9425]);
@@ -42,8 +42,8 @@ describe('buildRouteLayers', () => {
       plannedArc: [[-0.46, 51.47], [-73.78, 40.64]],
       flownTrack: [
         { t: '2026-09-30T20:00:00Z', lat: 51.47, lng: -0.46, altFt: null, onGround: true, gsKt: 10, trackDeg: 270 },
-        { t: '2026-09-30T20:10:00Z', lat: 51.6, lng: -2, altFt: 20000, onGround: false, gsKt: 400, trackDeg: 280 },
-        { t: '2026-09-30T20:20:00Z', lat: 52, lng: -5, altFt: 37000, onGround: false, gsKt: 480, trackDeg: 280 },
+        { t: '2026-09-30T20:05:00Z', lat: 51.6, lng: -2, altFt: 20000, onGround: false, gsKt: 400, trackDeg: 280 },
+        { t: '2026-09-30T20:09:00Z', lat: 52, lng: -5, altFt: 37000, onGround: false, gsKt: 480, trackDeg: 280 },
       ],
       remainingLeg: [[-5, 52], [-73.78, 40.64]],
       position: { lat: 52, lng: -5, altFt: 37000, gsKt: 480, trackDeg: 280, observedAt: '2026-09-30T20:20:00Z' },
@@ -131,5 +131,42 @@ describe('format', () => {
     expect(fmtKm(5555.4)).toBe('5,555 KM');
     expect(fmtNm(2999.6)).toBe('3,000 NM');
     expect(codeOf({ iata: null, icao: 'EGLL', ident: 'EGLL' })).toBe('EGLL');
+  });
+});
+
+describe('flown track observation gaps (R4-m1)', () => {
+  // ANA106 HND→LAX, live 2026-10-01: a 7 h 26 min gap between 16:26Z and 23:52Z over the Pacific.
+  const pts = [
+    { t: '2026-09-30T16:20:00Z', altFt: 37000 },
+    { t: '2026-09-30T16:26:00Z', altFt: 37000 },
+    { t: '2026-09-30T23:52:00Z', altFt: 36000 },
+    { t: '2026-09-30T23:58:00Z', altFt: 30000 },
+  ];
+  const track: [number, number][] = [
+    [144.2, 36.5],
+    [144.79, 36.86],
+    [233.67, 40.23],
+    [234.5, 39.6],
+  ];
+
+  it('a pair 10 min or more apart is not joined: the gap is left blank', () => {
+    expect(TRACK_GAP_MS).toBe(600_000);
+    const segs = flownSegments(track, pts);
+    expect(segs).toHaveLength(2);
+    expect(Math.max(...segs.map((s) => Math.abs(s.to[0] - s.from[0])))).toBeLessThan(2);
+  });
+
+  it('routeFrame drops the gap segment', () => {
+    const flight = {
+      ident: 'ANA106',
+      resolved: { callsign: 'ANA106', hex: '86e7a4', iataFlight: null, registration: null },
+      origin: null,
+      destination: null,
+      plannedArc: [],
+      flownTrack: pts.map((p, i) => ({ ...p, lat: track[i]![1], lng: ((track[i]![0] + 540) % 360) - 180, onGround: false, gsKt: 480, trackDeg: 60 })),
+      remainingLeg: [],
+      position: null,
+    } as unknown as Flight;
+    expect(routeFrame(null, null, flight)!.flown).toHaveLength(2);
   });
 });
