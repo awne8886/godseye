@@ -24,6 +24,7 @@ import { AGGREGATE_ABOVE, AGGREGATE_BELOW_ZOOM, advanceFrame, aggregateH3, build
 import { BUCKET_LAYER, useAviationPrefs, useFlights } from './useFlights';
 import { EMERGENCY_LABEL } from './format';
 import { aircraftSelection, hitTestAircraft } from './select';
+import { countStaleByBucket, deriveLayerState, staleKey, type StaleCounts } from './stale';
 
 const Z = getLayer('flights')?.z ?? 80;
 const TICK_MS = 1000;
@@ -82,7 +83,9 @@ export default function AviationLayer({ active }: LayerComponentProps) {
   const [drawn, setDrawn] = useState(0);
   /** Drawn aircraft past the 60 s dead-reckoning cap (frozen, dimmed): exposed for tests/QA. */
   const [stale, setStale] = useState(0);
-
+  /** Per-bucket aircraft past the cap (all positions in the bucket, matching the rail count). */
+  const [staleBy, setStaleBy] = useState<StaleCounts | null>(null);
+  const staleByKey = useRef('');
 
   /** Advance positions to now, refilter, and republish the layers (called from effects only). */
   const rebuild = useCallback(
@@ -111,6 +114,12 @@ export default function AviationLayer({ active }: LayerComponentProps) {
       );
       setDrawn(f.count);
       setStale(f.staleVisible);
+      const by = countStaleByBucket(f.seen, f.bucket, Date.now());
+      const key = staleKey(by);
+      if (key !== staleByKey.current) {
+        staleByKey.current = key;
+        setStaleBy(by);
+      }
     },
     [projection, buckets, colorMode, theme, watched, tracks, selectedId],
   );
@@ -157,7 +166,9 @@ export default function AviationLayer({ active }: LayerComponentProps) {
 
   useDeckLayers('aviation', layers, Z);
 
-  // Rail status per active layer (honest SOURCE OFFLINE with last-good time on 503).
+  // Rail status per active layer (honest SOURCE OFFLINE with last-good time on 503). The state is
+  // never LIVE when most of the layer's positions are past the 60 s cap (MAJOR-C); the rail shows
+  // "N OLDER THAN 60 S" from staleCount as the reason.
   useEffect(() => {
     for (const [bucket, id] of Object.entries(BUCKET_LAYER) as [Bucket, LayerId][]) {
       if (!active.has(id)) continue;
@@ -165,8 +176,11 @@ export default function AviationLayer({ active }: LayerComponentProps) {
         updateStatus(id, { state: 'loading' });
         continue;
       }
+      const total = data.offline ? 0 : data.counts[bucket];
+      const staleCount = data.offline ? 0 : (staleBy?.[bucket] ?? 0);
       updateStatus(id, {
-        state: data.meta.state,
+        state: deriveLayerState(data.meta.state, total, staleCount),
+        staleCount,
         count: data.offline ? null : data.counts[bucket],
         fetchedAt: data.meta.fetchedAt,
         observedAt: data.meta.observedAt,
@@ -175,7 +189,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
         ...(data.offline ? { error: 'SOURCE OFFLINE' } : {}),
       });
     }
-  }, [data, active, updateStatus]);
+  }, [data, active, staleBy, updateStatus]);
 
   // Intel Feed: one row per aircraft + squawk (unique within its layer; later polls update it).
   useEffect(() => {

@@ -38,24 +38,43 @@ export function useAircraftDetail(hex: string | null) {
   });
 }
 
+/** Position grid (degrees) for the route query: ~55 km, so the key changes every few minutes. */
+export const ROUTE_POS_STEP_DEG = 0.5;
+/** Ground-speed band (kt) for the route query. */
+export const ROUTE_SPEED_STEP_KT = 50;
+
+/** Nearest multiple of `step` (never -0, so equal cells give equal keys). */
+const quantise = (v: number, step: number) => Math.round(v / step) * step || 0;
+
+/**
+ * Query key and URL for /api/flight-route (MINOR-4). The position is quantised to a 0.5° grid and
+ * the speed to 50 kt bands so the key does not change on every poll (each change is a request to a
+ * rate-limited route); the server's plausibility gate still sees a position within ~40 km.
+ */
+export function flightRouteQuery(callsign: string, pos: { lat: number; lng: number; gsKt: number | null } | null): { key: readonly unknown[]; url: string } {
+  const lat = pos ? Math.max(-90, Math.min(90, quantise(pos.lat, ROUTE_POS_STEP_DEG))) : null;
+  let lng = pos ? quantise(pos.lng, ROUTE_POS_STEP_DEG) : null;
+  if (lng !== null && (lng > 180 || lng <= -180)) lng = lng > 0 ? lng - 360 : lng + 360;
+  const speed = pos?.gsKt != null ? Math.min(2000, quantise(pos.gsKt, ROUTE_SPEED_STEP_KT)) : null;
+  const q = new URLSearchParams({ callsign });
+  if (lat !== null && lng !== null) {
+    q.set('lat', String(lat));
+    q.set('lng', String(lng));
+  }
+  if (speed !== null) q.set('speed', String(speed));
+  return { key: ['flight-route', callsign, lat, lng, speed], url: `/api/flight-route?${q}` };
+}
+
 export function useFlightRoute(callsign: string | null, pos: { lat: number; lng: number; gsKt: number | null } | null) {
-  // Position rounded to 0.1° so the query key (and server cache) does not change every second.
-  const lat = pos ? Math.round(pos.lat * 10) / 10 : null;
-  const lng = pos ? Math.round(pos.lng * 10) / 10 : null;
-  const speed = pos?.gsKt != null ? Math.round(pos.gsKt) : null;
+  const { key, url } = callsign ? flightRouteQuery(callsign, pos) : { key: ['flight-route', null] as const, url: '' };
   return useQuery({
-    queryKey: ['flight-route', callsign, lat, lng, speed],
-    queryFn: ({ signal }) => {
-      const q = new URLSearchParams({ callsign: callsign! });
-      if (lat !== null && lng !== null) {
-        q.set('lat', String(lat));
-        q.set('lng', String(lng));
-      }
-      if (speed !== null) q.set('speed', String(speed));
-      return getJson<FlightRoute>(`/api/flight-route?${q}`, signal);
-    },
+    queryKey: key,
+    queryFn: ({ signal }) => getJson<FlightRoute>(url, signal),
     enabled: !!callsign,
     staleTime: 5 * 60_000,
+    // While the next grid cell's answer loads keep the same flight's previous answer (never
+    // another aircraft's).
+    placeholderData: (prev, prevQuery) => (prev && prevQuery?.queryKey[1] === callsign ? prev : undefined),
   });
 }
 
@@ -99,7 +118,9 @@ export default function AircraftCard({ selection }: CardProps) {
   const r: FlightRecord = live ?? snapshot;
   const layer = (selection.layer ?? BUCKET_LAYER[r.bucket]) as LayerId;
   const status = useLayerStatus(layer);
-  const feedState: FreshnessState = status.state === 'idle' || status.state === 'loading' ? (flights?.meta.state ?? 'recent') : status.state;
+  // The feed's own state, not the rail state: the rail is downgraded when most of the layer's
+  // positions are past the 60 s cap, which says nothing about this aircraft's own observation.
+  const feedState: FreshnessState = flights?.meta.state ?? (status.state === 'idle' || status.state === 'loading' ? 'recent' : status.state);
   const observedMs = r.seenAt * 1000;
   const state = entityFreshness({ kind: 'live', at: observedMs, observationCadenceMs: OBSERVATION_CADENCE_MS[layer], feedState, now });
   const reckoned = deadReckon(r, now);
