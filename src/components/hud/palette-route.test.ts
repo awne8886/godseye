@@ -123,6 +123,26 @@ describe('palette never plans a route from speech (round 5 M1)', () => {
     'lol go to rome',
     'please now go to rome',
     'I want to fly to paris',
+    // Inflected verbs, "I'm"/"we are" and request nouns are speech too (round 5 follow-up).
+    'flying to tokyo',
+    'heading to rome',
+    "I'm flying to paris",
+    'I’m flying to paris',
+    'im flying to paris',
+    'going to rome',
+    'we are driving to rome',
+    "we're heading to rome",
+    'i am going to rome',
+    'she flew to rome',
+    'travelling to london',
+    'returning to berlin',
+    'trip to rome',
+    'journey to rome',
+    'welcome to rome',
+    "what's the best way to paris",
+    'distance to paris',
+    'the distance to paris',
+    'London to flying',
     // The destination is checked too: a command verb never opens a place name.
     'London to drive to Paris',
     'London to go',
@@ -151,6 +171,7 @@ describe('palette never plans a route from speech (round 5 M1)', () => {
     ['hey, fly from Can Tho to Hanoi', 'Can Tho', 'Hanoi'],
     ['I need to fly from Hilton Head to Atlanta', 'Hilton Head', 'Atlanta'],
     ['St. Louis to Chicago', 'St. Louis', 'Chicago'],
+    ['Flying Cloud to Chicago', 'Flying Cloud', 'Chicago'],
   ])('%s → %s → %s still plans', (q, from, to) => {
     expect(parseRouteQuery(q)).toEqual({ kind: 'names', from, to });
   });

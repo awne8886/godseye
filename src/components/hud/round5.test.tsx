@@ -153,9 +153,12 @@ describe('visual-qa m1 + m6: phone attribution targets and the header scrim (bas
     const rule = phone.slice(phone.indexOf('.maplibregl-map .maplibregl-ctrl-attrib a {'));
     const body = rule.slice(0, rule.indexOf('}'));
     expect(body).toContain('display: inline-block');
-    // 14 px line + 2 × 15 px padding = 44 px.
+    // 14 px line + 2 × 15 px padding = 44 px hit box; the equal negative margin keeps the line 14 px,
+    // so the credits never grow over route framing or the honesty chips stacked above them.
     expect(body).toContain('padding-block: 15px');
+    expect(body).toContain('margin-block: -15px');
     expect(body).toContain('line-height: 14px');
+    expect(body).toContain('position: relative');
   });
 
   it('puts a theme-aware void scrim behind the header text, never a pointer target', () => {

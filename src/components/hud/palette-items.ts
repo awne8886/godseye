@@ -39,8 +39,14 @@ const looksLikeCode = (s: string) => /^[A-Z0-9]{3,4}$/.test(s) || (/\d/.test(s) 
 const NOT_A_PLACE = new Set([
   'go', 'fly', 'zoom', 'pan', 'jump', 'move', 'navigate', 'take', 'take me', 'bring', 'bring me', 'show', 'show me', 'switch', 'change',
   'set', 'toggle', 'turn', 'head', 'travel', 'goto', 'centre', 'center', 'scroll', 'rotate', 'tilt', 'back', 'return', 'snap', 'route',
-  'plan', 'directions', 'from', 'me', 'up', 'down', 'how', 'way', 'path', 'next', 'add', 'map', 'globe', 'view', 'camera', 'here', 'there',
+  'plan', 'directions', 'from', 'me', 'up', 'down', 'how', 'way', 'path', 'trip', 'journey', 'distance', 'welcome', 'next', 'add', 'map', 'globe', 'view', 'camera', 'here', 'there',
 ]);
+/**
+ * Question words that open speech, never a place ("what's the best way to paris", "where to rome").
+ * And nouns that end a request rather than a name ("the best way", "a trip", "the distance").
+ */
+const QUESTION_WORDS = new Set(['what', "what's", 'whats', 'where', "where's", 'which', 'why', 'when', 'who']);
+const REQUEST_NOUNS = new Set(['way', 'trip', 'journey', 'distance', 'route', 'path', 'flight', 'flights', 'welcome']);
 /** Continents and other areas that never resolve to one airport. */
 const AREAS = new Set(['europe', 'asia', 'africa', 'america', 'north america', 'south america', 'oceania', 'antarctica', 'arctic', 'the world', 'world', 'middle east', 'pacific', 'atlantic', 'globe', 'satellite', 'satellites', 'map', 'mercator', '2d', '3d']);
 
@@ -60,6 +66,7 @@ const LEAD_FILLERS = phrases(
   'now', 'just', 'then', 'ok', 'okay', 'hey', 'so', 'and', 'also', 'quickly', 'right now',
   'i need to', 'we need to', 'i have to', 'we have to', 'i must', 'we must', 'i should', 'we should', 'shall we', 'should we',
   'i gotta', 'gotta', "i'm going to", 'i am going to', "we're going to", 'we are going to', 'i will', "i'll", 'we will', "we'll",
+  "i'm", 'im', "we're", 'i am', 'we are', "you're", 'you are', "they're", 'they are',
   'time to', "it's time to", 'how do i get to', 'how do we get to', 'how can i get to', 'how do i go to', 'how to get to',
 );
 /** Politeness at the very end of the destination ("London to Paris please"). */
@@ -79,6 +86,9 @@ const COMMAND_VERBS = phrases(
   'zoom', 'jump', 'move', 'navigate', 'take', 'bring', 'get', 'send', 'switch', 'change', 'set', 'toggle', 'open', 'close',
   'scroll', 'rotate', 'tilt', 'return', 'snap', 'teleport', 'focus', 'directions',
   'drive', 'walk', 'ride', 'cycle', 'bike', 'hike', 'run', 'sail', 'swim', 'commute', 'cruise',
+  // Inflected forms (round 5 M1 follow-up): "flying to tokyo", "heading to rome" are speech, never routes.
+  'flying', 'flies', 'flew', 'going', 'goes', 'went', 'heading', 'headed', 'driving', 'drove', 'travelling', 'traveling',
+  'walking', 'riding', 'sailing', 'cruising', 'moving', 'returning', 'commuting',
 );
 /** Every word that opens a command or a flight request. */
 const VERB_WORDS: ReadonlySet<string> = new Set([...COMMAND_VERBS, ...FLIGHT_VERBS].map((p) => p[0]!));
@@ -87,7 +97,7 @@ const VERB_WORDS: ReadonlySet<string> = new Set([...COMMAND_VERBS, ...FLIGHT_VER
  * of the name ("Show Low" — SOW, Arizona; "Center Island"; "Snap Lake"), not a command. Alone or
  * followed only by particles ("show me", "head over", "go back") they are still commands.
  */
-const PLACE_PREFIX_VERBS = new Set(['go', 'show', 'head', 'pan', 'centre', 'center', 'back', 'view', 'look', 'turn', 'travel', 'snap']);
+const PLACE_PREFIX_VERBS = new Set(['go', 'show', 'head', 'pan', 'centre', 'center', 'back', 'view', 'look', 'turn', 'travel', 'snap', 'flying']);
 /**
  * Command verbs that also END real place names in the bundled airport data ("Hilton Head", "Mountain
  * View", "Orange Walk", "Copper Center", "Frying Pan Island"). Anywhere else after the first word a
@@ -96,7 +106,7 @@ const PLACE_PREFIX_VERBS = new Set(['go', 'show', 'head', 'pan', 'centre', 'cent
 const PLACE_SUFFIX_VERBS = new Set(['head', 'view', 'centre', 'center', 'walk', 'pan', 'run']);
 /** Pronouns, modals and discourse words: a verb right after one of them is speech, not a name ("we head"). */
 const CONVERSATIONAL = new Set([
-  'i', "i'm", 'we', "we're", 'you', 'me', 'us', 'they', 'should', 'need', 'needs', 'must', 'want', 'wanna', 'gotta', 'gonna',
+  'i', "i'm", 'im', 'am', 'are', 'we', "we're", 'you', 'me', 'us', 'they', 'should', 'need', 'needs', 'must', 'want', 'wanna', 'gotta', 'gonna',
   'have', 'has', 'do', 'does', 'did', 'can', 'could', 'would', 'will', 'shall', 'may', 'might', 'let', "let's", 'lets', 'now',
   'just', 'then', 'ok', 'okay', 'hey', 'so', 'quickly', 'please', 'pls', 'time', 'how', 'to', 'and', 'also',
 ]);
@@ -229,6 +239,8 @@ function typedCode(s: string): boolean {
 export function looksLikePlace(s: string): boolean {
   const v = s.trim().toLowerCase().replace(/\s+/g, ' ');
   if (NOT_A_PLACE.has(v) || AREAS.has(v)) return false;
+  const words = v.replace(/’/g, "'").split(' ');
+  if (QUESTION_WORDS.has(words[0]!) || REQUEST_NOUNS.has(words[words.length - 1]!)) return false;
   if (!/^[\p{L}][\p{L}\p{M} .'’-]*$/u.test(v)) return false;
   return (v.match(/\p{L}/gu)?.length ?? 0) >= 3;
 }

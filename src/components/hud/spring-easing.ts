@@ -2,7 +2,7 @@
  * CSS `linear()` equivalents of motion springs, for animations that stay in CSS so the first-load
  * bundle carries no motion code (perf m-d). The layer toggle knob uses the contract spring
  * (stiffness 500, damping 30, §7) through `--ease-toggle-spring` / `--dur-toggle-spring` in
- * tokens.css; spring-easing.test.ts pins those tokens to `springToCss(TOGGLE_SPRING)`, so the CSS
+ * tokens.css; hud/round5.test.tsx pins those tokens to `springToCss(TOGGLE_SPRING)`, so the CSS
  * cannot drift from the spring it stands for. Pure. Owner: design-system-hud.
  */
 

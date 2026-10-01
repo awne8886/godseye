@@ -9,7 +9,7 @@
  * and useIsMobile() (hooks.ts), so a landscape phone (844×390) is fully phone — bottom nav, sheets,
  * 44 px targets — never half phone (JS sheet) and half desktop (`md:` chrome). HUD classes are
  * desktop-first: the base class is the desktop chrome and `phone:` overrides it, so there is no
- * fractional-width gap between two queries. Pinned by phone-variant.test.ts.
+ * fractional-width gap between two queries. Pinned by src/components/hud/round5.test.tsx.
  */
 @custom-variant phone {
   @media (max-width: 767px), (max-height: 499px) and (orientation: landscape) {
@@ -529,15 +529,18 @@
     white-space: normal;
   }
   /* 44 px touch targets for the credit links (round 5 visual-qa m1; they were 13 px tall): each link
-     is an inline-block whose padding makes its own line 44 px, so targets never overlap a
-     neighbour's; a credits line without a link stays 14 px. The box keeps its horizontal padding. */
+     is an inline-block whose 15 px block padding is cancelled by an equal negative margin, so the
+     hit box is 44 px but the credits line stays 14 px tall (a taller box obscured route framing and
+     pushed the honesty chips above it off-screen on landscape phones). */
   .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
     padding-block: 0;
   }
   .maplibregl-map .maplibregl-ctrl-attrib a {
     display: inline-block;
     padding-block: 15px;
+    margin-block: -15px;
     line-height: 14px;
+    position: relative;
   }
 }
 /* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome (z ≥ 40). The map wrapper
