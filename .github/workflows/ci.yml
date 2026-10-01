@@ -148,14 +148,17 @@ jobs:
   # / (the WebGL globe) on every run, on the runner every other job uses. GitHub's standard runners
   # have no GPU, so Chromium draws the globe with SwiftShader on the CPU, and / is held to a separate,
   # documented software-GL budget (lighthouserc.home.json; README.md, "Lighthouse on /"): performance
-  # >= 0.45 and TBT <= 12000 ms, derived from the measured CI history of / under SwiftShader
-  # (performance 0.53-0.55, TBT 3.5-10 s), with accessibility = 1, LCP <= 2.5 s and CLS <= 0.1 at the
-  # contract values. It catches regressions; it does NOT show that / meets the contract's performance
-  # and TBT targets, which assume a GPU (the optional job lighthouse-gpu measures that).
+  # >= 0.45 and TBT <= 13500 ms, derived from the measured CI history of / under SwiftShader
+  # (perf 0.53-0.56, TBT 3.4-11.2 s, 60 runs; the job ids are in tools/ops-config.test.ts), with
+  # accessibility = 1, LCP <= 2.5 s and CLS <= 0.1 at the contract values. It catches regressions; it
+  # does NOT show that / meets the contract's performance and TBT targets, which assume a GPU (the
+  # optional job lighthouse-gpu measures that).
   # Every scored run carries the in-run audit godseye-map-globe-drawn (tools/lighthouse/), asserted on
-  # every run: a run that measured the WEBGL2 REQUIRED or BASEMAP UNAVAILABLE fallback, a blank canvas
-  # or a globe without its basemap fails the gate. Same Chrome (the runner's preinstalled Google
-  # Chrome), flags and desktop settings as the history the budget comes from. Never skipped.
+  # every run: a run that measured the WEBGL2 REQUIRED or BASEMAP UNAVAILABLE fallback (also one that
+  # recovered from it before the end of the load), a blank canvas or a globe without its OpenFreeMap
+  # basemap fails the gate; so does a run while OpenFreeMap is unreachable. Same Chrome (the runner's
+  # preinstalled Google Chrome), flags and desktop settings as the history the budget comes from.
+  # Never skipped.
   # A separate job rather than a step of lighthouse-pages: the existing required check
   # "Build + Lighthouse CI (/docs, /privacy)" keeps its name and meaning, the check name says which
   # threshold failed, and both run in parallel (one extra build).
@@ -192,7 +195,8 @@ jobs:
   # LIGHTHOUSE_GPU_RUNNER names a GPU runner: a runner label (for example gpu-t4-4core) or a JSON
   # array of labels (for example ["self-hosted","linux","x64","godseye-gpu"]). README.md, "Optional:
   # GPU runner for Lighthouse on /", says how to provision one. While the variable is empty the job is
-  # skipped (neutral): never red, never queued, never measured on software GL.
+  # skipped (GitHub reports a skipped job as success to required checks): never red, never queued,
+  # never measured on software GL.
   # With the variable set, a run from a fork goes to ubuntu-24.04 and its first step fails within
   # seconds ("not measured", never green), and a label that no online runner carries (mistyped,
   # runner offline, billing blocked) leaves the job Queued (up to 24 h, then it fails).

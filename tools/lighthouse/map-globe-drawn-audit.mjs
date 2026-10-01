@@ -14,8 +14,15 @@
  *   a basemap state other than offline, and the map canvas alone painted (at least
  *   MIN_DISTINCT_COLOURS colours, no colour over MAX_DOMINANT_SHARE of it);
  * - the network records of the run (the ones Lighthouse's network-requests audit lists): the MapLibre
- *   worker (requested only after MapLibre has its WebGL context) and at least one basemap vector tile
- *   loaded with HTTP 200 (same rules as tools/gpu-renderer-check.ts --verify-runs).
+ *   worker (requested only after MapLibre has its WebGL context) and at least one OpenFreeMap vector
+ *   tile loaded with HTTP 200 (same rules as tools/gpu-renderer-check.ts --verify-runs), and no failed
+ *   request for the basemap style or its TileJSON. MapPaint reads the page only after the measurement,
+ *   and src/components/map/MapView.tsx retries a failed style load after 2, 4, 8 and 16 s, so a run that
+ *   showed "BASEMAP UNAVAILABLE" while it was traced can end with the globe on screen; its failed style
+ *   or TileJSON requests stay in the network records and fail it here.
+ *
+ * The basemap comes from OpenFreeMap (tiles.openfreemap.org), a third party: when the runner cannot
+ * reach it, this audit fails ("not measured") rather than score a globe without its basemap.
  */
 import { Audit, NetworkRecords } from './lighthouse-module.mjs';
 
@@ -34,16 +41,25 @@ export const MAX_DOMINANT_SHARE = 0.9;
 /** Same rules as MAPLIBRE_WORKER_PATH and BASEMAP_VECTOR_TILE in tools/gpu-renderer-check.ts (tools/ops-config.test.ts compares them). */
 export const MAPLIBRE_WORKER_PATH = /^\/maplibre\/[^/]+\/maplibre-gl-worker\.mjs$/;
 export const BASEMAP_VECTOR_TILE = /^https:\/\/tiles\.openfreemap\.org\/planet\/[^/]+\/\d+\/\d+\/\d+\.pbf$/;
+/**
+ * The basemap style and its vector TileJSON (BASEMAP_STYLE_URL and BASEMAP_TILEJSON_URL in
+ * src/lib/map/basemap-urls.ts, preloaded by the app shell and fetched by src/lib/map/basemap-fetch.ts).
+ * Sprites, glyphs and tiles live under other paths.
+ */
+export const BASEMAP_STYLE_REQUEST = /^https:\/\/tiles\.openfreemap\.org\/(?:styles\/[^/?#]+|planet)$/;
 
 /**
  * @typedef {import('./map-paint-gatherer.mjs').MapPaintArtifact} MapPaintArtifact
  * @typedef {{canvas?: boolean, context?: boolean, renderer?: string|null, vendor?: string|null, product?: string}} MapWebGlArtifact
  * @typedef {{url?: unknown, statusCode?: unknown}} RequestLike
- * @typedef {{worker: boolean, vectorTiles: number}} RequestEvidence
+ * @typedef {{worker: boolean, vectorTiles: number, basemapFailures: number}} RequestEvidence
  */
 
 /**
- * Whether the MapLibre worker (same origin as the page) and basemap vector tiles loaded with HTTP 200.
+ * Whether the MapLibre worker (same origin as the page) and basemap vector tiles loaded with HTTP 200,
+ * and how many requests for the basemap style or its TileJSON (preload or fetch) ended with anything
+ * else: an HTTP error, or no response at all (Lighthouse records -1 for a failed, aborted or unfinished
+ * request).
  * @param {ReadonlyArray<RequestLike>} requests
  * @param {string | null | undefined} pageUrl
  * @return {RequestEvidence}
@@ -58,7 +74,8 @@ export function requestEvidence(requests, pageUrl) {
     return u.origin === origin && MAPLIBRE_WORKER_PATH.test(u.pathname);
   });
   const vectorTiles = requests.filter((r) => ok(r) && BASEMAP_VECTOR_TILE.test(/** @type {string} */ (r.url))).length;
-  return { worker, vectorTiles };
+  const basemapFailures = requests.filter((r) => typeof r.url === 'string' && BASEMAP_STYLE_REQUEST.test(r.url) && r.statusCode !== 200).length;
+  return { worker, vectorTiles, basemapFailures };
 }
 
 /**
@@ -82,8 +99,9 @@ export function globeProblems({ webgl, paint, requests }) {
       if (px.dominantShare > MAX_DOMINANT_SHARE) out.push(`blank map canvas: ${px.dominantColour} covers ${(px.dominantShare * 100).toFixed(1)} % (maximum ${MAX_DOMINANT_SHARE * 100} %)`);
     }
   }
+  if (requests.basemapFailures > 0) out.push(`basemap style or TileJSON request failed ${requests.basemapFailures} time(s) during the scored load`);
   if (!requests.worker) out.push('MapLibre worker not loaded with HTTP 200');
-  if (requests.vectorTiles === 0) out.push('no basemap vector tile loaded with HTTP 200');
+  if (requests.vectorTiles === 0) out.push('no OpenFreeMap vector tile loaded with HTTP 200');
   return out;
 }
 
@@ -110,7 +128,7 @@ export default class MapGlobeDrawn extends Audit {
       title: 'Globe drawn in this run (any WebGL2 renderer)',
       failureTitle: 'Globe NOT drawn in this run: the scores describe another page',
       description:
-        'The MapLibre canvas held a WebGL2 context and painted (colour statistics of the canvas alone), the map was ready, no "WEBGL2 REQUIRED" or "BASEMAP UNAVAILABLE" fallback was shown, the basemap was not offline, and the MapLibre worker and at least one basemap vector tile loaded with HTTP 200. The renderer may be software (SwiftShader in CI): this audit says the scored page was the globe, not that it ran on a GPU.',
+        'The MapLibre canvas held a WebGL2 context and painted (colour statistics of the canvas alone), the map was ready, no "WEBGL2 REQUIRED" or "BASEMAP UNAVAILABLE" fallback was shown, the basemap was not offline, no request for the basemap style or its TileJSON failed during the load, and the MapLibre worker and at least one OpenFreeMap vector tile (tiles.openfreemap.org) loaded with HTTP 200. The renderer may be software (SwiftShader in CI): this audit says the scored page was the globe, not that it ran on a GPU. If OpenFreeMap is unreachable from the runner, the run is not measured and fails.',
       requiredArtifacts: ['MapWebGl', 'MapPaint', 'DevtoolsLog', 'URL'],
     };
   }

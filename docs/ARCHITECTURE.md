@@ -266,9 +266,12 @@ accessibility = 1, LCP ≤ 2.5 s, CLS ≤ 0.1, TBT ≤ 300 ms). `/`, the WebGL g
 documented software-GL budget (job `lighthouse-home`, `lighthouserc.home.json`, never skipped):
 GitHub's standard runners have no GPU, SwiftShader rasterises the globe on the CPU, total blocking
 time (30 % of the performance score) scores 0 there, so the score cannot exceed 0.70, and the CI
-history of `/` under SwiftShader is performance 0.53 to 0.55 and TBT 3.5 to 10 s. The budget is performance ≥ 0.45 and TBT ≤ 12000 ms
-(lowest CI median minus 0.08, highest CI value plus 20 %), with accessibility = 1, LCP ≤ 2.5 s and
-CLS ≤ 0.1 at the contract values; README.md, "Lighthouse on `/`", gives the derivation. It catches
+history of `/` under SwiftShader (median run of three, every job of the former combined check with a
+result for `/`, 2026-09-30 23:33 to 2026-10-01 08:28 UTC) is performance 0.53 to 0.56 and TBT 3.4 to
+11.2 s in 60 CI jobs. The budget is performance ≥ 0.45 and TBT ≤ 13500 ms (lowest CI value minus 0.08;
+highest CI TBT plus 20 %, rounded up to the next 500 ms), with accessibility = 1, LCP ≤ 2.5 s and
+CLS ≤ 0.1 at the contract values; README.md, "Lighthouse on `/`", gives the derivation and
+`tools/ops-config.test.ts` lists the jobs. It catches
 regressions of the software-rendered globe and does not show that `/` meets the contract's
 performance and TBT targets, which assume a GPU. Because a page that fell back to "WEBGL2 REQUIRED" or
 "BASEMAP UNAVAILABLE" is light enough to pass that budget, `tools/lighthouse/home-config.mjs` spreads
@@ -277,9 +280,12 @@ audit `godseye-map-globe-drawn`, asserted on every run: after tracing has stoppe
 being scored, it requires no fallback alert, a WebGL2 context on the MapLibre canvas (any renderer;
 the renderer is reported), `data-map-ready="true"`, a basemap state other than offline, a painted
 canvas (a screenshot of the canvas alone, every other element hidden for that one capture: at least 64
-colours, no colour over 90 %), and the MapLibre worker and at least one basemap vector tile loaded with
-HTTP 200 (from the run's network records). The plug-ins resolve Lighthouse through `@lhci/cli`, exactly
-as its runner does.
+colours, no colour over 90 %), and, from the run's network records, the MapLibre worker and at least
+one OpenFreeMap vector tile (tiles.openfreemap.org) loaded with HTTP 200 and no failed request for the
+basemap style or its TileJSON (a run that showed "BASEMAP UNAVAILABLE" while it was measured and
+recovered through the map's style retry fails too). OpenFreeMap is a third party: if the runner cannot
+reach it, the audit fails ("not measured") and the run is repeated once the service is back. The
+plug-ins resolve Lighthouse through `@lhci/cli`, exactly as its runner does.
 Optionally, `/` is also measured against the contract thresholds on a hardware GPU (job
 `lighthouse-gpu`, `lighthouserc.gpu.json`). It runs only when the `LIGHTHOUSE_GPU_RUNNER` repository
 variable names a GPU runner; while the variable is empty the job is skipped (never red, never queued).

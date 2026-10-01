@@ -213,23 +213,28 @@ you provide one, adds the measurement of `/` against the contract thresholds.
 ### Lighthouse on `/`
 
 `/` is the WebGL globe. GitHub's standard runners have no GPU, so in CI Chromium draws the globe with
-SwiftShader, a software rasteriser on the CPU. Measured there up to 2026-10-01 (desktop settings,
-median of three runs): performance 0.53 to 0.55 (seven runs), total blocking time 4.3 to 9.0 s (four
-runs; earlier runs 3.5 to 10 s), LCP within 2.5 s, CLS 0.006, accessibility 1. Rasterising the globe
-on the CPU blocks the main thread for seconds, so total blocking time, 30 % of the performance score,
-scores 0 there and the performance score cannot exceed 0.70: the contract targets for performance
-and TBT are out of reach on that runner. They describe visitors with a GPU, which it cannot show.
+SwiftShader, a software rasteriser on the CPU. Measured there (desktop settings, median run of three,
+the runner's Google Chrome): performance 0.53 to 0.56 and TBT 3.4 to 11.2 s in 60 CI jobs, every job of
+the former check "Build + Lighthouse CI" that reported a result for `/` between 2026-09-30 23:33 and
+2026-10-01 08:28 UTC (the public job logs; `tools/ops-config.test.ts` lists each job id with its
+values); LCP within 2.5 s, CLS within 0.1 and accessibility 1 in all of them. In the same period, 2
+more stopped on a Lighthouse runtime error (NO_NAVSTART) before asserting. The two jobs before that
+period, on 2026-09-30 before the Phase 2 wave B layers were merged, measured a lighter page:
+performance 0.59 and 0.61, TBT 2.3 and 1.7 s. Rasterising the globe on the CPU blocks the main thread
+for seconds, so total blocking time, 30 % of the performance score, scores 0 there and the
+performance score cannot exceed 0.70: the contract targets for performance and TBT are out of reach on
+that runner. They describe visitors with a GPU, which it cannot show.
 
 CI therefore holds `/` to a separate, documented **software-GL budget**: performance ≥ 0.45 and
-TBT ≤ 12000 ms, with accessibility, LCP and CLS at the contract values (`lighthouserc.home.json`,
+TBT ≤ 13500 ms, with accessibility, LCP and CLS at the contract values (`lighthouserc.home.json`,
 check "Build + Lighthouse CI (/, software-GL budget)", run on every push and pull request, never
 skipped). Same Chrome (the runner's preinstalled Google Chrome), SwiftShader flags and desktop
 settings as the history above, three runs, assertions on the median run:
 
 | Metric | `/` software-GL budget | Contract (§11) | Basis |
 |---|---|---|---|
-| Performance | performance ≥ 0.45 | ≥ 0.85 | Lowest CI median 0.53 minus 0.08 (four times the observed spread of 0.02). With TBT at 0 the score moves with FCP, speed index, LCP and CLS only: with the FCP, speed index and CLS of a build-sandbox run (0.4 s, 8.6 s, 0.006), LCP at the contract's 2.5 s gives 0.465. |
-| Total blocking time | TBT ≤ 12000 ms | ≤ 300 ms | Highest CI value (10 s) plus 20 %. The performance score no longer sees TBT here, so this is the regression check for main-thread work. |
+| Performance | performance ≥ 0.45 | ≥ 0.85 | Lowest CI value 0.53 minus 0.08 (more than twice the observed spread of 0.03). With TBT at 0 the score moves with FCP, speed index, LCP and CLS only: with the FCP, speed index and CLS of a build-sandbox run (0.4 s, 8.6 s, 0.006), LCP at the contract's 2.5 s gives 0.465. |
+| Total blocking time | TBT ≤ 13500 ms | ≤ 300 ms | Highest CI value (11.2 s, job 110238095365) plus 20 %, rounded up to the next 500 ms (11207 × 1.2 = 13448). A log-normal fitted to the 60 values puts about 0.3 % of jobs above it. The performance score no longer sees TBT here, so this is the regression check for main-thread work. |
 | Accessibility | = 1 | = 1 | Contract value. |
 | Largest contentful paint | ≤ 2500 ms | ≤ 2500 ms | Contract value. |
 | Cumulative layout shift | ≤ 0.1 | ≤ 0.1 | Contract value. |
@@ -238,23 +243,31 @@ settings as the history above, three runs, assertions on the median run:
 This budget catches regressions of the software-rendered globe. It does not show that `/` meets the
 §11 performance and TBT targets, which assume a GPU; only the optional GPU job below measures that.
 If the runner's hardware or Chrome changes the numbers for good, re-derive both budget values from the
-new CI history with the same rule (lowest median minus 0.08, highest TBT plus 20 %) and update
-`lighthouserc.home.json` and this table together; `tools/ops-config.test.ts` checks that they agree.
+new CI history with the same rule (lowest value minus 0.08; highest TBT plus 20 %, rounded up to the
+next 500 ms) and update `lighthouserc.home.json`, this table and the job list in
+`tools/ops-config.test.ts` together; the test checks that they agree. A Lighthouse runtime error such
+as NO_NAVSTART fails the job without a result; re-run it.
 
 A page that fell back to "WEBGL2 REQUIRED" or "BASEMAP UNAVAILABLE" is much lighter than the globe:
-in the build sandbox (2026-10-01, Chromium 141, these flags) the fallbacks scored performance 0.82 to
-0.88 (0.86 on the median run of each) with 58 to 181 ms of total blocking time, against 0.52 to 0.57
-and 3.4 to 15.8 s for the globe (six runs), so they would pass this budget, and even the contract's
-performance and TBT targets, without earning it.
+in the build sandbox (2026-10-01, Chromium 141, these flags plus `--ignore-certificate-errors` for the
+sandbox's egress proxy; with `--disable-webgl` added, or with that flag left out so the basemap style
+was unreachable) the fallbacks scored performance 0.82 to 0.88 (0.86 on the median run of
+each) with 58 to 181 ms of total blocking time, against 0.52 to 0.57 and 3.4 to 15.8 s for the globe
+(six runs), so they would pass this budget, and even the contract's performance and TBT targets,
+without earning it.
 A globe without its basemap tiles also skips the work of drawing them. So every scored run
 carries the in-run audit `godseye-map-globe-drawn` (`tools/lighthouse/home-config.mjs`), asserted on
 every run, not on the median. In the page load being scored, after the measurement, it requires: no
 fallback alert; the MapLibre canvas with a WebGL2 context (the renderer is reported, SwiftShader in
 CI, not judged); `data-map-ready="true"`; a basemap state other than offline; the canvas alone,
 screenshotted with every other element hidden, painted (at least 64 colours, no colour over 90 % of
-it); and the MapLibre worker and at least one basemap vector tile loaded with HTTP 200. One run that
-measured anything else fails the check. Locally: `pnpm build && pnpm lhci:home` (with Chrome or
-Chromium installed; `CHROME_PATH` selects a binary).
+it); the MapLibre worker and at least one OpenFreeMap vector tile (tiles.openfreemap.org) loaded with
+HTTP 200; and no failed request for the basemap style or its TileJSON during the load. The last one
+catches a run that showed "BASEMAP UNAVAILABLE" while it was measured and recovered before the end
+(the map retries a failed style load after 2, 4, 8 and 16 s, then every 30 s). One run that measured anything else fails the
+check. The basemap is a third-party service: if OpenFreeMap is unreachable from the runner, the audit
+fails ("not measured") and the run should be repeated once the service is back. Locally:
+`pnpm build && pnpm lhci:home` (with Chrome or Chromium installed; `CHROME_PATH` selects a binary).
 
 ### Optional: GPU runner for Lighthouse on `/`
 

@@ -142,16 +142,19 @@ lazy layers (initial JS 560 → ~459 KB gz), worker-side satellite parse, /docs 
 hardening.
 - [ ] Lighthouse `/`: the owner chose a separate, documented software-GL threshold (user decision 2026-10-01, no GPU
       runner). Job `lighthouse-home` ("Build + Lighthouse CI (/, software-GL budget)", `lighthouserc.home.json`) runs on
-      every push and pull request on ubuntu-24.04: performance >= 0.45 and TBT <= 12000 ms (from the CI history under
-      SwiftShader: perf 0.53-0.55, TBT 3.5-10 s), accessibility = 1, LCP <= 2.5 s and CLS <= 0.1 at the contract values,
-      and the in-run audit `godseye-map-globe-drawn` on every run (fallback page, blank canvas or missing basemap fails).
-      Tick after its first green run on GitHub (the build sandbox is slower than CI: TBT above the budget there). This
+      every push and pull request on ubuntu-24.04: performance >= 0.45 and TBT <= 13500 ms (from the CI history under
+      SwiftShader: perf 0.53-0.56, TBT 3.4-11.2 s, 60 runs, job ids in tools/ops-config.test.ts), accessibility = 1,
+      LCP <= 2.5 s and CLS <= 0.1 at the contract values, and the in-run audit `godseye-map-globe-drawn` on every run
+      (fallback page, also one recovered from during the load, blank canvas or missing OpenFreeMap basemap fails; an
+      OpenFreeMap outage turns it red until the service is back).
+      Tick after its first green run on GitHub (the build sandbox is slower than CI: one of its two sets of three runs had a 14.8 s median TBT). This
       does NOT show the §11 targets for `/`; they stay unverified unless the optional GPU job runs. Initial JS ~459 KB gz
       vs 350 stays open (map-engine perf task)
-- [ ] Optional, the owner's choice, no action needed: a GPU runner measures `/` against the contract thresholds (job
-      `lighthouse-gpu`, `lighthouserc.gpu.json`: pre-check, in-run audit `godseye-map-webgl-hardware`, verify, assert;
-      README "Optional: GPU runner for Lighthouse on `/`"). Skipped while the repository variable
-      `LIGHTHOUSE_GPU_RUNNER` is empty; setting it to the runner's label enables it
+- [x] GPU runner declined by the owner 2026-10-01; the optional job `lighthouse-gpu` (contract thresholds on a hardware
+      GPU, README "Optional: GPU runner for Lighthouse on `/`") is skipped while `LIGHTHOUSE_GPU_RUNNER` is empty
+- [ ] Owner, optional: add "Build + Lighthouse CI (/, software-GL budget)" to the default-branch ruleset so the `/` gate
+      blocks merges (with "Build + Lighthouse CI (/docs, /privacy)"; README "Branch protection"). Read through the API on
+      2026-10-01: `main` has no ruleset and no branch protection, so today no check blocks a merge
 - [ ] aviation: 40–79 % of positions older than 60 s after a few minutes under adsb.lol 429 on shared egress;
       `ADSBLOL_REAPI` is the real fix; rail shows the stale count
 - [ ] feature-flight-paths: FAA airways layer (needs a cached, quota-aware provider); ArcLayer arc height and
