@@ -14,7 +14,9 @@
  *  - data-map-loads (map constructions this page), data-camera (lat,lng,zoom,pitch,bearing at the
  *    last moveend), data-far-side (camera ground point + altitude on the globe, else "none"),
  *    data-basemap-state (ok/offline/incomplete/stalled), data-admission-pending (start-up units
- *    queued), data-deck-layers / data-deck-undrawn (deck layers handed over / groups not in the style).
+ *    queued), data-admission-log (the last admitted units, `id@ms` since navigation start),
+ *    data-deck-layers / data-deck-undrawn (deck layers handed over / groups not in the style),
+ *    data-deck-classes (deck layer classes admitted so far, in order).
  * The wrapper `[data-testid=map-root]` carries data-projection (effective) and data-basemap.
  */
 import { expect, type Page } from '@playwright/test';
@@ -139,13 +141,32 @@ export function collectErrors(page: Page): string[] {
   return errors;
 }
 
-/** Pixels of `token`'s colour inside `rect` (fractions of the canvas), decoded from a screenshot. */
-export async function tokenPixels(page: Page, token: string, rect = { x0: 0.08, y0: 0.15, x1: 0.62, y1: 0.85 }): Promise<number> {
+export interface TokenPixelOptions {
+  /** Lowest blend alpha that counts (default 0.4). */
+  minAlpha?: number;
+  /** Brightest base channel the colour may be blended over (default 48: the dark globe, water, land). */
+  maxBase?: number;
+}
+
+/**
+ * Pixels showing `token`'s colour inside `rect` (fractions of the canvas), decoded from a
+ * screenshot. A pixel counts when it is the token blended over a dark base at alpha ≥ `minAlpha`:
+ * pixel ≈ a·token + (1 − a)·base with every base channel in [0, maxBase] (± 6 for rounding), solved
+ * per channel for the range of `a`. An opaque mark counts (a = 1) and so does a translucent line.
+ *
+ * Why (CI globe first draw): the planned route is a 2 px dashed line at alpha 153/255 over a 15 %
+ * glow, measured on screen at about (124, 103, 40) — never within the old opaque-only rule
+ * (Σ|Δ| ≤ 60 from the token), which only the route comet's 4 px head (≈ 60 px) could pass, and only
+ * while its 6 s sweep happened to be inside the clip; under reduced motion that count stayed 0.
+ * Measured with this rule on saved screenshots (desktop globe, default layers, day_night on): 0–2 px
+ * before the arc is drawn, 538–1030 px once it is, with or without the comet.
+ */
+export async function tokenPixels(page: Page, token: string, rect = { x0: 0.08, y0: 0.15, x1: 0.62, y1: 0.85 }, opts: TokenPixelOptions = {}): Promise<number> {
   const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
   const clip = { x: box.x + box.width * rect.x0, y: box.y + box.height * rect.y0, width: box.width * (rect.x1 - rect.x0), height: box.height * (rect.y1 - rect.y0) };
   const png = (await page.screenshot({ clip })).toString('base64');
   return page.evaluate(
-    async ({ png, token }) => {
+    async ({ png, token, minAlpha, maxBase }) => {
       const probe = document.createElement('i');
       probe.style.color = `var(${token})`;
       document.body.append(probe);
@@ -161,10 +182,27 @@ export async function tokenPixels(page: Page, token: string, rect = { x0: 0.08, 
       const ctx = c.getContext('2d')!;
       ctx.drawImage(img, 0, 0);
       const px = ctx.getImageData(0, 0, c.width, c.height).data;
+      const TOL = 6;
       let n = 0;
-      for (let p = 0; p < px.length; p += 4) if (Math.abs(px[p]! - rgb[0]!) + Math.abs(px[p + 1]! - rgb[1]!) + Math.abs(px[p + 2]! - rgb[2]!) <= 60) n++;
+      for (let p = 0; p < px.length; p += 4) {
+        // Intersect, over the three channels, the alphas a for which some base b ∈ [0, maxBase]
+        // gives v = a·t + (1 − a)·b (± TOL): v − a·t ≥ −TOL and v − a·t ≤ (1 − a)·maxBase + TOL.
+        let lo = minAlpha;
+        let hi = 1;
+        for (let k = 0; k < 3 && lo <= hi; k++) {
+          const v = px[p + k]!;
+          const t = rgb[k]!;
+          if (t > 0) hi = Math.min(hi, (v + TOL) / t);
+          const slope = t - maxBase;
+          const rhs = v - maxBase - TOL;
+          if (slope > 0) lo = Math.max(lo, rhs / slope);
+          else if (slope < 0) hi = Math.min(hi, rhs / slope);
+          else if (rhs > 0) hi = -1;
+        }
+        if (lo <= hi) n++;
+      }
       return n;
     },
-    { png, token },
+    { png, token, minAlpha: opts.minAlpha ?? 0.4, maxBase: opts.maxBase ?? 48 },
   );
 }

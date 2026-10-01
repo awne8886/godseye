@@ -10,6 +10,13 @@
  * unit per `maxWaitMs`. Admissions are plain state updates rendered by React in time slices
  * (`startTransition` in the requesters) — never `flushSync`, which once produced a 6 s task.
  *
+ * Focus work (what the user asked for: a `?route=` deep link, a tracked flight, a drawn shape; see
+ * `focus.ts`) runs first and has a requester-level `maxWaitMs` (FOCUS_MAX_WAIT_MS): on a software
+ * GPU (SwiftShader: CI, Lighthouse, GPU-less machines) the quiet slot never comes — 0 of 68 fences
+ * signalled while the globe repainted — so the full wait was pure latency in front of the route.
+ * A shorter wait arriving while a longer one is armed pulls the deadline in; a deadline armed for
+ * a unit that is no longer first re-arms for the next unit's own wait.
+ *
  * `pending` (published to `useAdmissionStore`) counts the units still waiting: while it is > 0 the
  * HUD must not present fetched entity counts as drawn. Owner: map-engine. Pure and unit-tested.
  */
@@ -21,6 +28,11 @@ export interface AdmissionRequester {
   id: string;
   /** Lower runs first; equal priorities alternate. */
   priority: number;
+  /**
+   * Longest wait for a quiet slot while this requester's unit is next (ms). Defaults to the
+   * scheduler's `maxWaitMs` and is never longer than it.
+   */
+  maxWaitMs?: number;
   /** Units of work waiting (0 = nothing to admit). */
   pending(): number;
   /** Admit exactly one unit. */
@@ -43,13 +55,21 @@ export interface SchedulerOptions {
   slot(cb: () => void): () => void;
   /** Longest wait for a slot before the next unit is admitted anyway. */
   maxWaitMs: number;
-  timers: Pick<DrainTimers, 'setTimeout' | 'clearTimeout'>;
+  timers: Pick<DrainTimers, 'setTimeout' | 'clearTimeout' | 'now'>;
   /** Called with the pending total whenever it may have changed. */
   onPending?(n: number): void;
+  /** Called with the requester id of every admitted unit (diagnostics). */
+  onAdmit?(id: string): void;
 }
 
 /** Default progress guarantee: at least one admission every 2 s, whatever the load. */
 export const ADMISSION_MAX_WAIT_MS = 2000;
+/**
+ * Wait for focus units (the user's route/flight/drawing): long enough for a real GPU to finish the
+ * frame in flight (a few ms there), short enough that a GPU that never drains does not hold the
+ * user's own request back for seconds.
+ */
+export const FOCUS_MAX_WAIT_MS = 250;
 
 export function createAdmissionScheduler(o: SchedulerOptions): AdmissionScheduler {
   const requesters: AdmissionRequester[] = [];
@@ -60,6 +80,9 @@ export function createAdmissionScheduler(o: SchedulerOptions): AdmissionSchedule
   let scheduled = false;
   let disposed = false;
   let published = -1;
+  /** When the current slot was requested, and the wait its deadline is armed for. */
+  let slotStart = 0;
+  let armedWait = 0;
 
   const pending = () => requesters.reduce((n, r) => n + Math.max(0, r.pending()), 0);
   const publish = () => {
@@ -77,6 +100,7 @@ export function createAdmissionScheduler(o: SchedulerOptions): AdmissionSchedule
     }
     return best;
   };
+  const waitOf = (r: AdmissionRequester): number => Math.max(0, Math.min(o.maxWaitMs, r.maxWaitMs ?? o.maxWaitMs));
   const clear = () => {
     cancelSlot?.();
     cancelSlot = null;
@@ -90,6 +114,7 @@ export function createAdmissionScheduler(o: SchedulerOptions): AdmissionSchedule
     const r = pick();
     if (r) {
       lastServed.set(r.id, ++serial);
+      o.onAdmit?.(r.id);
       try {
         r.admitOne();
       } catch (e) {
@@ -100,12 +125,34 @@ export function createAdmissionScheduler(o: SchedulerOptions): AdmissionSchedule
     publish();
     kick();
   };
+  /** (Re-)arm the deadline `wait` ms after the current slot was requested. */
+  const arm = (wait: number) => {
+    if (deadline !== null) o.timers.clearTimeout(deadline);
+    armedWait = wait;
+    deadline = o.timers.setTimeout(onDeadline, Math.max(0, slotStart + wait - o.timers.now()));
+  };
+  function onDeadline() {
+    deadline = null;
+    if (!scheduled || disposed) return;
+    // The unit the deadline was armed for may have gone or lost its place: the unit first now keeps
+    // its own wait (work that asked for a quiet slot is not admitted early on another's deadline).
+    const r = pick();
+    if (r && o.timers.now() < slotStart + waitOf(r)) arm(waitOf(r));
+    else run();
+  }
   function kick() {
     if (disposed) return;
     publish();
-    if (scheduled || !pick()) return;
+    const r = pick();
+    if (!r) return;
+    if (scheduled) {
+      // Focus work queued behind a slot armed for a longer wait: pull the deadline in.
+      if (waitOf(r) < armedWait) arm(waitOf(r));
+      return;
+    }
     scheduled = true;
-    deadline = o.timers.setTimeout(run, o.maxWaitMs);
+    slotStart = o.timers.now();
+    arm(waitOf(r));
     cancelSlot = o.slot(run);
   }
   return {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { DECK_GESTURE_EVENTS, detachDeckPressPicking, hoverAllowed, isPrimaryClick } from './deck-events';
+import { DECK_GESTURE_EVENTS, detachDeckPressPicking, hoverAllowed, isPrimaryClick, LINK_DRAW_FEATURES, primeLinkDrawFeatures } from './deck-events';
 import { collectCandidates, resetPicking, setDeckHoverInfo, setPickOverlay, type PickMap } from './picking';
 
 type Handler = (e: never) => void;
@@ -126,5 +126,22 @@ describe('host click gating', () => {
     expect(gpu).toBe(1);
     expect(hoverAllowed({ buttons: 0 })).toBe(true);
     expect(hoverAllowed({ buttons: 2 })).toBe(false);
+  });
+});
+
+describe('device feature priming (CI globe first draw)', () => {
+  it('asks the link/draw features once right after device creation, and tolerates a missing or failing device', () => {
+    const asked: string[] = [];
+    primeLinkDrawFeatures({ features: { has: (f) => (asked.push(f), true) } });
+    expect(asked).toEqual([...LINK_DRAW_FEATURES]);
+    expect(asked).toEqual(['compilation-status-async-webgl', 'shader-clip-cull-distance-webgl']);
+    expect(() => primeLinkDrawFeatures(null)).not.toThrow();
+    expect(() => primeLinkDrawFeatures({ features: null })).not.toThrow();
+    const lost = {
+      has: (): boolean => {
+        throw new Error('context lost');
+      },
+    };
+    expect(() => primeLinkDrawFeatures({ features: lost })).not.toThrow();
   });
 });

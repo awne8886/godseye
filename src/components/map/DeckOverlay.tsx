@@ -24,10 +24,20 @@
  * the next style/source/idle event and on a short backoff timer (`idle` may never come while tiles
  * keep retrying), and published as undrawn, so the header never counts them.
  *
- * Focus first (visual-qa R4-M1): classes needed by module Backgrounds (the planned route, drawn
- * shapes: what the user asked for) are admitted before ambient data-layer classes, ahead of
- * native layer types too, so a `?route=` deep link draws within a few slots of style parse.
- * Owner: map-engine.
+ * Focus first (visual-qa R4-M1, CI globe first draw): classes needed by module Backgrounds (the
+ * planned route, drawn shapes: what the user asked for) are admitted before ambient data-layer
+ * classes, in the focus layers' own drawing order (the route's arc first), the first of them ahead
+ * of the data-module mount, each with a short wait for a quiet slot (`focus.ts`).
+ *
+ * Stable lists: the arrays handed to deck keep their identity while their members do not change
+ * (`createStableLists`), so a module republishing every frame (the route comet) does not make deck
+ * update and repaint the globe while its own class still waits — that kept a software GPU busy
+ * non-stop and every admission slot ran into its deadline.
+ *
+ * Device: `_initializeFeatures: false` makes luma test WebGL features on first use instead of
+ * querying ~20 extensions at attach, each a synchronous round trip (1.5–3.4 s in total at the
+ * device attach measured on SwiftShader under load); the two it asks on every link/draw are primed
+ * at `onDeviceInitialized` (`primeLinkDrawFeatures`). Owner: map-engine.
  */
 import { MapLibreOverlay } from '@deck.gl/maplibre';
 import type { Layer, LayersList, PickingInfo } from '@deck.gl/core';
@@ -35,31 +45,23 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { useControl, useMap } from 'react-map-gl/maplibre';
 import { orderedDeckLayers, useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
 import { FEATURE_MODULES } from '@/features/registry';
-import { admitLayers, createAdmissionState, flattenLayers, focusFirst, layerClassKey, type AdmissionLayer } from '@/lib/map/deck-admission';
+import { admitLayers, createAdmissionState, createStableLists, flattenLayers, focusFirst } from '@/lib/map/deck-admission';
 import { useAdmissionStore } from '@/lib/map/admission-scheduler';
 import { type ApplyMap, missingDeckGroups, withParsedStyle } from '@/lib/map/deck-apply';
-import { type DeckLike, detachDeckPressPicking, initPendingLayers } from '@/lib/map/deck-events';
+import { type DeckLike, detachDeckPressPicking, type FeatureDevice, initPendingLayers, primeLinkDrawFeatures } from '@/lib/map/deck-events';
+import { deckClassMaxWait, deckClassPriority, focusClassOrder, registerFocusKeys } from '@/lib/map/focus';
 import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
 /** `beforeId` is a MapLibreOverlay-specific layer prop (not in deck's LayerProps typings). */
 type WithBeforeId = { beforeId?: string };
 
-function withBeforeId(layers: readonly Layer[], beforeId: string | undefined): LayersList {
-  if (!beforeId) return [...layers];
-  return layers.map((layer) => ((layer.props as WithBeforeId).beforeId ? layer : layer.clone({ beforeId } as Partial<Layer['props']> & WithBeforeId)));
-}
+const applyBeforeId = (layer: Layer, beforeId: string): Layer =>
+  (layer.props as WithBeforeId).beforeId ? layer : layer.clone({ beforeId } as Partial<Layer['props']> & WithBeforeId);
 
-/** Deck entries published by module Backgrounds (keyed by module id): the user's own focus layers. */
-const FOCUS_KEYS = new Set(FEATURE_MODULES.filter((m) => m.Background).map((m) => m.id));
+// Deck entries published by module Backgrounds (keyed by module id): the user's own focus layers.
+registerFocusKeys(FEATURE_MODULES.filter((m) => m.Background).map((m) => m.id));
 
-function focusClasses(entries: ReturnType<typeof useDeckLayerStore.getState>['entries']): Set<string> {
-  const out = new Set<string>();
-  for (const [key, e] of Object.entries(entries)) {
-    if (!FOCUS_KEYS.has(key)) continue;
-    for (const l of flattenLayers<AdmissionLayer>([e.layers] as unknown[])) out.add(layerClassKey(l));
-  }
-  return out;
-}
+const createLists = () => createStableLists<Layer>(applyBeforeId);
 
 /** Re-apply delays while deck groups are still missing from the style (ms after each apply). */
 const HEAL_BACKOFF_MS = [50, 100, 200, 400, 800, 1600, 3200];
@@ -74,15 +76,16 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   const entries = useDeckLayerStore((s) => s.entries);
   const ready = useMapInstanceStore((s) => s.ready);
   const [admission] = useState(createAdmissionState);
+  const [lists] = useState(createLists);
   const [admittedVersion, setAdmittedVersion] = useState(0);
 
-  const { pass, waiting } = useMemo(() => {
+  const { layers, waiting, focus } = useMemo(() => {
     const all = flattenLayers<Layer>(orderedDeckLayers(entries) as unknown[]);
     const r = admitLayers(all, admission);
-    return { pass: r.pass, waiting: focusFirst(r.waiting, focusClasses(entries)) };
+    const focus = lists.focus(focusClassOrder(entries));
+    return { layers: lists.layers(r.pass, beforeId), waiting: lists.waiting(focusFirst(r.waiting, focus)), focus };
     // `admittedVersion` re-runs admission when a class was admitted.
-  }, [entries, admittedVersion]); // eslint-disable-line react-hooks/exhaustive-deps
-  const layers = useMemo(() => withBeforeId(pass, beforeId), [pass, beforeId]);
+  }, [entries, admittedVersion, beforeId]); // eslint-disable-line react-hooks/exhaustive-deps
   const { current: mapRef } = useMap();
 
   const overlay = useControl(() => {
@@ -90,7 +93,9 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     box.overlay = new MapLibreOverlay({
       interleaved: true,
       layers: [],
-      deviceProps: { _reuseDevices: true } as never,
+      deviceProps: { _reuseDevices: true, _initializeFeatures: false } as never,
+      // The two features luma asks on every link/draw: answered now, not at the route's first draw.
+      onDeviceInitialized: (device) => primeLinkDrawFeatures(device as unknown as FeatureDevice),
       // deck writes the canvas cursor every frame: follow the host's hover verdict, else MapLibre's.
       getCursor: hoverCursor,
       onHover: (info: PickingInfo) => setDeckHoverInfo(info as unknown as DeckPickInfo),
@@ -99,12 +104,15 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     });
     return box.overlay;
   });
-  const layersRef = useRef(layers);
+  const layersRef = useRef<LayersList>(layers);
   const beforeIdRef = useRef(beforeId);
+  /** The list last handed to deck (an identical list needs no new `setProps`). */
+  const appliedRef = useRef<LayersList | null>(null);
   /** Hand deck `next` (groups added once the style is parsed) and publish what is still off the map. */
   const healTimer = useRef<{ id: ReturnType<typeof setTimeout> | null; step: number }>({ id: null, step: 0 });
   const applyRef = useRef((next: LayersList) => {
     const map = mapOfOverlay(overlay);
+    appliedRef.current = next;
     withParsedStyle(map, () => overlay.setProps({ layers: next }));
     const missing = missingDeckGroups(map, flattenLayers<Layer>(next as unknown[])).length;
     useAdmissionStore.getState().setUndrawn('deck', missing);
@@ -122,31 +130,39 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     }
     const el = (map as { getContainer?: () => HTMLElement } | null)?.getContainer?.();
     if (el) {
-      // Diagnostics for e2e: deck layers handed over, and groups still missing from the style.
+      // Diagnostics for e2e: deck layers handed over, groups still missing from the style, and the
+      // layer classes admitted so far (in admission order).
       el.dataset.deckLayers = String((next as unknown[]).length);
       el.dataset.deckUndrawn = String(missing);
+      el.dataset.deckClasses = [...admission.admitted].join(',');
     }
   });
   useEffect(() => {
     layersRef.current = layers;
     beforeIdRef.current = beforeId;
-    applyRef.current(layers);
+    // Already handed over (by the admission slot): nothing new for deck.
+    if (layers !== appliedRef.current) applyRef.current(layers);
   }, [overlay, layers, beforeId]);
   // Waiting layer classes are admitted one per scheduler slot.
   const scheduler = useAdmissionStore((s) => s.scheduler);
   const waitingRef = useRef<string[]>([]);
+  const focusRef = useRef<string[]>([]);
   useEffect(() => {
     waitingRef.current = waiting;
+    focusRef.current = focus;
     scheduler?.kick();
-  }, [waiting, scheduler]);
+  }, [waiting, focus, scheduler]);
   useEffect(() => {
     if (!scheduler) return;
     return scheduler.register({
       id: 'deck-classes',
-      // Ahead of native layer types while a focus class (route, drawing) is next in line.
+      // The first focus class (the route's arc) before the data modules mount, further focus
+      // classes before ambient classes and native types, each with a short wait (focus.ts).
       get priority() {
-        const next = waitingRef.current[0];
-        return next && focusClasses(useDeckLayerStore.getState().entries).has(next) ? 1 : 2;
+        return deckClassPriority(waitingRef.current[0], focusRef.current);
+      },
+      get maxWaitMs() {
+        return deckClassMaxWait(waitingRef.current[0], focusRef.current);
       },
       pending: () => waitingRef.current.length,
       admitOne: () => {
@@ -158,15 +174,15 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
         // work for this one class (one program link) runs in this task — no React commit. A map
         // frame queued before the link would make it wait for that frame on the GPU.
         const all = flattenLayers<Layer>(orderedDeckLayers(useDeckLayerStore.getState().entries) as unknown[]);
-        const now = withBeforeId(admitLayers(all, admission).pass, beforeIdRef.current);
+        const now = lists.layers(admitLayers(all, admission).pass, beforeIdRef.current);
         layersRef.current = now;
         applyRef.current(now);
         initPendingLayers(deckOf(overlay));
-        // React catches up in time slices (same layers by id: deck diffs them, nothing re-links).
+        // React catches up in time slices (same list, same layers: deck sees nothing new).
         startTransition(() => setAdmittedVersion((v) => v + 1));
       },
     });
-  }, [scheduler, admission, overlay]);
+  }, [scheduler, admission, lists, overlay]);
 
   // After a WebGL context restore MapLibre rebuilds its style; hand deck its layers again.
   useEffect(() => {

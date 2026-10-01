@@ -30,11 +30,12 @@ import { BASEMAP_STALL_MS, basemapChipText, createBasemapHealth, heldTileKeys, r
 import { fetchBasemapStyle, loadBasemapWithRetry } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
-import { onceBasemapPainted, onceStyleParsed, type PaintMap, styleParsed } from '@/lib/map/ready';
+import { onceBasemapPainted, onceFirstFrame, onceStyleParsed, type PaintMap, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { useSticky } from '@/lib/map/defer';
 import { afterQuietSlot, canvasGl } from '@/lib/map/gpu-drain';
-import { ADMISSION_MAX_WAIT_MS, createAdmissionScheduler, useAdmissionStore } from '@/lib/map/admission-scheduler';
+import { ADMISSION_MAX_WAIT_MS, createAdmissionScheduler, FOCUS_MAX_WAIT_MS, useAdmissionStore } from '@/lib/map/admission-scheduler';
+import { ADMISSION_PRIORITY, hasFocusLayers } from '@/lib/map/focus';
 import { installNativeAdmission, type NativeMapLike } from '@/lib/map/native-admission';
 import { useAdmission } from '@/lib/map/use-admission';
 import { installMissingImageResolver } from '@/lib/map/style-images';
@@ -88,6 +89,10 @@ const CONTEXT_RESTORE_MS = 4000;
 const QUIET_SLOT_PHASE_MS = 1500;
 /** Feature start-up waits for the basemap's first painted frame, at most this long after style.load. */
 const BASEMAP_PAINT_CAP_MS = 4000;
+/** Focus layers (the user's route) wait for the globe's first frame, at most this long. */
+const FIRST_FRAME_CAP_MS = 1000;
+/** Admitted units kept in `data-admission-log` (diagnostics for e2e samples). */
+const ADMISSION_LOG_MAX = 24;
 const DEFAULT_MAX_PITCH = 85;
 
 /**
@@ -452,23 +457,41 @@ export default function MapView() {
   // (whose device set-up queries the GPU synchronously) gets its own quiet slot once a layer exists.
   // All of that start-up work goes through one admission queue (one unit per quiet slot, at least
   // one unit every ADMISSION_MAX_WAIT_MS however busy the thread/GPU): feature mount, deck device,
-  // each new deck layer class and the first draw of each native layer type features add.
+  // each new deck layer class and the first draw of each native layer type features add. The
+  // user's own focus layers (route, flight, drawing) are served first with a short wait (focus.ts).
   const getGl = useCallback(() => canvasGl(mapRef.current?.getMap().getCanvas()), []);
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !loaded) return;
     const store = useAdmissionStore.getState();
+    const el = map.getContainer();
+    const log: string[] = [];
     const scheduler = createAdmissionScheduler({
       slot: (cb) => afterQuietSlot(getGl, cb, QUIET_SLOT_PHASE_MS),
       maxWaitMs: ADMISSION_MAX_WAIT_MS,
-      timers: { setTimeout: (cb, ms) => setTimeout(cb, ms), clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>) },
+      timers: {
+        setTimeout: (cb, ms) => setTimeout(cb, ms),
+        clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+        now: () => performance.now(),
+      },
       onPending: (n) => {
         store.setPending(n);
-        map.getContainer().dataset.admissionPending = String(n);
+        el.dataset.admissionPending = String(n);
+      },
+      // Diagnostics for e2e samples: which unit was admitted when (ms since navigation start).
+      onAdmit: (id) => {
+        log.push(`${id}@${Math.round(performance.now())}`);
+        if (log.length > ADMISSION_LOG_MAX) log.shift();
+        el.dataset.admissionLog = log.join(' ');
       },
     });
     const native = installNativeAdmission(map as unknown as NativeMapLike, () => scheduler.kick());
-    const unregister = scheduler.register({ id: 'native-types', priority: 2, pending: () => native.pendingTypes().length, admitOne: () => void native.admitNext() });
+    const unregister = scheduler.register({
+      id: 'native-types',
+      priority: ADMISSION_PRIORITY.ambient,
+      pending: () => native.pendingTypes().length,
+      admitOne: () => void native.admitNext(),
+    });
     store.setScheduler(scheduler);
     return () => {
       unregister();
@@ -485,13 +508,25 @@ export default function MapView() {
     if (!map || !loaded) return;
     return onceBasemapPainted(map as unknown as PaintMap, BASEMAP_SOURCE_ID, () => setBasemapPainted(true), BASEMAP_PAINT_CAP_MS);
   }, [loaded]);
-  const deferred = useAdmission(loaded && basemapPainted, 'features', 0);
+  const deferred = useAdmission(loaded && basemapPainted, 'features', ADMISSION_PRIORITY.features);
+  // The globe's first frame (no tiles needed): the earliest point for the user's own focus work.
+  const [firstFrame, setFirstFrame] = useState(false);
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !loaded) return;
+    return onceFirstFrame(map as unknown as PaintMap, () => setFirstFrame(true), FIRST_FRAME_CAP_MS);
+  }, [loaded]);
   // Created with the first published deck layer, then kept (no deck teardown on layer toggles).
   const hasDeckLayers = useSticky(useDeckLayerStore((s) => Object.keys(s.entries).length > 0));
-  // The deck device does not wait for the data modules to mount: deck layers published before they
-  // mount can only come from module Backgrounds (a `?route=` deep link, drawn shapes: what the user
-  // asked for), so the device then goes first (visual-qa R4-M1). Still after the first basemap frame.
-  const deckSlot = useAdmission(loaded && basemapPainted && hasDeckLayers, 'deck-device', deferred ? 1 : -1);
+  // Focus layers (a `?route=` deep link, a tracked flight, drawn shapes: what the user asked for,
+  // published by module Backgrounds) get the deck device first, once the globe has drawn its first
+  // frame, without waiting for basemap tiles or a quiet GPU (focus.ts). Ambient data layers keep
+  // waiting for the first painted basemap frame (visual-qa R2-M6); deck layers published before the
+  // data modules mount can only come from Backgrounds, so the device then still goes first (R4-M1).
+  const focusDeck = useDeckLayerStore((s) => hasFocusLayers(s.entries));
+  const deckWanted = loaded && hasDeckLayers && (basemapPainted || (focusDeck && firstFrame));
+  const deckPriority = focusDeck ? ADMISSION_PRIORITY.focusFirst : deferred ? ADMISSION_PRIORITY.focus : ADMISSION_PRIORITY.deckDevice;
+  const deckSlot = useAdmission(deckWanted, 'deck-device', deckPriority, focusDeck ? FOCUS_MAX_WAIT_MS : undefined);
 
   // Honest basemap state: repeated tile failures → BASEMAP OFFLINE (last observed tile) + backoff retry.
   const [basemapHealth, setBasemapHealth] = useState<BasemapHealth | null>(null);
