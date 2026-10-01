@@ -204,8 +204,174 @@ node --experimental-transform-types --import ./tools/ts-loader.mjs tools/compile
 
 Probe every new upstream with `curl` and the GODSEYE User-Agent before wiring it, and record status,
 latency, CORS, auth and licence in `docs/data-sources/<area>.md`. Project rules for contributors and
-coding agents are in [CLAUDE.md](CLAUDE.md). CI runs all of the above plus Lighthouse CI and
-`pnpm audit --prod` on every push and pull request.
+coding agents are in [CLAUDE.md](CLAUDE.md). CI runs all of the above plus `pnpm audit --prod` and
+Lighthouse CI on every push and pull request: `/docs` and `/privacy` on `ubuntu-24.04` (`pnpm lhci`),
+and `/` on a GPU runner (the pre-check `pnpm lhci:gpu:check`, then Lighthouse CI with
+`lighthouserc.gpu.json`: `lhci collect`, `pnpm lhci:gpu:verify`, `lhci assert`, `lhci upload`; `pnpm lhci:gpu`
+runs the same sequence locally), because a globe rasterised in software is not what visitors with a GPU get.
+
+### GPU runner for Lighthouse on `/`
+
+`/` is the WebGL globe. On a runner without a GPU, Chromium rasterises it with SwiftShader on the CPU
+(recent runs measured performance 0.46 to 0.61 with 1.7 to 17 s of total blocking time), which says
+nothing about what visitors with a GPU get. Without any WebGL, `/` shows a light fallback page instead
+of the globe, and that page can pass every threshold. CI therefore measures `/docs` and `/privacy` on
+`ubuntu-24.04` (`lighthouserc.json`) and `/` only on a hardware GPU (job `lighthouse-gpu`,
+`lighthouserc.gpu.json`), and checks that every scored run really drew the globe there. Both configs
+assert the same contract thresholds (performance ≥ 0.85, accessibility = 1, LCP ≤ 2.5 s, CLS ≤ 0.1,
+TBT ≤ 300 ms, median of three desktop runs); the GPU config adds one assertion, the in-run audit
+`godseye-map-webgl-hardware`, on every run. The GPU job:
+
+1. fails in its first step, on `ubuntu-24.04`, when the repository variable `LIGHTHOUSE_GPU_RUNNER` is
+   empty or the run comes from a fork. The check is then red ("not measured") within seconds, never
+   skipped (a skipped job counts as passed for a required check). When the variable names a label that
+   no online runner carries (mistyped, runner offline, billing blocked), the job waits as Queued for up
+   to 24 hours and then fails: the check stays pending, never green;
+2. installs Playwright's pinned Chromium build, points `CHROME_PATH` at it and builds the app;
+3. runs the pre-check `pnpm lhci:gpu:check` (`tools/gpu-renderer-check.ts`), a fast filter so that a
+   runner without working hardware WebGL2 never spends minutes on Lighthouse. It launches the same
+   Chromium binary with the `chromeFlags` of `lighthouserc.gpu.json` (a separate Playwright launch:
+   Playwright's other automation flags remain and chrome-launcher's defaults are absent) and fails unless
+   WebGL2 runs on a hardware renderer, on a blank canvas and on the map's own canvas at `/`. SwiftShader,
+   llvmpipe, lavapipe, any "software" renderer, a context with a major performance caveat, WebGL not
+   hardware-enabled in Chromium's own report, or no WebGL2 at all fail the job;
+4. collects three Lighthouse runs of `/`, and refuses to start without a passing pre-check on record.
+   Every run carries the in-run audit `godseye-map-webgl-hardware` (`tools/lighthouse/`): in the page load
+   being scored, and in Lighthouse's own Chromium, it reads the WebGL2 renderer of the MapLibre canvas,
+   whether a context that refuses a major performance caveat can be created, the browser's full version
+   and Chromium's GPU feature status;
+5. verifies every run (`pnpm lhci:gpu:verify`): the in-run audit passed with a hardware renderer, the
+   MapLibre worker and at least one basemap vector tile loaded with HTTP 200, no console error mentions
+   WebGL, the desktop settings applied, the browser is the pre-checked build, the number of runs is
+   right, and the blank-canvas check still passes after the runs;
+6. only then asserts the thresholds (`lhci assert`, with the in-run audit asserted on every run) and
+   writes the reports. The job summary quotes, for each scored run, the renderer reported by the in-run
+   audit next to that run's scores. The reports, `gpu-renderer.json` (pre-check) and `gpu-runs.json`
+   (verification) are uploaded as the `lighthouse-gpu` artifact.
+
+**Set the variable.** Settings → Secrets and variables → Actions → Variables → New repository variable:
+name `LIGHTHOUSE_GPU_RUNNER`, value the runner's label (for example `gpu-t4-4core`) or a JSON array of
+labels (for example `["self-hosted","linux","x64","godseye-gpu"]`). It is not a secret, and no keys are
+needed.
+
+**Fork pull requests (both options).** Under Settings → Actions → General → "Approval for running fork
+pull request workflows from contributors", choose "Require approval for all external contributors". A
+fork pull request runs its own copy of the workflow, so it can name the GPU runner's label in `runs-on`
+directly and raise `timeout-minutes` to 360: the routing in `ci.yml` only keeps unmodified runs off the
+GPU runner and is neither a cost guard nor a security boundary. On a GitHub-hosted GPU runner an
+approved fork run is billed to the organisation (360 minutes is about $18.72), so read every change to
+`.github/**` and `package.json` before approving one; on a self-hosted runner the pre-job hook below
+refuses fork runs anyway. Never add a `pull_request_target` trigger. Dependabot pull requests come from
+this repository and do receive repository variables (GitHub staff confirmed it in community discussion
+44088, March 2023; the Dependabot docs only mention secrets), so every dependency update is measured on
+the GPU runner, twice (its push and its pull request).
+
+**Option A: GitHub-hosted GPU runner (recommended).** GPU runners are larger runners, which GitHub offers
+only to organisations on GitHub Team (a paid per-user plan) or Enterprise Cloud, so a repository in a
+personal account must first move into such an organisation (Settings → General → Transfer ownership).
+Keep a payment method on the organisation (larger runners can take up to 10 minutes to become usable
+after one is added) and give the Actions budget a non-zero amount, for example $20 a month with
+"Stop usage when budget limit is reached": a $0 budget blocks larger runners, and the job then waits as
+Queued. Then, as an organisation owner: organisation Settings → Actions → Runners → New runner → New
+GitHub-hosted runner. Name it (the name becomes the label, for example `gpu-t4-4core`); platform Linux
+x64; image: Partner tab, "NVIDIA GPU-Optimized Image for AI and HPC" (GitHub's docs list it as
+NVIDIA GPU-Optimized VMI); size: GPU-powered tab (4 vCPU, one Tesla T4, 28 GB RAM, 16 GB VRAM, 176 GB SSD);
+maximum concurrency 1; a dedicated runner group. Give that group access to this repository (Repository
+access → Selected repositories) and allow public repositories, because runner groups serve private
+repositories only by default. Billing is per job, rounded up to whole minutes (`linux_4_core_gpu`,
+$0.052 per minute on 2026-10-01), not covered by included minutes and never free, public repositories
+included. One run (build, pre-check, three Lighthouse runs, verification) takes roughly 8 to 15 minutes,
+about $0.40 to $0.80, and a push to a branch with an open pull request runs it twice (push and
+pull_request). References: [larger runners](https://docs.github.com/en/actions/reference/runners/larger-runners),
+[runner pricing](https://docs.github.com/en/billing/reference/actions-runner-pricing).
+
+**Option B: self-hosted GPU machine.** GitHub's guidance is that self-hosted runners
+"should almost never be used for public repositories", because anyone can open a pull request, and a
+fork's pull request runs its own copy of the workflow. If you still use one, run it as a just-in-time
+(JIT) runner, which takes exactly one job and is then removed:
+
+- prepare a disposable VM image with a hardware GPU, an unprivileged runner user and no other
+  credentials, containing: the GPU driver with its Vulkan ICD (`vulkaninfo --summary` must list the GPU,
+  not llvmpipe), `jq`, Chromium's system libraries (`sudo npx playwright@1.63.0 install-deps chromium`;
+  the workflow never runs `sudo` on a self-hosted runner), the
+  [runner application](https://github.com/actions/runner/releases), and the pre-job hook below saved
+  outside the runner directory, for example as `/opt/godseye-runner-hooks/job-started.sh` (executable,
+  owned by root) and named in the runner's `.env` file:
+  `ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/godseye-runner-hooks/job-started.sh`. The runner executes the
+  hook before every job; a non-zero exit fails the job before any step runs, and a fork cannot edit a
+  file on your machine;
+- run a controller on the host, outside every runner VM. It holds the only admin credential: a
+  fine-grained personal access token limited to this repository with the repository permission
+  "Administration: Read and write", never copied into a VM. For each job it (1) starts a fresh VM from
+  the clean image, (2) requests a JIT runner configuration with the call below, (3) starts
+  `./run.sh --jitconfig "<encoded_jit_config>"` in that VM as the runner user, and (4) destroys the VM
+  when `run.sh` exits, then starts over. GitHub assigns one job to that runner and removes it afterwards.
+  While no matching runner is online the `/` check stays pending ("Waiting for a runner") for up to
+  24 hours and then fails;
+- the JIT call lists `self-hosted`, `linux` and `x64` next to `godseye-gpu`, as GitHub's own example
+  does, because its `labels` field is documented only as the labels to add;
+- before pushing a fork's change to a branch of this repository (which runs it on the GPU host), review
+  the whole diff, including `pnpm-lock.yaml`, `next.config.ts`, `tools/**` and `src/**`, not only
+  `.github/**` and `package.json`: the job installs, builds, runs and serves that tree.
+
+```sh
+# On the controller host (never inside a runner VM): one just-in-time runner configuration.
+curl -sS --fail-with-body -X POST \
+  -H "Accept: application/vnd.github+json" \
+  -H "Authorization: Bearer $GODSEYE_RUNNER_ADMIN_TOKEN" \
+  -H "X-GitHub-Api-Version: 2022-11-28" \
+  https://api.github.com/repos/awne8886/godseye/actions/runners/generate-jitconfig \
+  -d "{\"name\":\"godseye-gpu-$(date -u +%Y%m%dT%H%M%SZ)\",\"runner_group_id\":1,\"labels\":[\"self-hosted\",\"linux\",\"x64\",\"godseye-gpu\"]}" \
+  | jq -r .encoded_jit_config
+```
+
+```sh
+#!/bin/sh
+# GODSEYE GPU runner pre-job hook: admit pushes and pull requests from this repository only.
+set -eu
+case "${GITHUB_EVENT_NAME:-}" in
+  push) exit 0 ;;
+  pull_request)
+    head=$(jq -r '.pull_request.head.repo.full_name // empty' "$GITHUB_EVENT_PATH")
+    if [ -n "$head" ] && [ "$head" = "${GITHUB_REPOSITORY:-}" ]; then exit 0; fi
+    ;;
+esac
+echo "GODSEYE GPU runner: refusing a ${GITHUB_EVENT_NAME:-unknown} job from ${GITHUB_REPOSITORY:-unknown}: only pushes and same-repository pull requests run here" >&2
+exit 1
+```
+
+**Branch protection.** In the ruleset for the default branch, require both Lighthouse checks,
+"Build + Lighthouse CI (/docs, /privacy)" and "Build + Lighthouse CI (/, GPU runner)", and choose GitHub
+Actions as their source. If the former single check "Build + Lighthouse CI" is still required, replace it
+with these two, or merges wait for it forever. A pull request from a fork shows the `/` check red ("not
+measured") by design, and that failed check stays on the pull request. To measure it, a maintainer
+reviews the change, pushes its head unchanged to a branch of this repository
+(`git fetch origin pull/<number>/head && git push origin FETCH_HEAD:refs/heads/pr-<number>`), and merges
+through a pull request opened from `pr-<number>`.
+
+**When the renderer check fails on a GPU machine,** the job summary, `gpu-renderer.json` and
+`gpu-runs.json` show what Chromium got, and the "GPU diagnostics" step lists the Vulkan ICD manifests.
+Without a Vulkan ICD for the GPU, install the driver's user-space GL/Vulkan package for the same driver
+version (on Ubuntu, `libnvidia-gl-<driver major>`, the major version that `nvidia-smi` prints). Nothing
+can be preinstalled on a GitHub-hosted runner, so there it has to be a workflow step before the
+pre-check, guarded by `if: runner.environment == 'github-hosted'` (the only place this workflow may use
+`sudo`): `sudo apt-get install -y libnvidia-gl-<driver major>`. Chromium's
+[GPU-in-headless notes](https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/using-gpu-hardware-in-headless-chrome.md)
+and [server-side GPU notes](https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/server-side-headless-linux-chrome-with-gpus.md)
+point to the [Tesla T4 guide](https://github.com/jasonmayes/headless-chrome-nvidia-t4-gpu-support) these
+flags and packages come from. If Vulkan cannot work on that machine, ANGLE's EGL backend is the alternative: replace
+`--use-angle=vulkan --enable-features=Vulkan --disable-vulkan-surface` with
+`--use-gl=angle --use-angle=gl-egl` in `lighthouserc.gpu.json`; the pre-check and the in-run audit still
+gate it. Never add SwiftShader flags or loosen thresholds: a red `/` on a real GPU is an application
+performance problem to fix.
+
+**Locally,** on a machine with a GPU, with the Chromium build CI uses (a branded Google Chrome applies
+different field-trial settings):
+
+```sh
+pnpm exec playwright install --no-shell chromium && pnpm build && \
+  CHROME_PATH="$(node -p "require('@playwright/test').chromium.executablePath()")" pnpm lhci:gpu
+```
 
 ## Credits and licence
 

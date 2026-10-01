@@ -250,6 +250,8 @@ Preferences persist in `localStorage` (`godseye:settings`, `godseye:theme`), rea
 | `tools/gen-types.mjs` | Regenerates `src/lib/types.ts` from the zod schemas. |
 | `tools/gen-api-docs.ts` | Writes `docs/API.md` from the catalogue (`--check` to verify). |
 | `tools/compile-data-sources.ts` | Compiles `docs/DATA_SOURCES.md` from `docs/data-sources/*.md` plus the licence summary. |
+| `tools/gpu-renderer-check.ts` | Hardware-WebGL2 gate for Lighthouse on `/`: the pre-check (`pnpm lhci:gpu:check`, a separate launch of the same Chromium binary with the `chromeFlags` of `lighthouserc.gpu.json`) and the verification of every scored run (`pnpm lhci:gpu:verify`). |
+| `tools/lighthouse/*.mjs` | Lighthouse config for `/` on the GPU runner (desktop config plus the in-run audit `godseye-map-webgl-hardware`, which reads the globe's WebGL2 renderer in the scored page load); uses the Lighthouse copy `@lhci/cli` runs. |
 | `tools/ts-loader.mjs` | Resolve hook so Node's built-in TypeScript support can run the tools above against app modules. |
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request: a placeholder grep over LICENSE,
@@ -257,7 +259,39 @@ README and `docs/` (pattern in the workflow; the research pack and the contract 
 typecheck, unit tests with ≥ 80 % line coverage on `src/lib`, `src/app/api` and
 `src/features/flight-paths`, a production build, Playwright e2e inside the official Playwright image
 (pinned by digest; per-test budget 150 s so the 90 s first-canvas waits under SwiftShader can finish),
-Lighthouse CI on a separate build (`lighthouserc.json`: performance ≥ 0.85, accessibility = 1,
-LCP ≤ 2.5 s, CLS ≤ 0.1, TBT ≤ 300 ms, desktop preset, median of three runs) and `pnpm audit --prod`
-failing on high or critical advisories. `CHECK_CATALOG_COMPLETENESS=1` makes CI fail when a catalogued
+Lighthouse CI with the same thresholds in two configs (performance ≥ 0.85, accessibility = 1,
+LCP ≤ 2.5 s, CLS ≤ 0.1, TBT ≤ 300 ms, desktop settings, median of three runs) and `pnpm audit --prod`
+failing on high or critical advisories. `/docs` and `/privacy` are measured on a separate build on
+`ubuntu-24.04` (`lighthouserc.json`); `/`, the WebGL globe, only on a GPU runner named by the
+`LIGHTHOUSE_GPU_RUNNER` repository variable (job `lighthouse-gpu`, `lighthouserc.gpu.json`), because
+SwiftShader would rasterise the globe on the CPU and a page without WebGL falls back to a light page
+that can pass every threshold. That job installs Playwright's pinned Chromium as `CHROME_PATH` and
+builds, then:
+(1) `tools/gpu-renderer-check.ts` pre-checks the runner, a fast filter: a separate Playwright launch of
+the same binary with the config's `chromeFlags` must create a WebGL2 context on a hardware renderer on a
+blank canvas and on the MapLibre canvas of `/`, with Chromium reporting WebGL as hardware-enabled and no
+major performance caveat. Only the binary and the config flags match Lighthouse's launch: the three
+Playwright defaults that change the GPU path (`--enable-unsafe-swiftshader`,
+`--disable-field-trial-config`, Playwright's own `--enable-features`) are dropped, Playwright's other
+automation flags remain and chrome-launcher's defaults are absent (`commandLine` in
+`.lighthouseci/gpu-renderer.json`). `--disable-field-trial-config` mattered on Chromium 141 (measured
+2026-10-01: it turned a failed hardware path into SwiftShader WebGL2); on Chrome for Testing 153, the
+build CI installs, it is a no-op.
+(2) `lhci collect` runs `/` three times with `tools/lighthouse/gpu-config.mjs`, which spreads
+Lighthouse's desktop config (Lighthouse ignores `preset` once a config path is set) and adds the in-run
+audit `godseye-map-webgl-hardware`: after tracing has stopped, it reads the MapLibre canvas's WebGL2
+renderer, a caveat-refusing context, the full browser version and Chromium's GPU feature status in the
+page load being scored, in Lighthouse's own Chromium. The plug-ins resolve Lighthouse through
+`@lhci/cli`, exactly as its runner does.
+(3) `--verify-runs` requires every run to pass that audit with a hardware renderer, to load the MapLibre
+worker (requested only after MapLibre has its WebGL context) and at least one basemap vector tile with
+HTTP 200, to log no WebGL console error, to carry the desktop settings and the pre-checked Chromium
+version, and the right number of runs; it repeats the blank-canvas check afterwards and writes
+`.lighthouseci/gpu-runs.json` and a job summary that quotes each run's renderer with its scores.
+(4) `lhci assert` applies the contract thresholds (median of three) and the in-run audit (every run).
+An empty variable or a fork pull request fails the job's first step on `ubuntu-24.04` instead of
+skipping it, so `/` is never green unmeasured; a label without an online runner leaves the check
+pending. That routing only keeps unmodified runs off the GPU runner: forks are kept off by the
+fork-approval setting and, on a self-hosted runner, by the README's pre-job hook and just-in-time
+registration. `CHECK_CATALOG_COMPLETENESS=1` makes CI fail when a catalogued
 route has no route file.
