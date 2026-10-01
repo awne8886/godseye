@@ -12,9 +12,15 @@ import { describe, expect, it } from 'vitest';
 import type { LngLatTuple } from '@/lib/geo';
 import type { Plan } from './api';
 import {
+  angleBetween,
   frameArea,
   framePoints,
   hiddenLabels,
+  horizonDeg,
+  LIMB,
+  limbModes,
+  vignetteCorners,
+  VIGNETTE_MARK_SHARE,
   intersects,
   labelBox,
   MARK_CLEAR_PX,
@@ -35,9 +41,11 @@ import per from '../__fixtures__/r3/plan-PER-LHR.json';
 import lhr from '../__fixtures__/r3/plan-LHR-JFK.json';
 import sin from '../__fixtures__/r3/plan-SIN-JFK.json';
 import syd from '../__fixtures__/r3/plan-SYD-SCL.json';
+import svo from '../__fixtures__/r3/plan-SVO-LAX.json';
+import akl from '../__fixtures__/r3/plan-AKL-EZE.json';
 
 const D = Math.PI / 180;
-const plans: Record<string, unknown> = { 'LHR-JFK': lhr, 'SYD-SCL': syd, 'SIN-JFK': sin, 'HEL-ANC': hel, 'PER-LHR': per };
+const plans: Record<string, unknown> = { 'LHR-JFK': lhr, 'SYD-SCL': syd, 'SIN-JFK': sin, 'HEL-ANC': hel, 'PER-LHR': per, 'SVO-LAX': svo };
 const PHONE_CLEAR = ['LHR-JFK', 'SYD-SCL', 'SIN-JFK', 'HEL-ANC'];
 
 /** Independent MapLibre pitch-0 globe: px offset from the padded centre, or null behind the horizon. */
@@ -202,6 +210,104 @@ describe('desktop 1600×1000: the JFK label clears the left rail in mercator (vi
       expect(Math.abs(a!.dot.left - b!.dot.left)).toBeGreaterThan((area.right - area.left) * 0.6);
     });
   }
+});
+
+// Round 5 visual-qa MAJOR-2: on the desktop globe the solver maximised the zoom with no limb
+// constraint, so a long route's far end sank onto the horizon (SVO→LAX: LAX on the limb under the
+// atmosphere; SYD→SCL: SYD likewise), foreshortened, while `data-marks` still called it clear.
+// Now both endpoints stay ≤ 60° from the camera's ground point and ≥ 12° inside the horizon; a route
+// too long for that (SIN-JFK, 137°) still fits as before.
+describe('globe limb: both endpoints well inside the visible hemisphere (round 5 visual-qa M2)', () => {
+  const desktop = { width: 1600, height: 1000 };
+  const dArea = frameArea(desktop, panelOf(desktopOverlays));
+  const phone = { width: 390, height: 844 };
+  const pArea = frameArea(phone, panelOf(phoneOverlays));
+  const cases: [string, Plan, typeof desktop, Rect, Rect[], number][] = [
+    ['SVO-LAX desktop', svo as unknown as Plan, desktop, dArea, rects(desktopOverlays), 1.2],
+    ['SYD-SCL desktop', syd as unknown as Plan, desktop, dArea, rects(desktopOverlays), 1.2],
+    ['LHR-JFK desktop', lhr as unknown as Plan, desktop, dArea, rects(desktopOverlays), 1.2],
+    ['AKL-EZE desktop', akl as unknown as Plan, desktop, dArea, rects(desktopOverlays), 1.2],
+    ['SVO-LAX phone', svo as unknown as Plan, phone, pArea, rects(phoneOverlays), 0.3],
+    ['LHR-JFK phone', lhr as unknown as Plan, phone, pArea, rects(phoneOverlays), 0.3],
+  ];
+  for (const [name, plan, viewport, area, obstacles, minZoom] of cases) {
+    it(`${name}: endpoints ≤ ${LIMB.maxDeg}° from the camera and ≥ ${LIMB.marginDeg}° inside the horizon, still framed clear`, () => {
+      const frame = routeFrame(plan, null, null)!;
+      const sol = solveFrame(frame, { projection: 'globe', viewport, area, obstacles, minZoom, maxZoom: 8 })!;
+      expect(sol.fits && sol.clear).toBe(true);
+      const horizon = horizonDeg(sol.center, sol.zoom, viewport.height);
+      for (const e of frame.endpoints) {
+        const deg = angleBetween(sol.center, e.position);
+        expect(deg, `${e.label} from the camera`).toBeLessThanOrEqual(LIMB.maxDeg + 1e-9);
+        expect(deg, `${e.label} vs horizon ${horizon.toFixed(1)}°`).toBeLessThanOrEqual(horizon - LIMB.marginDeg + 1e-9);
+      }
+    });
+  }
+
+  for (const [code, plan] of [['SIN-JFK', sin], ['PER-LHR', per]] as const) {
+    it(`${code} (too far apart for 60°): the relaxed limits — each end ≤ half the span + 4°, ≥ 6° inside the horizon (PER sat ON the limb before)`, () => {
+      const frame = routeFrame(plan as unknown as Plan, null, null)!;
+      const [a, b] = frame.endpoints.map((e) => e.position);
+      const span = angleBetween(a!, b!);
+      expect(span).toBeGreaterThan(2 * LIMB.maxDeg - 2 * LIMB.relaxedSlackDeg);
+      expect(limbModes('globe', [a!, b!]).map((m) => m?.maxDeg)).toEqual([LIMB.maxDeg, span / 2 + LIMB.relaxedSlackDeg, undefined]);
+      const sol = solveFrame(frame, { projection: 'globe', viewport: desktop, area: dArea, obstacles: rects(desktopOverlays), minZoom: 1.2, maxZoom: 8 })!;
+      expect(sol.fits).toBe(true);
+      const horizon = horizonDeg(sol.center, sol.zoom, desktop.height);
+      for (const e of frame.endpoints) {
+        const deg = angleBetween(sol.center, e.position);
+        expect(deg).toBeLessThanOrEqual(span / 2 + LIMB.relaxedSlackDeg + 1e-9);
+        expect(deg).toBeLessThanOrEqual(horizon - LIMB.relaxedMarginDeg + 1e-9);
+      }
+    });
+  }
+
+  it('vignette: the SVO-LAX desktop labels stay out of the dark corners (LAX was at 76 % of the vignette ellipse, 0.54 black)', () => {
+    const frame = routeFrame(svo as unknown as Plan, null, null)!;
+    const share = (sol: NonNullable<ReturnType<typeof solveFrame>>) =>
+      Math.max(
+        ...placed('SVO-LAX', sol, 'globe', desktop.height).map((m) =>
+          Math.max(...[[m.box.left, m.box.top], [m.box.right, m.box.top], [m.box.left, m.box.bottom], [m.box.right, m.box.bottom]].map(([x, y]) => Math.hypot((x! - 800) / (800 * Math.SQRT2), (y! - 500) / (500 * Math.SQRT2)))),
+        ),
+      );
+    const env = { projection: 'globe' as const, viewport: desktop, area: dArea, obstacles: rects(desktopOverlays), minZoom: 1.2, maxZoom: 8 };
+    const plain = solveFrame(frame, { ...env, vignette: false })!;
+    const kept = solveFrame(frame, env)!;
+    expect(share(plain)).toBeGreaterThan(0.72);
+    expect(share(kept)).toBeLessThan(0.7);
+    expect(kept.fits && kept.clear).toBe(true);
+    // At a modest cost in size (≤ VIGNETTE_SLACK).
+    expect(plain.zoom - kept.zoom).toBeLessThan(0.35);
+  });
+
+  it('vignetteCorners: every box lies wholly beyond the share of the farthest-corner ellipse', () => {
+    for (const vp of [desktop, phone]) {
+      const boxes = vignetteCorners(vp);
+      expect(boxes.length).toBeGreaterThan(8);
+      const d = (x: number, y: number) => Math.hypot((x - vp.width / 2) / ((vp.width / 2) * Math.SQRT2), (y - vp.height / 2) / ((vp.height / 2) * Math.SQRT2));
+      for (const b of boxes) {
+        // The inner corner of each box (nearest the screen centre) is on or beyond the share.
+        const ix = b.left === 0 ? b.right : b.left;
+        const iy = b.top === 0 ? b.bottom : b.top;
+        expect(d(ix, iy)).toBeGreaterThanOrEqual(VIGNETTE_MARK_SHARE - 1e-9);
+      }
+    }
+  });
+
+  it('limbModes: mercator has no limb; a short route only the strict limits', () => {
+    expect(limbModes('mercator', [[0, 0], [10, 0]])).toEqual([undefined]);
+    expect(limbModes('globe', [])).toEqual([undefined]);
+    expect(limbModes('globe', [[0, 0], [100, 0]])).toEqual([{ ends: [[0, 0], [100, 0]], maxDeg: LIMB.maxDeg, marginDeg: LIMB.marginDeg }, undefined]);
+  });
+
+  it('horizonDeg: MapLibre’s pitch-0 cap — wide for a small globe, closing in as it grows', () => {
+    expect(horizonDeg([0, 0], 0, 1000)).toBeGreaterThan(85);
+    expect(horizonDeg([0, 0], 3, 1000)).toBeLessThan(horizonDeg([0, 0], 2, 1000));
+    // cos θ = R / (R + 1.5·H): R = 512·2²/2π ≈ 326 px at z 2 on the equator.
+    const R = (512 * 4) / (2 * Math.PI);
+    expect(horizonDeg([0, 0], 2, 1000)).toBeCloseTo(Math.acos(R / (R + 1500)) / D, 3);
+    expect(angleBetween([0, 0], [90, 0])).toBeCloseTo(90, 9);
+  });
 });
 
 describe('solver pieces', () => {

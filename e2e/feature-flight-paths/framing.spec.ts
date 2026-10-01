@@ -170,6 +170,41 @@ for (const [route, proj] of [
   });
 }
 
+// Round 5 visual-qa MAJOR-2: on the desktop globe the framing maximised the zoom with no limb
+// constraint, so a long route's far end sat on the horizon (SVO→LAX: LAX on the limb under the
+// atmosphere, its pill dimmed; SYD→SCL: SYD likewise) while `data-marks` still called it clear.
+// Geometry: the central angle from the camera's ground point (`data-far-side`) to each endpoint is
+// ≤ 60° and ≥ 12° inside the horizon (acos(R / (R + camera altitude))). Pixels: both code labels are
+// drawn at full strength inside their reported boxes (no data layers, so the only amber is the route's).
+const EARTH_KM = 6371.0088;
+const D2R = Math.PI / 180;
+const centralDeg = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const h = Math.sin(((b.lat - a.lat) * D2R) / 2) ** 2 + Math.cos(a.lat * D2R) * Math.cos(b.lat * D2R) * Math.sin(((b.lng - a.lng) * D2R) / 2) ** 2;
+  return (2 * Math.asin(Math.min(1, Math.sqrt(h)))) / D2R;
+};
+
+for (const route of ['SVO-LAX', 'SYD-SCL'] as const) {
+  test(`desktop · ${route} on the globe: both endpoints well inside the visible hemisphere, labels drawn (round 5 visual-qa M2)`, async ({ page }, info) => {
+    test.skip(info.project.name !== 'desktop', 'desktop layout (1600×1000)');
+    test.setTimeout(240_000);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expectClearFraming(page, route, 'globe', { layers: '' });
+    const [from, to] = route.split('-');
+    const plan = (await (await page.request.get(`/api/route/plan?from=${from}&to=${to}`)).json()) as { origin: { lat: number; lng: number; iata: string }; destination: { lat: number; lng: number; iata: string } };
+    const raw = await page.locator(MAP).getAttribute('data-far-side');
+    expect(raw).toMatch(/^-?\d/);
+    const [lng, lat, altM] = raw!.split(',').map(Number) as [number, number, number];
+    const horizon = Math.acos(EARTH_KM / (EARTH_KM + altM / 1000)) / D2R;
+    for (const e of [plan.origin, plan.destination]) {
+      const deg = centralDeg({ lat, lng }, e);
+      expect(deg, `${e.iata} ${deg.toFixed(1)}° from the camera`).toBeLessThanOrEqual(60.5);
+      expect(horizon - deg, `${e.iata} ${deg.toFixed(1)}° vs horizon ${horizon.toFixed(1)}°`).toBeGreaterThanOrEqual(11.5);
+    }
+    await expect.poll(async () => Math.min(...(await labelPixels(page))), { timeout: 120_000, intervals: [2_000, 4_000] }).toBeGreaterThan(12);
+    await page.screenshot({ path: info.outputPath(`limb-${route.toLowerCase()}-globe-desktop.png`), animations: 'disabled', mask: [page.locator('time'), page.locator('footer')] });
+  });
+}
+
 // The reported boxes are where the labels really are. Black Marble city lights share the label's
 // amber hue (69 matching px in an empty JFK box on 2026-10-01), so this runs with no data layers
 // (`?layers=`): the only amber on the map is then the route's own endpoint rings and labels.

@@ -42,3 +42,41 @@ test('palette "Atlantis to London" → PATHS offers "Did you mean ACY (Atlantic 
   await expect(status(page)).toHaveAttribute('data-route', 'ACY-LHR', { timeout: 30_000 });
   await expect(p.getByText('ACY → LHR', { exact: true })).toBeVisible({ timeout: 60_000 });
 });
+
+/**
+ * Round 5 B2: "City to City" plans the main airport of each city — "Bali to Sydney" planned BLC
+ * (Bali, Cameroon) → BWU (Bankstown) in round 5 — and, when a city has no main airport (Kyiv: no
+ * scheduled service), PATHS says "No main airport found" with a suggestion instead of planning.
+ */
+test('palette "Bali to Sydney" plans DPS → SYD (the main airports), never the namesake fields', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the command palette is a keyboard flow (desktop)');
+  test.setTimeout(120_000);
+  await gotoMap(page);
+  await page.keyboard.press('Control+k');
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  await expect(palette).toBeVisible();
+  await page.keyboard.type('Bali to Sydney');
+  await expect(palette.getByRole('option', { name: /Plan route BALI → SYDNEY/ })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(palette).toBeHidden();
+  await expect(status(page)).toHaveAttribute('data-route', 'DPS-SYD', { timeout: 30_000 });
+  await expect(panel(page).getByText('DPS → SYD', { exact: true })).toBeVisible({ timeout: 60_000 });
+});
+
+test('palette "Kiev to Warsaw" → "No main airport found for "Kiev". Did you mean IEV (Kyiv)?", nothing planned', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the command palette is a keyboard flow (desktop)');
+  test.setTimeout(120_000);
+  await gotoMap(page);
+  await page.keyboard.press('Control+k');
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  await expect(palette).toBeVisible();
+  await page.keyboard.type('Kiev to Warsaw');
+  await expect(palette.getByRole('option', { name: /Plan route KIEV → WARSAW/ })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(palette).toBeHidden();
+  const p = panel(page);
+  await expect(p.getByRole('status').filter({ hasText: 'Did you mean IEV (Kyiv)?' })).toHaveText('No main airport found for "Kiev". Did you mean IEV (Kyiv)?', { timeout: 30_000 });
+  await expect(status(page)).toHaveAttribute('data-route', '');
+  await expect(p.getByLabel('FROM', { exact: true })).toHaveValue('Kiev');
+  await expect(p.getByLabel('TO', { exact: true })).toHaveValue('WAW');
+});

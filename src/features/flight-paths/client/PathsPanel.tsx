@@ -18,7 +18,7 @@ import { entityFreshness } from '@/lib/freshness';
 import { OBSERVATION_CADENCE_MS } from '@/lib/layer-registry';
 import type { FreshnessState } from '@/lib/types';
 import { draftMessage, pendingSides, setPathsDraft, usePathsDraft, type DraftSuggestion } from './draft';
-import { obscuredFitText, PARTIAL_FIT_TEXT, useFitNotice } from './fit';
+import { obscuredFitText, partialFitText, useFitNotice } from './fit';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
 import { FLT_TOKEN, PATH_TYPES, TWILIGHT_TOKEN, codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
@@ -378,18 +378,18 @@ export function liveCounts(aircraft: readonly { basis: 'matched' | 'inferred' }[
 }
 
 /**
- * Compact header chip for the live tab (R3-m3): the panel header leaves ~14 characters, so a zero
- * count is dropped ("2 MATCHED", "1 INFERRED") and, when both are present, the two counts are
- * abbreviated ("1 M · 2 I") — still never summed. The full wording is the first line of the LIVE
- * tab (`liveCounts`).
+ * Compact header chip for the live tab (R3-m3): the panel header leaves ~14 characters. Round 5
+ * visual-qa: the abbreviated "6 M · 1 I" was cryptic, and "6 MATCHED · 1 INFERRED" (22) is cut
+ * to "6 MATCHED · 1…" — so the chip names the MATCHED count in words ("6 MATCHED"; "1 INFERRED"
+ * when none is matched) and the full, never-summed wording is its tooltip and the first line of
+ * the LIVE tab (`liveCounts`).
  */
 export function liveChip(aircraft: readonly { basis: 'matched' | 'inferred' }[]): string {
   const m = aircraft.filter((a) => a.basis === 'matched').length;
   const i = aircraft.length - m;
   if (m === 0 && i === 0) return '0 AIRCRAFT';
-  if (i === 0) return `${m} MATCHED`;
   if (m === 0) return `${i} INFERRED`;
-  return `${m} M · ${i} I`;
+  return `${m} MATCHED`;
 }
 
 export function LiveView({ live, error }: { live: Live | undefined; error: unknown }) {
@@ -624,7 +624,7 @@ export default function PathsPanel(_props: PanelProps) {
           : plan.error
             ? ['ERROR', 'error']
             : ['STANDBY', 'idle'];
-  // The abbreviated LIVE chip ('1 M · 2 I') carries the full wording as its tooltip.
+  // The LIVE chip ('6 MATCHED') carries the full wording ('6 MATCHED · 1 INFERRED') as its tooltip.
   usePanelChip(chip[0], chip[1], mode === 'live' && live.data && plan.data ? liveCounts(live.data.aircraft) : undefined);
 
   const plot = (a = from, b = to) => {
@@ -720,7 +720,7 @@ export default function PathsPanel(_props: PanelProps) {
             <div className="flex flex-wrap gap-1" data-testid="paths-draft-suggestions">
               {openSuggestions.map((sg) => (
                 <button
-                  key={sg.side}
+                  key={`${sg.side}:${sg.code}`}
                   type="button"
                   onClick={() => accept(sg)}
                   aria-label={`Use ${sg.code} (${sg.label}) as ${sg.side === 'from' ? 'origin' : 'destination'}`}
@@ -786,7 +786,7 @@ export default function PathsPanel(_props: PanelProps) {
 
       {fitNotice && !fitNotice.fits && fitNotice.key.startsWith(route ? 'route:' : ident ? 'flight:' : '-') && (
         <p role="status" data-testid="paths-fit-partial" className="font-sans text-[12px] text-[var(--text-secondary)]">
-          {PARTIAL_FIT_TEXT}
+          {partialFitText(fitNotice.projection)}
         </p>
       )}
       {fitNotice && fitNotice.fits && !!fitNotice.hidden?.length && fitNotice.key.startsWith(route ? 'route:' : ident ? 'flight:' : '-') && (

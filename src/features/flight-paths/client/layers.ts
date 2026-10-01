@@ -21,10 +21,20 @@ import { getFarSideCamera, isFacing } from '@/lib/map/far-side';
 import { hexToRgba, hudFontFamily, parseCssColor, readCssColor, UI_TOKENS, type MapToken, type Rgba } from '@/lib/tokens';
 import { dashPieces, intoFrame, nearLng, pathBounds, pathIntoFrame, pointAlong, unwrapPath } from '../lib/geometry';
 import type { Flight, Live, Plan } from './api';
-import { endpointLabelOffset, framePoints, LABEL_FONT_PX, LABEL_GAP_Y_PX, LABEL_PADDING_PX, type Projector } from './framing';
+import { endpointLabelOffset, framePoints, intersects, LABEL_FONT_PX, LABEL_GAP_Y_PX, LABEL_PADDING_PX, MARK_CLEAR_PX, type Projector, type Rect } from './framing';
 
 // Label placement and framing live in framing.ts (pure, no deck.gl); re-exported for the layer's callers.
 export { endpointLabelOffset, LABEL_GAP_X_PX, LABEL_GAP_Y_PX } from './framing';
+
+/** The map as it is on screen at the current camera (viewport px), for placing chips. */
+export interface ScreenSpace {
+  /** Viewport px of a point (MapLibre's own projection); null when it is not drawn (far side). */
+  project: Projector;
+  /** HUD chrome boxes over the map (insets.ts, plus the docked panel). */
+  obstacles: readonly Rect[];
+  width: number;
+  height: number;
+}
 
 export interface RouteLayerInput {
   plan: Plan | null;
@@ -37,6 +47,8 @@ export interface RouteLayerInput {
   zoom?: number;
   /** Bumps when the theme changes so colours are re-read. */
   theme: number;
+  /** The real screen (RouteLayer): progress chips then also keep clear of the HUD chrome and stay on screen. */
+  screen?: ScreenSpace;
 }
 
 const NO_CULL = { cullMode: 'none' } as const;
@@ -284,6 +296,24 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
 
   if (frame.remaining.length > 1) out.push(pathLayer('route-remaining', dashPieces(frame.remaining, 2, 2), color('--map-route-planned', 0.45), 1.5));
 
+  // Diversion dots under the endpoint dots and their pills (round 5: a diversion near SVO cut into its pill).
+  const diversions = frame.diversions.filter((p) => vis(p.position));
+  if (diversions.length) {
+    out.push(
+      new ScatterplotLayer<Point>({
+        id: 'route-diversions',
+        data: diversions,
+        getPosition: (d) => d.position,
+        getRadius: 3.5,
+        radiusUnits: 'pixels',
+        getFillColor: color('--map-route-filed', 0.8),
+        billboard: true,
+        parameters: { ...NO_CULL, depthCompare: 'always' },
+        updateTriggers: trigger,
+      }),
+    );
+  }
+
   const endpoints = frame.endpoints.filter((p) => vis(p.position));
   if (endpoints.length) {
     const ring = color('--map-airport-watch');
@@ -324,23 +354,6 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: { ...trigger, getBackgroundColor: [o.theme], getBorderColor: [o.theme] },
-      }),
-    );
-  }
-
-  const diversions = frame.diversions.filter((p) => vis(p.position));
-  if (diversions.length) {
-    out.push(
-      new ScatterplotLayer<Point>({
-        id: 'route-diversions',
-        data: diversions,
-        getPosition: (d) => d.position,
-        getRadius: 3.5,
-        radiusUnits: 'pixels',
-        getFillColor: color('--map-route-filed', 0.8),
-        billboard: true,
-        parameters: { ...NO_CULL, depthCompare: 'always' },
-        updateTriggers: trigger,
       }),
     );
   }
@@ -386,12 +399,15 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
       }),
     );
     // R2-M3: chips only for matched aircraft, decluttered in screen space (none on top of an
-    // endpoint label, no two overlapping, at most CHIP_MAX).
-    const project = screenProjector(o.globe, o.center, o.zoom ?? 2);
+    // endpoint label, no two overlapping, at most CHIP_MAX); round 5 visual-qa: on the real screen
+    // also none under the HUD chrome (the phone's "JBU…" chip ran under the BLACK MARBLE chip) or off it.
+    const project = o.screen?.project ?? screenProjector(o.globe, o.center, o.zoom ?? 2);
     const chips = selectChips(
       matched.filter((a) => typeof a.progress === 'number'),
       endpoints.map((e) => e.position),
       project,
+      CHIP_MAX,
+      o.screen,
     );
     if (chips.length) {
       out.push(
@@ -464,17 +480,23 @@ export function screenProjector(globe: boolean, center: LngLatTuple, zoom: numbe
 /**
  * Greedy chip placement in priority order (the server's order: forward, then by progress; a
  * tracked flight first): skip chips anchored within `ENDPOINT_CLEAR_PX` of an endpoint, chips whose
- * box overlaps one already placed, and everything past `CHIP_MAX`. The aircraft rings stay.
+ * box overlaps one already placed, and everything past `CHIP_MAX`. With the real `screen` (viewport
+ * px), also chips not wholly on screen or within `MARK_CLEAR_PX` of a HUD box. The aircraft rings stay.
  */
 export function selectChips<T extends { position: LngLatTuple; label: string; progress: number | null }>(
   candidates: readonly T[],
   endpoints: readonly LngLatTuple[],
   project: Projector,
   max = CHIP_MAX,
+  screen?: Pick<ScreenSpace, 'obstacles' | 'width' | 'height'>,
 ): T[] {
   const ends = endpoints.map(project).filter((p): p is [number, number] => p !== null);
   const boxes: [number, number, number, number][] = [];
   const out: T[] = [];
+  const g = MARK_CLEAR_PX;
+  const blocked = (b: [number, number, number, number]) =>
+    !!screen &&
+    (b[0] < 0 || b[1] < 0 || b[2] > screen.width || b[3] > screen.height || screen.obstacles.some((o) => intersects({ left: b[0] - g, top: b[1] - g, right: b[2] + g, bottom: b[3] + g }, o)));
   for (const c of candidates) {
     if (out.length >= max) break;
     const p = project(c.position);
@@ -482,6 +504,7 @@ export function selectChips<T extends { position: LngLatTuple; label: string; pr
     if (ends.some(([x, y]) => Math.hypot(x - p[0], y - p[1]) < ENDPOINT_CLEAR_PX)) continue;
     const w = progressChip(c.label, c.progress ?? 0).length * CHIP_CHAR_PX + 8;
     const box: [number, number, number, number] = [p[0] - w / 2, p[1] + CHIP_OFFSET_Y - CHIP_H_PX / 2, p[0] + w / 2, p[1] + CHIP_OFFSET_Y + CHIP_H_PX / 2];
+    if (blocked(box)) continue;
     if (boxes.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
     boxes.push(box);
     out.push(c);
