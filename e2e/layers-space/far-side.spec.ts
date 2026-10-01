@@ -1,11 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { recordToOmm, rowToRecord, SAT_CATEGORIES, type SatRow } from '../../src/features/space/lib/catalog';
+import { CATEGORY_TOKEN, recordToOmm, rowToRecord, SAT_CATEGORIES, type SatRow } from '../../src/features/space/lib/catalog';
 import { packRows } from '../../src/features/space/lib/packed';
 import { propagateAt, satrecFromOmm } from '../../src/features/space/lib/orbit';
 import { displayAltM, propagateBatch, type BatchInput, type FarSideCamera } from '../../src/features/space/lib/propagate-batch';
 import { centralAngle } from '../../src/lib/geo';
 import { horizonAngleDeg } from '../../src/lib/map/far-side';
-import { collectErrors, gotoMap, MAP, nudgeMap, readFarSideCamera, waitForCameraIdle } from '../map-engine/helpers';
+import { decodePng, gotoMap, nudgeMap, readFarSideCamera, tokenRgb, waitForCameraIdle } from '../map-engine/helpers';
 
 /**
  * R2 round 5 MAJOR-2: satellites behind the globe were drawn and pickable. The far-side filter kept
@@ -82,7 +82,8 @@ test('globe z6: exactly the satellites above the horizon at their drawn altitude
   test.setTimeout(240_000);
   let cat = await catalogue(request);
   test.skip(cat === null, 'CelesTrak and SatNOGS are both offline from this network');
-  const errors = collectErrors(page);
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
   const f = await bootSettled(page, 6);
   if (cat!.version !== f.version) cat = await catalogue(request); // refreshed between the two reads
   test.skip(!cat || cat.version !== f.version, 'the catalogue was refreshed while the page loaded it');
@@ -105,38 +106,78 @@ test('globe z6: exactly the satellites above the horizon at their drawn altitude
   expect(errors).toEqual([]);
 });
 
-test('globe z4: no click opens a satellite behind the globe', async ({ page, request }, info) => {
-  test.skip(info.project.name === 'mobile', 'desktop pick sweep');
+/**
+ * Isolated satellite markers on screen: pixels within ±28 of a mission colour token (markers draw
+ * at alpha 0.95; Earth-shadow ones at 0.3 do not match), clustered, inside `rect` (fractions of
+ * the viewport, clear of the HUD), with no other marker within 30 px so a click is unambiguous.
+ */
+async function satelliteMarkers(page: Page, rect = { x0: 0.15, y0: 0.15, x1: 0.85, y1: 0.8 }): Promise<{ x: number; y: number }[]> {
+  const tokens = await Promise.all(SAT_CATEGORIES.map((c) => tokenRgb(page, CATEGORY_TOKEN[c])));
+  const img = decodePng(await page.screenshot());
+  const clusters: { x: number; y: number; n: number }[] = [];
+  for (let y = Math.round(img.height * rect.y0); y < img.height * rect.y1; y++) {
+    for (let x = Math.round(img.width * rect.x0); x < img.width * rect.x1; x++) {
+      const p = (y * img.width + x) * img.channels;
+      const [r, g, b] = [img.data[p]!, img.data[p + 1]!, img.data[p + 2]!];
+      if (!tokens.some((t) => Math.abs(r - t[0]!) <= 28 && Math.abs(g - t[1]!) <= 28 && Math.abs(b - t[2]!) <= 28)) continue;
+      const c = clusters.find((k) => Math.abs(k.x / k.n - x) <= 4 && Math.abs(k.y / k.n - y) <= 4);
+      if (c) {
+        c.x += x;
+        c.y += y;
+        c.n++;
+      } else clusters.push({ x, y, n: 1 });
+    }
+  }
+  const centres = clusters.filter((c) => c.n >= 2).map((c) => ({ x: c.x / c.n, y: c.y / c.n }));
+  return centres.filter((c) => centres.every((o) => o === c || Math.hypot(o.x - c.x, o.y - c.y) > 30));
+}
+
+test('globe z4: clicks on drawn satellites open them, and never one behind the globe', async ({ page, request }, info) => {
+  test.skip(info.project.name === 'mobile', 'desktop pick check');
   test.setTimeout(240_000);
   const cat = await catalogue(request);
   test.skip(cat === null, 'CelesTrak and SatNOGS are both offline from this network');
   await bootSettled(page, 4);
   const byId = new Map(cat!.rows.map((r, i) => [rowToRecord(r).noradId, i]));
-  const box = (await page.locator(`${MAP} canvas.maplibregl-canvas`).boundingBox())!;
   const card = page.getByTestId('satellite-card').first();
-  const opened = new Set<number>();
-  for (let gy = 0; gy < 4; gy++) {
-    for (let gx = 0; gx < 4; gx++) {
-      // The central 40 % of the canvas (clear of the HUD rails and panels).
-      await page.mouse.click(box.x + box.width * (0.3 + gx * 0.133), box.y + box.height * (0.3 + gy * 0.133));
-      await page.waitForTimeout(400);
-      if (!(await card.isVisible())) continue;
-      const id = Number((await card.locator('dt', { hasText: /^NORAD ID$/ }).locator('xpath=following-sibling::dd[1]').innerText()).trim());
-      if (opened.has(id)) continue;
-      opened.add(id);
-      const cam = (await readFarSideCamera(page))!;
-      const i = byId.get(id);
-      expect(i, `NORAD ${id} is in the catalogue`).toBeDefined();
-      const rec = cat!.input.satrecs[i!];
-      expect(rec, `NORAD ${id} has usable elements (it was drawn)`).toBeTruthy();
-      const p = propagateAt(rec!, new Date());
-      expect(p, `NORAD ${id} propagates now`).not.toBeNull();
-      if (!p) continue;
-      const cap = horizonAngleDeg(cam.altitude) + horizonAngleDeg(displayAltM(p.altKm));
-      const d = centralAngle([cam.lng, cam.lat], [p.lng, p.lat]) * DEG;
-      // 0.5° of slack: a LEO satellite moves ~0.07°/s between the click and this check.
-      expect(d, `NORAD ${id} is ${d.toFixed(1)}° from the camera, cap ${cap.toFixed(1)}°`).toBeLessThanOrEqual(cap + 0.5);
+  const norad = async () => (await card.isVisible()) ? Number((await card.locator('dt', { hasText: /^NORAD ID$/ }).locator('xpath=following-sibling::dd[1]').innerText()).trim()) : null;
+  const tried: { x: number; y: number }[] = [];
+  let opened = 0;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    // LEO markers move ~2 px/s at z4: locate them afresh right before every click.
+    const t = (await satelliteMarkers(page)).find((m) => tried.every((o) => Math.hypot(o.x - m.x, o.y - m.y) > 40));
+    if (!t) break;
+    tried.push(t);
+    // The camera the pick is judged against (a selection never moves the camera).
+    const cam = (await readFarSideCamera(page))!;
+    const before = await norad();
+    await page.mouse.click(t.x, t.y);
+    // A pick (GPU + CPU hit test) takes up to ~0.6 s on SwiftShader; the card follows.
+    let id: number | null = null;
+    for (const until = Date.now() + 4_000; Date.now() < until; await page.waitForTimeout(150)) {
+      const n = await norad();
+      if (n !== null && n !== before) {
+        id = n;
+        break;
+      }
     }
+    if (id === null) continue;
+    opened++;
+    // Close the card so it never covers the next marker.
+    await page.getByRole('button', { name: 'Close card' }).first().click({ timeout: 2_000 }).catch(() => undefined);
+    const i = byId.get(id);
+    expect(i, `NORAD ${id} is in the catalogue`).toBeDefined();
+    const rec = cat!.input.satrecs[i!];
+    expect(rec, `NORAD ${id} has usable elements (it was drawn)`).toBeTruthy();
+    const p = propagateAt(rec!, new Date());
+    expect(p, `NORAD ${id} propagates now`).not.toBeNull();
+    const cap = horizonAngleDeg(cam.altitude) + horizonAngleDeg(displayAltM(p!.altKm));
+    const d = centralAngle([cam.lng, cam.lat], [p!.lng, p!.lat]) * DEG;
+    // 0.5° of slack: a LEO satellite moves ~0.07°/s between the click and this check.
+    expect(d, `NORAD ${id} is ${d.toFixed(1)}° from the camera, cap ${cap.toFixed(1)}°`).toBeLessThanOrEqual(cap + 0.5);
   }
-  test.info().annotations.push({ type: 'satellite cards opened', description: String(opened.size) });
+  test.info().annotations.push({ type: 'satellite markers clicked / opened', description: `${tried.length} / ${opened}` });
+  test.skip(tried.length < 3, `only ${tried.length} isolated satellite markers on screen`);
+  // The drawn markers are pickable (the far-side re-check never rejects a drawn, facing satellite).
+  expect(opened).toBeGreaterThanOrEqual(Math.ceil(tried.length / 2));
 });
