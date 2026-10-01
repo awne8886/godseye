@@ -305,6 +305,20 @@ Honest UA (`GODSEYE/0.1.0 (godseye open-source monitor; probe)`).
 | `https://vrs-standing-data.adsb.lol/routes/UA/UAL61.json` | 200 | 0.28 s | `*` | `airport_codes "YMML-KSFO"`, `_airport_codes_iata "MEL-SFO"` |
 | `https://api.adsbdb.com/v0/callsign/UAL61` | 200 | 11.7 s (slow) | `*` | `flightroute` BRU → (EWR) → IAH — disagrees with VRS (MEL-SFO); the route chain prefers VRS, and the corroboration rule (observed departure beats schedule) arbitrates. Looked up per request, never bulk-stored |
 
+#### Re-probe 2026-10-01 02:30 UTC (Phase 3 round-2b, R2-M2 corridor inference)
+
+Honest UA (`GODSEYE/0.1 (open-source monitor; probe)`). adsb.lol `/v2/point` is read only to capture
+test fixtures here — the live route endpoint never polls it (it reads aviation's flights snapshot).
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/point/51/-30/250` (mid-Atlantic, on the LHR–JFK corridor) | 200 | 0.69 s | none (server-side only) | `{ac: [], now: 1790821791501}` — **no aircraft**: no ADS-B ground coverage over the open ocean, so oceanic corridor inference has nothing to work with there (a truthful empty, not an outage) |
+| `https://api.adsb.lol/v2/point/51.5/-8/250` (west of Ireland) | 200 | 0.65 s | none | 39 rows; readsb jv2 fields `hex, flight, r, t, alt_baro, gs, track, lat, lon, category, dbFlags?`; eastbound NAT exits for many European destinations (DAL22, AFR343, KLM250 …) |
+| `https://api.adsb.lol/v2/point/41.5/-70/150` (New England, ~300 km from JFK) | 200 | 0.87 s | none | 58 rows incl. domestic regional legs (RPA E75L), cargo (FDX1273, UPS1017), USAF (DUCE53, `dbFlags 1`), bizjet (SIO007 GLEX) — the classes R2-M2 found mis-inferred |
+
+Both populated responses (airborne rows, fields trimmed) are the unit-test fixture
+`src/features/flight-paths/__fixtures__/adsblol-point-lhr-jfk-ends.json`. Licence: adsb.lol data ODbL 1.0.
+
 ### layers-aviation
 
 Probed 2026-09-30 18:07–18:20 UTC from the build sandbox with
