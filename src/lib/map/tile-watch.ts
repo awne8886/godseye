@@ -5,7 +5,8 @@
  *  - every source: a failed tile (MapLibre reports non-404 failures with the tile) counts as a hole
  *    until it loads; repeated failures with nothing in between read SOURCE OFFLINE (with the last
  *    tile that really arrived); holes still in view are retried by tile id with backoff, never the
- *    whole viewport (R1r4-m2); a camera move forgets holes that left the view;
+ *    whole viewport (R1r4-m2), for sources with `retry` (the vector basemap: retrying a failed
+ *    raster tile crashes MapLibre's raster draw); a camera move forgets holes that left the view;
  *  - `firstPaint` (the basemap): `loading` from the moment the map exists until the first frame
  *    rendered after one of its tiles arrived (visual-qa round-4 m7 / round-5 m3: never a blank globe
  *    with no chip for 10 s);
@@ -35,6 +36,13 @@ export interface WatchedSource {
   stall?: boolean;
   /** Read `loading` until a frame with this source's tiles has been painted. */
   firstPaint?: boolean;
+  /**
+   * Re-request failed tiles by id (vector basemap only). Raster imagery sources must not: MapLibre
+   * then treats a failed image tile as drawable without a texture and its raster draw throws,
+   * stopping the whole frame (round-5 BLOCKING 4). Their holes stay reported and MapLibre asks for
+   * them again when the camera moves.
+   */
+  retry?: boolean;
 }
 
 export interface TileWatchTimers {
@@ -116,7 +124,7 @@ export function watchTileSources(
   };
   // Ask again for the failed tiles only: a whole-viewport reload re-downloads every tile in view.
   const retry = (e: Entry, h: BasemapHealth) => {
-    if (h.retryInMs === null || e.timer !== null) return;
+    if (!e.spec.retry || h.retryInMs === null || e.timer !== null) return;
     e.timer = timers.setTimeout(() => {
       e.timer = null;
       const targets = retryTargets(e.health.get(), e.health.failedTiles());

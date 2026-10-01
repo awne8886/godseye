@@ -82,7 +82,13 @@ function fakeTimers() {
   };
 }
 
-const SOURCES = [{ id: BASEMAP, stall: true, firstPaint: true }, { id: ESRI_SOURCE_ID }, { id: GIBS_TRUECOLOR_SOURCE_ID }, { id: NIGHT_SOURCE_ID }];
+/** Mirrors MapView's WATCHED_TILE_SOURCES: only the vector basemap retries failed tiles by id. */
+const SOURCES = [
+  { id: BASEMAP, stall: true, firstPaint: true, retry: true },
+  { id: ESRI_SOURCE_ID, retry: false },
+  { id: GIBS_TRUECOLOR_SOURCE_ID, retry: false },
+  { id: NIGHT_SOURCE_ID, retry: false },
+];
 
 function setup(loadedAtStart = false) {
   const m = fakeMap(loadedAtStart);
@@ -134,7 +140,7 @@ describe('R1r5 visual-qa m3: BASEMAP LOADING from the first frame until the base
 });
 
 describe('R1r5 visual-qa m10: holes in the imagery overlays are announced', () => {
-  it('a failed Esri tile among loaded ones reads N TILES MISSING until it loads (retried by id)', () => {
+  it('a failed Esri tile among loaded ones reads N TILES MISSING until it loads (never refreshed: raster retry crashes the draw)', () => {
     const s = setup(true);
     s.tileLoaded(ESRI_SOURCE_ID, 4, 8, 5);
     s.tileFailed(ESRI_SOURCE_ID, 4, 8, 6);
@@ -143,8 +149,11 @@ describe('R1r5 visual-qa m10: holes in the imagery overlays are announced', () =
     expect(h.state).toBe('incomplete');
     expect(imageryChipText(ESRI_LABEL, h)).toBe('ESRI WORLD IMAGERY · REFERENCE · 2 TILES MISSING');
     expect(tilesDegraded(h)).toBe(true);
-    s.advance(BASEMAP_RETRY_BASE_MS);
-    expect(s.refreshed).toEqual([{ id: ESRI_SOURCE_ID, tiles: [{ z: 4, x: 8, y: 6 }, { z: 4, x: 9, y: 6 }] }]);
+    s.advance(BASEMAP_RETRY_BASE_MS * 8);
+    // Round-5 BLOCKING 4: refreshTiles on a failed raster tile leaves MapLibre drawing a tile with
+    // no texture (TypeError in the raster draw, whole frame lost). The hole stays reported instead.
+    expect(s.refreshed).toEqual([]);
+    expect(s.pending()).toBe(1); // only the stall check interval
     s.tileLoaded(ESRI_SOURCE_ID, 4, 8, 6);
     expect(imageryChipText(ESRI_LABEL, s.seen[ESRI_SOURCE_ID])).toBe('ESRI WORLD IMAGERY · REFERENCE · 1 TILE MISSING');
     s.tileLoaded(ESRI_SOURCE_ID, 4, 9, 6);
@@ -181,9 +190,31 @@ describe('R1r5 visual-qa m10: holes in the imagery overlays are announced', () =
     expect(s.refreshed.filter((r) => r.id === NIGHT_SOURCE_ID)).toEqual([]);
   });
 
+  it('Black Marble and GIBS failures (the default night layer) never call refreshTiles', () => {
+    const s = setup(true);
+    s.tileLoaded(NIGHT_SOURCE_ID, 3, 1, 1);
+    for (let i = 0; i < 3; i++) s.tileFailed(NIGHT_SOURCE_ID, 3, 2, i);
+    s.tileLoaded(GIBS_TRUECOLOR_SOURCE_ID, 3, 1, 1);
+    s.tileFailed(GIBS_TRUECOLOR_SOURCE_ID, 3, 2, 2);
+    s.held.set(NIGHT_SOURCE_ID, ['3/1/1', '3/2/0', '3/2/1', '3/2/2']);
+    s.held.set(GIBS_TRUECOLOR_SOURCE_ID, ['3/1/1', '3/2/2']);
+    s.moveEnd();
+    s.advance(10 * 60_000);
+    expect(s.refreshed).toEqual([]);
+    expect(s.seen[NIGHT_SOURCE_ID]!.missing).toBeGreaterThan(0);
+  });
+
+  it('the vector basemap still retries its failed tiles by id', () => {
+    const s = setup(true);
+    s.tileLoaded(BASEMAP, 4, 8, 5);
+    s.tileFailed(BASEMAP, 4, 8, 6);
+    s.advance(BASEMAP_RETRY_BASE_MS);
+    expect(s.refreshed).toEqual([{ id: BASEMAP, tiles: [{ z: 4, x: 8, y: 6 }] }]);
+  });
+
   it('dispose removes every listener and timer', () => {
     const s = setup();
-    s.tileFailed(ESRI_SOURCE_ID, 2, 0, 0);
+    s.tileFailed(BASEMAP, 2, 0, 0);
     s.watch.dispose();
     expect(s.listeners()).toBe(0);
     expect(s.pending()).toBe(0);

@@ -104,10 +104,10 @@ const DEFAULT_MAX_PITCH = 85;
  * frame, stalls, holes, offline) and the imagery overlays (holes and offline, visual-qa m10).
  */
 const WATCHED_TILE_SOURCES: readonly WatchedSource[] = [
-  { id: BASEMAP_SOURCE_ID, stall: true, firstPaint: true },
-  { id: ESRI_SOURCE_ID },
-  { id: GIBS_TRUECOLOR_SOURCE_ID },
-  { id: NIGHT_SOURCE_ID },
+  { id: BASEMAP_SOURCE_ID, stall: true, firstPaint: true, retry: true },
+  { id: ESRI_SOURCE_ID, retry: false },
+  { id: GIBS_TRUECOLOR_SOURCE_ID, retry: false },
+  { id: NIGHT_SOURCE_ID, retry: false },
 ];
 /** The basemap before its first painted frame (and before the map even exists). */
 const LOADING: BasemapHealth = { state: 'loading', lastGoodAt: null, retryInMs: null, missing: 0 };
@@ -564,6 +564,15 @@ export default function MapView() {
   const deckReady = basemapPainted || (focusDeck && firstFrame);
   const deckPriority = focusDeck ? ADMISSION_PRIORITY.focusFirst : ADMISSION_PRIORITY.deckDevice;
   const deckSlot = useAdmission(loaded && hasDeckLayers, 'deck-device', deckPriority, focusDeck ? FOCUS_MAX_WAIT_MS : undefined, deckReady);
+  // Between the device's admission and DeckOverlay's mount (lazy chunk + first commit) nothing is
+  // drawn yet and 'deck-device' no longer counts as pending: keep the header on DRAWING until the
+  // overlay has mounted and handed its layers over (round-5 perf m-l follow-up).
+  const [deckMounted, setDeckMounted] = useState(false);
+  const deckMountPending = loaded && hasDeckLayers && !deckMounted;
+  useEffect(() => {
+    useAdmissionStore.getState().setUndrawn('deck-mount', deckMountPending ? 1 : 0);
+  }, [deckMountPending]);
+  useEffect(() => () => useAdmissionStore.getState().setUndrawn('deck-mount', 0), []);
 
   // Honest tile state (basemap + imagery overlays): BASEMAP LOADING until the first painted frame,
   // repeated failures → OFFLINE with the last observed tile, holes → N TILES MISSING, each retried
@@ -598,9 +607,10 @@ export default function MapView() {
   const chips = useMemo(() => {
     const out: ImageryChip[] = [];
     const base = tileHealth[BASEMAP_SOURCE_ID];
-    // Until the watcher runs (map constructed, style not parsed yet) the basemap is loading too.
-    if (!loaded || !base || base.state === 'loading') out.push({ id: 'basemap-loading', text: basemapChipText(LOADING)!, tone: 'reference' });
-    else {
+    // Until the style is parsed <BasemapPending/> shows BASEMAP LOADING over the map (one chip, no
+    // gap while MapLibre is constructed); after it, the watcher's state until the first painted frame.
+    if (loaded && (!base || base.state === 'loading')) out.push({ id: 'basemap-loading', text: basemapChipText(LOADING)!, tone: 'reference' });
+    else if (loaded && base) {
       const basemapText = basemapChipText(base);
       if (basemapText) out.push({ id: 'basemap', text: basemapText });
     }
@@ -654,11 +664,14 @@ export default function MapView() {
             under the deck layers inserted later at the same label anchor. */}
         <BuildingsLayer beforeId={labelAnchor} visible={buildings} />
         <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
-        {deckSlot && <DeckOverlay beforeId={labelAnchor} />}
+        {deckSlot && <DeckOverlay beforeId={labelAnchor} gpuOpen={basemapPainted} onMounted={setDeckMounted} />}
         {loaded && <FeatureBackgrounds />}
         {featuresMounted && <FeatureLayers />}
         <ImageryChips chips={chips} />
       </Map>
+      {/* Same chip, same place, from the style's arrival until the map's own stack takes over at
+          load (visual-qa round-5 m3: no chip-less gap while MapLibre is constructed). */}
+      {!loaded && <BasemapPending phone={phone} />}
       {contextLost && (
         <div role="status" className="hud-micro pointer-events-none absolute inset-x-0 top-1/2 text-center text-[var(--alert-orange)]">
           GPU CONTEXT LOST · RESTORING

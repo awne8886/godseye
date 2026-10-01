@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { gotoMap, MAP, waitForAdmissionDrained, waitForMapStyle } from './helpers';
+import { collectErrors, gotoMap, MAP, waitForAdmissionDrained, waitForMapStyle } from './helpers';
 
 /**
  * Phase 3 round-5 map-engine regressions: BASEMAP LOADING from the first frame (visual-qa m3),
@@ -34,6 +34,7 @@ test.describe('map-engine round 5', () => {
   });
 
   test('m10: holes in the GIBS true-colour overlay are announced on its chip', async ({ page }) => {
+    const errors = collectErrors(page);
     // Half of the GIBS true-colour tiles fail at the network (as the sandbox proxy did); the rest load.
     await page.route(/gibs\.earthdata\.nasa\.gov\/.+VIIRS_SNPP_CorrectedReflectance_TrueColor\/.+\/(\d+)\/(\d+)\/(\d+)\.jpg/, (route) => {
       const m = route.request().url().match(/\/(\d+)\/(\d+)\/(\d+)\.jpg$/)!;
@@ -43,6 +44,29 @@ test.describe('map-engine round 5', () => {
     const chip = page.getByTestId('imagery-chip-gibs');
     await expect(chip).toHaveText(/^VIIRS TRUE COLOUR \d{4}-\d{2}-\d{2} · REFERENCE · (\d+ TILES? MISSING|SOURCE OFFLINE.*)$/, { timeout: 90_000 });
     await expect(chip).toHaveAttribute('data-tone', 'offline');
+    // Round-5 BLOCKING 4: a refreshed failed raster tile threw in MapLibre's raster draw on every
+    // frame. Let the retry window pass, then the page must be clean and the labels still drawn.
+    await page.waitForTimeout(20_000);
+    expect(withoutAbortedTiles(errors)).toEqual([]);
+    await expect(page.locator(MAP)).not.toHaveAttribute('data-basemap-state', /loading|stalled/);
+  });
+
+  test('m10: failed Black Marble tiles (day/night is on by default) never break the frame', async ({ page, context }) => {
+    const errors = collectErrors(page);
+    // The night tiles are fetched by the geometry worker: route at the context so worker fetches match.
+    let failed = 0;
+    await context.route(/gibs\.earthdata\.nasa\.gov\/.+VIIRS_Black_Marble\/.+\.png/, (route) => {
+      if (failed < 3) {
+        failed++;
+        return route.abort('failed');
+      }
+      return route.continue();
+    });
+    await gotoMap(page, { camera: { lat: 20, lng: 100, zoom: 3 } });
+    await expect(page.locator(MAP)).toHaveAttribute('data-basemap-state', /^(ok|incomplete|offline)$/, { timeout: 90_000 });
+    await page.waitForTimeout(30_000);
+    expect(withoutAbortedTiles(errors)).toEqual([]);
+    await expect(page.getByText('BASEMAP LOADING')).toHaveCount(0);
   });
 
   test('m-h: hover picks stay within budget and a drag runs none', async ({ page }) => {
@@ -117,6 +141,11 @@ test.describe('map-engine round 5', () => {
     expect(dishonest).toEqual([]);
   });
 });
+
+/** The deliberately aborted tile requests log `net::ERR_FAILED`; anything else is an app error. */
+function withoutAbortedTiles(errors: readonly string[]): string[] {
+  return errors.filter((e) => !/net::ERR_FAILED/.test(e));
+}
 
 async function countReadPixels(page: Page): Promise<void> {
   await page.addInitScript(() => {

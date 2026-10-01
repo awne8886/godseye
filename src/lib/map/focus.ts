@@ -86,3 +86,13 @@ export function deckClassPriority(next: string | undefined, focus: readonly stri
 export function deckClassMaxWait(next: string | undefined, focus: readonly string[]): number | undefined {
   return next && focus.includes(next) ? FOCUS_MAX_WAIT_MS : undefined;
 }
+
+/**
+ * Whether the deck class next in line may be admitted now: focus classes (what the user asked for)
+ * at once, ambient data classes only once the basemap has painted (`gpuOpen`, capped) — with a
+ * route or flight deep link the other layers' classes must not link programs before it
+ * (round-5 perf m-l follow-up).
+ */
+export function deckClassReady(next: string | undefined, focus: readonly string[], gpuOpen: boolean): boolean {
+  return gpuOpen || (!!next && focus.includes(next));
+}

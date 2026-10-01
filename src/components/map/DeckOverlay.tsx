@@ -60,7 +60,7 @@ import {
   runDeckHoverLeave,
   runDeckHoverPick,
 } from '@/lib/map/deck-events';
-import { deckClassMaxWait, deckClassPriority, focusClassOrder, focusKeysOf, registerFocusKeys } from '@/lib/map/focus';
+import { deckClassMaxWait, deckClassPriority, deckClassReady, focusClassOrder, focusKeysOf, registerFocusKeys } from '@/lib/map/focus';
 import { createHoverPickGate } from '@/lib/map/hover-pick';
 import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
@@ -84,7 +84,15 @@ const deckOf = (o: MapLibreOverlay | undefined): DeckLike | undefined => (o as u
 /** The map the overlay was added to (a private field, set in `onAdd`; read-only use). */
 const mapOfOverlay = (o: MapLibreOverlay): ApplyMap | null => (o as unknown as { _map?: ApplyMap })._map ?? null;
 
-export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
+export interface DeckOverlayProps {
+  beforeId?: string;
+  /** The basemap has painted (capped): ambient layer classes may link their programs. */
+  gpuOpen: boolean;
+  /** Told when this overlay has mounted (true) and unmounted (false): the host counts it as drawing until then. */
+  onMounted?: (mounted: boolean) => void;
+}
+
+export default function DeckOverlay({ beforeId, gpuOpen, onMounted }: DeckOverlayProps) {
   const entries = useDeckLayerStore((s) => s.entries);
   const ready = useMapInstanceStore((s) => s.ready);
   const [admission] = useState(createAdmissionState);
@@ -164,11 +172,13 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
   const scheduler = useAdmissionStore((s) => s.scheduler);
   const waitingRef = useRef<string[]>([]);
   const focusRef = useRef<string[]>([]);
+  const gpuOpenRef = useRef(gpuOpen);
   useEffect(() => {
     waitingRef.current = waiting;
     focusRef.current = focus;
+    gpuOpenRef.current = gpuOpen;
     scheduler?.kick();
-  }, [waiting, focus, scheduler]);
+  }, [waiting, focus, gpuOpen, scheduler]);
   useEffect(() => {
     if (!scheduler) return;
     return scheduler.register({
@@ -182,6 +192,8 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
         return deckClassMaxWait(waitingRef.current[0], focusRef.current);
       },
       pending: () => waitingRef.current.length,
+      // Ambient classes wait for the basemap's first painted frame; focus classes do not.
+      ready: () => deckClassReady(waitingRef.current[0], focusRef.current, gpuOpenRef.current),
       admitOne: () => {
         const next = waitingRef.current[0];
         if (!next) return;
@@ -234,6 +246,12 @@ export default function DeckOverlay({ beforeId }: { beforeId?: string }) {
     setDeckHoverInfo(null);
     return () => setPickOverlay(null);
   }, [overlay]);
+  // Mounted: the layers were handed over above and the class queue is registered, so the host's
+  // own "deck not mounted yet" drawing count can be dropped (round-5 perf m-l follow-up).
+  useEffect(() => {
+    onMounted?.(true);
+    return () => onMounted?.(false);
+  }, [onMounted]);
   // Budgeted hover picks (perf round-5 m-h) from the map's pointer events.
   useEffect(() => {
     const map = mapRef?.getMap();
