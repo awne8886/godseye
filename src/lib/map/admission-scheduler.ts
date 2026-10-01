@@ -135,17 +135,38 @@ interface AdmissionStoreState {
   scheduler: AdmissionScheduler | null;
   /** Start-up units still waiting for a slot (features, deck device, layer classes/types). */
   pending: number;
+  /**
+   * Admitted entity layers the map has not drawn yet: deck layers whose MapLibre layer group is
+   * not in the style, native GeoJSON sources not loaded yet (visual-qa R3-M2).
+   */
+  undrawn: number;
+  /** Per producer (`deck`, `native`); `undrawn` is their sum. */
+  undrawnBy: Record<string, number>;
   setScheduler(s: AdmissionScheduler | null): void;
   setPending(n: number): void;
+  setUndrawn(producer: string, n: number): void;
 }
 
 /** UI state only: which scheduler serves the mounted map, and how much is still queued. */
 export const useAdmissionStore = create<AdmissionStoreState>((set) => ({
   scheduler: null,
   pending: 0,
+  undrawn: 0,
+  undrawnBy: {},
   setScheduler: (scheduler) => set({ scheduler }),
   setPending: (pending) => set({ pending }),
+  setUndrawn: (producer, n) =>
+    set((s) => {
+      if ((s.undrawnBy[producer] ?? 0) === n) return s;
+      const undrawnBy = { ...s.undrawnBy, [producer]: n };
+      return { undrawnBy, undrawn: Object.values(undrawnBy).reduce((a, b) => a + b, 0) };
+    }),
 }));
 
-/** True while some map start-up work is still queued (entities fetched may not be drawn yet). */
-export const useDrawPending = (): boolean => useAdmissionStore((s) => s.pending > 0);
+/** Header honesty: fetched entities are not "drawn" while start-up work is queued or layers are not on the map. */
+export function drawPending(s: Pick<AdmissionStoreState, 'pending' | 'undrawn'>): boolean {
+  return s.pending > 0 || s.undrawn > 0;
+}
+
+/** True while some fetched entities may not be drawn yet (queued start-up work or layers not on the map). */
+export const useDrawPending = (): boolean => useAdmissionStore(drawPending);
