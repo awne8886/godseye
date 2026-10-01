@@ -1324,14 +1324,14 @@ ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/
 | Cache | s-maxage 10 min, stale-while-revalidate 20 min |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `ArcgisResponse` |
-| Upstreams | `www.arcgis.com`, `services.arcgis.com`, `services[1-9].arcgis.com`, `*.arcgisonline.com`, `(ARCGIS_ALLOWED_HOSTS)` |
+| Upstreams | `www.arcgis.com`, `services.arcgis.com`, `services[1-9].arcgis.com`, `services-eu1.arcgis.com`, `services-ap1.arcgis.com`, `*.arcgisonline.com`, `(ARCGIS_ALLOWED_HOSTS)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/arcgis` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `q` | query | string | no | catalogue search |
-| `url` | query | string | no | …/rest/services/…/(Feature\|Map)Server[/n] on services[1-9].arcgis.com, services.arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS |
+| `url` | query | string | no | …/rest/services/…/(Feature\|Map)Server[/n] on services[1-9].arcgis.com, services.arcgis.com, services-eu1/-ap1.arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS |
 | `bbox` | query | string | no | west,south,east,north |
 
 ## Flight paths

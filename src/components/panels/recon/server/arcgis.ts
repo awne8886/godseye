@@ -11,7 +11,7 @@
 import 'server-only';
 import { HttpError, httpJson } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
-import { allowListedFetch, matchesAllowList, type AllowRule } from '@/lib/ssrf';
+import { ALLOWED_PORTS, allowListedFetch, matchesAllowList, type AllowRule } from '@/lib/ssrf';
 import type { ArcgisResponse, ProviderStatus } from '@/lib/types';
 import { probe } from './lookup';
 
@@ -54,15 +54,17 @@ export function parseServiceUrl(raw: string): ServiceRef {
 export const BUILTIN_ARCGIS_RULES: readonly AllowRule[] = [
   // Explicit hosted-service hosts, not `*.arcgis.com`: utility.arcgis.com/usrsvcs is Esri's proxy to
   // any origin an ArcGIS Online account registers, so a wildcard would reopen the SSRF path.
-  ...['services.arcgis.com', ...Array.from({ length: 9 }, (_, i) => `services${i + 1}.arcgis.com`)].map((host) => ({ host, pathPrefix: '/' })),
+  // services-eu1 / services-ap1 are the regional hosted-service hosts (both answered 2026-10-01).
+  ...['services.arcgis.com', ...Array.from({ length: 9 }, (_, i) => `services${i + 1}.arcgis.com`), 'services-eu1.arcgis.com', 'services-ap1.arcgis.com'].map((host) => ({ host, pathPrefix: '/' })),
   { host: '*.arcgisonline.com', pathPrefix: '/arcgis/rest/services/' },
 ];
 
 const HOST_ENTRY = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::(\d{2,5}))?$/;
 
 /**
- * Operator additions: `ARCGIS_ALLOWED_HOSTS=gis.example.gov,maps.example.org:8443` — exact hosts
- * (optional port), https only, no wildcards. Invalid entries are ignored.
+ * Operator additions: `ARCGIS_ALLOWED_HOSTS=gis.example.gov,maps.example.org:6443` — exact hosts
+ * (optional port, e.g. ArcGIS Server's 6443), https only, no wildcards. Invalid entries are ignored.
+ * A listed port is allowed for that exact host only (see arcgisPorts).
  */
 export function arcgisRules(env: Record<string, string | undefined> = process.env): AllowRule[] {
   const extra: AllowRule[] = [];
@@ -72,6 +74,14 @@ export function arcgisRules(env: Record<string, string | undefined> = process.en
     extra.push({ host: m[1]!, pathPrefix: '/', ...(m[2] && m[2] !== '443' ? { port: m[2] } : {}) });
   }
   return [...BUILTIN_ARCGIS_RULES, ...extra];
+}
+
+/**
+ * Ports the SSRF guard accepts for ArcGIS fetches: the usual web ports plus any port an operator rule
+ * names. Safe to widen here because matchesAllowList already requires the exact host + port pair.
+ */
+export function arcgisPorts(rules: readonly AllowRule[]): ReadonlySet<string> {
+  return new Set([...ALLOWED_PORTS, ...rules.flatMap((r) => (r.port ? [r.port] : []))]);
 }
 
 /** True when the (rebuilt) service URL is on the ArcGIS allow-list. */
@@ -134,7 +144,8 @@ export function sanitizeFeatures(body: unknown): { fc: GeoJSON.FeatureCollection
 export async function importLayer(ref: ServiceRef, bbox?: Bbox | null): Promise<{ fc: GeoJSON.FeatureCollection | null; truncated: boolean; status: ProviderStatus }> {
   const url = queryUrl(ref, bbox);
   const p = await probe(`arcgis:layer:${url.toString()}`, 10 * 60_000, async () => {
-    const res = await allowListedFetch(url, arcgisRules(), { maxBytes: ARCGIS_MAX_BYTES, timeoutMs: 10_000, deadlineMs: 20_000, headers: { accept: 'application/geo+json, application/json' } });
+    const rules = arcgisRules();
+    const res = await allowListedFetch(url, rules, { ports: arcgisPorts(rules), maxBytes: ARCGIS_MAX_BYTES, timeoutMs: 10_000, deadlineMs: 20_000, headers: { accept: 'application/geo+json, application/json' } });
     if (!res.ok) throw new HttpError(`HTTP ${res.status}`, 'http', url.origin, res.status);
     let body: unknown;
     try {

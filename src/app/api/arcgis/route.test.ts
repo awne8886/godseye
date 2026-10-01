@@ -101,12 +101,31 @@ describe('GET /api/arcgis', () => {
       'https://arcgis.com/arcgis/rest/services/x/FeatureServer/0',
       'https://notarcgis.com/arcgis/rest/services/x/FeatureServer/0',
       'https://sampleserver6.arcgisonline.com/server/rest/services/x/FeatureServer/0',
-      'http://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USGS_Seismic_Data_v1/FeatureServer/0',
     ]) {
       const body = await error(await call(`?url=${encodeURIComponent(bad)}`), 403);
       expect(body.error, bad).toBe('host_not_allowed');
     }
+    // An http:// URL to a built-in host is refused for its scheme, not as an unknown host.
+    const http = await error(await call(`?url=${encodeURIComponent('http://services9.arcgis.com/RHVPKKiFTONKtxq3/arcgis/rest/services/USGS_Seismic_Data_v1/FeatureServer/0')}`), 400);
+    expect(http.error).toBe('https_only');
     expect(upstream.calls).toEqual([]);
+  });
+
+  it('imports from an operator host on the port the operator listed (ArcGIS Server :6443), and only that port', async () => {
+    vi.stubEnv('ARCGIS_ALLOWED_HOSTS', 'gis.example.org:6443');
+    upstream.on('gis.example.org', { json: fixture('arcgisonline-sample6-query.json') });
+    const body = await valid(await call(`?url=${encodeURIComponent('https://gis.example.org:6443/arcgis/rest/services/x/FeatureServer/0')}`));
+    expect(body.features.features.length).toBe(2);
+    expect(new URL(upstream.calls[0]!.url).port).toBe('6443');
+    for (const other of ['https://gis.example.org/arcgis/rest/services/x/FeatureServer/0', 'https://gis.example.org:8443/arcgis/rest/services/x/FeatureServer/0']) {
+      expect((await error(await call(`?url=${encodeURIComponent(other)}`), 403)).error, other).toBe('host_not_allowed');
+    }
+  });
+
+  it('allow-lists the regional ArcGIS Online hosts', () => {
+    expect(isImportableUrl('https://services-eu1.arcgis.com/abc/arcgis/rest/services/x/FeatureServer/0', {})).toBe(true);
+    expect(isImportableUrl('https://services-ap1.arcgis.com/abc/arcgis/rest/services/x/FeatureServer/0', {})).toBe(true);
+    expect(isImportableUrl('https://services-eu1.arcgis.com.evil.example/abc/arcgis/rest/services/x/FeatureServer/0', {})).toBe(false);
   });
 
   it('imports from *.arcgisonline.com under /arcgis/rest/services/', async () => {

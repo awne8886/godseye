@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { HttpError } from '@/lib/http';
 import { apiError, json, parseQuery, withRoute } from '@/lib/respond';
 import { assertPublicUrl } from '@/lib/ssrf';
-import { importLayer, isAllowedService, parseServiceUrl, searchItems, type Bbox } from '@/components/panels/recon/server/arcgis';
+import { arcgisPorts, arcgisRules, importLayer, isAllowedService, parseServiceUrl, searchItems, type Bbox } from '@/components/panels/recon/server/arcgis';
 import { offline } from '@/components/panels/recon/server/lookup';
 
 export const dynamic = 'force-dynamic';
@@ -44,10 +44,11 @@ export const GET = withRoute('/api/arcgis', async (req: Request) => {
   let ref;
   try {
     ref = parseServiceUrl(q.data.url!);
+    if (ref.origin.startsWith('http:')) return apiError(400, 'https_only', 'ArcGIS imports use https only: change the service URL to https://.');
     if (!isAllowedService(ref)) {
-      return apiError(403, 'host_not_allowed', `${new URL(ref.origin).host} is not an ArcGIS host this server imports from (ArcGIS Online hosted services, *.arcgisonline.com, or hosts the operator adds in ARCGIS_ALLOWED_HOSTS).`);
+      return apiError(403, 'host_not_allowed', `${new URL(ref.origin).host} is not an ArcGIS host this server imports from (ArcGIS Online hosted services on services[1-9].arcgis.com and the regional services-eu1/-ap1 hosts, *.arcgisonline.com, or hosts the operator adds in ARCGIS_ALLOWED_HOSTS).`);
     }
-    await assertPublicUrl(new URL(`${ref.origin}/`));
+    await assertPublicUrl(new URL(`${ref.origin}/`), undefined, undefined, arcgisPorts(arcgisRules()));
   } catch (e) {
     if (e instanceof HttpError && e.code === 'blocked') return apiError(400, 'blocked_target', e.message);
     throw e;

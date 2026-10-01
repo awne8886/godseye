@@ -1,6 +1,6 @@
 // Phase 3 round 1 security audit regressions (cross-site POSTs, body caps, secret redaction,
 // IPv6 bucket keys, SSE and snapshot memory budgets).
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -188,6 +188,19 @@ describe('snapshot store budgets', () => {
       expect(total).toBeLessThanOrEqual(16 * 250);
       expect(await fs.get('q19')).not.toBeNull();
       expect(await fs.get('q0')).toBeNull();
+    });
+
+    it('removes temp files orphaned by a crash mid-write in both tiers after an hour', async () => {
+      dir = await mkdtemp(path.join(os.tmpdir(), 'godseye-fs-'));
+      const fs = new FileStore(dir);
+      await fs.set('feed', snap(10), 60_000, { pinned: true });
+      await fs.set('q', snap(10), 60_000);
+      for (const tier of ['lru', 'pinned']) await writeFile(path.join(dir, tier, `orphan-${tier}.tmp`), 'x');
+      await fs.sweep(Date.now() + 30 * 60_000);
+      expect((await readdir(path.join(dir, 'pinned'))).filter((n) => n.endsWith('.tmp'))).toHaveLength(1);
+      await fs.sweep(Date.now() + 2 * 3_600_000);
+      for (const tier of ['lru', 'pinned']) expect((await readdir(path.join(dir, tier))).filter((n) => n.endsWith('.tmp')), tier).toHaveLength(0);
+      expect(await fs.get('feed')).not.toBeNull();
     });
   });
 });

@@ -70,6 +70,12 @@ describe('GET /api/flight-route', () => {
     expect(mode.calls.some((u) => u.includes('adsbdb'))).toBe(false);
   });
 
+  it('treats empty numeric params as not observed, never as 0', async () => {
+    const body = await (await call('?callsign=BAW117&lat=&lng=&speed=&track=')).json();
+    expect(body).toMatchObject({ found: true, basis: 'schedule', status: 'unknown' });
+    expect((await call('?callsign=BAW117&lat=10&lng=')).status).toBe(400);
+  });
+
   it('reports progress on the corridor when a position is given', async () => {
     const body = await (await call('?callsign=BAW117&lat=53.5&lng=-30&speed=480')).json();
     expect(body.basis).toBe('corridor');

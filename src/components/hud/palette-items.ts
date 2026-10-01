@@ -103,21 +103,6 @@ export function parseFlightQuery(query: string): string | null {
   return parseFlightParam(v);
 }
 
-/** One airport code for a place name: the metro group's first airport, else the best match. */
-export async function resolveAirport(name: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
-  try {
-    const r = await fetchImpl(`/api/airports/search?q=${encodeURIComponent(name)}&submit=1`);
-    if (!r.ok) return null;
-    const body = (await r.json()) as { results?: { iata: string | null; icao: string | null; ident: string }[]; metro?: { codes: string[] } | null };
-    const metro = body.metro?.codes?.[0];
-    if (metro) return metro;
-    const a = body.results?.[0];
-    return a ? (a.iata ?? a.icao ?? a.ident) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Items derived from what the visitor typed: a route (codes or place names) plans it; a callsign,
  * flight number, registration or hex tracks a flight. Both open the PATHS panel.

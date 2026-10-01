@@ -181,15 +181,18 @@ export class FileStore implements SnapshotStore {
   private async sweepOnce(now: number): Promise<number> {
     const lru = path.join(this.dir, 'lru');
     let names: string[];
-    try {
-      const all = await readdir(lru);
-      names = all.filter((n) => n.endsWith('.json'));
-      // Temp files left by a crash mid-write (renamed into place on success) older than an hour.
-      for (const n of all.filter((x) => x.endsWith('.tmp'))) {
-        const f = path.join(lru, n);
+    // Temp files left by a crash mid-write (renamed into place on success) older than an hour, in
+    // both directories: pinned snapshots are never evicted, but their orphaned temp files are.
+    for (const dir of [lru, path.join(this.dir, 'pinned')]) {
+      const tmps = (await readdir(dir).catch(() => [] as string[])).filter((x) => x.endsWith('.tmp'));
+      for (const n of tmps) {
+        const f = path.join(dir, n);
         const st = await stat(f).catch(() => null);
         if (st && now - st.mtimeMs > 3_600_000) await rm(f, { force: true });
       }
+    }
+    try {
+      names = (await readdir(lru)).filter((n) => n.endsWith('.json'));
     } catch {
       return 0;
     }

@@ -258,8 +258,8 @@ export const API_CATALOG = [
   },
   {
     method: 'GET', path: '/api/arcgis', group: 'geo', summary: 'ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/services/…/(Feature|Map)Server/<n>/query, SSRF-guarded)',
-    params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, '…/rest/services/…/(Feature|Map)Server[/n] on services[1-9].arcgis.com, services.arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS'), q('bbox', 'string', false, 'west,south,east,north')],
-    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', 'services.arcgis.com', 'services[1-9].arcgis.com', '*.arcgisonline.com', '(ARCGIS_ALLOWED_HOSTS)'], forwardsUserInput: true, osiris: true, rateLimit: { limit: 20, windowS: 60 }, owner: 'panels-recon',
+    params: [q('q', 'string', false, 'catalogue search'), q('url', 'string', false, '…/rest/services/…/(Feature|Map)Server[/n] on services[1-9].arcgis.com, services.arcgis.com, services-eu1/-ap1.arcgis.com, *.arcgisonline.com or ARCGIS_ALLOWED_HOSTS'), q('bbox', 'string', false, 'west,south,east,north')],
+    ttlSeconds: 600, responseSchema: 'ArcgisResponse', upstreams: ['www.arcgis.com', 'services.arcgis.com', 'services[1-9].arcgis.com', 'services-eu1.arcgis.com', 'services-ap1.arcgis.com', '*.arcgisonline.com', '(ARCGIS_ALLOWED_HOSTS)'], forwardsUserInput: true, osiris: true, rateLimit: { limit: 20, windowS: 60 }, owner: 'panels-recon',
   },
 
   // ── flight paths ───────────────────────────────────────────────────────────────

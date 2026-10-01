@@ -67,6 +67,12 @@ Other bundled data with a notice requirement:
   public/data/airports*.json                time zones from mwgg/Airports
                                             (© mwgg, MIT License)
 
+Bundled fonts (SIL Open Font License 1.1, https://openfontlicense.org; from the
+@fontsource npm packages, served from this server):
+  Inter                                     © The Inter Project Authors
+  JetBrains Mono                            © The JetBrains Mono Project Authors
+  Space Grotesk                             © The Space Grotesk Project Authors
+
 GODSEYE does not use the OSIRIS name, logo, links or promotions. World Monitor
 and Orodruin (AGPL) were studied for ideas only; no code was copied from them.
 Third-party data sources and their licences are listed in docs/DATA_SOURCES.md

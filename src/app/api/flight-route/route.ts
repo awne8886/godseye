@@ -10,7 +10,9 @@ import { flightRoute } from '@/features/aviation/server/route-lookup';
 
 export const dynamic = 'force-dynamic';
 
-const coord = (min: number, max: number) => z.coerce.number().min(min).max(max);
+// An empty value (`track=`) means "not observed", never 0 — z.coerce.number('') would be 0.
+const num = (min: number, max: number) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), z.coerce.number().min(min).max(max).optional());
 
 const Query = z
   .object({
@@ -19,10 +21,10 @@ const Query = z
       .transform((v) => v.replace(/\s+/g, '').toUpperCase())
       .pipe(z.string().regex(/^[A-Z0-9]{2,8}$/, 'callsign must be 2–8 letters/digits')),
     icao24: z.string().trim().toLowerCase().regex(/^~?[0-9a-f]{6}$/).optional(),
-    lat: coord(-90, 90).optional(),
-    lng: coord(-180, 180).optional(),
-    speed: z.coerce.number().min(0).max(2000).optional(),
-    track: z.coerce.number().min(0).max(360).optional(),
+    lat: num(-90, 90),
+    lng: num(-180, 180),
+    speed: num(0, 2000),
+    track: num(0, 360),
   })
   .refine((q) => (q.lat === undefined) === (q.lng === undefined), { message: 'lat and lng go together', path: ['lat'] });
 
