@@ -141,6 +141,15 @@ projections deck.gl accepts). deck.gl 9.4 runs as one interleaved `MapLibreOverl
 inserted beneath the basemap labels. Theme changes update paint properties in place; the map is never
 remounted.
 
+**Admission scheduler.** GPU-blocking start-up work (feature mounts, the deck device, the first instance
+of each deck layer class, the first draw of each MapLibre layer type) is queued in one admission scheduler
+(`src/lib/map/admission-scheduler.ts`, with `deck-admission.ts`, `native-admission.ts` and
+`use-admission.ts`): one unit per idle, GPU-drained slot, with a `maxWaitMs` progress guarantee. While
+units are pending the HUD shows fetched counts as `N RECEIVED + DRAWING`, never as drawn.
+
+**Fonts.** Inter, JetBrains Mono and Space Grotesk (SIL OFL 1.1) are bundled from `@fontsource` packages
+through `next/font/local` in `src/app/layout.tsx`; neither the build nor the browser contacts a font CDN.
+
 **MapLibre worker recipe.** MapLibre 6 ships an ES-module worker that imports a sibling shared module,
 and Turbopack neither emits that sibling nor leaves `new URL(x, import.meta.url)` alone. So
 `tools/prepare-map-worker.mjs` (run by `predev` and `prebuild`) copies `maplibre-gl-worker.mjs` and
@@ -153,8 +162,9 @@ copy `public/`.
 
 **Globe workarounds** (deck.gl swaps in its experimental GlobeView on the MapLibre globe):
 `parameters: {cullMode: 'none'}` on arc, great-circle (`numSegments ≥ 64`), line, path, trips, text and
-non-billboard icon layers; `antialiasing: true` on arcs, paths and lines; aircraft, ships and satellites as
-billboard icons with a far-side filter; no hexagon/heatmap/contour layers on the globe (H3 or MapLibre's
+icon layers, billboard icons included (MapLibre leaves back-face culling on after drawing the globe, and the
+icon quad's winding would cull it); `antialiasing: true` on arcs, paths and lines; aircraft, ships and
+satellites as billboard icons with `depthCompare: 'always'` and a far-side filter; no hexagon/heatmap/contour layers on the globe (H3 or MapLibre's
 native heatmap instead); large circles as geodesic polygons.
 
 ### Feature modules

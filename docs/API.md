@@ -164,6 +164,7 @@ CelesTrak OMM catalogue (columnar) with mission colours and categories
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
 | `category` | query | enum (comms \| military \| navigation \| earth_obs \| science \| other) | no | Restrict to one category (e.g. `navigation`) |
+| `id` | query | number | no | One NORAD id (narrows the catalogue to that satellite) (e.g. `25544`) |
 
 ### `GET /api/satellites/orbit`
 
@@ -374,7 +375,7 @@ No parameters.
 
 ### `GET /api/cctv/proxy`
 
-Stills-only frame proxy (exact-prefix allow-list, no storage)
+Stills-only frame proxy (exact-prefix allow-list, no storage); Cache-Control follows the operator's minimum poll interval (30–120 s, 60 s for most)
 
 | | |
 |---|---|
@@ -915,7 +916,7 @@ One-click overview (Claude when keyed, heuristic ANALYST otherwise)
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `body` | body | json | yes | {scope, feeds} |
+| `body` | body | json | yes | {scope: alerts\|markets\|chain, provider?} |
 | `x-ai-key` | header | string | no | Optional user-supplied provider key; used for this request only, never stored or logged. |
 
 ### `POST /api/ai/analyze`
@@ -932,7 +933,7 @@ Region/selection analysis citing feed rows
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `body` | body | json | yes | {lat, lng, selection} |
+| `body` | body | json | yes | {lat, lng, provider?} |
 | `x-ai-key` | header | string | no | Optional user-supplied provider key; used for this request only, never stored or logged. |
 
 ### `POST /api/ai/briefing`
@@ -949,7 +950,7 @@ Daily briefing (BLUF / PIRs / forecast)
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `body` | body | json | yes | {horizon} |
+| `body` | body | json | yes | {horizon: 24h\|72h, provider?} |
 | `x-ai-key` | header | string | no | Optional user-supplied provider key; used for this request only, never stored or logged. |
 
 ### `POST /api/ai/chat`
@@ -967,7 +968,7 @@ Analyst chat over current feeds, streamed as NDJSON (meta → delta → done)
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|
-| `body` | body | json | yes | {messages} |
+| `body` | body | json | yes | {messages, provider?} |
 | `x-ai-key` | header | string | no | Optional user-supplied provider key; used for this request only, never stored or logged. |
 
 ## OSINT
@@ -1326,7 +1327,7 @@ ArcGIS catalogue search and Feature/Map Service import (URL rebuilt to …/rest/
 | Response | `ArcgisResponse` |
 | Upstreams | `www.arcgis.com`, `services.arcgis.com`, `services[1-9].arcgis.com`, `services-eu1.arcgis.com`, `services-ap1.arcgis.com`, `*.arcgisonline.com`, `(ARCGIS_ALLOWED_HOSTS)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
-| Example | `GET /api/arcgis` |
+| Example | `GET /api/arcgis?q=earthquakes` |
 
 | Parameter | In | Type | Required | Description |
 |---|---|---|---|---|

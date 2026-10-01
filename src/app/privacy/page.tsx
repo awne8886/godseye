@@ -180,7 +180,7 @@ export default function PrivacyPage() {
             AI summaries run only when the operator configured a provider key or you supply your own. A key you supply travels in the{' '}
             <Code>x-ai-key</Code> request header, is used for that one request and is never stored or logged, and the server&apos;s HTTP
             client drops credential headers whenever an upstream redirects to another origin. Operators can refuse visitor keys with{' '}
-            <Code>DISABLE_USER_AI_KEYS=true</Code>. The request body (the scope, the feed rows or your chat messages) goes to the
+            <Code>DISABLE_USER_AI_KEYS=true</Code>. The request (the scope, the point you analyse, your chat messages, plus the feed rows the server selects) goes to the
             model provider named in the table above, so do not paste confidential material. Without a model, the heuristic ANALYST
             answers instead and is labelled as a heuristic, not AI. A model summary is not verification: check its claims against the
             cited feeds.

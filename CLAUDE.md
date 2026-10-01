@@ -69,8 +69,8 @@ Turbopack). Run lint + typecheck + test before every commit.
   `selection`. Card badges use `entityFreshness()` with `OBSERVATION_CADENCE_MS[layer]` (events
   inherit the feed state). Per-frame data lives in refs/typed arrays/workers, never in zustand.
 - deck.gl on the globe: `parameters: {cullMode: 'none'}` on Arc/GreatCircle (`greatCircle: true`,
-  `numSegments ≥ 64`)/Line/Path/Trips/Text/non-billboard Icon; `antialiasing: true` on arc/path/line;
-  billboard icons + far-side filter (`isFacing()` in `src/lib/map/far-side.ts`); no Hexagon/Heatmap/Contour on the globe (H3 or
+  `numSegments ≥ 64`)/Line/Path/Trips/Text/Icon (billboard too: MapLibre leaves face culling on after the
+  globe pass); `antialiasing: true` on arc/path/line; billboard icons + `depthCompare: 'always'` + far-side filter (`isFacing()` in `src/lib/map/far-side.ts`); no Hexagon/Heatmap/Contour on the globe (H3 or
   MapLibre heatmap); big circles as geodesic polygons; never pass a view with id `maplibre`;
   projection only `{type:'globe'|'mercator'}`.
 

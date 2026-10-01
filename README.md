@@ -216,6 +216,7 @@ from it. GODSEYE does not use the OSIRIS name, logo, links or promotions. World 
 (AGPL) were studied for ideas only; no code was copied from them.
 
 Map data © OpenStreetMap contributors (ODbL), tiles by OpenFreeMap; satellite imagery: Esri, Vantor,
-Earthstar Geographics, and the GIS User Community; night lights and imagery courtesy of NASA GIBS. Every
+Earthstar Geographics, and the GIS User Community; night lights and imagery courtesy of NASA GIBS. Fonts: Inter, JetBrains Mono and Space Grotesk (SIL Open
+Font License 1.1), bundled from @fontsource. Every
 other source and its licence is listed in [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md) and in the in-app
 attribution panel.

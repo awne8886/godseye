@@ -13,6 +13,7 @@
 | `https://nominatim.openstreetmap.org/search?q=Kyiv&format=jsonv2&limit=1` | 200 | 0.41 s | — (server-side only) | none | © OpenStreetMap contributors (ODbL); usage policy: ≤ 1 req/s, identifying UA, no autocomplete | behind `SerialQueue(1100 ms, 40)` + 30-day cache |
 | `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson` | 200 | 0.20 s | `*` | none | public domain | (hazards agent owns the feed) |
 | `https://fonts.googleapis.com/css2?family=JetBrains+Mono` | 200 | 0.55 s | — | none | SIL OFL | self-hosted at build time by `next/font` |
+| (2026-10-01) fonts | — | — | — | none | SIL OFL 1.1 | superseded: Inter, JetBrains Mono and Space Grotesk are bundled from `@fontsource` packages via `next/font/local`; fonts.googleapis.com is no longer contacted at build or run time |
 
 ## Phase 1 contract review (probed 2026-09-30 ~17:30Z)
 

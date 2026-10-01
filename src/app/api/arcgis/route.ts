@@ -30,7 +30,7 @@ const Query = z
         return n as Bbox;
       }),
   })
-  .refine((v) => Boolean(v.q) !== Boolean(v.url), 'Pass either q (search) or url (import), not both');
+  .refine((v) => Boolean(v.q) !== Boolean(v.url), 'Pass exactly one of q (search) or url (import)');
 
 export const GET = withRoute('/api/arcgis', async (req: Request) => {
   const q = parseQuery(req, Query);
