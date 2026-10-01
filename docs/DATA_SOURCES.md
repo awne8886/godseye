@@ -436,6 +436,25 @@ IconLayer billboard 0 aircraft drawn; plain IconLayer non-billboard + `cullMode:
 billboard + `cullMode: 'none'` draws (half-clipped by the globe depth without `depthCompare:
 'always'`); SDF + both draws with its outline. The SDF `fs:#main-end` injection was not the cause.
 
+Re-probed 2026-10-01 05:52–06:08 UTC (Phase 3 round 4), same UA, `Origin: http://localhost:3000`,
+requests ≥ 2 s apart:
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://vrs-standing-data.adsb.lol/routes/{XX}/{CS}.json` ×45 (R2's 43 multi-leg callsigns + UAL1118, WZZ1738) | 200 ×45 | 0.05–0.60 s | `*` | every `airport_codes` unchanged since R2's 05:2x scan; `_airports[].{icao, lat, lon, alt_feet}` kept as `__fixtures__/route-legs-2026-10-01.json` (with R2's observed positions/tracks; 2-airport coordinates from OurAirports) |
+| `HEAD …/routes/UA/UAL1118.json`, `…/DA/DAL709.json` | 200 ×2 | 0.21–0.49 s | `*` | `Last-Modified: Sun, 20 Sep 2026 18:47–18:48 GMT` |
+| `https://api.adsb.lol/v2/callsign/DAL709` | 200 | 0.38 s | none | a7f2d2 at 35.893,-110.562, FL350, trk 066 — eastbound from SAN: the KSAN→KJFK leg (R2 BLOCKING-1) |
+| `https://api.adsb.lol/v2/callsign/DAL571` | 200 | 0.15 s | none | a6893e at 35.918,-111.019, FL330, trk 065 — the KSAN→KBOS leg |
+| `https://api.adsb.lol/v2/callsign/AFR832` | 200 | 0.14 s | none | `total: 0` (landed at CDG) |
+| `https://api.adsb.lol/v2/callsign/UAL1118`, `/WZZ1738`, `/v2/point/51.5/-0.1/100` | **429** ×3 | 0.13 s | none | no `Retry-After`; this sandbox shares its egress IP with the running app's tile sweeper — the reason for the sweep hysteresis below |
+| VRS `alt_feet` / adsbdb `elevation` | — | — | — | now carried as `RouteAirport.elevationFt`: "low" near an end is AGL (< 3,000 ft above the field), as in the FLIGHT view |
+
+Round 4 behaviour (no new upstream): `/api/flight-route` uses `icao24` (exact snapshot position;
+the aircraft's flown track from `/api/aircraft`'s cached trace lookup to corroborate a reversed
+leg). The tile provider stays `ok` while any tile was read since the last run and is held for one
+sweep period (165 s) through a 429 burst; `/api/flights` and the SSE stream never report LIVE while
+the positions provider is `ok: false` (RECENT ≤ 360 s of last-good age, else STALE).
+
 ### layers-hazards
 
 Probed **2026-09-30 18:06–18:25 UTC** from the build sandbox with
