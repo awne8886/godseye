@@ -64,4 +64,15 @@ describe('SSE per-IP cap', () => {
     expect(hub.subscribe(new Request('http://x/'), undefined, '5.6.7.8').status).toBe(429);
     expect(hub.subscribe(new Request('http://x/'), undefined, '5.6.7.9').status).toBe(200);
   });
+
+  it('caps a whole IPv6 /48 at 8× the per-client limit and releases it when streams close', async () => {
+    const hub = new SseHub('per-48', () => null);
+    const ip = (n: number) => `2001:db8:99:${n.toString(16)}::1`;
+    const open = Array.from({ length: 32 }, (_, i) => hub.subscribe(new Request('http://x/'), undefined, ip(i)));
+    expect(open.every((r) => r.status === 200)).toBe(true);
+    expect(hub.subscribe(new Request('http://x/'), undefined, ip(99)).status).toBe(429);
+    expect(hub.subscribe(new Request('http://x/'), undefined, '2001:db8:aa::1').status).toBe(200);
+    await open[0]!.body!.cancel();
+    expect(hub.subscribe(new Request('http://x/'), undefined, ip(98)).status).toBe(200);
+  });
 });

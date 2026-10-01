@@ -189,10 +189,10 @@ export async function rateLimit(req: Request, route: string, opts: RateLimitOpti
   const ip = getClientIp(req.headers);
   const bucket = opts.bucket ?? route;
   let r = await checkRateLimit(bucket, ip, opts.limit, opts.windowS, opts.failClosed);
-  // Costly fail-closed routes (AI, scanner) also cap a whole IPv6 /48 at 8× the per-/64 limit, so
-  // one tunnel-broker allocation cannot mint 65,536 fresh buckets.
-  if (r.allowed && opts.failClosed && net.isIPv6(ip)) {
-    const agg = await checkRateLimit(`${bucket}:48`, ipBucketKey(ip, 48), opts.limit * 8, opts.windowS, true);
+  // Every route also caps a whole IPv6 /48 at 8× the per-/64 limit, so one tunnel-broker allocation
+  // cannot mint 65,536 fresh buckets; the aggregate fails closed only where the route does.
+  if (r.allowed && net.isIPv6(ip)) {
+    const agg = await checkRateLimit(`${bucket}:48`, ipBucketKey(ip, 48), opts.limit * 8, opts.windowS, opts.failClosed);
     if (!agg.allowed) r = { ...agg, limit: opts.limit };
   }
   if (r.allowed) return null;

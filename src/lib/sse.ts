@@ -5,6 +5,7 @@
  * globalThis so one server-side poll loop fans out to every client.
  * Owner: lead. Server-only.
  */
+import { isIPv6 } from 'node:net';
 import { getClientIp, ipBucketKey } from './ratelimit';
 
 export const SSE_HEADERS = {
@@ -181,14 +182,20 @@ export class SseHub {
 
   subscribe(req: Request, opts?: SseOptions, ip = getClientIp(req.headers)): Response {
     const key = ipBucketKey(ip);
+    // IPv6 also counts against the whole /48 (8× the per-client cap), so one allocation cannot open
+    // thousands of streams from fresh /64s.
+    const key48 = isIPv6(ip) ? `48:${ipBucketKey(ip, 48)}` : null;
     const mine = this.perIpCount.get(key) ?? 0;
-    if (this.clients.size >= this.maxClients || mine >= this.perIp) {
+    const mine48 = key48 ? (this.perIpCount.get(key48) ?? 0) : 0;
+    const perClient = mine >= this.perIp || mine48 >= this.perIp * 8;
+    if (this.clients.size >= this.maxClients || perClient) {
       return new Response(JSON.stringify({ error: 'too_many_streams', detail: 'Too many open streams; close another tab or try again shortly.' }), {
-        status: mine >= this.perIp ? 429 : 503,
+        status: perClient ? 429 : 503,
         headers: { 'Content-Type': 'application/json', 'Retry-After': '30', 'Cache-Control': 'no-store' },
       });
     }
     this.perIpCount.set(key, mine + 1);
+    if (key48) this.perIpCount.set(key48, mine48 + 1);
     let released = false;
     let sink: SseSendRaw | null = null;
     // Idempotent and bound to the stream's end signal, so every exit path releases exactly once.
@@ -196,9 +203,11 @@ export class SseHub {
       if (released) return;
       released = true;
       if (sink) this.clients.delete(sink);
-      const n = (this.perIpCount.get(key) ?? 1) - 1;
-      if (n <= 0) this.perIpCount.delete(key);
-      else this.perIpCount.set(key, n);
+      for (const k of key48 ? [key, key48] : [key]) {
+        const n = (this.perIpCount.get(k) ?? 1) - 1;
+        if (n <= 0) this.perIpCount.delete(k);
+        else this.perIpCount.set(k, n);
+      }
     };
     return sseResponse(
       req,

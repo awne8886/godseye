@@ -103,7 +103,7 @@ describe('IPv6 bucket keys', () => {
     expect(ipBucketKey('203.0.113.1', 48)).toBe('203.0.113.1');
   });
 
-  it('caps a whole /48 on fail-closed routes, so rotating /64s does not mint fresh buckets', async () => {
+  it('caps a whole /48 on every route, so rotating /64s does not mint fresh buckets', async () => {
     setRateLimitStore(new MemoryRateLimitStore());
     const opts = { limit: 1, windowS: 60, failClosed: true, bucket: 'ai-test' };
     const mk = (n: number) => new Request('http://x/api/ai/overview', { headers: { 'x-forwarded-for': `2001:db8:77:${n.toString(16)}::1` } });
@@ -111,8 +111,13 @@ describe('IPv6 bucket keys', () => {
     for (let i = 0; i < 12; i++) statuses.push((await rateLimit(mk(i), '/api/ai/overview', opts))?.status ?? 200);
     expect(statuses.filter((s) => s === 200)).toHaveLength(8); // 8 × the per-/64 limit
     expect(statuses.slice(8).every((s) => s === 429)).toBe(true);
-    // Non-fail-closed routes keep plain per-/64 keying.
-    for (let i = 0; i < 12; i++) expect(await rateLimit(mk(100 + i), '/api/test-open', { limit: 1, windowS: 60 })).toBeNull();
+    // Open routes (e.g. /api/arcgis, /api/osint/headers) get the same /48 aggregate.
+    const open: number[] = [];
+    for (let i = 0; i < 12; i++) open.push((await rateLimit(mk(100 + i), '/api/test-open', { limit: 1, windowS: 60 }))?.status ?? 200);
+    expect(open.filter((s) => s === 200)).toHaveLength(8);
+    // IPv4 clients are unaffected by the /48 rule.
+    const v4 = (n: number) => new Request('http://x/api/test-v4', { headers: { 'x-forwarded-for': `198.51.100.${n}` } });
+    for (let i = 1; i <= 12; i++) expect(await rateLimit(v4(i), '/api/test-v4', { limit: 1, windowS: 60 })).toBeNull();
   });
 });
 

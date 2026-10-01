@@ -48,9 +48,6 @@ export const IMAGE_HOSTS = [
 export const MEDIA_HOSTS = [
   'https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/', // TfL JamCams mp4 loops
   'https://wzmedia.dot.ca.gov/', // Caltrans CCTV HLS (ACAO *)
-  'https://*.its.nv.gov', // Nevada DOT HLS
-  'https://*.dotd.la.gov', // Louisiana DOTD HLS
-  'https://skysfs4.trafficwise.org', // Indiana DOT HLS
   'https://*.telesco.pe/file/', // public Telegram channel video
   'https://*.cdn-telegram.org/file/',
 ] as const;
