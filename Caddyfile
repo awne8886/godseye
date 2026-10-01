@@ -9,6 +9,19 @@
 	# The app ships its own CSP/HSTS/X-Frame-Options/nosniff (src/config/csp.ts); just hide the banner.
 	header -Server
 
+	# Request body caps in front of the app's own (defence in depth; Caddy answers 413 past them).
+	# The analyst routes read at most 32 KiB (ai-route.ts MAX_BODY_BYTES) and the SDK ingest
+	# 256 KiB (sdk.ts MAX_BODY_BYTES); no other route takes a body. Event streams are GETs and
+	# unaffected. Units are decimal: 64KB = 64 000 bytes, 1MB = 1 000 000 bytes.
+	@ai_body path /api/ai/*
+	request_body @ai_body {
+		max_size 64KB
+	}
+	@other_body not path /api/ai/*
+	request_body @other_body {
+		max_size 1MB
+	}
+
 	# Compress JSON and pages on the wire (feed JSON is 5-10x smaller gzipped). An explicit list, so
 	# Server-Sent Events (text/event-stream) are never buffered by an encoder; responses the app
 	# already precompressed (bulk layers, Content-Encoding set) are passed through untouched.

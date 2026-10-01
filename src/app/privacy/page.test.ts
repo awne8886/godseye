@@ -41,6 +41,18 @@ describe('/privacy', () => {
     expect(html).toContain('<main id="main"');
   });
 
+  it('limits sanctions screening and the entity graph to listed or public entities, as the README does', () => {
+    const sentence = 'Sanctions-list screening and the entity graph cover listed or public entities only, never private individuals.';
+    expect(decoded.replace(/\s+/g, ' ')).toContain(sentence);
+  });
+
+  it('discloses that ip-api.com is reached over plain HTTP', () => {
+    expect(upstreamsReceivingUserInput()).toContain('ip-api.com');
+    const text = decoded.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+    expect(text).toContain('One provider is reached over plain HTTP: ip-api.com, whose free tier has no HTTPS.');
+    expect(text).toContain('/api/osint/ip travels unencrypted');
+  });
+
   it('renders no reference-project branding', () => {
     expect(html).not.toMatch(/osiris/i);
   });

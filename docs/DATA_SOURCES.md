@@ -841,13 +841,14 @@ Same honest User-Agent; `curl -I -L` (HEAD), falling back to GET where HEAD is r
 | `https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html` | 200 | 0.38 s | "You may not in connection with the Services engage in commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" |
 | `https://libre.space/licenses/` | 200 (redirects to `www.libre.space/`) | 1.04 s | home page, no licence text; not linked |
 
-### Container images pinned in the Dockerfile and CI (resolved 2026-09-30)
+### Container images pinned in the Dockerfile, CI and compose (resolved 2026-09-30 and 2026-10-01)
 
 | Image | Digest | How resolved |
 |---|---|---|
 | `node:22-alpine` | `sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402` | `registry-1.docker.io` manifest HEAD (multi-arch index), 22:53 UTC |
 | `mcr.microsoft.com/playwright:v1.63.0-noble` | `sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27` | `mcr.microsoft.com` manifest HEAD, 22:56 UTC |
-| `caddy:2-alpine`, `redis:8-alpine` | not pinned | Docker Hub answered 429 (anonymous pull-rate limit) from the sandbox; compose comments say how to pin |
+| `caddy:2-alpine` (docker-compose.yml) | `sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b` | 2026-10-01 02:28 UTC: anonymous token from `auth.docker.io`, then `HEAD registry-1.docker.io/v2/library/caddy/manifests/2-alpine` → 200 in 0.38 s, `application/vnd.oci.image.index.v1+json` (multi-arch index), `ratelimit-limit: 100;w=3600`; matches the Hub tag API digest of 2026-09-30 |
+| `redis:8-alpine` (docker-compose.yml) | `sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0` | 2026-10-01 02:28 UTC: same method → 200 in 0.18 s, OCI image index; matches the Hub tag API digest of 2026-09-30 |
 
 ## panels-alerts-markets-dossier-graph — probe log
 
