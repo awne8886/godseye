@@ -160,3 +160,17 @@ LIVE. The upstream `timestamp` was up to 2 s after our receive time in round 7, 
 `meta.observedAt` is clamped to the receive time (never after `fetchedAt`). Fixture:
 `src/features/space/__fixtures__/wheretheiss-tles.json`. Rate cost: one extra request per hour
 against the 350 / 5 min limit.
+
+## Re-probe 2026-10-02 10:30 UTC (Phase 3 round 8: NASA embed readiness)
+
+| URL | Status | Latency | Size | CORS / framing | Notes |
+|---|---|---|---|---|---|
+| `https://www.youtube-nocookie.com/embed/awQzjn72bI0?autoplay=0&mute=1&playsinline=1&rel=0&enablejsapi=1&origin=…` | 200 | 0.46 s | player shell | CSP `require-trusted-types-for 'script'`; no `X-Frame-Options` (embeddable) | Loads `/s/_/ytembeds/…/m=root,base` (embed client) and `/s/player/8ab5c328/player_embed.vflset/en_US/base.js`. |
+| `https://www.youtube-nocookie.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US…/m=root,base` | 200 | — | 558 543 B | — | The IFrame Player API lives here: on a JSON-string message `{"event":"listening","id",…}` it stores the sender's origin as its target and answers `initialDelivery` + `onReady` (or `alreadyInitialized` to a repeat), JSON strings with `channel: "widget"`. Messages are accepted only from `typeof data === "string"`. |
+
+Why: Chrome fires the iframe `load` event for its own network-error page too, so `onLoad` cannot
+mean "the player loaded" (round 8 MINOR). The SPACE panel embeds with `enablejsapi=1&origin=<page
+origin>`, posts the "listening" handshake to `https://www.youtube-nocookie.com` only (an error page
+never receives it), and shows the player only when that origin answers from that frame with
+onReady / initialDelivery / infoDelivery / alreadyInitialized. No answer in 15 s = "did not load
+here; open it on YouTube". Only the `event` name of a player message is read; nothing is rendered.
