@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { IconLayer, PathLayer, TextLayer, type IconLayerProps } from '@deck.gl/layers';
 import type { GetPickingInfoParams, LayersList, PickingInfo } from '@deck.gl/core';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { type Selection, useDeckLayers, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
@@ -28,6 +28,7 @@ import type { Attribution, SatCategory } from '@/lib/types';
 import { hudFontFamily } from '@/lib/tokens';
 import { createBoundaryPublisher, startAlignedTicks } from './lib/second-clock';
 import type { CatalogueSummary } from './lib/propagator';
+import { buildGlyphAtlas, type GlyphAtlas } from './lib/glyphs';
 
 const REFRESH_MS = 120 * 60_000;
 /** While the SatNOGS fallback is served, ask again this soon (the server retries CelesTrak on a back-off). */
@@ -66,13 +67,14 @@ export function frameDiagnostics(f: Frame | null): string {
 
 /**
  * The satellites are binary attributes, so deck.gl leaves `info.object` empty and the map's click
- * router would drop the pick; expose the drawn row index as the picked object.
+ * router would drop the pick; expose the drawn row index (in the whole frame, not this category's
+ * slice) as the picked object.
  */
-class SatelliteDotsLayer extends ScatterplotLayer<unknown, { drawnFrame: Frame }> {
-  static override layerName = 'SatelliteDotsLayer';
+class SatelliteIconLayer extends IconLayer<unknown, { drawnFrame: Frame; drawOffset: number }> {
+  static override layerName = 'SatelliteIconLayer';
   override getPickingInfo(params: GetPickingInfoParams): PickingInfo {
     const info = super.getPickingInfo(params);
-    if (info.index >= 0 && (info.object === undefined || info.object === null)) info.object = { drawIndex: info.index };
+    if (info.index >= 0 && (info.object === undefined || info.object === null)) info.object = { drawIndex: this.props.drawOffset + info.index };
     return info;
   }
 }
@@ -89,35 +91,71 @@ function seqOf(f: Frame): number {
   return s;
 }
 
+/** deck layer id of one mission category's glyphs. */
+export const satelliteLayerId = (cat: SatCategory): string => `${DOTS_ID}-${cat}`;
+
+
+let atlasCache: { image: ImageData; mapping: GlyphAtlas['mapping'] } | null = null;
+/** The glyph atlas, rasterised once per page (one object identity, so deck.gl never re-uploads it). */
+function glyphAtlas(): { image: ImageData; mapping: GlyphAtlas['mapping'] } {
+  if (!atlasCache) {
+    const a = buildGlyphAtlas();
+    atlasCache = { image: new ImageData(a.data as Uint8ClampedArray<ArrayBuffer>, a.width, a.height), mapping: a.mapping };
+  }
+  return atlasCache;
+}
+
 /**
- * The satellites: binary attributes straight from the worker frame (already far-side filtered).
- * Never culled (MapLibre leaves face culling on after the globe pass). The depth test stays on:
- * the far-side filter drops satellites behind the globe, and depth hides the few a fast drag can
- * carry past the limb before the next re-filter (≤ 100 ms, or ≤ 250 ms ahead of a tick).
+ * The satellites: one IconLayer per mission category (the glyph is a constant `getIcon`, which
+ * IconLayer cannot take as a binary attribute) over `subarray` views of the worker frame, whose
+ * rows arrive sorted by category with `categoryOffsets`. The six layers are always published
+ * (empty ones invisible) so their GPU state survives a category toggle. Billboarded, never culled
+ * (MapLibre leaves face culling on after the globe pass) and drawn with `depthCompare: 'always'`:
+ * the worker's far-side filter (isFacing at the drawn altitude) already dropped every satellite
+ * behind the globe, and the camera re-filter reaches the worker within 100 ms of a move.
  */
-export function satelliteDotsLayer(frame: Frame): SatelliteDotsLayer {
+export function satelliteIconLayers(frame: Frame, atlas: { image: unknown; mapping: GlyphAtlas['mapping'] }): SatelliteIconLayer[] {
   const seq = seqOf(frame);
-  return new SatelliteDotsLayer({
-    id: DOTS_ID,
-    data: {
-      length: frame.count,
-      attributes: {
-        getPosition: { value: frame.positions, size: 3 },
-        getFillColor: { value: frame.colors, size: 4, type: 'unorm8' },
-        getRadius: { value: frame.radii, size: 1 },
+  const offs = frame.categoryOffsets;
+  return SAT_CATEGORIES.map((cat, c) => {
+    const start = offs[c] ?? 0;
+    const end = offs[c + 1] ?? start;
+    const n = end - start;
+    return new SatelliteIconLayer({
+      id: satelliteLayerId(cat),
+      data: {
+        length: n,
+        attributes: {
+          getPosition: { value: frame.positions.subarray(start * 3, end * 3), size: 3 },
+          getColor: { value: frame.colors.subarray(start * 4, end * 4), size: 4, type: 'unorm8' },
+          getSize: { value: frame.sizes.subarray(start, end), size: 1 },
+        },
       },
-    },
-    radiusUnits: 'pixels',
-    radiusMinPixels: 1,
-    billboard: true,
-    stroked: false,
-    pickable: true,
-    parameters: { cullMode: 'none' },
-    // Read by the map's single click/hover router (src/lib/map/picking.ts), which arbitrates
-    // with every other module (aircraft and cameras outrank satellites) and opens one card.
-    drawnFrame: frame,
-    updateTriggers: { getPosition: seq, getFillColor: seq, getRadius: seq },
+      // An ImageData (deck.gl uploads browser image objects; the prop type names only Texture | URL).
+      iconAtlas: atlas.image as IconLayerProps['iconAtlas'],
+      iconMapping: atlas.mapping,
+      // Constant per layer: deck.gl resolves a non-function accessor once (no per-row call).
+      getIcon: cat as unknown as () => string,
+      sizeUnits: 'pixels',
+      billboard: true,
+      visible: n > 0,
+      pickable: true,
+      parameters: { cullMode: 'none', depthCompare: 'always' },
+      // Read by the map's single click/hover router (src/lib/map/picking.ts), which arbitrates
+      // with every other module (aircraft and cameras outrank satellites) and opens one card.
+      drawnFrame: frame,
+      drawOffset: start,
+      updateTriggers: { getPosition: seq, getColor: seq, getSize: seq },
+    });
   });
+}
+
+/** The frame and frame-wide row a GPU pick on one of the category layers refers to (null: not a drawn satellite). */
+export function pickedRow(info: DeckPickInfo): { frame: Frame; row: number } | null {
+  const f = (info.layer?.props as { drawnFrame?: Frame } | undefined)?.drawnFrame;
+  const i = (info.object as { drawIndex?: number } | null | undefined)?.drawIndex ?? -1;
+  if (!f || !Number.isInteger(i) || i < 0 || i >= f.count) return null;
+  return { frame: f, row: i };
 }
 
 /** Selection for catalogue row `catIndex` drawn at `lngLat` in the frame propagated for `at`. */
@@ -172,7 +210,7 @@ export function issLabelLayer(p: [number, number, number], color: Rgba): TextLay
     getSize: 11,
     fontFamily: hudFontFamily(),
     characterSet: ISS_LABEL_CHARSET,
-    getPixelOffset: [0, -12],
+    getPixelOffset: [0, -16],
     billboard: true,
     parameters: { cullMode: 'none', depthCompare: 'always' },
     pickable: false,
@@ -304,23 +342,23 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     [],
   );
 
-  // GPU pick → selection (the map's click router calls it for 'space-satellites'). The picked index
-  // belongs to the frame that layer instance drew; the card opens at the satellite's position in
+  // GPU pick → selection (the map's click router calls it for each 'space-satellites-<category>'
+  // layer). The picked `drawIndex` belongs to the frame that layer instance drew; the card opens at the satellite's position in
   // the NEWEST frame (the marker moves every tick).
-  useEffect(
-    () =>
-      registerDeckPick(DOTS_ID, (info: DeckPickInfo): Selection | null => {
-        const f = (info.layer?.props as { drawnFrame?: Frame } | undefined)?.drawnFrame;
-        const i = info.index ?? -1;
-        if (!f || i < 0 || i >= f.count) return null;
-        const catIndex = f.index[i]!;
-        const p = latestPosition(latestFrame.current, catIndex) ?? [f.positions[i * 3]!, f.positions[i * 3 + 1]!, f.positions[i * 3 + 2]!];
-        // GPU picking draws its own buffer without the globe's depth: re-check the far side.
-        if (globeRef.current && !isFacing([p[0], p[1]], getFarSideCamera(), p[2])) return null;
-        return selectionFor(catIndex, [p[0], p[1]], latestFrame.current?.at ?? f.at, activeRef.current);
-      }),
-    [],
-  );
+  useEffect(() => {
+    const resolve = (info: DeckPickInfo): Selection | null => {
+      const picked = pickedRow(info);
+      if (!picked) return null;
+      const { frame: f, row: i } = picked;
+      const catIndex = f.index[i]!;
+      const p = latestPosition(latestFrame.current, catIndex) ?? [f.positions[i * 3]!, f.positions[i * 3 + 1]!, f.positions[i * 3 + 2]!];
+      // GPU picking draws its own buffer without the globe's depth: re-check the far side.
+      if (globeRef.current && !isFacing([p[0], p[1]], getFarSideCamera(), p[2])) return null;
+      return selectionFor(catIndex, [p[0], p[1]], latestFrame.current?.at ?? f.at, activeRef.current);
+    };
+    const offs = SAT_CATEGORIES.map((cat) => registerDeckPick(satelliteLayerId(cat), resolve));
+    return () => offs.forEach((off) => off());
+  }, []);
 
   // View (far-side camera, visible categories, palette, selection) → worker.
   useEffect(() => {
@@ -396,7 +434,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     if (orbit.data && selData && orbit.data.noradId === selData.noradId) {
       out.push(orbitLayer(orbit.data.segments, readCssColor(CATEGORY_TOKEN[selData.category], 0.85)));
     }
-    out.push(satelliteDotsLayer(frame));
+    out.push(...satelliteIconLayers(frame, glyphAtlas()));
     // ISS highlight: a label beside its (enlarged) marker when it is on the visible hemisphere.
     const issIdx = indexOfId(ISS_NORAD_ID);
     const k = issIdx === undefined ? -1 : frame.index.indexOf(issIdx);
