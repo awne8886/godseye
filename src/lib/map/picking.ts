@@ -12,6 +12,13 @@
  * null for "not selectable". The map host is the ONLY click listener: it gathers every candidate
  * with `collectCandidates()`, drops those behind the globe and selects `routePick()`'s winner, so
  * one click opens exactly one card. Modules never listen to `click` themselves.
+ *
+ * Drawn marks (round 8): a point layer drawn ON TOP of the layers it overlaps may declare the
+ * radius of each drawn mark — a `pickMarkPx` prop on the deck layer (centre = its `getPosition`), or
+ * `markRadiusPx` on a hit-tester's candidate. A declared mark that contains the pointer wins the
+ * click outright (the nearest such mark), so a small dot under the pointer is never lost to a
+ * higher-priority mark that is only within the pick tolerance (the route's LHR dot vs the matched
+ * aircraft ring drawn next to it). Everything else keeps the priority order.
  * Owner: map-engine. Pure and unit-tested.
  */
 import type { Selection } from '@/lib/layer-host';
@@ -20,8 +27,14 @@ import { choosePick, getLayer } from '@/lib/layer-registry';
 export interface PickCandidate {
   layer: string;
   selection: Selection;
-  /** Screen distance from the pointer in px (CPU hit-tests); breaks ties within one priority. */
+  /** Screen distance (px) from the pointer to the mark's centre (CPU hit-tests, declared deck marks); breaks ties within one priority. */
   distancePx?: number;
+  /**
+   * Radius (px) of the mark as drawn around that centre. With `distancePx` ≤ this the mark covers
+   * the pointer and wins the click (`routePick`). Declare it only for marks drawn above the layers
+   * they overlap.
+   */
+  markRadiusPx?: number;
   /** Height (m) the marker is drawn at; the far-side test lifts the point by it (satellites). Default 0. */
   altitudeM?: number;
 }
@@ -118,13 +131,48 @@ function deckResolver(info: DeckPickInfo): DeckPickResolver | undefined {
 
 const candidate = (s: Selection | null): PickCandidate | null => (s ? { layer: s.layer ?? '', selection: s } : null);
 
-/** Deck picks (top-most first, as `pickMultipleObjects` returns them) → candidates. */
-export function candidatesFromDeck(infos: readonly DeckPickInfo[]): PickCandidate[] {
+/** Where the pointer is, and how the map projects a drawn position (for declared deck marks). */
+export interface PointerAt {
+  point: { x: number; y: number };
+  project: HitTestMap['project'];
+}
+
+type PositionAccessor = (object: unknown, ctx: { index: number; data: unknown; target: number[] }) => unknown;
+
+/**
+ * A deck layer's declared mark (`pickMarkPx`, see the module doc) around the picked object's drawn
+ * position (`getPosition`, the same accessor deck draws with, so an unwrapped antimeridian frame
+ * projects to the copy on screen): distance from the pointer to its centre + its radius.
+ */
+function declaredMark(info: DeckPickInfo, at: PointerAt | undefined): Pick<PickCandidate, 'distancePx' | 'markRadiusPx'> | null {
+  const props = info.layer?.props;
+  const radius = props?.pickMarkPx;
+  if (!at || !props || typeof radius !== 'number' || !(radius > 0)) return null;
+  const get = props.getPosition;
+  let pos: unknown;
+  try {
+    pos = typeof get === 'function' ? (get as PositionAccessor)(info.object, { index: info.index ?? -1, data: props.data, target: [] }) : get;
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(pos) || typeof pos[0] !== 'number' || typeof pos[1] !== 'number') return null;
+  const p = at.project([pos[0], pos[1]]);
+  const d = Math.hypot(p.x - at.point.x, p.y - at.point.y);
+  return Number.isFinite(d) ? { distancePx: d, markRadiusPx: radius } : null;
+}
+
+/**
+ * Deck picks (top-most first, as `pickMultipleObjects` returns them) → candidates. With `at`, a
+ * layer's declared mark (`pickMarkPx`) adds the pointer's distance to it and its radius.
+ */
+export function candidatesFromDeck(infos: readonly DeckPickInfo[], at?: PointerAt): PickCandidate[] {
   const out: PickCandidate[] = [];
   for (const info of infos) {
     if (info.object === undefined || info.object === null) continue;
     const c = candidate(deckResolver(info)?.(info) ?? null);
-    if (c) out.push(c);
+    if (!c) continue;
+    const mark = declaredMark(info, at);
+    out.push(mark ? { ...c, ...mark } : c);
   }
   return out;
 }
@@ -139,18 +187,34 @@ export function candidatesFromNative(features: readonly NativeFeature[]): PickCa
   return out;
 }
 
+/** The candidate's declared drawn mark covers the pointer (`distancePx` ≤ `markRadiusPx`). */
+export function markContainsPointer(c: PickCandidate): boolean {
+  return c.markRadiusPx !== undefined && c.distancePx !== undefined && c.distancePx <= c.markRadiusPx;
+}
+
+const priorityOf = (c: PickCandidate) => getLayer(c.layer)?.pickPriority ?? -1;
+
 /**
- * The selection to open: highest registry pickPriority wins (aircraft and cameras beat the
- * satellites drawn above them, points beat polygons); within that priority the nearest hit
- * (`distancePx`, GPU/native picks count as 0), then the first (top-most) candidate.
+ * The selection to open. A declared mark that covers the pointer wins first (the nearest such
+ * mark, then the higher priority, then the top-most): round 8, the route's LHR dot under the
+ * pointer lost to a matched aircraft ring drawn next to it (priority 100 against the airport's −1).
+ * Otherwise the highest registry pickPriority wins (aircraft and cameras beat the satellites drawn
+ * above them, points beat polygons); within that priority the nearest hit (`distancePx`,
+ * GPU/native picks count as 0), then the first (top-most) candidate.
  */
 export function routePick(candidates: readonly PickCandidate[]): Selection | null {
+  let under: PickCandidate | null = null;
+  for (const c of candidates) {
+    if (!markContainsPointer(c)) continue;
+    if (!under || c.distancePx! < under.distancePx! || (c.distancePx === under.distancePx && priorityOf(c) > priorityOf(under))) under = c;
+  }
+  if (under) return under.selection;
   const top = choosePick(candidates);
   if (!top) return null;
-  const prio = getLayer(top.layer)?.pickPriority ?? -1;
+  const prio = priorityOf(top);
   let best = top;
   for (const c of candidates) {
-    if ((getLayer(c.layer)?.pickPriority ?? -1) !== prio) continue;
+    if (priorityOf(c) !== prio) continue;
     if ((c.distancePx ?? 0) < (best.distancePx ?? 0)) best = c;
   }
   return best.selection;
@@ -196,7 +260,7 @@ export function collectCandidates(map: PickMap, point: { x: number; y: number },
       native = [];
     }
   }
-  const all = [...candidatesFromDeck(deck), ...candidatesFromNative(native), ...candidatesFromHitTesters(point, map)];
+  const all = [...candidatesFromDeck(deck, { point, project: (ll) => map.project(ll) }), ...candidatesFromNative(native), ...candidatesFromHitTesters(point, map)];
   const facing = opts.facing;
   return facing ? all.filter((c) => !c.selection.lngLat || facing(c.selection.lngLat, c.altitudeM ?? 0)) : all;
 }

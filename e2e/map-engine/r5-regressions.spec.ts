@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectErrors, gotoMap, MAP, waitForAdmissionDrained, waitForMapStyle } from './helpers';
+import { collectErrors, gotoMap, imageryChip, MAP, waitForAdmissionDrained, waitForMapStyle } from './helpers';
 
 /**
  * Phase 3 round-5 map-engine regressions: BASEMAP LOADING from the first frame (visual-qa m3),
@@ -41,7 +41,7 @@ test.describe('map-engine round 5', () => {
       return Number(m[3]) % 2 === 1 ? route.abort('failed') : route.continue();
     });
     await gotoMap(page, { camera: { lat: 20, lng: 10, zoom: 3 }, params: { layers: 'gibs_truecolor' } });
-    const chip = page.getByTestId('imagery-chip-gibs');
+    const chip = await imageryChip(page, 'gibs', 90_000);
     await expect(chip).toHaveText(/^VIIRS TRUE COLOUR \d{4}-\d{2}-\d{2} · REFERENCE · (\d+ TILES? MISSING|SOURCE OFFLINE.*)$/, { timeout: 90_000 });
     await expect(chip).toHaveAttribute('data-tone', 'offline');
     // Round-5 BLOCKING 4: a refreshed failed raster tile threw in MapLibre's raster draw on every

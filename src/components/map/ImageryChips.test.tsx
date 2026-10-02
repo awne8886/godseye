@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { basemapChipText, type BasemapHealth, imageryChipText, tilesDegraded } from '@/lib/map/basemap-health';
 import { ESRI_LABEL } from '@/lib/map/imagery';
@@ -15,7 +15,7 @@ vi.mock('react-map-gl/maplibre', () => ({
   },
 }));
 
-const { default: ImageryChips } = await import('./ImageryChips');
+const { default: ImageryChips, summarizeChips } = await import('./ImageryChips');
 
 afterEach(() => {
   cleanup();
@@ -75,5 +75,52 @@ describe('R1r5 m3: BASEMAP LOADING from the first frame (before the map exists)'
     cleanup();
     render(<BasemapPending phone />);
     expect((document.querySelector('.godseye-imagery-chips') as HTMLElement).style.bottom).toContain('safe-area-inset-bottom');
+  });
+});
+
+describe('round 8: the phone layout folds the stack into one summary chip (worst tone, tap to expand)', () => {
+  const night = { id: 'night', text: 'BLACK MARBLE 2016 · REFERENCE' };
+  const gibs = { id: 'gibs', text: 'VIIRS TRUE COLOUR 2026-10-01 · REFERENCE' };
+  const terrainDown = { id: 'terrain', text: TERRAIN_STATUS_TEXT.error };
+  const items = () => [...document.querySelectorAll('[data-testid^="imagery-chip-"]')].map((el) => el.getAttribute('data-testid'));
+
+  it('summarizes: a source that is down leads (alert tone), else the first chip; the rest are counted', () => {
+    expect(summarizeChips([])).toBeNull();
+    expect(summarizeChips([night, gibs])).toEqual({ lead: night, tone: 'reference', more: 1 });
+    expect(summarizeChips([night, gibs, terrainDown])).toEqual({ lead: terrainDown, tone: 'offline', more: 2 });
+    const holes = { id: 'esri', text: 'ESRI WORLD IMAGERY · REFERENCE · 3 TILES MISSING', tone: 'offline' as const };
+    expect(summarizeChips([night, holes])!.lead).toBe(holes);
+  });
+
+  it('two or more chips: one summary row with the worst chip and a count; a tap shows every chip, another folds them', () => {
+    render(<ImageryChips chips={[night, gibs, terrainDown]} collapse />);
+    expect(items()).toEqual(['imagery-chip-summary']);
+    const summary = document.querySelector('[data-testid="imagery-chip-summary"]')!;
+    expect(summary.getAttribute('data-tone')).toBe('offline');
+    expect(summary.textContent).toBe(`${TERRAIN_STATUS_TEXT.error}+2`);
+    // One row for the route framing / HUD inset measurements (`.godseye-imagery-chips li`).
+    expect(document.querySelectorAll('.godseye-imagery-chips li')).toHaveLength(1);
+    const button = document.querySelector('button')!;
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(button.getAttribute('aria-label')).toBe(`Imagery on the map: ${TERRAIN_STATUS_TEXT.error} and 2 more. Show all`);
+    // 44 px touch target (phone layout only).
+    expect(button.className).toContain('min-h-11');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(items()).toEqual(['imagery-chip-night', 'imagery-chip-gibs', 'imagery-chip-terrain', 'imagery-chip-summary']);
+    expect(tone('terrain')).toBe('offline');
+    fireEvent.click(button);
+    expect(items()).toEqual(['imagery-chip-summary']);
+  });
+
+  it('a single chip is shown as it is; desktop never folds', () => {
+    render(<ImageryChips chips={[night]} collapse />);
+    expect(items()).toEqual(['imagery-chip-night']);
+    expect(document.querySelector('button')).toBeNull();
+    cleanup();
+    document.body.innerHTML = '';
+    render(<ImageryChips chips={[night, gibs, terrainDown]} />);
+    expect(items()).toEqual(['imagery-chip-night', 'imagery-chip-gibs', 'imagery-chip-terrain']);
+    expect(document.querySelector('button')).toBeNull();
   });
 });

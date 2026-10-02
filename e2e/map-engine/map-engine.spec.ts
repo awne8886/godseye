@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { isFacing } from '../../src/lib/map/far-side';
 import { gibsTrueColorDate } from '../../src/lib/map/imagery';
-import { collectErrors, gotoMap, MAP, mapLoads, mapProjection, nudgeMap, readCamera, readFarSideCamera, waitForAdmissionDrained, waitForMapIdle, waitForMapStyle } from './helpers';
+import { collectErrors, gotoMap, imageryChip, MAP, mapLoads, mapProjection, nudgeMap, readCamera, readFarSideCamera, waitForAdmissionDrained, waitForMapIdle, waitForMapStyle } from './helpers';
 
 /** An imagery chip's dated label, possibly followed by the holes it has (R1r5 m10: announced). */
 const chipText = (label: string) => new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( · \\d+ TILES? MISSING| · SOURCE OFFLINE.*)?$`);
@@ -15,7 +15,7 @@ test.describe('map engine', () => {
     await waitForMapIdle(page);
     await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('OpenStreetMap');
     // Day/night is on by default: its dated REFERENCE chip is shown with the night lights.
-    await expect(page.getByTestId('imagery-chip-night')).toHaveText(chipText('BLACK MARBLE 2016 · REFERENCE'));
+    await expect(await imageryChip(page, 'night')).toHaveText(chipText('BLACK MARBLE 2016 · REFERENCE'));
     await page.waitForTimeout(1500); // late tile/sprite/worker errors
     expect(errors).toEqual([]);
   });
@@ -69,7 +69,7 @@ test.describe('map engine', () => {
     const canvas = await page.locator('canvas.maplibregl-canvas').elementHandle();
     await sat.first().click();
     await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-basemap', 'satellite');
-    await expect(page.getByTestId('imagery-chip-esri')).toBeVisible();
+    await expect(await imageryChip(page, 'esri')).toBeVisible();
     await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community');
     // Same canvas element, one map construction: nothing was remounted.
     expect(await page.locator('canvas.maplibregl-canvas').evaluate((el, prev) => el === prev, canvas)).toBe(true);
@@ -83,7 +83,7 @@ test.describe('map engine', () => {
     await gotoMap(page, { camera: { lat: 46.55, lng: 7.98, zoom: 11, pitch: 50, bearing: 0 }, params: { layers: 'terrain_elevation' } });
     const root = page.locator('[data-testid="map-root"]');
     await expect(root).toHaveAttribute('data-projection', 'mercator', { timeout: 90_000 });
-    await expect(page.getByTestId('imagery-chip-terrain')).toHaveText(/Loading nearby terrain…|Terrain on/);
+    await expect(await imageryChip(page, 'terrain')).toHaveText(/Loading nearby terrain…|Terrain on/);
     const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await expect
@@ -97,7 +97,7 @@ test.describe('map engine', () => {
 
   test('GIBS true colour shows the previous UTC day, badged REFERENCE', async ({ page }) => {
     await gotoMap(page, { camera: { lat: 10, lng: 20, zoom: 2 }, params: { layers: 'gibs_truecolor' } });
-    await expect(page.getByTestId('imagery-chip-gibs')).toHaveText(chipText(`VIIRS TRUE COLOUR ${gibsTrueColorDate(Date.now())} · REFERENCE`), { timeout: 60_000 });
+    await expect(await imageryChip(page, 'gibs')).toHaveText(chipText(`VIIRS TRUE COLOUR ${gibsTrueColorDate(Date.now())} · REFERENCE`), { timeout: 60_000 });
     await expect(page.getByTestId('imagery-chip-night')).toHaveCount(0); // day_night not in ?layers=
   });
 

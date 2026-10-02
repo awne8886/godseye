@@ -303,6 +303,20 @@ export function routeNeedsFlights(live: Pick<Live, 'aircraft'> | null | undefine
 // ── Click selections ──────────────────────────────────────────────────────────────
 const wrapLng = (x: number) => ((((x + 180) % 360) + 360) % 360) - 180;
 
+/** Route endpoint dot: fill radius and ring width (px; deck centres the ring on the dot's edge). */
+export const ENDPOINT_RADIUS_PX = 5;
+export const ENDPOINT_RING_PX = 2;
+/** Diversion dot radius (px, no ring). */
+export const DIVERSION_RADIUS_PX = 3.5;
+/**
+ * The airport marks as drawn, for the map's click router (`pickMarkPx`, src/lib/map/picking.ts):
+ * the dot and its ring plus the 1 px antialiased edge. A pointer inside opens the airport card even
+ * when an aircraft ring or icon lies within the pick tolerance (round 8: the LHR dot opened DAL3).
+ * The marks are drawn above aviation (route z 90), so the dot is what the pointer is on.
+ */
+export const ENDPOINT_MARK_PX = ENDPOINT_RADIUS_PX + ENDPOINT_RING_PX / 2 + 1;
+export const DIVERSION_MARK_PX = DIVERSION_RADIUS_PX + 1;
+
 /** An airport mark (route endpoint or diversion) → the airport card's selection (bundled REFERENCE data, no observation time). */
 export function airportSelection(p: Pick<Point, 'id' | 'position' | 'label' | 'code' | 'name'>, role: 'endpoint' | 'diversion'): Selection {
   return {
@@ -442,13 +456,14 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         id: 'route-diversions',
         data: diversions,
         getPosition: (d) => d.position,
-        getRadius: 3.5,
+        getRadius: DIVERSION_RADIUS_PX,
         radiusUnits: 'pixels',
         getFillColor: color('--map-route-filed', 0.8),
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: trigger,
         pickable: true,
+        pickMarkPx: DIVERSION_MARK_PX,
         toSelection: (info: { object?: unknown }) => {
           const p = picked<Point>(info);
           return p ? airportSelection(p, 'diversion') : null;
@@ -465,17 +480,18 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         id: 'route-endpoints',
         data: endpoints,
         getPosition: (d) => d.position,
-        getRadius: 5,
+        getRadius: ENDPOINT_RADIUS_PX,
         radiusUnits: 'pixels',
         getFillColor: uiColor('--text-primary'),
         getLineColor: ring,
         lineWidthUnits: 'pixels',
-        getLineWidth: 2,
+        getLineWidth: ENDPOINT_RING_PX,
         stroked: true,
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: trigger,
         pickable: true,
+        pickMarkPx: ENDPOINT_MARK_PX,
         toSelection: (info: { object?: unknown }) => {
           const p = picked<Point>(info);
           return p ? airportSelection(p, 'endpoint') : null;
