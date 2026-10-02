@@ -97,22 +97,73 @@ export function occupiedFromBottom(el: HTMLElement): number | null {
   return Math.round(el.offsetHeight + bottom);
 }
 
+export type BottomReserve = '--sheet-occupied' | '--card-occupied';
+
+/** The <html> attribute that says a reserve is held (`data-sheet-occupied`, `data-card-occupied`). */
+export const reserveAttr = (name: BottomReserve) => `data-${name.slice(2)}`;
+
 /**
  * Publish how much of the screen bottom a phone sheet covers as a CSS custom property on <html>
  * (`--sheet-occupied`, `--card-occupied`), so base.css lifts MapLibre's attribution and imagery
- * chips above it (the attribution stays visible). Cleared as soon as `active` turns false (exit
- * starts), not when the exit animation ends.
+ * chips above it (the attribution stays visible). While the reserve is held <html> also carries
+ * `data-sheet-occupied` / `data-card-occupied`, which base.css uses on landscape phones to move
+ * that stack into the column right of the view bar (r8: above a sheet it ran into the header row).
+ * Cleared as soon as `active` turns false (exit starts), not when the exit animation ends.
  */
-export function useBottomReserve(ref: RefObject<HTMLElement | null>, name: '--sheet-occupied' | '--card-occupied', active: boolean) {
+export function useBottomReserve(ref: RefObject<HTMLElement | null>, name: BottomReserve, active: boolean) {
   useEffect(() => {
     const root = document.documentElement;
+    const attr = reserveAttr(name);
+    const clear = () => {
+      root.style.removeProperty(name);
+      root.removeAttribute(attr);
+    };
     const el = ref.current;
     if (!active || !el) {
-      root.style.removeProperty(name);
+      clear();
       return;
     }
     const write = () => {
       const px = occupiedFromBottom(el);
+      if (px === null) return clear();
+      root.style.setProperty(name, `${px}px`);
+      root.setAttribute(attr, '');
+    };
+    write();
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(write);
+    ro?.observe(el);
+    window.addEventListener('resize', write);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener('resize', write);
+      clear();
+    };
+  }, [ref, name, active]);
+}
+
+export type HudEdge = '--view-controls-right' | '--telemetry-bottom';
+
+/**
+ * Layout edge (px from the viewport's left or top) of a fixed HUD element, from its layout box
+ * (offset*), so an entry transform does not leak into the value. Null while it is not laid out.
+ */
+export function layoutEdge(el: HTMLElement, edge: 'right' | 'bottom'): number | null {
+  if (el.offsetWidth === 0 && el.offsetHeight === 0) return null;
+  return Math.ceil(edge === 'right' ? el.offsetLeft + el.offsetWidth : el.offsetTop + el.offsetHeight);
+}
+
+/**
+ * Publish an edge of a fixed HUD element as a CSS custom property on <html> (`--view-controls-right`,
+ * `--telemetry-bottom`), so base.css can keep MapLibre's corner stack clear of it. Re-measured when
+ * the element or the window resizes; cleared on unmount (the CSS then falls back to its default).
+ */
+export function usePublishedEdge(ref: RefObject<HTMLElement | null>, name: HudEdge, edge: 'right' | 'bottom') {
+  useEffect(() => {
+    const root = document.documentElement;
+    const el = ref.current;
+    if (!el) return;
+    const write = () => {
+      const px = layoutEdge(el, edge);
       if (px === null) root.style.removeProperty(name);
       else root.style.setProperty(name, `${px}px`);
     };
@@ -125,5 +176,5 @@ export function useBottomReserve(ref: RefObject<HTMLElement | null>, name: '--sh
       window.removeEventListener('resize', write);
       root.style.removeProperty(name);
     };
-  }, [ref, name, active]);
+  }, [ref, name, edge]);
 }

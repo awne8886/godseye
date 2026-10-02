@@ -16,7 +16,7 @@ import { getCursor, getView, subscribeCursor, subscribeView, type MapPoint } fro
 import { useUiStore, type Settings } from '@/lib/store';
 import { toggleFullscreen } from './actions';
 import { locateOnce } from './Boot';
-import { useApiRoute } from './hooks';
+import { useApiRoute, usePublishedEdge } from './hooks';
 import { formatLatLng, geoCell, HINT_MIN_ROW_PX, readoutRightInset, scaleBarFor } from './map-readout';
 
 function Segmented<T extends string>({ label, value, options, onChange, group }: { label: string; value: T; group: string; options: { value: T; text: string; title: string; icon: ReactNode }[]; onChange: (v: T) => void }) {
@@ -283,6 +283,10 @@ export default function ViewControls() {
   const failTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readoutRow = useRef<HTMLDivElement>(null);
   useClearOfAttribution(readoutRow);
+  // base.css keeps the map's credits + imagery chips right of this bar on a landscape phone with a
+  // sheet open (r8: above the sheet they ran under it).
+  const bar = useRef<HTMLDivElement>(null);
+  usePublishedEdge(bar, '--view-controls-right', 'right');
 
   const locate = async () => {
     // The click itself is the consent; it is remembered in Settings (and can be revoked there).
@@ -299,7 +303,7 @@ export default function ViewControls() {
   return (
     <>
       {/* data-map-inset: map framing (flight paths) keeps route endpoints out from under this bar. */}
-      <div data-map-inset="view-controls" data-testid="view-controls" className="glass-panel fixed bottom-[100px] left-[120px] z-[var(--z-hud)] flex items-center gap-1 p-1 phone:bottom-auto phone:left-3 phone:top-[64px]">
+      <div ref={bar} data-map-inset="view-controls" data-testid="view-controls" className="glass-panel fixed bottom-[100px] left-[120px] z-[var(--z-hud)] flex items-center gap-1 p-1 phone:bottom-auto phone:left-3 phone:top-[64px]">
         <Segmented
           label="Projection"
           group="proj"
