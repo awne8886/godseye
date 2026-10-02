@@ -16,7 +16,7 @@ import { getCursor, getView, subscribeCursor, subscribeView, type MapPoint } fro
 import { useUiStore, type Settings } from '@/lib/store';
 import { toggleFullscreen } from './actions';
 import { locateOnce } from './Boot';
-import { useApiRoute, usePublishedEdge } from './hooks';
+import { useApiRoute, usePublishedAttribHeight, usePublishedEdge } from './hooks';
 import { formatLatLng, geoCell, HINT_MIN_ROW_PX, readoutRightInset, scaleBarFor } from './map-readout';
 
 function Segmented<T extends string>({ label, value, options, onChange, group }: { label: string; value: T; group: string; options: { value: T; text: string; title: string; icon: ReactNode }[]; onChange: (v: T) => void }) {
@@ -287,6 +287,9 @@ export default function ViewControls() {
   // sheet open (r8: above the sheet they ran under it).
   const bar = useRef<HTMLDivElement>(null);
   usePublishedEdge(bar, '--view-controls-right', 'right');
+  // ...and caps a sheet/card there so the credits keep a row above it (r8 minor, 568×320).
+  const mapContainer = useMapInstanceStore((s) => s.map?.getContainer() ?? null);
+  usePublishedAttribHeight(mapContainer);
 
   const locate = async () => {
     // The click itself is the consent; it is remembered in Settings (and can be revoked there).

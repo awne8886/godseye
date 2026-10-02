@@ -133,3 +133,52 @@ test.describe('portrait phone 390x844 with a sheet open (unchanged)', () => {
     expect(glyphs.last.onTop, `last glyph covered by ${glyphs.last.hit}`).toBe(true);
   });
 });
+
+/**
+ * r8 minor: on a narrow landscape phone (568x320, iPhone SE 1st gen) the column right of the view
+ * bar is ~190 px, the credits wrap to 5 lines and ran up over the STATUS telemetry. The sheet and
+ * the entity card now stop low enough to leave the credits their own row (--map-attrib-height).
+ */
+for (const [w, h] of [
+  [568, 320],
+  [667, 375],
+] as const) {
+  test.describe(`narrow landscape phone ${w}x${h} with a sheet open`, () => {
+    test.use({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+
+    test(`r8 m: the credits clear the telemetry, the view bar and the sheet (${w}x${h})`, async ({ page }, info) => {
+      test.skip(info.project.name !== 'desktop', 'sets its own viewport; once');
+      await boot(page, '/?panel=layers');
+      await expect(page.getByTestId('mobile-sheet')).toBeVisible();
+      const attrib = page.locator('.maplibregl-ctrl-attrib');
+      await expect(attrib).toContainText('OpenStreetMap', { timeout: 60_000 });
+      await expect.poll(() => page.evaluate(() => document.documentElement.style.getPropertyValue('--map-attrib-height'))).toMatch(/^\d+px$/);
+      await page.waitForTimeout(1500);
+
+      const glyphs = (await creditGlyphsOnTop(page))!;
+      expect(glyphs.first.onTop, `first glyph covered by ${glyphs.first.hit}`).toBe(true);
+      expect(glyphs.last.onTop, `last glyph covered by ${glyphs.last.hit}`).toBe(true);
+      const telemetry = (await page.locator('[data-map-inset="telemetry"]').boundingBox())!;
+      const viewBar = (await page.getByTestId('view-controls').boundingBox())!;
+      const header = (await page.locator('header[data-map-inset="header"]').boundingBox())!;
+      const sheet = (await page.getByTestId('mobile-sheet').boundingBox())!;
+      const credits = (await attrib.boundingBox())!;
+      for (const [label, b] of [['telemetry', telemetry], ['view bar', viewBar], ['header', header]] as const) expect(overlaps(credits, b), `credits vs ${label}`).toBe(false);
+      expect(credits.y + credits.height, 'credits above the sheet').toBeLessThanOrEqual(sheet.y);
+      // The STATUS telemetry is the topmost element at its own centre (nothing drawn over it).
+      const telemetryOnTop = await page.evaluate(() => {
+        const t = document.querySelector('[data-map-inset="telemetry"]')!;
+        const r = t.getBoundingClientRect();
+        return !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('[data-map-inset="telemetry"]');
+      });
+      expect(telemetryOnTop, 'telemetry not covered').toBe(true);
+      for (const c of await visibleChipBoxes(page)) {
+        expect(overlaps(c, telemetry), `${c.id} vs telemetry`).toBe(false);
+        expect(c.y + c.height, `${c.id} above the sheet`).toBeLessThanOrEqual(sheet.y);
+      }
+      // The sheet stays usable: at least 30% of the viewport tall.
+      expect(sheet.height).toBeGreaterThanOrEqual(Math.floor(0.3 * h));
+      await info.attach(`landscape-${w}x${h}.png`, { body: await page.screenshot(), contentType: 'image/png' });
+    });
+  });
+}

@@ -580,6 +580,21 @@
   :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib {
     flex-shrink: 0;
   }
+  /* Narrow landscape phones (r8 minor, 568x320): the column right of the view bar is ~190 px, the
+     credits wrap to 5 lines there and a 55vh sheet left them too little height, so they ran up over
+     the STATUS telemetry. The sheet and the entity card stop low enough to leave the credits
+     (--map-attrib-height, published by ViewControls) their own row between them and the telemetry
+     (the 10 px are the stack's 4 px lift + the 6 px gap under the telemetry). Wider screens never
+     reach the cap (844x390: 259 px against a 214 px sheet), and a 30vh floor keeps the sheet usable. */
+  .godseye-mobile-sheet {
+    --sheet-cap: calc(100dvh - 56px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    max-height: min(55vh, max(30vh, var(--sheet-cap)));
+    min-height: min(40vh, max(30vh, var(--sheet-cap)));
+  }
+  .godseye-card-sheet {
+    --sheet-cap: calc(100dvh - 60px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    max-height: min(50vh, max(30vh, var(--sheet-cap)));
+  }
 }
 /* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome (z ≥ 40). The map wrapper
    has no z-index, so these compete in the root stacking context. */

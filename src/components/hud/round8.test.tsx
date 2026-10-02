@@ -15,7 +15,7 @@ import { AnimatePresence, LazyMotion, domMax } from 'motion/react';
 import { useRef, type ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PHONE_LAYOUT_QUERY } from '@/lib/map/view';
-import { layoutEdge, reserveAttr, usePublishedEdge } from './hooks';
+import { layoutEdge, reserveAttr, usePublishedAttribHeight, usePublishedEdge } from './hooks';
 import { MobileSheetBody } from './PanelHost';
 import Telemetry from './Telemetry';
 import ViewControls from './ViewControls';
@@ -26,7 +26,7 @@ const root = document.documentElement;
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  for (const p of ['--sheet-occupied', '--view-controls-right', '--telemetry-bottom']) root.style.removeProperty(p);
+  for (const p of ['--sheet-occupied', '--view-controls-right', '--telemetry-bottom', '--map-attrib-height']) root.style.removeProperty(p);
   root.removeAttribute('data-sheet-occupied');
 });
 
@@ -136,5 +136,76 @@ describe('r8 M: base.css landscape-phone stack while a sheet or card is open', (
     // Rows top-down, so the last row (the phone summary chip's toggle) is the one nearest the credits.
     expect(list).toContain('flex-direction: row');
     expect(list).toContain('flex-wrap: wrap;');
+  });
+});
+
+describe('r8 minor: narrow landscape phone (568x320) - the sheet leaves the credits a row above it', () => {
+  it('usePublishedAttribHeight publishes the credits height, follows a control added later, and clears on unmount', async () => {
+    let height = 71;
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(192);
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(() => height);
+    const container = document.createElement('div');
+    const controls = document.createElement('div');
+    controls.className = 'maplibregl-control-container';
+    container.append(controls);
+    document.body.append(container);
+    function Probe() {
+      usePublishedAttribHeight(container);
+      return null;
+    }
+    const view = render(<Probe />);
+    expect(root.style.getPropertyValue('--map-attrib-height')).toBe('');
+    const attrib = document.createElement('div');
+    attrib.className = 'maplibregl-ctrl maplibregl-ctrl-attrib';
+    controls.append(attrib);
+    await vi.waitFor(() => expect(root.style.getPropertyValue('--map-attrib-height')).toBe('71px'));
+    height = 29;
+    window.dispatchEvent(new Event('resize'));
+    expect(root.style.getPropertyValue('--map-attrib-height')).toBe('29px');
+    view.unmount();
+    expect(root.style.getPropertyValue('--map-attrib-height')).toBe('');
+    container.remove();
+  });
+
+  const at = baseCss.indexOf('@media (max-height: 499px) and (orientation: landscape) {');
+  const block = baseCss.slice(at, baseCss.indexOf('\n}\n', at));
+  const rule = (sel: string) => {
+    const i = block.indexOf(`${sel} {`);
+    expect(i, sel).toBeGreaterThan(-1);
+    return block.slice(i, block.indexOf('}', i));
+  };
+  /** The cap the CSS computes, evaluated for a viewport (calc of px terms only). */
+  const cap = (css: string, vh: number, vars: Record<string, number>) => {
+    const expr = /--sheet-cap: calc\((.*)\);/.exec(css)![1]!;
+    return expr.split(' - ').reduce((acc, term, i) => {
+      const v = term === '100dvh' ? vh : term === 'env(safe-area-inset-bottom)' ? 0 : /^var\((--[\w-]+)/.test(term) ? vars[/^var\((--[\w-]+)/.exec(term)![1]!]! : parseFloat(term);
+      return i === 0 ? v : acc - v;
+    }, 0);
+  };
+
+  it('caps the sheet and the card on short landscape screens so the credits fit between them and the telemetry', () => {
+    const sheet = rule('.godseye-mobile-sheet');
+    const card = rule('.godseye-card-sheet');
+    expect(sheet).toContain('max-height: min(55vh, max(30vh, var(--sheet-cap)))');
+    expect(sheet).toContain('min-height: min(40vh, max(30vh, var(--sheet-cap)))');
+    expect(card).toContain('max-height: min(50vh, max(30vh, var(--sheet-cap)))');
+    // 568x320, measured: telemetry bottom 31, credits 71 tall in the 192 px column.
+    const vars = { '--telemetry-bottom': 31, '--map-attrib-height': 71 };
+    const sheetCap = cap(sheet, 320, vars);
+    expect(sheetCap).toBe(152);
+    // The stack's room above the capped sheet (base.css: 100% - stack bottom - telemetry - 6) holds the credits.
+    const stackBottom = sheetCap + 56 + 4;
+    expect(320 - stackBottom - 31 - 6).toBeGreaterThanOrEqual(71);
+    const cardCap = cap(card, 320, vars);
+    expect(320 - (cardCap + 60 + 4) - 31 - 6).toBeGreaterThanOrEqual(71);
+    // 844x390 (credits 29 tall) never reaches the cap: 55vh stays the limit.
+    expect(cap(sheet, 390, { '--telemetry-bottom': 31, '--map-attrib-height': 29 })).toBeGreaterThan(0.55 * 390);
+  });
+
+  it('the phone sheet and the card carry the classes the cap targets', () => {
+    const panelHost = readFileSync(join(process.cwd(), 'src/components/hud/PanelHost.tsx'), 'utf8');
+    const cardHost = readFileSync(join(process.cwd(), 'src/components/cards/CardHost.tsx'), 'utf8');
+    expect(panelHost).toMatch(/data-testid="mobile-sheet"[\s\S]{0,80}className="godseye-mobile-sheet /);
+    expect(cardHost).toContain('className="godseye-card-sheet ');
   });
 });

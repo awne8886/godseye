@@ -178,3 +178,45 @@ export function usePublishedEdge(ref: RefObject<HTMLElement | null>, name: HudEd
     };
   }, [ref, name, edge]);
 }
+
+/**
+ * Publish the height of MapLibre's attribution control as `--map-attrib-height` on <html>, so a
+ * phone sheet or entity card on a short landscape screen stops low enough to leave the credits a
+ * row between it and the STATUS telemetry (base.css; r8 minor: at 568×320 the credits wrapped to 5
+ * lines in the column right of the view bar and ran up over the telemetry). The control can be
+ * added after the map mounts, so the container is watched until it appears. Cleared on unmount.
+ */
+export function usePublishedAttribHeight(container: HTMLElement | null) {
+  useEffect(() => {
+    if (!container) return;
+    const root = document.documentElement;
+    let ro: ResizeObserver | null = null;
+    let attrib: HTMLElement | null = null;
+    const write = () => {
+      if (!attrib || (attrib.offsetWidth === 0 && attrib.offsetHeight === 0)) root.style.removeProperty('--map-attrib-height');
+      else root.style.setProperty('--map-attrib-height', `${Math.ceil(attrib.offsetHeight)}px`);
+    };
+    const attach = () => {
+      const found = container.querySelector<HTMLElement>('.maplibregl-ctrl-attrib');
+      if (found === attrib) return;
+      ro?.disconnect();
+      attrib = found;
+      write();
+      if (attrib && typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(write);
+        ro.observe(attrib);
+      }
+    };
+    attach();
+    const mo = typeof MutationObserver === 'undefined' ? null : new MutationObserver(attach);
+    // Only the control corners, not the whole map (markers and popups churn there).
+    mo?.observe(container.querySelector('.maplibregl-control-container') ?? container, { childList: true, subtree: true });
+    window.addEventListener('resize', write);
+    return () => {
+      mo?.disconnect();
+      ro?.disconnect();
+      window.removeEventListener('resize', write);
+      root.style.removeProperty('--map-attrib-height');
+    };
+  }, [container]);
+}
