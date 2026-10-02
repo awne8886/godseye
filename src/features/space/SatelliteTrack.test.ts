@@ -15,6 +15,15 @@ describe('satellite TRACK tab wording', () => {
     ]);
   });
 
+  it('words an in-progress pass by its predicted rise, or as up now when no rise was predicted', () => {
+    const pass = { aosMs: Date.parse('2026-09-30T19:41:30Z'), maxMs: Date.parse('2026-09-30T19:44:30Z'), maxElevationDeg: 47.6, aosAzimuthDeg: 262, losMs: Date.parse('2026-09-30T19:48:00Z') };
+    const rose = passLines({ kind: 'pass', inProgress: true, pass });
+    expect(rose).not.toBeTypeOf('string');
+    expect((rose as { label: string }[])[0]).toEqual({ label: 'ROSE (±30 S)', value: '09-30 19:41:30Z · W' });
+    const now = passLines({ kind: 'pass', inProgress: true, pass: { ...pass, aosMs: null, aosAzimuthDeg: null } });
+    expect((now as { label: string; value: string }[])[0]).toEqual({ label: 'ABOVE 10° NOW', value: 'RISE NOT PREDICTED' });
+  });
+
   it('never invents a pass', () => {
     expect(passLines({ kind: 'none' })).toBe('NO PASS ABOVE 10° IN THE NEXT 24 H');
     expect(passLines({ kind: 'always-up' })).toBe('ABOVE 10° FOR THE WHOLE NEXT 24 H');

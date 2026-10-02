@@ -189,6 +189,99 @@ export function thinGeometry(g: Geo, tol = THIN_TOLERANCE_DEG, maxVertices = MAX
   }
 }
 
+/** Even-odd point-in-polygon over every ring of one polygon (outer + holes); planar degrees. */
+export function pointInPolygon(pt: readonly [number, number], rings: readonly (readonly GeoJSON.Position[])[]): boolean {
+  const [x, y] = pt;
+  let inside = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi = 0, yi = 0] = ring[i]!;
+      const [xj = 0, yj = 0] = ring[j]!;
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/** Signed distance (degrees) from `pt` to the polygon's boundary: positive inside, negative outside. */
+function signedEdgeDistance(pt: readonly [number, number], rings: readonly (readonly GeoJSON.Position[])[]): number {
+  let d2 = Infinity;
+  for (const ring of rings) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) d2 = Math.min(d2, segDist2(pt as unknown as GeoJSON.Position, ring[i]!, ring[j]!));
+  return (pointInPolygon(pt, rings) ? 1 : -1) * Math.sqrt(d2);
+}
+
+/**
+ * Pole of inaccessibility of one polygon (the polylabel quadtree search): the interior point
+ * farthest from every edge, to `precision` of the polygon's larger extent. Always inside the
+ * polygon for a valid (non-degenerate) outline.
+ */
+export function poleOfInaccessibility(rings: readonly (readonly GeoJSON.Position[])[], precisionFraction = 1e-3): [number, number] | null {
+  const outer = rings[0];
+  if (!outer || outer.length < 4) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [x = 0, y = 0] of outer) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  const size = Math.max(maxX - minX, maxY - minY);
+  if (!(size > 0)) return null;
+  const precision = size * precisionFraction;
+  type Cell = { x: number; y: number; h: number; d: number; max: number };
+  const cell = (x: number, y: number, h: number): Cell => {
+    const d = signedEdgeDistance([x, y], rings);
+    return { x, y, h, d, max: d + h * Math.SQRT2 };
+  };
+  const queue: Cell[] = [];
+  const h0 = size / 2;
+  for (let x = minX; x < maxX; x += size) for (let y = minY; y < maxY; y += size) queue.push(cell(x + h0, y + h0, h0));
+  // Seed with the vertex-free centroid guess and the bbox centre; keep whichever is deeper.
+  const c = ringCentroid(outer);
+  let best = c ? cell(c[0], c[1], 0) : cell((minX + maxX) / 2, (minY + maxY) / 2, 0);
+  const mid = cell((minX + maxX) / 2, (minY + maxY) / 2, 0);
+  if (mid.d > best.d) best = mid;
+  while (queue.length) {
+    let k = 0;
+    for (let i = 1; i < queue.length; i++) if (queue[i]!.max > queue[k]!.max) k = i;
+    const q = queue[k]!;
+    queue[k] = queue[queue.length - 1]!;
+    queue.pop();
+    if (q.d > best.d) best = q;
+    if (q.max - best.d <= precision) continue;
+    const h = q.h / 2;
+    queue.push(cell(q.x - h, q.y - h, h), cell(q.x + h, q.y - h, h), cell(q.x - h, q.y + h, h), cell(q.x + h, q.y + h, h));
+  }
+  return best.d > 0 ? [best.x, best.y] : null;
+}
+
+/**
+ * Marker position for an outline: the area centroid of its largest polygon when that point lies on
+ * the polygon, otherwise (concave coastal/marine zones, C shapes) the polygon's pole of
+ * inaccessibility, so the marker is always on the area it stands for.
+ */
+export function geometryAnchor(g: Geo): [number, number] | null {
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  let best: GeoJSON.Position[][] | null = null;
+  let bestArea = -1;
+  for (const p of polys) {
+    const outer = p[0];
+    if (!outer) continue;
+    const area = ringArea(outer);
+    if (area > bestArea) {
+      bestArea = area;
+      best = p;
+    }
+  }
+  if (!best) return null;
+  const c = ringCentroid(best[0]!);
+  if (c && pointInPolygon(c, best)) return c;
+  return poleOfInaccessibility(best) ?? c;
+}
+
 // ── NWS ─────────────────────────────────────────────────────────────────────────
 /**
  * NWS active alerts. §6.2: api.weather.gov REJECTS a `limit` parameter (400) and requires an
@@ -280,11 +373,19 @@ const thinnedZone = (z: ZoneGeom): Geo => {
   if (!g) THINNED.set(z, (g = thinGeometry(z.geometry)));
   return g;
 };
+// Marker point per cached zone: on the drawn (thinned) outline, never just the centroid (which
+// falls outside concave zones; cached ZoneGeoms from before r11 carry only that centroid).
+const ANCHORS = new WeakMap<ZoneGeom, [number, number]>();
+const zoneAnchor = (z: ZoneGeom): [number, number] => {
+  let a = ANCHORS.get(z);
+  if (!a) ANCHORS.set(z, (a = geometryAnchor(thinnedZone(z)) ?? z.centroid));
+  return a;
+};
 
 /**
  * Alerts with their own polygon use it (thinned for display); the rest are placed on their
- * affected zones' geometry (from the 30-day zone cache): position = the zone centroid nearest the
- * mean of the resolved centroids, footprint = the zones' outlines. Each zone outline is returned
+ * affected zones' geometry (from the 30-day zone cache): position = the zone anchor (centroid, or
+ * pole of inaccessibility when the centroid is off the zone) nearest the mean of the anchors, footprint = the zones' outlines. Each zone outline is returned
  * once in `zones` (keyed by `zoneKey`) and the alert lists its keys in `zoneRefs`, so alerts on
  * the same zones do not repeat the same outlines. Alerts whose zones are not resolved yet are
  * returned as `unplaced` (never guessed).
@@ -314,9 +415,10 @@ export function normalizeNws(
       detail: p.event,
     };
     if (isPolygonal(f.geometry)) {
-      const c = geometryCentroid(f.geometry);
+      const geometry = thinGeometry(f.geometry);
+      const c = geometryAnchor(geometry);
       if (!c) continue;
-      items.push({ ...base, lng: c[0], lat: c[1], geometry: thinGeometry(f.geometry), positionBasis: 'geometry' });
+      items.push({ ...base, lng: c[0], lat: c[1], geometry, positionBasis: 'geometry' });
       continue;
     }
     const resolved = (p.affectedZones ?? []).flatMap((u) => {
@@ -327,15 +429,16 @@ export function normalizeNws(
       unplaced++;
       continue;
     }
-    const mx = resolved.reduce((s, r) => s + r.z.centroid[0], 0) / resolved.length;
-    const my = resolved.reduce((s, r) => s + r.z.centroid[1], 0) / resolved.length;
-    const anchor = resolved.reduce((a, b) => (Math.hypot(b.z.centroid[0] - mx, b.z.centroid[1] - my) < Math.hypot(a.z.centroid[0] - mx, a.z.centroid[1] - my) ? b : a)).z;
+    const pts = resolved.map((r) => zoneAnchor(r.z));
+    const mx = pts.reduce((s, q) => s + q[0], 0) / pts.length;
+    const my = pts.reduce((s, q) => s + q[1], 0) / pts.length;
+    const anchor = pts.reduce((a, b) => (Math.hypot(b[0] - mx, b[1] - my) < Math.hypot(a[0] - mx, a[1] - my) ? b : a));
     const refs: string[] = [];
     for (const r of resolved) {
       shapes[r.key] ??= thinnedZone(r.z);
       if (!refs.includes(r.key)) refs.push(r.key);
     }
-    items.push({ ...base, lng: anchor.centroid[0], lat: anchor.centroid[1], geometry: null, zoneRefs: refs, positionBasis: 'zone-centroid' });
+    items.push({ ...base, lng: anchor[0], lat: anchor[1], geometry: null, zoneRefs: refs, positionBasis: 'zone-centroid' });
   }
   return { items, unplaced, zones: shapes };
 }

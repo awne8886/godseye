@@ -35,7 +35,9 @@ export function passLines(r: PassResult): { label: string; value: string }[] | s
     case 'pass': {
       const p = r.pass;
       return [
-        { label: r.inProgress ? 'IN PROGRESS SINCE' : 'RISES (±30 S)', value: `${dateTime(p.aosMs)} · ${compass(p.aosAzimuthDeg)}` },
+        p.aosMs === null || p.aosAzimuthDeg === null
+          ? { label: `ABOVE ${MIN_EL}° NOW`, value: 'RISE NOT PREDICTED' }
+          : { label: r.inProgress ? 'ROSE (±30 S)' : 'RISES (±30 S)', value: `${dateTime(p.aosMs)} · ${compass(p.aosAzimuthDeg)}` },
         { label: 'MAX ELEVATION', value: `${Math.round(p.maxElevationDeg)}° · ${hhmmssZ(p.maxMs)}` },
         { label: 'SETS (±30 S)', value: p.losMs === null ? 'AFTER 24 H' : hhmmssZ(p.losMs) },
       ];

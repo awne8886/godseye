@@ -134,7 +134,7 @@ export function zoneList(zones: readonly string[], max = 12): string {
 
 export function WeatherEventCard({ selection }: CardProps) {
   const e = selection.data as unknown as WeatherEvent;
-  const placed = e.positionBasis === 'zone-centroid' ? 'Marker at the centre of an affected NWS zone; shaded area = the alert zones.' : undefined;
+  const placed = e.positionBasis === 'zone-centroid' ? 'Marker inside an affected NWS zone; shaded area = the alert zones.' : undefined;
   return (
     <Body>
       <Provenance source={e.source} note={placed} />
