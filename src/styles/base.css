@@ -520,6 +520,12 @@
     align-items: flex-end;
     bottom: var(--map-stack-bottom);
   }
+  /* The stack spans the full width, so the chip controls take the same inset on both sides (r9 m:
+     MapLibre's 10 px right margin only, so a chip wrapped to the full width touched the left edge). */
+  .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl:not(.maplibregl-ctrl-attrib) {
+    margin-left: max(10px, env(safe-area-inset-left));
+    margin-right: max(10px, env(safe-area-inset-right));
+  }
   /* Phones: the credits wrap inside the viewport (never clipped, never collapsed behind a button). */
   .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
     max-width: calc(100vw - 12px);
@@ -552,8 +558,9 @@
  * to the column right of the view bar (--view-controls-right, published by ViewControls) and below
  * the telemetry row (--telemetry-bottom, published by Telemetry). The credits never shrink and wrap
  * inside that column; the chip controls give way first, clipped from the top so the row nearest the
- * credits stays (with it the phone summary chip's expand/hide toggle, which is last). Chip lists
- * wrap as right-aligned rows here to show more of them in the little height there is.
+ * credits stays (with it the phone summary chip's expand/hide toggle, which is last), down to one
+ * chip row that is always kept (r9). Chip lists wrap as right-aligned rows here to show more of them
+ * in the little height there is.
  */
 @media (max-height: 499px) and (orientation: landscape) {
   :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right {
@@ -567,9 +574,16 @@
     justify-content: flex-end;
     flex-shrink: 1;
     min-height: 0;
-    max-width: calc(100% - 10px);
+    max-width: calc(100% - 20px);
     margin-bottom: 4px;
     overflow: hidden;
+  }
+  /* The imagery chips always keep one row (r9 m: the credits wrapped to 4 lines at 844x390 and the
+     control shrank to 17 px, clipping the folded summary chip out of view, so a degraded basemap gave
+     no signal on the map while a sheet was open). 44 px is the summary toggle's touch target; the
+     sheet cap below reserves this row plus the control's 4 px margin. */
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .godseye-imagery-chips {
+    min-height: 44px;
   }
   :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl:not(.maplibregl-ctrl-attrib) ul {
     flex-direction: row;
@@ -584,15 +598,16 @@
      credits wrap to 5 lines there and a 55vh sheet left them too little height, so they ran up over
      the STATUS telemetry. The sheet and the entity card stop low enough to leave the credits
      (--map-attrib-height, published by ViewControls) their own row between them and the telemetry
-     (the 10 px are the stack's 4 px lift + the 6 px gap under the telemetry). Wider screens never
-     reach the cap (844x390: 259 px against a 214 px sheet), and a 30vh floor keeps the sheet usable. */
+     (the 10 px are the stack's 4 px lift + the 6 px gap under the telemetry) and one imagery chip
+     row (48 px: the 44 px summary toggle + 4 px margin, r9 m). At 844x390 that caps the sheet at
+     ~188 px (55vh is 214 px), and a 30vh floor keeps the sheet usable. */
   .godseye-mobile-sheet {
-    --sheet-cap: calc(100dvh - 56px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    --sheet-cap: calc(100dvh - 56px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px) - 48px);
     max-height: min(55vh, max(30vh, var(--sheet-cap)));
     min-height: min(40vh, max(30vh, var(--sheet-cap)));
   }
   .godseye-card-sheet {
-    --sheet-cap: calc(100dvh - 60px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    --sheet-cap: calc(100dvh - 60px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px) - 48px);
     max-height: min(50vh, max(30vh, var(--sheet-cap)));
   }
 }

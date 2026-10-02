@@ -22,7 +22,7 @@ import { Map, type MapLayerMouseEvent, type MapRef, type ViewStateChangeEvent } 
 import { normalizeLng } from '@/lib/geo';
 import { useDeckLayerStore, useLayerStatusStore, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
 import { publishCursor, publishView } from '@/lib/map/cursor';
-import { cameraFromMap, isFacing, setFarSideCamera } from '@/lib/map/far-side';
+import { cameraFromMap, isFacing, setFarSideCamera, type FarSideCamera } from '@/lib/map/far-side';
 import { createDoubleRightGesture, createLongPress } from '@/lib/map/gestures';
 import { createHostHover, type HostHover } from '@/lib/map/host-hover';
 import { BLACK_MARBLE_LABEL, ESRI_LABEL, ESRI_SOURCE_ID, GIBS_TRUECOLOR_SOURCE_ID, gibsTrueColorLabel } from '@/lib/map/imagery';
@@ -148,6 +148,11 @@ const reducedMotion = () => typeof window !== 'undefined' && window.matchMedia('
 
 let mapLoads = 0;
 
+/** `data-far-side` for e2e: the far-side camera as `lng,lat,altitude`, or `none` off the globe. */
+function fmtFarSide(far: FarSideCamera | null): string {
+  return far ? `${far.lng.toFixed(4)},${far.lat.toFixed(4)},${Math.round(far.altitude)}` : 'none';
+}
+
 export default function MapView() {
   const mapRef = useRef<MapRef | null>(null);
   const [style, setStyle] = useState<StyleSpecification | null>(null);
@@ -195,7 +200,10 @@ export default function MapView() {
   useEffect(() => {
     setProjection(effective);
     const map = mapRef.current?.getMap();
-    setFarSideCamera(effective === 'globe' && map ? cameraFromMap(map) : null);
+    const far = effective === 'globe' && map ? cameraFromMap(map) : null;
+    setFarSideCamera(far);
+    // A switch that moves nothing (2D at pitch 0) fires no moveend: keep the attribute in step (R9-B).
+    if (map) map.getContainer().dataset.farSide = fmtFarSide(far);
   }, [effective, setProjection]);
 
   // User projection switch: flatten the pitch into 2D, tilt a flat camera onto the globe.
@@ -279,6 +287,11 @@ export default function MapView() {
     if (!map || published.current === map) return; // once per map instance (a WebGL retry remounts it)
     published.current = map;
     setMap(map);
+    // The projection effect ran before the map existed, and a load with no camera move fires no
+    // moveend: seed the far-side camera (filter + `data-far-side`) from the constructed map (R9-B).
+    const far = useMapInstanceStore.getState().projection === 'globe' ? cameraFromMap(map) : null;
+    setFarSideCamera(far);
+    map.getContainer().dataset.farSide = fmtFarSide(far);
     // `ready` follows in the admission effect below, right after the queue that holds the native
     // layers' first draws is installed (the data modules are mounted already and add layers as
     // soon as the map is ready).
@@ -381,7 +394,7 @@ export default function MapView() {
       setCamera(cam);
       e.target.getContainer().dataset.camera = `${cam.lat.toFixed(4)},${cam.lng.toFixed(4)},${cam.zoom.toFixed(2)},${cam.pitch.toFixed(1)},${cam.bearing.toFixed(1)}`;
       const far = useMapInstanceStore.getState().projection === 'globe' ? cameraFromMap(e.target) : null;
-      e.target.getContainer().dataset.farSide = far ? `${far.lng.toFixed(4)},${far.lat.toFixed(4)},${Math.round(far.altitude)}` : 'none';
+      e.target.getContainer().dataset.farSide = fmtFarSide(far);
     },
     [setCamera],
   );

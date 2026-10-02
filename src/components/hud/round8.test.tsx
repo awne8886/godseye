@@ -192,12 +192,14 @@ describe('r8 minor: narrow landscape phone (568x320) - the sheet leaves the cred
     // 568x320, measured: telemetry bottom 31, credits 71 tall in the 192 px column.
     const vars = { '--telemetry-bottom': 31, '--map-attrib-height': 71 };
     const sheetCap = cap(sheet, 320, vars);
-    expect(sheetCap).toBe(152);
-    // The stack's room above the capped sheet (base.css: 100% - stack bottom - telemetry - 6) holds the credits.
+    expect(sheetCap).toBe(104);
+    // The stack's room above the capped sheet (base.css: 100% - stack bottom - telemetry - 6) holds the
+    // credits and one imagery chip row (44 px + 4 px margin, r9 m), and the cap stays above the 30vh floor.
     const stackBottom = sheetCap + 56 + 4;
-    expect(320 - stackBottom - 31 - 6).toBeGreaterThanOrEqual(71);
+    expect(320 - stackBottom - 31 - 6).toBeGreaterThanOrEqual(71 + 48);
+    expect(sheetCap).toBeGreaterThanOrEqual(0.3 * 320);
     const cardCap = cap(card, 320, vars);
-    expect(320 - (cardCap + 60 + 4) - 31 - 6).toBeGreaterThanOrEqual(71);
+    expect(320 - (cardCap + 60 + 4) - 31 - 6).toBeGreaterThanOrEqual(71 + 48);
     // 844x390 (credits 29 tall) never reaches the cap: 55vh stays the limit.
     expect(cap(sheet, 390, { '--telemetry-bottom': 31, '--map-attrib-height': 29 })).toBeGreaterThan(0.55 * 390);
   });
