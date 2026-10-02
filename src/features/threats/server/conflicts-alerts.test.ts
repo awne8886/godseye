@@ -7,7 +7,8 @@ import { describe, expect, it } from 'vitest';
 import { AlertItem, ConflictEvent } from '@/lib/schemas';
 import type { AlertItem as AlertItemT } from '@/lib/types';
 import { fixture, FX } from './__fixtures__';
-import { alertsToConflictEvents, buildConflicts, loadZones, type toConflictEvent } from './conflicts';
+import { NEWS_ATTRIBUTION } from '@/components/panels/intel/feeds';
+import { alertsToConflictEvents, buildConflicts, conflictsFeed, loadZones, type toConflictEvent } from './conflicts';
 import { parseExport } from './gdelt';
 import { unzipFirst } from './zip';
 
@@ -87,5 +88,14 @@ describe('buildConflicts with alerts', () => {
     expect(again.events.filter((e) => e.source === 'alerts').length).toBe(alertEvents.length);
     const later = buildConflicts(zones, buffer, [], NOW + 25 * 3600_000);
     expect(later.events).toHaveLength(0);
+  });
+});
+
+describe('conflictsFeed attribution', () => {
+  it('credits the Telegram channels and wire publishers that Live Alert pins come from', () => {
+    const texts = conflictsFeed.def.attribution.map((a) => a.text);
+    for (const a of NEWS_ATTRIBUTION) expect(texts).toContain(a.text);
+    expect(texts.some((t) => t.includes('GDELT'))).toBe(true);
+    expect(texts.some((t) => t.includes('Natural Earth'))).toBe(true);
   });
 });

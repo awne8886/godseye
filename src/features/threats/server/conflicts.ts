@@ -14,7 +14,7 @@
 import 'server-only';
 import { defineFeed, type FeedResult } from '@/lib/feeds';
 import { pointInPolygon } from '@/lib/geo';
-import { newsFeed } from '@/components/panels/intel/feeds';
+import { NEWS_ATTRIBUTION, newsFeed } from '@/components/panels/intel/feeds';
 import type { AlertItem, ConflictEvent, ConflictZone, FreshnessState, GdeltEvent } from '@/lib/types';
 import { gdeltTitle, precisionClass } from '../shared/gdelt';
 import { GDELT_ATTRIBUTION, GDELT_CADENCE_MS, gdeltFeed, type GdeltData } from './gdelt';
@@ -146,6 +146,8 @@ export const conflictsFeed = defineFeed<ConflictsData>({
   attribution: [
     { text: 'Zone polygons: Natural Earth (public domain); zone list curated (REFERENCE)', url: 'https://www.naturalearthdata.com/' },
     ...GDELT_ATTRIBUTION,
+    // Live Alert pins come from Telegram previews and wire RSS; credit them here too.
+    ...NEWS_ATTRIBUTION,
   ],
   note: 'Zones are REFERENCE. Events are GDELT QuadClass 3/4 rows and geoparsed Live Alerts, each at its own point (country-level geocodes excluded); counts cover a rolling window of up to 24 h.',
   // Zones are always present; the feed is empty only if the bundled file is missing.
