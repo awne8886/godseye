@@ -85,7 +85,7 @@ function loadYaml(source: string): unknown {
   return parse(source);
 }
 
-type Step = { name?: string; uses?: string; run?: string; with?: Record<string, unknown>; if?: string; 'continue-on-error'?: unknown };
+type Step = { name?: string; uses?: string; run?: string; with?: Record<string, unknown>; if?: string; 'continue-on-error'?: unknown; env?: Record<string, string> };
 type Job = {
   name?: string;
   'runs-on': string | string[];
@@ -151,6 +151,14 @@ describe('.github/workflows/ci.yml', () => {
     const budget = Number(/--timeout=(\d+)/.exec(e2eRun ?? '')?.[1]);
     expect(budget).toBeGreaterThan(90_000);
     expect(read('e2e/map-engine/helpers.ts')).toContain('timeout: 90_000');
+    // The serial suite outgrew one 45 min job: it runs in 3 Playwright shards, every shard runs
+    // (no fail-fast) and uploads its own report.
+    const matrix = (e2e as unknown as { strategy?: { 'fail-fast'?: boolean; matrix?: { shard?: number[] } } }).strategy;
+    expect(matrix?.matrix?.shard).toEqual([1, 2, 3]);
+    expect(matrix?.['fail-fast']).toBe(false);
+    expect(e2eRun).toContain('--shard="$SHARD/3"');
+    expect(e2e.steps.find((st) => st.run === e2eRun)?.env?.SHARD).toBe('${{ matrix.shard }}');
+    expect(read('.github/workflows/ci.yml')).toContain('name: playwright-report-${{ matrix.shard }}');
     // Sandbox-only switches never reach CI.
     expect(read('.github/workflows/ci.yml')).not.toMatch(/E2E_IGNORE_HTTPS_ERRORS|PLAYWRIGHT_CHROMIUM_EXECUTABLE/);
   });

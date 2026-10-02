@@ -258,7 +258,7 @@ Preferences persist in `localStorage` under four keys, the same ones `/privacy` 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request: a placeholder grep over LICENSE,
 README and `docs/` (pattern in the workflow; the research pack and the contract are exempt), lint,
 typecheck, unit tests with ≥ 80 % line coverage on `src/lib`, `src/app/api` and
-`src/features/flight-paths`, a production build, Playwright e2e inside the official Playwright image
+`src/features/flight-paths`, a production build, Playwright e2e (3 shards) inside the official Playwright image
 (pinned by digest; per-test budget 150 s so the 90 s first-canvas waits under SwiftShader can finish),
 Lighthouse CI on `ubuntu-24.04` (desktop settings, median of three runs, two jobs with their own
 build) and `pnpm audit --prod` failing on high or critical advisories.
