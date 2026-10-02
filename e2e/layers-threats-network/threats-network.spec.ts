@@ -54,6 +54,8 @@ async function railCount(page: Page, group: string, row: RegExp): Promise<number
 test.describe('threats & network layers', () => {
   test('Global Incidents renders ≥ 1 GDACS incident when live', async ({ page }, info) => {
     test.skip(info.project.name === 'mobile', 'the layer rail flyout is desktop-only');
+    // gotoMap waits up to 90 s for the canvas + 30 s for the splash, after a 90 s route probe.
+    test.setTimeout(240_000);
     const body = await live<{ items: { lat: number; lng: number }[] }>(page, '/api/gdacs', 'gdacs');
     test.skip(body === null, 'GDACS offline right now: /api/gdacs answered SOURCE OFFLINE (asserted)');
     expect(body!.items.length).toBeGreaterThan(0);
@@ -63,6 +65,8 @@ test.describe('threats & network layers', () => {
 
   test('GDELT Events renders ≥ 1 event when live', async ({ page }, info) => {
     test.skip(info.project.name === 'mobile', 'the layer rail flyout is desktop-only');
+    // gotoMap waits up to 90 s for the canvas + 30 s for the splash, after a 90 s route probe.
+    test.setTimeout(240_000);
     const body = await live<{ items: { lat: number; lng: number }[]; window: { batches: number } }>(page, '/api/gdelt-events?limit=50', 'export');
     test.skip(body === null, 'GDELT offline right now: /api/gdelt-events answered SOURCE OFFLINE (asserted)');
     expect(body!.items.length).toBeGreaterThan(0);
