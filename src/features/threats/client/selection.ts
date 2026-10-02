@@ -31,8 +31,11 @@ export function zoneSelection(z: ConflictZone): Selection {
 export function conflictEventSelection(e: ConflictEvent, zone: Pick<ConflictZone, 'label'> | undefined): Selection {
   const data: ConflictEventCardData = { ...e, zoneLabel: zone ? zoneDisplayName(zone) : null };
   // In-zone Live Alerts are attributed to the (live) alert pins layer, GDELT rows to GDELT events.
+  // An alert's selection source is the alert's own source (`t.me/intelslava`), so the card frame names
+  // who made the claim; 'alerts' is only the fallback for an event recorded without attribution.
   const layer = e.source === 'alerts' ? 'alert_pins' : 'gdelt_events';
-  return { kind: 'conflict_zone', id: e.id, layer, source: e.source, observedAt: e.observedAt, data: record(data), lngLat: [e.lng, e.lat] };
+  const source = e.source === 'alerts' ? (e.sourceHandle ?? 'alerts') : e.source;
+  return { kind: 'conflict_zone', id: e.id, layer, source, observedAt: e.observedAt, data: record(data), lngLat: [e.lng, e.lat] };
 }
 
 export function chokepointSelection(c: Chokepoint): Selection {

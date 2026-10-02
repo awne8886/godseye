@@ -8,7 +8,7 @@ import { AlertItem, ConflictEvent } from '@/lib/schemas';
 import type { AlertItem as AlertItemT } from '@/lib/types';
 import { fixture, FX } from './__fixtures__';
 import { NEWS_ATTRIBUTION } from '@/components/panels/intel/feeds';
-import { alertsToConflictEvents, buildConflicts, conflictsFeed, loadZones, type toConflictEvent } from './conflicts';
+import { alertsToConflictEvents, buildConflicts, conflictsFeed, loadZones, type toConflictEvent, zoneFor } from './conflicts';
 import { parseExport } from './gdelt';
 import { unzipFirst } from './zip';
 
@@ -34,7 +34,11 @@ describe('alertsToConflictEvents', () => {
     expect(ids.get('alert:rss:aljazeera:L-moGsMf2_LwGTxK')?.zoneId).toBe('gaza');
     // Aden (45.02 E, 12.79 N) is on the coast just outside the bundled Yemen outline: not counted, not moved.
     expect(ids.has('alert:tg:presstv/209139')).toBe(false);
-    expect(ids.get('alert:rss:africanews:QBejmXJnYGgMy5_U')?.zoneId).toBe('sudan');
+    // Khartoum is inside the Sudan zone, but the Africanews item is kind=news (a hospitalisation
+    // headline), not a conflict event: dropped (r6 MAJOR, alerts counted whatever their kind).
+    expect(byId('rss:africanews:QBejmXJnYGgMy5_U').kind).toBe('news');
+    expect(zoneFor(zones, byId('rss:africanews:QBejmXJnYGgMy5_U').place!.lng, byId('rss:africanews:QBejmXJnYGgMy5_U').place!.lat)).toBe('sudan');
+    expect(ids.has('alert:rss:africanews:QBejmXJnYGgMy5_U')).toBe(false);
     // Outside every zone: St Petersburg, Paris, Hong Kong, Tehran.
     for (const id of ['rss:tass:a7ccgzHAYw8SWEO9', 'rss:france24:nt7lXUeC52jF12qF', 'rss:scmp:XIZ7_b_0SIOvbc29', 'tg:presstv/209140']) expect(ids.has(`alert:${id}`)).toBe(false);
     // Country-level pins are centroids, even when the centroid lies inside a zone (Ukraine, Lebanon, Yemen).
@@ -53,6 +57,29 @@ describe('alertsToConflictEvents', () => {
       expect(e.source).toBe('alerts');
       expect(['settlement', 'region']).toContain(e.precision);
     }
+  });
+
+  it('counts only rocket/event alerts: a kind=news headline inside a zone is never a conflict event', () => {
+    const out = alertsToConflictEvents(items, zones, undefined, NOW);
+    for (const e of out) expect(['rocket', 'event']).toContain(byId(e.id.slice('alert:'.length)).kind);
+    // Every in-zone, settlement/region, kind=news item in the recording is dropped...
+    const newsInZone = items.filter((i) => i.kind === 'news' && i.place && i.place.precision !== 'country' && zoneFor(zones, i.place.lng, i.place.lat));
+    expect(newsInZone.length).toBeGreaterThan(0);
+    for (const n of newsInZone) expect(out.some((e) => e.id === `alert:${n.id}`)).toBe(false);
+    // ...and the same post reclassified as an event would count (only the kind differs).
+    const n = newsInZone[0]!;
+    expect(alertsToConflictEvents([{ ...n, kind: 'event' }], zones, undefined, NOW).map((e) => e.id)).toEqual([`alert:${n.id}`]);
+    expect(alertsToConflictEvents([{ ...n, kind: 'rocket' }], zones, undefined, NOW)).toHaveLength(1);
+  });
+
+  it('keeps who made the claim: source handle, channel name, stance and bloc from the AlertItem', () => {
+    const out = alertsToConflictEvents(items, zones, undefined, NOW);
+    expect(out.length).toBeGreaterThan(0);
+    for (const e of out) {
+      const src = byId(e.id.slice('alert:'.length));
+      expect(e).toMatchObject({ sourceHandle: src.source, sourceName: src.sourceName, lean: src.lean, bloc: src.bloc, alertKind: src.kind });
+    }
+    expect(out.find((e) => e.id === 'alert:tg:rybar_in_english/34727')).toMatchObject({ sourceHandle: 't.me/rybar_in_english', sourceName: 'Rybar', lean: 'Russian military OSINT', bloc: 'russian' });
   });
 
   it('caps a future publish time at now, drops items older than 24 h and bounds the title', () => {
@@ -82,7 +109,9 @@ describe('buildConflicts with alerts', () => {
       expect(z.liveEventCount).toBe(gdeltOnly.zones.find((g) => g.id === z.id)!.liveEventCount + fromAlerts);
     }
     expect(gdeltOnly.events.length).toBeGreaterThan(0);
-    expect(alertEvents.filter((e) => e.zoneId === 'ukraine').length).toBe(3);
+    // Kyiv Independent + Rybar. The TASS item is classed kind=news by the alert classifier, so it no longer counts.
+    expect(alertEvents.filter((e) => e.zoneId === 'ukraine').map((e) => e.id).sort()).toEqual(['alert:tg:KyivIndependent_official/55853', 'alert:tg:rybar_in_english/34727']);
+    expect(both.events.some((e) => e.id === 'alert:rss:tass:o7SYHDuDP-glqW3f')).toBe(false);
     // Re-reading the same news snapshot does not double count (keyed alert:<id>).
     const again = buildConflicts(zones, buffer, [], NOW, items);
     expect(again.events.filter((e) => e.source === 'alerts').length).toBe(alertEvents.length);

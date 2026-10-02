@@ -116,6 +116,16 @@ export const ConflictEvent = z.object({
   observedAt: IsoTime,
   url: z.url().nullable(),
   precision: z.enum(['settlement', 'region', 'country']),
+  /** Live Alerts only: who made the claim (the alert's own source handle, e.g. `t.me/intelslava`). */
+  sourceHandle: z.string().optional(),
+  /** Live Alerts only: the channel or outlet name. */
+  sourceName: z.string().optional(),
+  /** Live Alerts only: the channel's stated stance (e.g. "Russian military OSINT"). */
+  lean: z.string().optional(),
+  /** Live Alerts only: the channel's bloc label. */
+  bloc: z.enum(['western', 'russian', 'regional', 'independent']).optional(),
+  /** Live Alerts only: the alert class (only rocket/event alerts are conflict events; news is excluded). */
+  alertKind: z.enum(['rocket', 'event']).optional(),
 });
 
 export const ConflictsResponse = Envelope.extend({ zones: z.array(ConflictZone), events: z.array(ConflictEvent).max(500) });
