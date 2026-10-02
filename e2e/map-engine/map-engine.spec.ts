@@ -61,6 +61,23 @@ test.describe('map engine', () => {
     expect(await mapLoads(page)).toBe(1);
   });
 
+  test('2D ↔ globe at pitch 0 (no camera move) keeps data-far-side in step with the projection', async ({ page }) => {
+    await gotoMap(page, { camera: { lat: 20, lng: 10, zoom: 2.5, pitch: 0, bearing: 0 } });
+    await waitForMapStyle(page);
+    expect(await mapProjection(page)).toBe('globe');
+    await expect.poll(() => readFarSideCamera(page)).not.toBeNull();
+    await page.getByRole('button', { name: '2D' }).click();
+    await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-projection', 'mercator');
+    // Nothing moves at pitch 0, so no moveend: the projection switch itself must clear it (R9-B).
+    await expect(page.locator(MAP)).toHaveAttribute('data-far-side', 'none');
+    await page.getByRole('button', { name: '3D' }).click();
+    await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-projection', 'globe');
+    await expect.poll(() => readFarSideCamera(page)).not.toBeNull();
+    // 3D tilts the flat camera onto the globe (pitch 20, bearing 0): the camera stays on the centre's meridian.
+    expect(Math.abs((await readFarSideCamera(page))!.lng - 10)).toBeLessThan(1);
+    expect(await mapLoads(page)).toBe(1);
+  });
+
   test('SAT toggle keeps the map mounted and shows Esri imagery with its attribution', async ({ page }) => {
     await gotoMap(page, { camera: { lat: 48.85, lng: 2.35, zoom: 5 } });
     const sat = page.getByRole('button', { name: /^SAT$|Satellite View/ });
