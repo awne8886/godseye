@@ -206,6 +206,12 @@ export function parseChannelPage(html: string, channel: string): TelegramPost[] 
   return posts;
 }
 
+/**
+ * Words kept in the cross-post fingerprint (contract §5, OSIRIS: 24). Shorter prefixes merge
+ * distinct templated posts that merely open alike, hiding the later report.
+ */
+export const FINGERPRINT_WORDS = 24;
+
 /** Word-level fingerprint for spotting one report carried by several channels. */
 export function fingerprint(text: string): string {
   return text
@@ -215,6 +221,6 @@ export function fingerprint(text: string): string {
     .trim()
     .split(' ')
     .filter((w) => w.length > 1)
-    .slice(0, 12)
+    .slice(0, FINGERPRINT_WORDS)
     .join(' ');
 }
