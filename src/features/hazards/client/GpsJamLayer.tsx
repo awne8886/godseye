@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useMapInstanceStore } from '@/lib/layer-host';
 import { isFacing } from '@/lib/map/far-side';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor } from '@/lib/tokens';
 import type { GpsInterferenceResponse, GpsJamCell } from '@/lib/types';
 import { jamLevel } from '../shared';
@@ -46,6 +47,8 @@ export default function GpsJamLayer() {
   const items = data?.items;
   const outlined = useZoomAtLeast(OUTLINE_MIN_ZOOM);
   const camera = useFarSideCamera();
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
   const cells = useFacing(items, camera);
 
   // Visual-qa M11: translucent fills (jamLevel alphas ≤ .35), registry z 20 keeps the cells under
@@ -70,9 +73,10 @@ export default function GpsJamLayer() {
         parameters: GLOBE_POINT_PARAMETERS,
         pickable: true,
         autoHighlight: true,
+        updateTriggers: { getFillColor: styleVersion, getLineColor: styleVersion },
       }),
     ];
-  }, [cells, outlined]);
+  }, [cells, outlined, styleVersion]);
 
   const byCell = useMemo(() => {
     const m = new Map<string, GpsJamCell>();

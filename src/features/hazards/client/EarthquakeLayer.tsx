@@ -11,6 +11,7 @@ import { useEffect, useMemo } from 'react';
 import { geodesicCircle } from '@/lib/geo';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { Earthquake, EarthquakesResponse } from '@/lib/types';
 import { magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken } from '../shared';
@@ -30,6 +31,8 @@ export default function EarthquakeLayer() {
   const data = useHazardData<EarthquakesResponse>('earthquakes', '/api/earthquakes', count);
   const items = data?.items;
   const push = useFeedEventStore((s) => s.push);
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
 
   useEffect(() => {
     if (items) push(quakeEvents(items));
@@ -47,7 +50,8 @@ export default function EarthquakeLayer() {
           properties: { id: q.id, color: rgba(readCssColor(quakeToken(q.magnitude), 0.55)) },
         })),
     };
-  }, [items]);
+    // Ring colours live in the features: rebuilt (setData) on every style change.
+  }, [items, styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
   useGeoJsonLayers('hazards-quake-rings', rings, RING_LAYERS);
 
   // Largest first so small quakes draw on top and stay clickable.
@@ -73,9 +77,10 @@ export default function EarthquakeLayer() {
         parameters: GLOBE_POINT_PARAMETERS,
         pickable: true,
         autoHighlight: true,
+        updateTriggers: { getFillColor: styleVersion, getLineColor: styleVersion },
       }),
     ];
-  }, [points]);
+  }, [points, styleVersion]);
 
   useDeckLayers('hazards:earthquakes', layers, Z);
   useHitTester('earthquakes', (map, e) => {

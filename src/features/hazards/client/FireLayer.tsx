@@ -10,6 +10,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import { useEffect, useMemo } from 'react';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor } from '@/lib/tokens';
 import type { FiresResponse, WeatherEvent } from '@/lib/types';
 import { FIRE_CONFIDENCE_ALPHA, FIRE_IDX as IDX, fireEvents, fireRadiusPx, fireRowObject } from '../shared';
@@ -24,6 +25,8 @@ const count = (b: FiresResponse) => b.rows.length;
 export default function FireLayer() {
   const data = useHazardData<FiresResponse>('fires', '/api/fires', count);
   const push = useFeedEventStore((s) => s.push);
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
 
   useEffect(() => {
     if (!data) return;
@@ -51,7 +54,8 @@ export default function FireLayer() {
     }
     const units = unitVectors(n, (i) => rows[i]![IDX.lng] as number, (i) => rows[i]![IDX.lat] as number);
     return { n, positions, radii, colors, units };
-  }, [data]);
+    // The colour column is baked from `--map-fire`: rebuilt on every style change.
+  }, [data, styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const camera = useFarSideCamera();
   const facing = useMemo(() => (columns ? facingIndices(columns.units, camera) : null), [columns, camera]);
@@ -101,9 +105,10 @@ export default function FireLayer() {
         billboard: true,
         parameters: GLOBE_POINT_PARAMETERS,
         pickable: true,
+        updateTriggers: { getLineColor: styleVersion },
       }),
     ];
-  }, [drawn, wildfires]);
+  }, [drawn, wildfires, styleVersion]);
 
   useDeckLayers('hazards:fires', layers, Z);
   useHitTester('fires', (map, e) => {

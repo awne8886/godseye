@@ -3,9 +3,11 @@
  * 2026-09-30 (see docs/data-sources/layers-surveillance.md). Tests only.
  */
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
-const at = (name: string) => new URL(`./${name}`, import.meta.url);
+// Resolved from the repo root, not import.meta.url (which is not a file: URL under jsdom).
+const at = (name: string) => join(process.cwd(), 'src/features/surveillance/server/__fixtures__', name);
 const D = '2026-09-30';
 
 export const text = (name: string): string => readFileSync(at(name), 'utf8');

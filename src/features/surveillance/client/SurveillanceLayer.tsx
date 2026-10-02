@@ -6,7 +6,7 @@
  * opacity when zoomed out) so thousands of cameras never merge into solid blobs; positions are
  * never moved or aggregated. Clicks go through the map-engine pick router (registerDeckPick /
  * registerNativePick) — never a private map click handler. Colours come from `--map-cctv` /
- * `--map-news` and are re-read when the theme changes.
+ * `--map-news` and are re-read on every theme / Style Studio / Ghost Protocol change (useStyleVersion).
  *
  * Globe (round 5, visual-qa MAJOR-1): the flat points draw with `cullMode: 'none'` +
  * `depthCompare: 'always'` (never half-clipped by the globe surface), so cameras behind the limb
@@ -23,11 +23,12 @@ import { useDeckLayers, useLayerStatusStore, useMapInstance, useMapInstanceStore
 import { cameraFromMap, getFarSideCamera } from '@/lib/map/far-side';
 import { registerDeckPick, registerNativePick } from '@/lib/map/picking';
 import { useUiStore } from '@/lib/store';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor } from '@/lib/tokens';
 import type { NewsChannel } from '@/lib/types';
 import { zoomBand } from '../shared';
 import CctvPreviews from './CctvPreviews';
-import { cameraPointsLayer, cameraSelection, CCTV_DECK_ID } from './camera-layer';
+import { cameraPointsLayer, cameraSelection, CCTV_DECK_ID, colorKeyOf } from './camera-layer';
 import { facingRows, unitVectors } from './far-side';
 import { IDX } from './rows';
 import { useCctv } from './useCctv';
@@ -130,13 +131,16 @@ function useCameraPoints(fetchOn: boolean, active: boolean) {
   const data = useCctv(fetchOn);
   const facing = useFacingRows(active && data ? data.rows : null);
   const theme = useUiStore((s) => s.theme);
+  // Ghost Protocol / Style Studio rewrite `--map-cctv` without changing `theme`.
+  const styleVersion = useStyleVersion();
+  const colorKey = colorKeyOf(theme, styleVersion);
   const band = useZoomBand();
   const visible = facing?.rows ?? null;
   const layers = useMemo(() => {
     if (!active || !visible) return null;
     const colors = { live: readCssColor('--map-cctv', 0.95), still: readCssColor('--map-cctv', 0.75), link: readCssColor('--map-cctv', 0.3) };
-    return [cameraPointsLayer(visible, colors, band, theme)];
-  }, [active, visible, theme, band]);
+    return [cameraPointsLayer(visible, colors, band, colorKey)];
+  }, [active, visible, colorKey, band]);
   useDeckLayers('surveillance:cctv', layers, Z);
   // Between two refilters a point can have rotated past the limb: the mapping re-checks isFacing().
   useEffect(() => registerDeckPick(CCTV_DECK_ID, (info) => cameraSelection(info.object, getFarSideCamera())), []);
@@ -173,6 +177,7 @@ function useLiveNews(active: boolean) {
   const map = useMapInstance();
   const update = useLayerStatusStore((s) => s.update);
   const theme = useUiStore((s) => s.theme);
+  const styleVersion = useStyleVersion();
   const q = useLiveNewsQuery(active);
   const items = q.data?.ok ? q.data.body.items : null;
 
@@ -216,12 +221,12 @@ function useLiveNews(active: boolean) {
     };
   }, [map, active, fc]);
 
-  // Theme recolour in place.
+  // Theme / Style Studio / Ghost Protocol recolour in place.
   useEffect(() => {
     if (!map || !map.getLayer(NEWS_LAYER)) return;
     map.setPaintProperty(NEWS_LAYER, 'circle-color', rgba(readCssColor('--map-news', 0.9)));
     map.setPaintProperty(NEWS_LAYER, 'circle-stroke-color', rgba(readCssColor('--map-news', 1)));
-  }, [map, theme]);
+  }, [map, theme, styleVersion]);
 
   useEffect(() => {
     if (!items) return;

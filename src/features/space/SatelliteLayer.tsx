@@ -14,6 +14,7 @@ import type { GetPickingInfoParams, LayersList, PickingInfo } from '@deck.gl/cor
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { type Selection, useDeckLayers, useLayerStatusStore, useMapInstance, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor } from '@/lib/tokens';
 import type { LayerId } from '@/lib/layer-registry';
 import { CATEGORY_TOKEN, LAYER_CATEGORY, SAT_CATEGORIES } from './lib/catalog';
@@ -258,6 +259,8 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
   const map = useMapInstance();
   const projection = useMapInstanceStore((s) => s.projection);
   const theme = useUiStore((s) => s.theme);
+  // Style Studio / Ghost Protocol rewrite `--map-sat-*` without touching `theme`: re-post the palette.
+  const styleVersion = useStyleVersion();
   const selection = useSelectionStore((s) => s.selection);
   const updateStatus = useLayerStatusStore((s) => s.update);
   const setFrame = useSpaceStore((s) => s.setFrame);
@@ -366,7 +369,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     if (!w) return;
     const camera = projection === 'globe' ? (map ? cameraFromMap(map) : getFarSideCamera()) : null;
     w.postMessage({ type: 'view', camera, visible, palette: palette(), selectedId } satisfies WorkerIn);
-  }, [map, projection, visible, selectedId, theme, catalogueVersion]);
+  }, [map, projection, visible, selectedId, theme, styleVersion, catalogueVersion]);
 
   // Far-side camera → worker while the map moves (at most every CAMERA_POST_MS, and once when it
   // settles). The worker re-filters its newest propagation at once, so satellites that turn
@@ -442,7 +445,8 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
       out.push(issLabelLayer([frame.positions[k * 3]!, frame.positions[k * 3 + 1]!, frame.positions[k * 3 + 2]!], readCssColor('--map-sat-science', 1)));
     }
     return out;
-  }, [frame, orbit.data, selData]);
+    // Re-read the orbit / ISS label tokens on Style Studio / Ghost Protocol changes.
+  }, [frame, orbit.data, selData, styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useDeckLayers('space', layers, DECK_Z);
   const diagnostics = useMemo(() => frameDiagnostics(frame), [frame]);

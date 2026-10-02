@@ -10,6 +10,7 @@ import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useMemo, useState } from 'react';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useMapInstanceStore } from '@/lib/layer-host';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor } from '@/lib/tokens';
 import type { AirQuality, AirQualityResponse } from '@/lib/types';
 import { aqiCategory } from '../shared';
@@ -50,6 +51,8 @@ export default function AirQualityLayer() {
   const items = data?.items;
 
   const camera = useFarSideCamera();
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
   const points = useFacing(items, camera);
 
   const layers = useMemo(() => {
@@ -70,9 +73,10 @@ export default function AirQualityLayer() {
         parameters: GLOBE_POINT_PARAMETERS,
         pickable: true,
         autoHighlight: true,
+        updateTriggers: { getFillColor: styleVersion, getLineColor: styleVersion },
       }),
     ];
-  }, [points]);
+  }, [points, styleVersion]);
 
   useDeckLayers('hazards:air_quality', layers, Z);
   useHitTester('air_quality', (m, e) => {
