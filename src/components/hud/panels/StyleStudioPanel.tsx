@@ -26,6 +26,7 @@ const MAP_SECTIONS: { title: string; keys: MapToken[] }[] = [
   { title: 'CAMERAS · NEWS', keys: ['--map-cctv', '--map-news'] },
   { title: 'HAZARDS', keys: ['--map-seismic', '--map-fire', '--map-weather', '--map-volcano', '--map-air-quality'] },
   { title: 'MARITIME · NETWORK', keys: ['--map-port', '--map-ship-cargo', '--map-cable', '--map-malware', '--map-outage', '--map-gps-jam'] },
+  { title: 'FLIGHT PATHS', keys: ['--map-route-planned', '--map-route-filed', '--map-airport-watch'] },
 ];
 
 const mapLabel = (k: string) => k.replace('--map-', '').replace(/-/g, ' ').toUpperCase();

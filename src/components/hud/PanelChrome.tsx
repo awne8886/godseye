@@ -77,9 +77,16 @@ interface FrameProps {
   sheet?: boolean;
   /** Phones: header buttons get 44 px touch targets. */
   touch?: boolean;
+  /**
+   * Phone sheet section tabs, rendered in the header row itself so the tabs, the panel's header
+   * tools, the state chip and the close button share one row (r6 m: a landscape sheet is ~210 px
+   * tall); the tab strip scrolls sideways in what is left. Implies `sheet`.
+   */
+  tabs?: ReactNode;
 }
 
-export function InstrumentFrame({ title, onClose, onPin, pinned, children, className = '', as = 'section', headerExtra, labelId, sheet = false, touch = false }: FrameProps) {
+export function InstrumentFrame({ title, onClose, onPin, pinned, children, className = '', as = 'section', headerExtra, labelId, sheet: sheetProp = false, touch = false, tabs }: FrameProps) {
+  const sheet = sheetProp || tabs != null;
   const [chip, setChip] = useState<PanelChipState | null>(null);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const autoId = useId();
@@ -93,15 +100,19 @@ export function InstrumentFrame({ title, onClose, onPin, pinned, children, class
           {...(as === 'section' ? { 'aria-labelledby': id } : {})}
           className={`instrument-grid ${sheet ? '' : 'instrument-corners'} relative flex min-h-0 flex-col ${className}`}
         >
-          <header className={`relative flex items-center gap-2 px-4 ${sheet ? 'pb-1 pt-1' : 'pb-2 pt-3'}`}>
+          <header data-frame-header="" className={`relative flex items-center gap-2 ${tabs != null ? 'pl-0 pr-3' : 'px-4'} ${sheet ? 'pb-1 pt-1' : 'pb-2 pt-3'}`}>
             {!sheet && <span className="instrument-accent" aria-hidden />}
             <h2 id={id} className={sheet ? 'sr-only' : 'hud-title min-w-0 shrink-0 truncate'} title={title}>
               {title}
             </h2>
-            <span className="min-w-0 flex-1" aria-hidden />
+            {tabs != null ? <div className="min-w-0 flex-1">{tabs}</div> : <span className="min-w-0 flex-1" aria-hidden />}
             {headerExtra}
-            <span ref={setSlot} data-panel-tools="" className="flex items-center gap-1 empty:hidden" />
-            {chip && <StateChip {...chip} />}
+            <span ref={setSlot} data-panel-tools="" className="flex shrink-0 items-center gap-1 empty:hidden" />
+            {chip && (
+              <span className="flex min-w-0 max-w-[40%] shrink">
+                <StateChip {...chip} />
+              </span>
+            )}
             {onPin && (
               <button type="button" onClick={onPin} aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`} title={pinned ? 'Unpin' : 'Pin beside other panels'} className={btn}>
                 {pinned ? <PinOff size={14} /> : <Pin size={14} />}

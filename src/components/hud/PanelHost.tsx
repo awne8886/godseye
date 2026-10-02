@@ -244,6 +244,11 @@ export default function PanelHost() {
   );
 }
 
+/** The frame (and so the tab row) remounts per section: keep the selected tab scrolled into view. */
+function revealTab(el: HTMLButtonElement | null) {
+  el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+}
+
 function MobileSheet({ id }: { id: PanelId | null }) {
   return <AnimatePresence>{id && <MobileSheetBody key="sheet" id={id} />}</AnimatePresence>;
 }
@@ -280,23 +285,32 @@ export function MobileSheetBody({ id }: { id: PanelId }) {
     >
       <div className="glass-3 flex min-h-0 flex-1 flex-col rounded-b-none">
         <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--gold-dim)]" aria-hidden />
-        {siblings.length > 1 && (
-          <div role="tablist" aria-label="Sheet sections" className="hud-fade-right flex shrink-0 scroll-px-4 gap-1 overflow-x-auto px-3 pr-8 pt-2">
-            {siblings.map((p) => (
-              <button
-                key={p}
-                role="tab"
-                type="button"
-                aria-selected={p === id}
-                onClick={() => setOpenPanel(p)}
-                className={`hud-micro hud-control min-h-[44px] shrink-0 border px-3 ${p === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
-              >
-                {panelLabel(p)}
-              </button>
-            ))}
-          </div>
-        )}
-        <InstrumentFrame key={id} title={panelLabel(id)} onClose={close} sheet={siblings.length > 1} touch className="min-h-0 flex-1">
+        <InstrumentFrame
+          key={id}
+          title={panelLabel(id)}
+          onClose={close}
+          touch
+          className="min-h-0 flex-1"
+          tabs={
+            siblings.length > 1 ? (
+              <div role="tablist" aria-label="Sheet sections" className="hud-fade-right flex scroll-px-3 gap-1 overflow-x-auto pl-3 pr-6">
+                {siblings.map((p) => (
+                  <button
+                    key={p}
+                    role="tab"
+                    type="button"
+                    aria-selected={p === id}
+                    ref={p === id ? revealTab : undefined}
+                    onClick={() => setOpenPanel(p)}
+                    className={`hud-micro hud-control min-h-[44px] shrink-0 border px-3 ${p === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
+                  >
+                    {panelLabel(p)}
+                  </button>
+                ))}
+              </div>
+            ) : undefined
+          }
+        >
           <PanelBody id={id} onClose={close} />
         </InstrumentFrame>
       </div>

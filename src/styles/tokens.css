@@ -162,6 +162,8 @@
   --map-airport-watch: #ffb300;
   --map-route-planned: #d4af37;
   --map-route-filed: #00e5ff;
+  /* FAA ADDS ATS routes (US airways) near a planned route: a quiet blue under the gold plan. */
+  --map-route-airways: #448aff;
 
   /* Live Alerts blocs */
   --bloc-western: #4f9cff;
