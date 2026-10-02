@@ -213,7 +213,7 @@ export const AiAlertBrief = z.object({
       topics: z.array(z.string()),
       breaking: z.number().int().nonnegative(),
       latest: IsoTime.nullable(),
-      lead: z.object({ id: z.string(), title: z.string(), source: z.string(), link: z.url(), publishedAt: IsoTime }).nullable(),
+      lead: z.object({ id: z.string(), title: z.string(), source: z.string(), link: z.url(), publishedAt: IsoTime, alsoReportedBy: z.array(z.string()).optional() }).nullable(),
     }),
   ),
   seismic: z

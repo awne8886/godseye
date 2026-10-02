@@ -11,7 +11,7 @@ import { earthquakeFeed } from '@/features/hazards/server/usgs';
 import type { AlertItem, Earthquake, Quote } from '@/lib/types';
 import { chainFeed, getNews, marketsFeed } from '../feeds';
 import { SYSTEM_BASE, type ChatTurn, type CitableRow } from './ai';
-import { BLOC_LABEL, buildAlertBrief, sourceWithStance, timeAgo, type AlertBrief } from './digest';
+import { BLOC_LABEL, buildAlertBrief, itemCorroboration, perspectivePhrase, sourceWithStance, threadMixPhrase, timeAgo, type AlertBrief } from './digest';
 import type { ChainData } from './chain';
 
 export interface Prompt {
@@ -49,7 +49,7 @@ function headlineLines(news: readonly AlertItem[], now: number, max = 40): strin
   return [...news]
     .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
     .slice(0, max)
-    .map((r) => `- [news:${r.id}] ${timeAgo(r.publishedAt, now) || 'undated'} · ${r.sourceName} (stance: ${r.lean}; digest group: ${BLOC_LABEL[r.bloc]})${r.alsoReportedBy.length ? `, also carried by ${r.alsoReportedBy.length} other channel(s)` : ''}: ${r.title}`)
+    .map((r) => `- [news:${r.id}] ${timeAgo(r.publishedAt, now) || 'undated'} · ${r.sourceName} (stance: ${r.lean}; digest group: ${BLOC_LABEL[r.bloc]})${r.alsoReportedBy.length ? `, also reported by ${[...new Set(r.alsoReportedBy.map((a) => a.sourceName))].join(', ')}` : ', no other channel so far'}: ${r.title}`)
     .join('\n');
 }
 
@@ -139,7 +139,10 @@ export function briefingPrompt(horizon: '24h' | '72h', s: Snapshot, now = Date.n
   const brief = briefFor(s, now);
   const mf = marketFacts(s.quotes, s.kp);
   const allowed = [...s.news.slice(0, 40).map(newsRow), ...s.quakes.slice(0, 20).map(quakeRow)];
-  const pirs = brief.threads.slice(0, 3).map((t) => `Does independent reporting corroborate "${t.lead?.title ?? t.label}" (${t.perspective === 'single' ? 'single-sided so far' : t.perspective === 'cross' ? 'carried by both sides' : 'mixed sourcing'})?`);
+  // Corroboration is the lead item's own `alsoReportedBy`; the thread's bloc mix is named as the thread's (r10).
+  const pirs = brief.threads
+    .slice(0, 3)
+    .map((t) => (t.lead ? `Does independent reporting corroborate "${t.lead.title}" (${itemCorroboration(t.lead)}; ${threadMixPhrase(t)})?` : `Does independent reporting corroborate the ${t.label} reports (thread ${perspectivePhrase(t)})?`));
   const analyst = [
     `BLUF: ${brief.bottomLine}`,
     '',

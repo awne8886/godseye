@@ -158,6 +158,36 @@ describe('GET /api/arcgis', () => {
     expect(body.features.features.length).toBe(2);
   });
 
+  it('imports from *.arcgisonline.com under the /ArcGIS/rest/services/ casing, and only that path shape (r10)', async () => {
+    const dir = 'https://sampleserver6.arcgisonline.com/ArcGIS/rest/services/USA/MapServer/0';
+    expect(isImportableUrl(dir, {})).toBe(true);
+    expect(isImportableUrl('https://services.arcgisonline.com/ArcGIS/rest/services/Demographics/USA_Population_Density/MapServer', {})).toBe(true);
+    const rules = arcgisRules({});
+    expect(matchesAllowList(new URL('https://sampleserver6.arcgisonline.com/ARCGIS/REST/SERVICES/USA/MapServer/0/query'), rules)).toBe(true);
+    // Other path shapes and hosts stay refused whatever their casing.
+    for (const bad of [
+      'https://sampleserver6.arcgisonline.com/ArcGIS/sharing/rest/info',
+      'https://sampleserver6.arcgisonline.com/ArcGIS/rest/admin/services/USA/MapServer/0/query',
+      'https://sampleserver6.arcgisonline.com/Server/ArcGIS/rest/services/USA/MapServer/0/query',
+      'https://sampleserver6.arcgisonline.com/ArcGIS/rest/services/USA/MapServer/0',
+      'https://arcgisonline.com/ArcGIS/rest/services/USA/MapServer/0/query',
+      'https://sampleserver6.arcgisonline.com.evil.example/ArcGIS/rest/services/USA/MapServer/0/query',
+    ]) expect(matchesAllowList(new URL(bad), rules), bad).toBe(false);
+    expect(isImportableUrl('https://arcgisonline.com/ArcGIS/rest/services/USA/MapServer/0', {})).toBe(false);
+    expect(isImportableUrl('https://example.com/ArcGIS/rest/services/USA/MapServer/0', {})).toBe(false);
+    upstream.on('sampleserver6.arcgisonline.com/ArcGIS/rest/services/USA/MapServer/0/query', { json: fixture('arcgisonline-sample6-query.json') });
+    const body = await valid(await call(`?url=${encodeURIComponent(dir)}`));
+    expect(body.features.features.length).toBe(2);
+    expect(new URL(upstream.calls[0]!.url).pathname).toBe('/ArcGIS/rest/services/USA/MapServer/0/query');
+  });
+
+  it('re-checks the /ArcGIS/ path shape on every redirect hop on *.arcgisonline.com (r10)', async () => {
+    upstream.on('sampleserver6.arcgisonline.com/ArcGIS/rest/services/USA', { redirect: 'https://sampleserver6.arcgisonline.com/ArcGIS/sharing/rest/content/items/1' });
+    const body = await error(await call(`?url=${encodeURIComponent('https://sampleserver6.arcgisonline.com/ArcGIS/rest/services/USA/MapServer/0')}`), 400);
+    expect(body.error).toBe('blocked_target');
+    expect(upstream.calls).toHaveLength(1);
+  });
+
   it('refuses a redirect from an allowed ArcGIS host to an off-list host', async () => {
     upstream.on('services9.arcgis.com', { redirect: 'https://example.com/rest/services/x/FeatureServer/0/query' });
     upstream.on('example.com', { json: { type: 'FeatureCollection', features: [] } });
