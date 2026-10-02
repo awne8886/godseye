@@ -103,15 +103,22 @@ async function groundPoint(page: Page, lat: number, lng: number, start: { x: num
   return { x, y };
 }
 
-/** Centre of the satellite's marker on screen (pixels within ±28 of its mission colour), or null. */
-async function drawnMarker(page: Page, token: string): Promise<{ x: number; y: number; n: number } | null> {
+/**
+ * Centre of the satellite's marker on screen (pixels of its mission colour, see below) within
+ * 320 px of `near` (the HUD rail and legends share the mission colours), or null.
+ */
+async function drawnMarker(page: Page, token: string, near: { x: number; y: number }): Promise<{ x: number; y: number; n: number } | null> {
   const rgb = await tokenRgb(page, token);
   const img = decodePng(await page.screenshot());
   const hits: { x: number; y: number }[] = [];
-  for (let y = 0; y < img.height; y++) {
-    for (let x = 0; x < img.width; x++) {
+  const R = 320;
+  for (let y = Math.max(0, Math.round(near.y - R)); y < Math.min(img.height, near.y + R); y++) {
+    for (let x = Math.max(0, Math.round(near.x - R)); x < Math.min(img.width, near.x + R); x++) {
       const p = (y * img.width + x) * img.channels;
-      if (Math.abs(img.data[p]! - rgb[0]!) <= 28 && Math.abs(img.data[p + 1]! - rgb[1]!) <= 28 && Math.abs(img.data[p + 2]! - rgb[2]!) <= 28) hits.push({ x, y });
+      // The mission colour at 60–105 % brightness (the globe pass darkens it ~15 %), hue held within ±20.
+      const [r, g, b] = [img.data[p]!, img.data[p + 1]!, img.data[p + 2]!];
+      const k = (r * rgb[0]! + g * rgb[1]! + b * rgb[2]!) / (rgb[0]! ** 2 + rgb[1]! ** 2 + rgb[2]! ** 2);
+      if (k >= 0.6 && k <= 1.05 && Math.hypot(r - k * rgb[0]!, g - k * rgb[1]!, b - k * rgb[2]!) <= 20) hits.push({ x, y });
     }
   }
   if (hits.length < 3) return null;
@@ -124,8 +131,8 @@ async function drawnMarker(page: Page, token: string): Promise<{ x: number; y: n
   const best = [...cells.values()].sort((a, b) => b.length - a.length)[0]!;
   const cx = best.reduce((s, h) => s + h.x, 0) / best.length;
   const cy = best.reduce((s, h) => s + h.y, 0) / best.length;
-  const near = hits.filter((h) => Math.hypot(h.x - cx, h.y - cy) <= 12);
-  return { x: near.reduce((s, h) => s + h.x, 0) / near.length, y: near.reduce((s, h) => s + h.y, 0) / near.length, n: near.length };
+  const blob = hits.filter((h) => Math.hypot(h.x - cx, h.y - cy) <= 12);
+  return { x: blob.reduce((s, h) => s + h.x, 0) / blob.length, y: blob.reduce((s, h) => s + h.y, 0) / blob.length, n: blob.length };
 }
 
 const card = (page: Page) => page.getByTestId('satellite-card').first();
@@ -155,7 +162,7 @@ test.describe('r10 MAJOR 1: satellites are hit where they are drawn, never at a 
       const vp = page.viewportSize()!;
       const ground = await groundPoint(page, t.lat, t.lng, { x: vp.width / 2, y: vp.height / 2 + 100 });
       await page.mouse.move(5, vp.height / 2); // off the marker before the screenshot
-      const drawn = await drawnMarker(page, token);
+      const drawn = await drawnMarker(page, token, ground);
       test.info().annotations.push({ type: `mercator z${zoom}`, description: JSON.stringify({ norad: t.rec.noradId, ground, drawn }) });
       // Before the fix: drawn ~120 px south of the ground point at z5, not drawn at all at z7.
       expect(drawn, `marker drawn at z${zoom}`).not.toBeNull();
@@ -175,7 +182,7 @@ test.describe('r10 MAJOR 1: satellites are hit where they are drawn, never at a 
     const vp = page.viewportSize()!;
     const ground = await groundPoint(page, t.lat, t.lng, { x: vp.width / 2, y: vp.height / 2 + 100 });
     await page.mouse.move(5, vp.height / 2);
-    const drawn = await drawnMarker(page, CATEGORY_TOKEN[t.rec.category]);
+    const drawn = await drawnMarker(page, CATEGORY_TOKEN[t.rec.category], ground);
     test.info().annotations.push({ type: 'globe z5', description: JSON.stringify({ norad: t.rec.noradId, ground, drawn }) });
     expect(drawn, 'marker drawn on the globe').not.toBeNull();
     const offset = Math.hypot(drawn!.x - ground.x, drawn!.y - ground.y);
