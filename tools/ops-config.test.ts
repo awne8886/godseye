@@ -15,7 +15,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { CAPABILITIES } from '@/lib/capabilities';
+import { CAPABILITIES, evaluateCapability, type CapabilityId, type CapabilitySpec } from '@/lib/capabilities';
+import { SOURCES } from '@/lib/sources';
 import { BASEMAP_ORIGIN as APP_BASEMAP_ORIGIN, BASEMAP_STYLE_URL, BASEMAP_TILEJSON_URL } from '@/lib/map/basemap-urls';
 import {
   BASEMAP_ORIGIN,
@@ -112,6 +113,13 @@ describe('.github/workflows/ci.yml', () => {
   it('runs on every push and pull request with read-only permissions', () => {
     expect(Object.keys(wf.on).sort()).toEqual(['pull_request', 'push']);
     expect(wf.permissions).toEqual({ contents: 'read' });
+  });
+
+  it('uploads dot-directory artifacts (.lighthouseci) with include-hidden-files, or upload-artifact silently drops them', () => {
+    const uploads = steps.filter((s) => s.uses?.startsWith('actions/upload-artifact@'));
+    const hidden = uploads.filter((s) => String(s.with?.path ?? '').split('\n').some((p) => /(^|\/)\.[^/.]/.test(p.trim())));
+    expect(hidden.map((s) => s.with?.name).sort()).toEqual(['lighthouse-gpu', 'lighthouse-home', 'lighthouse-pages']);
+    for (const s of hidden) expect(s.with?.['include-hidden-files'], String(s.with?.name)).toBe(true);
   });
 
   it('runs every quality gate', () => {
@@ -1703,6 +1711,25 @@ describe('tools/gpu-renderer-check.ts: main() and the CLI entry', () => {
   }, 30_000);
 });
 
+describe('LICENSE (NOTICE)', () => {
+  /** Bundled files whose sources ask for no notice: CC0 or public domain, and credited in docs/DATA_SOURCES.md. */
+  const NO_NOTICE: Record<string, string> = {
+    'routes-vrs.json.gz': 'VRS standing data, CC0',
+    'zones-countries.json': 'Natural Earth, public domain',
+  };
+  it('lists every file in public/data/ (by name or glob) unless its source asks for no notice', () => {
+    const notice = read('LICENSE');
+    const globs = [...notice.matchAll(/^\s+public\/data\/(\S+)/gm)].map((m) => new RegExp(`^${m[1]!.replace(/[.]/g, '\\.').replace(/\*/g, '[^/]*')}$`));
+    const files = readdirSync(path.join(root, 'public/data')).filter((f) => !f.startsWith('.'));
+    expect(files).toContain('airways-us.min.json');
+    for (const f of files) {
+      if (NO_NOTICE[f]) continue;
+      expect(globs.some((g) => g.test(f)), `public/data/${f} is missing from the LICENSE notice`).toBe(true);
+    }
+    expect(notice).toMatch(/airways-us\.min\.json\s+FAA ADDS ATS_Route[\s\S]*?public domain/);
+  });
+});
+
 describe('README.md', () => {
   const readme = read('README.md');
   it('documents every optional variable in .env.example and every capability', () => {
@@ -1710,6 +1737,35 @@ describe('README.md', () => {
     expect(vars.length).toBeGreaterThan(40);
     for (const v of vars) expect(readme, v).toContain(`\`${v}`);
     for (const id of Object.keys(CAPABILITIES)) expect(readme, id).toContain(`\`${id}\``);
+  });
+  it('names every capability COMMERCIAL_DEPLOYMENT turns off, and every nc_sources source, in the code, README and .env.example', () => {
+    const env = read('.env.example');
+    const envComment = /# Set to true on a commercial deployment[\s\S]*?\nCOMMERCIAL_DEPLOYMENT=/.exec(env)?.[0] ?? '';
+    const readmeRow = readme.split('\n').find((l) => l.startsWith('| `COMMERCIAL_DEPLOYMENT`')) ?? '';
+    const readmeGates = /Keyless licence gates that are on by default:[\s\S]*?\n\n/.exec(readme)?.[0] ?? '';
+    expect(envComment && readmeRow && readmeGates).toBeTruthy();
+    // Every capability that is on with its keys and flags set, and off once COMMERCIAL_DEPLOYMENT=true.
+    const ids = Object.keys(CAPABILITIES) as CapabilityId[];
+    const offWhenCommercial = ids.filter((id) => {
+      const spec: CapabilitySpec = CAPABILITIES[id];
+      const full: Record<string, string> = Object.fromEntries(spec.env.map((k) => [k, 'x']));
+      if (spec.flag) full[spec.flag] = 'true';
+      return evaluateCapability(id, full).enabled && !evaluateCapability(id, { ...full, COMMERCIAL_DEPLOYMENT: 'true' }).enabled;
+    });
+    expect(offWhenCommercial.sort()).toEqual(['aeroapi', 'cloudflare', 'deepstate', 'nc_sources', 'openmeteo']);
+    for (const id of offWhenCommercial) {
+      expect(readmeRow, id).toContain(`\`${id}\``);
+      expect(envComment, id).toContain(id);
+    }
+    // Every source the nc_sources gate switches off, by its most distinctive word (e.g. "Edmonton").
+    const key = (name: string) => name.replace(/\s*\(.*\)/, '').split(/\s+/).sort((x, y) => y.length - x.length)[0]!.replace(/\.com$/, '');
+    const nc = SOURCES.filter((src) => src.gate?.capability === 'nc_sources').map((src) => key(src.name));
+    expect(nc).toEqual(expect.arrayContaining(['Edmonton', 'TeleGeography', 'abuse.ch', 'ip-api', 'InternetDB', 'OpenSanctions']));
+    for (const k of nc) {
+      expect(CAPABILITIES.nc_sources.note, k).toContain(k);
+      expect(readmeGates, k).toContain(k);
+      expect(envComment, k).toContain(k);
+    }
   });
   it('credits OSIRIS under MIT and tells operators to overwrite X-Forwarded-For', () => {
     expect(readme).toContain('OSIRIS © 2026 simplifaisoul, MIT licence');

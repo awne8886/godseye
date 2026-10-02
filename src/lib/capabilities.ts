@@ -43,7 +43,7 @@ export const CAPABILITIES = {
   nc_sources: {
     env: [],
     invertFlag: 'COMMERCIAL_DEPLOYMENT',
-    note: 'Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial)',
+    note: 'Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only)',
   },
   openmeteo: { env: [], invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'Open-Meteo free tier (non-commercial; CC BY 4.0 data)' },
   deepstate: { env: [], flag: 'NONCOMMERCIAL', note: "DeepStateMap frontlines (non-commercial, attribution; commercial API use needs DeepState's prior approval)" },

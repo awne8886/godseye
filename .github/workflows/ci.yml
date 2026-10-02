@@ -142,6 +142,8 @@ jobs:
         with:
           name: lighthouse-pages
           path: .lighthouseci/
+          # .lighthouseci is a dot-directory: upload-artifact v4+ skips hidden files unless told not to.
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
 
@@ -187,6 +189,8 @@ jobs:
         with:
           name: lighthouse-home
           path: .lighthouseci/
+          # .lighthouseci is a dot-directory: upload-artifact v4+ skips hidden files unless told not to.
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
 
@@ -285,5 +289,7 @@ jobs:
         with:
           name: lighthouse-gpu
           path: .lighthouseci/
+          # .lighthouseci is a dot-directory: upload-artifact v4+ skips hidden files unless told not to.
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
