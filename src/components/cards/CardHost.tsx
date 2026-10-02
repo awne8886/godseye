@@ -1,14 +1,16 @@
 'use client';
 /**
  * Entity-card host: renders the current selection inside EntityCardFrame with the body from
- * cardFor(kind). Desktop: floating beside the rail; phones: a sheet above the bottom nav. On phones
+ * cardFor(kind) and the TRACK tab body from trackFor(kind). Desktop: floating beside the rail;
+ * phones: a sheet above the bottom nav. On phones
  * the map is panned so the selected entity sits in the free space above the sheet instead of under
  * it, re-checked while the card grows as its body loads (m7), and the sheet's height is reserved so
  * the map attribution stays visible above it. Owner: design-system-hud.
  */
 import { AnimatePresence, m, useIsPresent } from 'motion/react';
 import { createElement, useEffect, useRef } from 'react';
-import { cardFor } from '@/features/registry';
+import { FEATURE_MODULES, cardFor } from '@/features/registry';
+import type { EntityKind } from '@/lib/types';
 import { useLayerStatusStore, useMapInstanceStore, useSelectionStore, type Selection } from '@/lib/layer-host';
 import { occupiedFromBottom, useBottomReserve, useIsMobile } from '@/components/hud/hooks';
 import EntityCardFrame from './EntityCardFrame';
@@ -23,6 +25,15 @@ export function panToClearSheet(pointY: number, sheetTop: number, topInset = 56,
   return Math.round(pointY - target);
 }
 
+/** The TRACK tab body registered for `kind` (FeatureModule.tracks), or null: no TRACK tab. */
+export function trackFor(kind: EntityKind, modules = FEATURE_MODULES) {
+  for (const mod of modules) {
+    const t = mod.tracks?.[kind];
+    if (t) return t;
+  }
+  return null;
+}
+
 /** How long after selection a growing card (body still loading) may still move the map. */
 export const CARD_SETTLE_MS = 2500;
 
@@ -34,6 +45,7 @@ function CardSheet({ selection, onClose }: { selection: Selection; onClose: () =
   const sheet = useRef<HTMLDivElement>(null);
   useBottomReserve(sheet, '--card-occupied', mobile && present);
   const body = cardFor(selection.kind);
+  const track = trackFor(selection.kind);
   const lngLat = selection.lngLat ?? null;
 
   useEffect(() => {
@@ -74,7 +86,7 @@ function CardSheet({ selection, onClose }: { selection: Selection; onClose: () =
       aria-hidden={present ? undefined : true}
       className="godseye-card-sheet fixed left-16 top-28 z-[var(--z-docked)] flex max-h-[calc(100vh-12rem)] w-[340px] flex-col phone:inset-x-2 phone:top-auto phone:bottom-[calc(60px+env(safe-area-inset-bottom))] phone:max-h-[50vh] phone:w-auto"
     >
-      <EntityCardFrame selection={selection} feed={feed} onClose={onClose}>
+      <EntityCardFrame selection={selection} feed={feed} onClose={onClose} track={track ? createElement(track, { selection }) : undefined}>
         {createElement(body, { selection })}
       </EntityCardFrame>
     </m.div>

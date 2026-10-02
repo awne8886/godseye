@@ -58,6 +58,11 @@ export interface FeatureModule {
   Background?: ComponentType;
   /** Entity card bodies by kind (the HUD supplies the Overview/Track/Sources frame). */
   cards?: Partial<Record<EntityKind, ComponentType<CardProps>>>;
+  /**
+   * TRACK tab bodies by kind (§7): the entity's observed (or, for satellites, labelled propagated)
+   * track. Kinds without one get no TRACK tab. Mounted only while the tab is open.
+   */
+  tracks?: Partial<Record<EntityKind, ComponentType<CardProps>>>;
   /** Panels by id (right-rail tools and floating panels). Lazy-load heavy ones with next/dynamic. */
   panels?: Partial<Record<PanelId, ComponentType<PanelProps>>>;
 }
