@@ -129,7 +129,7 @@ const GATED_FEEDS = new WeakSet<Feed<Camera[]>>();
  * Installs gateRegion() on the region feed object itself, which is the same object the feed
  * registry hands to /api/health, /api/stats and the region dossier (getFeed/allFeeds), so no reader
  * sees an ungated snapshot. health() reads through feed.peek(), so its count and providers are
- * gated too (asserted in catalog.gate.test.ts).
+ * gated too (asserted in src/app/api/cctv/licence-gate.test.ts).
  */
 function gatedFeed(feed: Feed<Camera[]>, defs: readonly ProviderDef[]): Feed<Camera[]> {
   if (GATED_FEEDS.has(feed)) return feed;
