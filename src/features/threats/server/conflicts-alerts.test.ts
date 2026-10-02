@@ -110,8 +110,8 @@ describe('alertsToConflictEvents', () => {
   });
 
   it('isKineticAlertText: weapon language counts, casualty/blast language only without a hazard, idioms never', () => {
-    for (const t of ['Israeli occupation aircraft launch a strike near Gaza City', 'Russian drones hit a bridge', 'Clashes in Khartoum', 'Gunmen opened fire on a checkpoint', 'Police raid in Mosul', 'Sirens in Sderot']) expect(isKineticAlertText(t), t).toBe(true);
-    for (const t of ['Earthquake felt in Aleppo', 'Fire at Baghdad market, 5 killed', 'Gas explosion in a Baghdad restaurant', 'Sirens sound after earthquake in Haifa', 'Teachers on strike in Sanaa', 'Minister suffers heart attack', 'Carrier strike group enters the Red Sea', 'Bashir hospitalized in Khartoum']) expect(isKineticAlertText(t), t).toBe(false);
+    for (const t of ['Israeli occupation aircraft launch a strike near Gaza City', 'Russian drones hit a bridge', 'Clashes in Khartoum', 'Gunmen opened fire on a checkpoint', 'Police raid in Mosul', 'Sirens in Sderot', 'Rocket strike sparks fire in Kharkiv', 'Drone strike causes building collapse in Odesa', 'Airstrike after the earthquake in Idlib']) expect(isKineticAlertText(t), t).toBe(true);
+    for (const t of ['Earthquake felt in Aleppo', 'Fire at Baghdad market, 5 killed', 'Gas explosion in a Baghdad restaurant', 'Sirens sound after earthquake in Haifa', 'Teachers on strike in Sanaa', 'Minister suffers heart attack', 'Carrier strike group enters the Red Sea', 'Bashir hospitalized in Khartoum', 'Earthquake strikes Aleppo', 'Magnitude 5.8 quake strikes near Baghdad', 'Lightning strike sparks wildfire', 'Strong earthquake struck Hatay', 'Drone footage shows flood damage in Kherson']) expect(isKineticAlertText(t), t).toBe(false);
   });
 
   it('keeps who made the claim: source handle, channel name, stance and bloc from the AlertItem', () => {

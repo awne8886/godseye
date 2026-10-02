@@ -86,8 +86,13 @@ function keywords(list: readonly string[], flags = 'iu'): RegExp {
   return new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})`, flags);
 }
 
-/** Weapon and combat language: a conflict event on its own. */
-const WEAPON = keywords(['rocket', 'missile', 'ballistic', 'intercept', 'air raid', 'airstrike', 'strike', 'attack', 'drone', 'shelling', 'shelled', 'artillery', 'clashes', 'clashed', 'raid', 'gunfire', 'gunmen', 'opened fire', 'opens fire', 'bombing', 'bombed']);
+/** Unambiguous weapon and combat language: a conflict event even when a hazard or fire is also named. */
+const WEAPON = keywords(['rocket', 'missile', 'ballistic', 'intercept', 'air raid', 'airstrike', 'air strike', 'drone strike', 'drone attack', 'shelling', 'shelled', 'artillery', 'clashes', 'clashed', 'gunfire', 'gunmen', 'opened fire', 'opens fire', 'bombing', 'bombed']);
+/**
+ * Generic kinetic verbs and nouns that hazards share ('Earthquake strikes Aleppo', 'Lightning strike
+ * sparks wildfire', 'drone footage of the flood'): kinetic only when no hazard or accident is named.
+ */
+const GENERIC = keywords(['strike', 'struck$', 'attack', 'raid', 'drone']);
 /** Kinetic only when no hazard or accident explains it: a quake also kills, a gas leak also explodes. */
 const AMBIGUOUS = keywords(['explosion', 'exploded', 'blast', 'killed', 'shot$', 'shots$', 'sirens$', 'red alert']);
 /** Non-conflict causes: natural hazards, fires and accidents. */
@@ -96,14 +101,15 @@ const INCIDENT = keywords(['earthquake', 'quake', 'aftershock', 'tremor', 'seism
 const IDIOMS = keywords(['hunger strike', 'general strike', 'labour strike', 'labor strike', 'workers strike', 'strike action', 'on strike', 'strike group', 'strike a deal', 'strikes a deal', 'heart attack', 'panic attack', 'cyber attack', 'cyber-attack'], 'giu');
 
 /**
- * Whether an alert's text (title + summary) describes a kinetic event: weapon or combat language, or
- * explosion/casualty/siren language with no natural hazard, fire or accident named. A deterministic
+ * Whether an alert's text (title + summary) describes a kinetic event: unambiguous weapon or combat
+ * language, or generic strike/attack/raid or explosion/casualty/siren language with no natural hazard,
+ * fire or accident named. A deterministic
  * keyword test (never called "AI") that errs towards not counting: a post that mixes an earthquake
  * with a shooting is left out. Pure; exported for tests.
  */
 export function isKineticAlertText(text: string): boolean {
   const t = text.replace(IDIOMS, ' ');
-  return WEAPON.test(t) || (AMBIGUOUS.test(t) && !INCIDENT.test(t));
+  return WEAPON.test(t) || ((GENERIC.test(t) || AMBIGUOUS.test(t)) && !INCIDENT.test(t));
 }
 
 /**
