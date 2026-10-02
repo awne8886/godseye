@@ -37,6 +37,7 @@ export function normalizeDeepState(s: DeepStateSnapshot): { geojson: GeoJSON.Fea
 }
 
 export const frontlinesFeed = defineFeed<{ geojson: GeoJSON.FeatureCollection; asOf: string | null }>({
+  gates: ['deepstate'],
   key: 'frontlines',
   ttlMs: 60 * 60_000,
   pollMs: 30 * 60_000,

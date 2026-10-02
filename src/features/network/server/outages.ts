@@ -21,6 +21,7 @@ import { httpJson } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import type { AttackOrigin, Outage } from '@/lib/types';
 import { countryByIso2 } from '../../threats/shared/country';
+import { skipReason } from './gate';
 
 export const IODA_EVENTS = 'https://api.ioda.inetintel.cc.gatech.edu/v2/outages/events';
 export const CF_BASE = 'https://api.cloudflare.com/client/v4/radar/';
@@ -148,6 +149,8 @@ export const outagesFeed = defineFeed<{ items: Outage[] }>({
   count: (d) => d.items.length,
   isEmpty: () => false,
   deadlineMs: 40_000,
+  // Cloudflare rows (CC BY-NC) must not outlive the gate: a snapshot from another gate state is absent.
+  gates: ['cloudflare'],
   run: async ({ signal }) => {
     const until = Math.floor(Date.now() / 1000);
     const providers: Record<string, ProviderRun> = {};
@@ -170,7 +173,7 @@ export const outagesFeed = defineFeed<{ items: Outage[] }>({
       );
       providers.cloudflare = r.run;
       cf = r.result ?? [];
-    } else providers.cloudflare = skippedProvider('not-configured');
+    } else providers.cloudflare = skippedProvider(skipReason('cloudflare'));
     const answered = ioda.run.status.ok || providers.cloudflare.status.ok;
     const items = [...(ioda.result ?? []), ...cf].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
     // Only a real answer (possibly "none") is served; if every provider failed the feed is OFFLINE.
@@ -216,8 +219,9 @@ export const attackOriginsFeed = defineFeed<{ items: AttackOrigin[]; window: str
   attribution: [CF_ATTRIBUTION],
   note: 'Share of Layer 3 DDoS traffic by ORIGIN country over the last 24 h (points; no target is reported, so no arcs).',
   count: (d) => d.items.length,
+  gates: ['cloudflare'],
   run: async ({ signal }) => {
-    if (!hasCapability('cloudflare')) return { data: { items: [], window: '1d' }, providers: { cloudflare: skippedProvider('not-configured') } };
+    if (!hasCapability('cloudflare')) return { data: { items: [], window: '1d' }, providers: { cloudflare: skippedProvider(skipReason('cloudflare')) } };
     let at: string | null = null;
     const { result, run } = await runProvider(
       async () => {

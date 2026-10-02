@@ -32,6 +32,8 @@ export const GET = withRoute('/api/region-dossier', async (req) => {
       attribution: [{ text: OSM_ATTRIBUTION }, { text: 'Wikidata (CC0) and Wikipedia (CC BY-SA 4.0)' }, { text: 'Population: World Bank WDI SP.POP.TOTL (CC BY 4.0)', url: 'https://data.worldbank.org/indicator/SP.POP.TOTL' }, { text: 'Weather: Open-Meteo (CC BY 4.0)' }],
       isEmpty: (d) => !d.location && !d.country && !d.brief && !d.weather,
       deadlineMs: 30_000,
+      // Open-Meteo weather (non-commercial free tier): a dossier cached under another gate state is never served.
+      gates: ['openmeteo'],
       run: (signal) => runDossierStatic(lat, lng, signal),
     }),
     nearbyAll(lat, lng, RADIUS_KM),

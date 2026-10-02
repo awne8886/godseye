@@ -11,12 +11,17 @@
  *    caches (OSINT, aircraft lookups, geocoder), so user traffic cannot erase last-good data;
  *  - "empty result is a failed refresh" unless `isEmpty` says empty is legitimate;
  *  - conditional GET support (the fetcher receives the previous ETag/Last-Modified);
- *  - an in-memory L1 with an LRU cap in front of the SnapshotStore (memory / filesystem / Redis).
+ *  - an in-memory L1 with an LRU cap in front of the SnapshotStore (memory / filesystem / Redis);
+ *  - licence/key gates (`gates`): every snapshot is written with the capability signature it was
+ *    fetched under (`meta.gateSignature`), and on every read (L1, store, shared-lock poll) a
+ *    snapshot whose signature differs from the current capabilities is treated as absent — its data
+ *    is never served and never kept as the "previous" good value by an empty refresh (round 10).
  * Owner: lead. Server-only.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { hasCapability, type CapabilityId } from './capabilities';
 import { HttpError, errorReason } from './http';
 
 export interface StoredSnapshot<T> {
@@ -379,6 +384,16 @@ export interface CacheOptions<T> {
   /** Never LRU-evict (default: true for keys starting `feed:`). */
   pin?: boolean;
   store?: SnapshotStore;
+  /**
+   * Capabilities whose state decides what this cache may hold (licence gates, keys). A snapshot
+   * written under a different on/off combination is never served, kept or revalidated.
+   */
+  gates?: readonly CapabilityId[];
+}
+
+/** `id=1|0` per gate, in declaration order: the capability state a snapshot was fetched under. */
+export function gateSignature(gates: readonly CapabilityId[], env: Record<string, string | undefined> = process.env): string {
+  return gates.map((g) => `${g}=${hasCapability(g, env) ? 1 : 0}`).join(',');
 }
 
 export interface CacheResult<T> {
@@ -450,8 +465,20 @@ export function sourceCache<T>(
   const pin = opts.pin ?? key.startsWith('feed:');
   if (pin) PINNED.add(key);
   const store = () => opts.store ?? getStore();
+  const gates = opts.gates ?? [];
+  const signature = () => (gates.length ? gateSignature(gates) : null);
+  /** A snapshot fetched under other capability states is no snapshot at all. */
+  const admissible = (s: StoredSnapshot<unknown> | null | undefined, sig = signature()): boolean =>
+    !!s && (sig === null || s.meta?.gateSignature === sig);
+  const signed = (s: StoredSnapshot<T>, sig: string | null): StoredSnapshot<T> => (sig === null ? s : { ...s, meta: { ...s.meta, gateSignature: sig } });
 
-  const current = () => (L1.get(key) as StoredSnapshot<T> | undefined) ?? null;
+  const current = (): StoredSnapshot<T> | null => {
+    const s = L1.get(key) as StoredSnapshot<T> | undefined;
+    if (!s) return null;
+    if (admissible(s)) return s;
+    L1.delete(key);
+    return null;
+  };
   const toResult = (s: StoredSnapshot<T> | null, now = Date.now()): CacheResult<T> =>
     s
       ? { data: s.data, fetchedAt: s.fetchedAt || null, lastAttemptAt: s.lastAttemptAt, stale: s.error !== null || now - s.fetchedAt >= ttl, error: s.error, meta: s.meta ?? {} }
@@ -460,7 +487,7 @@ export function sourceCache<T>(
   async function loadL2() {
     if (current()) return;
     const s = await store().get<T>(key);
-    if (s && !current()) l1Set(key, s as StoredSnapshot<unknown>);
+    if (s && admissible(s) && !current()) l1Set(key, s as StoredSnapshot<unknown>);
   }
 
   async function doRefresh(): Promise<void> {
@@ -471,13 +498,15 @@ export function sourceCache<T>(
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 200));
         const shared = await s.get<T>(key);
-        if (shared && shared.lastAttemptAt > (current()?.lastAttemptAt ?? 0)) {
+        if (shared && admissible(shared) && shared.lastAttemptAt > (current()?.lastAttemptAt ?? 0)) {
           l1Set(key, shared as StoredSnapshot<unknown>);
           return;
         }
       }
       return;
     }
+    // The gate state this refresh runs under: its result is signed with it, and `prev` must match it.
+    const sig = signature();
     const prev = current();
     const now = () => Date.now();
     let next: StoredSnapshot<T>;
@@ -500,6 +529,7 @@ export function sourceCache<T>(
       const reason = errorReason(e);
       next = prev ? { ...prev, lastAttemptAt: now(), error: reason } : ({ data: null as T, fetchedAt: 0, lastAttemptAt: now(), error: reason } as StoredSnapshot<T>);
     }
+    next = signed(next, sig);
     try {
       l1Set(key, next as StoredSnapshot<unknown>);
       await s.set(key, next, retention, { pinned: pin });
@@ -548,7 +578,7 @@ export function sourceCache<T>(
     },
     peek: () => toResult(current()),
     seed(data, fetchedAt = Date.now(), meta) {
-      l1Set(key, { data, fetchedAt, lastAttemptAt: fetchedAt, error: null, meta } as StoredSnapshot<unknown>);
+      l1Set(key, signed({ data, fetchedAt, lastAttemptAt: fetchedAt, error: null, meta } as StoredSnapshot<T>, signature()) as StoredSnapshot<unknown>);
     },
     isStale(now = Date.now()) {
       const s = current();

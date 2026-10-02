@@ -83,7 +83,8 @@ export const sdnCache = sourceCache<SdnEntry[]>(
     const { text } = await httpText(OFAC_CSV_URL, { timeoutMs: 45_000, retries: 1, deadlineMs: 90_000, maxBytes: 40 * 1024 * 1024, maxRedirects: 3, signal });
     return { data: parseSdn(text ?? '') };
   },
-  { ttlMs: 24 * 3600_000, deadlineMs: 90_000, retryAfterErrorMs: 10 * 60_000, pin: true },
+  // CC BY-NC: a list cached by a non-commercial run is never served once nc_sources is off.
+  { ttlMs: 24 * 3600_000, deadlineMs: 90_000, retryAfterErrorMs: 10 * 60_000, pin: true, gates: ['nc_sources'] },
 );
 
 export async function loadSdn(): Promise<{ entries: SdnEntry[] | null; status: ProviderStatus }> {
