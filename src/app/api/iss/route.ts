@@ -1,10 +1,12 @@
 /**
- * GET /api/iss — ISS position from wheretheiss.at (with its own timestamp as meta.observedAt) plus a
+ * GET /api/iss — ISS position COMPUTED by wheretheiss.at from NORAD 25544's TLE (`position`: method,
+ * TLE epoch; meta.observedAt = the instant it was computed for, never after fetchedAt) plus a
  * ground track PROPAGATED from NORAD 25544's catalogue elements (labelled: `groundTrack.elementsEpoch`).
  * The track is null while the catalogue has not loaded; it never blocks the position.
  * Owner: layers-space.
  */
 import { feedJson, withRoute } from '@/lib/respond';
+import { toIso } from '@/lib/freshness';
 import { issFeed, satellitesFeed } from '@/features/space/feeds';
 import { lookupSatellite } from '@/features/space/server/lookup';
 import { groundTrack, splitTrackAtAntimeridian } from '@/features/space/lib/orbit';
@@ -42,7 +44,9 @@ export const GET = withRoute('/api/iss', async (req: Request) => {
   return feedJson(
     req,
     result,
-    (d) => ({ lat: d.lat, lng: d.lng, altKm: d.altKm, velocityKmH: d.velocityKmH, visibility: d.visibility, groundTrack: issGroundTrack(now) }),
+    (d) => ({ lat: d.lat, lng: d.lng, altKm: d.altKm, velocityKmH: d.velocityKmH, visibility: d.visibility,
+      position: { method: 'propagated', by: 'wheretheiss.at', elementsEpoch: toIso(d.elementsEpochMs) },
+      groundTrack: issGroundTrack(now) }),
     `${new URL(req.url).search}|${Math.floor(now / 60_000)}`,
   );
 });

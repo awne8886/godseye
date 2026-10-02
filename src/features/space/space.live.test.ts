@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { httpJson } from '@/lib/http';
 import { parseKp, parseRtswMag, parseRtswWind, parseXray } from './lib/swpc';
-import { parseWhereTheIss, WHERETHEISS_URL } from './server/iss';
+import { parseTleEpoch, parseWhereTheIss, WHERETHEISS_TLES_URL, WHERETHEISS_URL } from './server/iss';
 import { SWPC_URLS } from './server/space-weather';
 
 const live = process.env.RUN_LIVE_TESTS === '1';
@@ -26,5 +26,12 @@ describe('space upstreams (live)', () => {
   it.runIf(live)('wheretheiss.at answers a sane position', async () => {
     const { data } = await httpJson(WHERETHEISS_URL);
     expect(parseWhereTheIss(data)).not.toBeNull();
+  }, 30_000);
+
+  it.runIf(live)('wheretheiss.at names the TLE it propagates (epoch within 30 days)', async () => {
+    const { data } = await httpJson(WHERETHEISS_TLES_URL);
+    const epoch = parseTleEpoch(data);
+    expect(epoch).not.toBeNull();
+    expect(Math.abs(Date.now() - epoch!)).toBeLessThan(30 * 86_400_000);
   }, 30_000);
 });
