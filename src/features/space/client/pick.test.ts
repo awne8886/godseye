@@ -5,6 +5,7 @@ import {
   SAT_HIT_PX,
   SatelliteScreenCache,
   elevatedPoint,
+  fitGlobeProjection,
   frameRowFaces,
   hitTestSatellites,
   latestLngLat,
@@ -191,11 +192,70 @@ describe('hover hit-test cost: one projection per (frame, camera)', () => {
     return { ...frame(rows), camera: cam };
   }
 
-  it('projectFrame makes one project() per satellite plus one for the globe centre (was three per satellite)', () => {
+  /** project() calls one verified projection fit costs (19 fit points + 6 check points). */
+  const FIT_CALLS = 25;
+
+  it('projectFrame on the globe: a verified fitted projection, so the cost no longer grows with the satellites (was three project() each)', () => {
     const { m, state } = countingGlobe();
     const f = bigFrame(2_000);
     projectFrame(f, m, GLOBE);
-    expect(state.calls).toBe(f.count + 1);
+    expect(state.calls).toBe(1 + FIT_CALLS); // the globe centre + the fit
+  });
+
+  it('a surface the fit cannot reproduce falls back to one project() per satellite, with the same answers', () => {
+    // Equirectangular is not a perspective view of a sphere: the check points reject the fit.
+    let calls = 0;
+    const flat = {
+      project: ([lng, lat]: [number, number]) => {
+        calls++;
+        return { x: 500 + lng * 10, y: 500 - lat * 10 };
+      },
+      getCenter: () => ({ lng: 0, lat: 0 }),
+    };
+    expect(fitGlobeProjection(flat, GLOBE)).toBeNull();
+    calls = 0;
+    const f = bigFrame(500);
+    const table = projectFrame(f, flat, GLOBE);
+    expect(calls).toBe(1 + FIT_CALLS + f.count);
+    for (let k = 0; k < f.count; k++) {
+      if (Number.isNaN(table[k * 4 + 2]!)) continue;
+      const g = flat.project([f.positions[k * 3]!, f.positions[k * 3 + 1]!]);
+      expect(table[k * 4 + 2]).toBeCloseTo(g.x, 3);
+      expect(table[k * 4 + 3]).toBeCloseTo(g.y, 3);
+    }
+  });
+
+  it('the fit reproduces a pitched perspective globe (another sphere embedding) to well under a pixel, limb included', () => {
+    // MapLibre-style embedding (x = sin λ cos φ, y = sin φ, z = cos λ cos φ), camera 1.5 R above
+    // (10°, 20°) and pushed sideways (pitched view), 800 px focal length, principal point (500, 500).
+    const emb = (lng: number, lat: number) => [Math.sin(lng * DEG) * Math.cos(lat * DEG), Math.sin(lat * DEG), Math.cos(lng * DEG) * Math.cos(lat * DEG)];
+    const T = emb(10, 20);
+    const east = [Math.cos(10 * DEG), 0, -Math.sin(10 * DEG)];
+    const C = T.map((t, i) => 2.5 * t + 0.6 * east[i]!);
+    const norm = (v: number[]) => v.map((x) => x / Math.hypot(...v));
+    const cross = (a: number[], b: number[]) => [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
+    const fwd = norm(T.map((t, i) => t - C[i]!));
+    const right = norm(cross(fwd, [0, 1, 0]));
+    const up = cross(right, fwd);
+    const dot = (a: number[], b: number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+    const persp = {
+      project: ([lng, lat]: [number, number]) => {
+        const d = emb(lng, lat).map((p, i) => p - C[i]!);
+        const z = dot(d, fwd);
+        return { x: 500 + (800 * dot(d, right)) / z, y: 500 - (800 * dot(d, up)) / z };
+      },
+      getCenter: () => ({ lng: 10, lat: 20 }),
+    };
+    const view: PickView = { globe: true, camera: { lng: 10, lat: 20, altitude: 1.5 * EARTH_RADIUS_M } };
+    expect(fitGlobeProjection(persp, view)).not.toBeNull();
+    const f = bigFrame(3_000, view.camera);
+    const table = projectFrame(f, persp, view);
+    let worst = 0;
+    for (let k = 0; k < f.count; k++) {
+      const g = persp.project([f.positions[k * 3]!, f.positions[k * 3 + 1]!]);
+      worst = Math.max(worst, Math.hypot(table[k * 4 + 2]! - g.x, table[k * 4 + 3]! - g.y));
+    }
+    expect(worst).toBeLessThan(0.05);
   });
 
   it('the screen table gives exactly the uncached answer (elevated and ground points, far side)', () => {
@@ -219,8 +279,8 @@ describe('hover hit-test cost: one projection per (frame, camera)', () => {
     const cache = new SatelliteScreenCache();
     for (let i = 0; i < 60; i++) hitTestSatellites(f, { x: 300 + i * 5, y: 420 }, m, GLOBE, () => null, cache);
     expect(cache.builds).toBe(1);
-    // build: 9,000 satellites + the centre; every hover: one camera probe. Before: 3 × 9,000 × 60.
-    expect(state.calls).toBe(9_000 + 1 + 60);
+    // build: the centre + one fit; every hover: one camera probe. Before: 3 × 9,000 × 60.
+    expect(state.calls).toBe(1 + FIT_CALLS + 60);
   });
 
   it('a new frame, a camera move, a zoom or a far-side camera change rebuilds the table; nothing else does', () => {
