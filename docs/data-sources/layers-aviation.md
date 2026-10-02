@@ -145,3 +145,18 @@ never the latest (a go-around or step-down that climbs back above 3,000 ft AGL n
 destination read as a "take-off from the destination"). A take-off from the origin on the
 corridor, with the address airborne under that callsign in the flights snapshot, is
 `basis: 'observed'`, `onCorridor: true`, with progress.
+
+## Round 6b (2026-10-02): watched-flight trails as a TripsLayer
+
+| URL | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/mil` | 200 | 0.93 s | server-side only | used to pick a live airborne address (ae5dcf) for the trace probe |
+| `https://adsb.lol/data/traces/cf/trace_full_ae5dcf.json` | 200 (gzip, `application/json`) | 0.57 s | none (server-side only) | 38 KB, 1,559 rows; Δs column non-decreasing (0 → 22,745 s after `timestamp` 1790887985.237) |
+| `https://adsb.lol/data/traces/cf/trace_recent_ae5dcf.json` | 200 (gzip, `application/json`) | 0.43 s | none | 3 KB, 92 rows, Δs 308 → 1,068 s; non-decreasing |
+
+No new upstream: the trail reads the same `/api/aircraft` track. Each vertex's TripsLayer timestamp
+is its observed sample time (`timestamp + Δs`), in seconds after the earliest drawn vertex (float32
+on the GPU cannot hold epoch seconds to better than 128 s). The head is the snapshot position moved
+along its own track and speed for at most 60 s after `seenAt`, stamped seenAt + the reckoned
+seconds (never "now" past the cap); `currentTime` is the newest head and `trailLength` 30 min.
+Out-of-order samples are skipped, never re-dated.
