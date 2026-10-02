@@ -172,6 +172,7 @@ function broadcastDegraded(error: string): void {
 }
 
 export const malwareFeed = defineFeed<MalwareData>({
+  gates: ['nc_sources'],
   key: 'malware',
   ttlMs: 5 * 60_000,
   pollMs: 60_000,

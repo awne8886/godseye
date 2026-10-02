@@ -11,6 +11,7 @@
  */
 import { errorReason } from './http';
 import { sourceCache, type SourceCache } from './cache';
+import type { CapabilityId } from './capabilities';
 import { freshnessState, toIso } from './freshness';
 import type { Attribution, DataKind, FeedMeta, FreshnessState, ProviderStatus, Providers } from './types';
 
@@ -69,6 +70,13 @@ export interface FeedDef<T> {
    * the returned state caps this feed's (e.g. conflicts while GDELT is down). null = no cap.
    */
   stateCap?: (now: number) => FreshnessState | null;
+  /**
+   * Capabilities (licence gates, keys) of the providers this feed may contain. A snapshot fetched
+   * under a different on/off state of these is treated as absent on every read, so a cached row of
+   * a provider whose gate is now off is never served (e.g. after a restart with
+   * COMMERCIAL_DEPLOYMENT=true on the same SnapshotStore). run() still skips the gated provider.
+   */
+  gates?: readonly CapabilityId[];
 }
 
 export interface FeedResult<T> {
@@ -158,7 +166,7 @@ export function defineFeed<T>(def: FeedDef<T>): Feed<T> {
       }
       return { data: out.data, etag: out.etag, lastModified: out.lastModified, meta: { providers: out.providers, observedAt: out.observedAt ?? null } };
     },
-    { ttlMs: def.ttlMs, isEmpty, retryAfterErrorMs: def.retryAfterErrorMs, deadlineMs: def.deadlineMs, pin: true },
+    { ttlMs: def.ttlMs, isEmpty, retryAfterErrorMs: def.retryAfterErrorMs, deadlineMs: def.deadlineMs, pin: true, gates: def.gates },
   );
 
   const toResult = (r: ReturnType<SourceCache<T>['peek']>): FeedResult<T> => {

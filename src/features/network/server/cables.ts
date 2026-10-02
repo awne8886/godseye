@@ -9,7 +9,8 @@
  * rather than being guessed.
  */
 import 'server-only';
-import { defineFeed } from '@/lib/feeds';
+import { hasCapability } from '@/lib/capabilities';
+import { defineFeed, skippedProvider } from '@/lib/feeds';
 import type { LandingPoint, SubmarineCable } from '@/lib/types';
 import { readRef } from '../../threats/server/refdata';
 
@@ -46,7 +47,9 @@ export const cablesFeed = defineFeed<{ cables: SubmarineCable[]; landingPoints: 
   kind: 'reference',
   attribution: [{ text: 'Submarine cables: TeleGeography Submarine Cable Map (bundled 2026-09-30)', url: 'https://www.submarinecablemap.com/', licence: 'CC BY-NC-SA 3.0' }],
   count: (d) => d.cables.length,
+  gates: ['nc_sources'],
   run: async () => {
+    if (!hasCapability('nc_sources')) return { data: { cables: [], landingPoints: [] }, providers: { telegeography: skippedProvider('licence') } };
     const data = loadCables();
     return { data, providers: { telegeography: { status: { ok: true, count: data.cables.length, ms: 0, age_s: 0 }, okAt: Date.now() } } };
   },
