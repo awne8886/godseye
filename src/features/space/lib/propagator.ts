@@ -129,14 +129,28 @@ export function createPropagator(post: Post, fetchImpl: FetchLike) {
     post({ type: 'catalogue', version, summary: { ...summaryBase, unusable }, packed }, packedTransferables(packed));
   }
 
+  /** load() that never rejects: a throw while building (malformed row, transfer error) is SOURCE OFFLINE. */
+  async function safeLoad(url: string): Promise<void> {
+    try {
+      await load(url);
+    } catch {
+      post({ type: 'catalogue-error', status: 0, meta: null, providers: null });
+    }
+  }
+
   return {
+    /** Test hook: whether a load is queued or running. */
+    isLoading: () => loading !== null,
     handle(msg: WorkerIn): Promise<void> | void {
       if (msg.type === 'load') {
-        // One load at a time; a refresh that arrives mid-load waits for it.
-        const run = (loading ?? Promise.resolve()).then(() => load(msg.url));
-        loading = run.finally(() => {
-          if (loading === run) loading = null;
+        // One load at a time; a refresh that arrives mid-load waits for it. The chain never holds
+        // a rejection (safeLoad reports every failure as catalogue-error), and the tail clears
+        // itself once it is the newest load, so the 2-h refresh and the 60-s retry always run.
+        const run = (loading ?? Promise.resolve()).then(() => safeLoad(msg.url));
+        const tail: Promise<void> = run.finally(() => {
+          if (loading === tail) loading = null;
         });
+        loading = tail;
         return run;
       }
       if (msg.type === 'view' || msg.type === 'camera') {

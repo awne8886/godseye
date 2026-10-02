@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMapInstanceStore } from '@/lib/layer-host';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor } from '@/lib/tokens';
 import type { SentinelResponse, SentinelScene } from '@/lib/types';
 import { useHitTester } from './hit-test';
@@ -40,6 +41,8 @@ export default function SentinelLayer() {
   const data = useHazardData<SentinelResponse>('sentinel', url, count, map ? SENTINEL_IDLE_REASON : undefined);
   const items = url ? data?.items : undefined;
   const byId = useRef(new Map<string, SentinelScene>());
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
   useEffect(() => {
     byId.current = new Map((items ?? []).map((s) => [s.id, s]));
   }, [items]);
@@ -54,7 +57,8 @@ export default function SentinelLayer() {
       { id: 'hazards-sentinel-fill', type: 'fill' as const, paint: { 'fill-color': `rgb(${r},${g},${b})`, 'fill-opacity': 0.04 } },
       { id: 'hazards-sentinel-line', type: 'line' as const, paint: { 'line-color': `rgb(${r},${g},${b})`, 'line-width': 1, 'line-opacity': 0.6, 'line-dasharray': [2, 2] } },
     ];
-  }, []);
+    // New paint objects on every style change: useGeoJsonLayers repaints them in place.
+  }, [styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useGeoJsonLayers('hazards-sentinel', fc, layers);
   useHitTester('sentinel', (map, e) => {

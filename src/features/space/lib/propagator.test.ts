@@ -151,4 +151,31 @@ describe('tle-propagate worker protocol', () => {
     p.handle({ type: 'tick', at: 0 });
     expect(sent).toEqual([{ type: 'catalogue-error', status: 0, meta: null, providers: null }]);
   });
+  // Verification round 6 (minor): the queue compared `loading` with the un-`finally`ed promise, so
+  // it never cleared, and a throw inside load() left it rejected: every later load (the 2-h
+  // refresh, the 60-s SOURCE OFFLINE retry) was skipped and no catalogue-error was ever posted.
+  it('a load that throws posts SOURCE OFFLINE, clears the queue, and the next load still runs', async () => {
+    let malformed = true;
+    const { p, sent, urls } = harness(() => (malformed ? { ok: true, status: 200, json: async () => ({ ...structuredClone(body), rows: [null] }) } : ok()));
+    await p.handle({ type: 'load', url: '/api/satellites' });
+    expect(sent.map((s) => s.msg)).toEqual([{ type: 'catalogue-error', status: 0, meta: null, providers: null }]);
+    await Promise.resolve();
+    expect(p.isLoading()).toBe(false);
+    malformed = false;
+    await p.handle({ type: 'load', url: '/api/satellites' });
+    expect(urls).toHaveLength(2);
+    expect(sent.at(-1)!.msg.type).toBe('catalogue');
+    expect(p.loadedVersion()).not.toBeNull();
+  });
+
+  it('serialises overlapping loads and clears the queue once the newest settles', async () => {
+    const { p, sent } = harness(ok);
+    const a = p.handle({ type: 'load', url: '/api/satellites' });
+    const b = p.handle({ type: 'load', url: '/api/satellites' });
+    expect(p.isLoading()).toBe(true);
+    await Promise.all([a, b]);
+    await Promise.resolve();
+    expect(p.isLoading()).toBe(false);
+    expect(sent.map((s) => s.msg.type)).toEqual(['catalogue', 'catalogue']);
+  });
 });

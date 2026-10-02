@@ -1,6 +1,6 @@
 /**
  * The camera point layer and its pick mapping, as pure functions (SurveillanceLayer supplies the
- * camera-facing rows, the theme colours and the zoom band). On the globe the points draw with
+ * camera-facing rows, the `--map-cctv` colours with their trigger key and the zoom band). On the globe the points draw with
  * `cullMode: 'none'` + `depthCompare: 'always'` (CCTV_POINT_PARAMETERS) so the surface never
  * half-clips a disc; `rows` must therefore already be far-side filtered (./far-side.ts), and the
  * pick mapping refuses a camera behind the limb. Owner: layers-surveillance.
@@ -26,8 +26,12 @@ export interface CameraPointColors {
 
 const isVideo = (r: readonly Cell[]) => r[IDX.streamType] === 'hls' || r[IDX.streamType] === 'mp4';
 
-/** One ScatterplotLayer over the (camera-facing) columnar rows, styled for the zoom `band`. */
-export function cameraPointsLayer(rows: readonly Cell[][], colors: CameraPointColors, band: number, theme: string): ScatterplotLayer<Cell[]> {
+/**
+ * One ScatterplotLayer over the (camera-facing) columnar rows, styled for the zoom `band`.
+ * `colorKey` must change whenever `colors` may have (theme preset, Style Studio, Ghost Protocol:
+ * see colorKeyOf): deck re-runs the colour accessors on the same `rows` only when it does.
+ */
+export function cameraPointsLayer(rows: readonly Cell[][], colors: CameraPointColors, band: number, colorKey: string): ScatterplotLayer<Cell[]> {
   const style = CCTV_ZOOM_BANDS[Math.max(0, Math.min(CCTV_ZOOM_BANDS.length - 1, band))]!;
   return new ScatterplotLayer<Cell[]>({
     id: CCTV_DECK_ID,
@@ -48,9 +52,12 @@ export function cameraPointsLayer(rows: readonly Cell[][], colors: CameraPointCo
     autoHighlight: true,
     // Flat discs on the globe: never depth-clipped by the surface; the far side is filtered out of `rows`.
     parameters: CCTV_POINT_PARAMETERS,
-    updateTriggers: { getFillColor: theme, getLineColor: theme },
+    updateTriggers: { getFillColor: colorKey, getLineColor: colorKey },
   });
 }
+
+/** The colour trigger for a theme preset and a style version (useStyleVersion()). */
+export const colorKeyOf = (theme: string, styleVersion: number): string => `${theme}:${styleVersion}`;
 
 /** Card selection for a picked camera row; null for anything else or a camera behind the limb. */
 export function cameraSelection(object: unknown, camera: FarSideCamera | null): Selection | null {

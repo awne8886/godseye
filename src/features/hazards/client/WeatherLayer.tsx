@@ -9,6 +9,7 @@ import { ScatterplotLayer } from '@deck.gl/layers';
 import { useEffect, useMemo, useRef } from 'react';
 import { LAYERS } from '@/lib/layer-registry';
 import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
+import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { WeatherEvent, WeatherResponse } from '@/lib/types';
 import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken } from '../shared';
@@ -29,6 +30,8 @@ export default function WeatherLayer() {
   useWeatherUnplaced(data);
   const push = useFeedEventStore((s) => s.push);
   const byId = useRef(new Map<string, WeatherEvent>());
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
 
   useEffect(() => {
     if (!items) return;
@@ -55,7 +58,8 @@ export default function WeatherLayer() {
       { id: 'hazards-weather-fill', type: 'fill' as const, paint: { 'fill-color': color as unknown as string, 'fill-opacity': 0.12 } },
       { id: 'hazards-weather-line', type: 'line' as const, paint: { 'line-color': color as unknown as string, 'line-width': 1, 'line-opacity': 0.7 } },
     ];
-  }, []);
+    // New paint objects on every style change: useGeoJsonLayers repaints them in place.
+  }, [styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useGeoJsonLayers('hazards-weather-areas', areas, nativeLayers);
 
@@ -80,9 +84,10 @@ export default function WeatherLayer() {
         parameters: GLOBE_POINT_PARAMETERS,
         pickable: true,
         autoHighlight: true,
+        updateTriggers: { getFillColor: styleVersion, getLineColor: styleVersion },
       }),
     ];
-  }, [points]);
+  }, [points, styleVersion]);
 
   useDeckLayers('hazards:weather', layers, Z);
   useHitTester('weather', (map, e) => {
