@@ -25,7 +25,8 @@ afterEach(() => {
 });
 
 describe('visual-qa m4: the phone Style Studio sheet has one header row and no meaningless chip', () => {
-  it('puts the studio tools in the frame header beside the one close button, with no STANDBY chip', async () => {
+  // r7 m moved the tools from the header row to the top of the sheet body (the tab strip needs the width).
+  it('keeps one header row with one close button and no STANDBY chip; the studio tools head the body', async () => {
     mockMobile(true);
     render(
       <InstrumentFrame title="STYLE STUDIO" onClose={() => {}} sheet touch>
@@ -33,11 +34,10 @@ describe('visual-qa m4: the phone Style Studio sheet has one header row and no m
       </InstrumentFrame>,
     );
     const header = document.querySelector('header')!;
-    // The tools are portalled into the header once the frame's slot has mounted.
     const copy = await screen.findByRole('button', { name: 'Copy theme JSON' });
-    expect(header.contains(copy)).toBe(true);
-    expect(header.contains(screen.getByRole('button', { name: 'Import theme JSON from clipboard' }))).toBe(true);
-    // One header row: nothing else in the sheet body carries the tools or a close button.
+    expect(header.contains(copy)).toBe(false);
+    expect(screen.getByRole('toolbar', { name: 'Theme JSON' }).contains(screen.getByRole('button', { name: 'Import theme JSON from clipboard' }))).toBe(true);
+    // One header row and one close button.
     expect(screen.getAllByRole('button', { name: /^Close/ })).toHaveLength(1);
     expect(document.querySelectorAll('header')).toHaveLength(1);
     expect(screen.queryByText('STANDBY')).toBeNull();

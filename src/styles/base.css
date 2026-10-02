@@ -486,10 +486,12 @@
   -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
 }
 
-/* Horizontal scrollers (phone sheet tabs): the right-edge fade says "more this way". */
+/* Horizontal scrollers (phone sheet tabs): the right-edge fade says "more this way". A fixed
+   24 px fade, matched by the strip's 24 px end padding (pr-6), so the last tab can always scroll
+   clear of it (r7 m: a 15% fade was wider than the padding and the selected last tab stayed faded). */
 .hud-fade-right {
-  mask-image: linear-gradient(90deg, #000 85%, transparent);
-  -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
 }
 
 /*

@@ -114,17 +114,6 @@ describe('r1 M2: the HUD is fully phone or fully desktop (one media query for JS
 });
 
 describe('r1 m1: the view-control status lines are map insets', () => {
-  it('marks the terrain line', () => {
-    act(() => {
-      useUiStore.getState().setLayer('terrain_elevation', true);
-      useLayerStatusStore.getState().update('terrain_elevation', { state: 'loading' });
-    });
-    render(<ViewControls />);
-    const line = document.querySelector('[data-map-inset="terrain-line"]');
-    expect(line?.getAttribute('role')).toBe('status');
-    act(() => useUiStore.getState().setLayer('terrain_elevation', false));
-  });
-
   it('marks LOCATION UNAVAILABLE', async () => {
     vi.stubGlobal('navigator', { ...navigator, geolocation: { getCurrentPosition: (_ok: unknown, fail: () => void) => fail() } });
     render(<ViewControls />);

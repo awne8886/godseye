@@ -1,18 +1,18 @@
 'use client';
 /**
  * Bottom-left view strip: 3D | 2D and MAP | SAT segmented controls (shared layoutId highlight; the
- * map host swaps Esri imagery in place), consent-based "centre on my region", the terrain status
- * line while 3D terrain is on, and the readout: scale bar + cursor position fed by map-engine's
+ * map host swaps Esri imagery in place), consent-based "centre on my region" and the readout: scale bar + cursor position fed by map-engine's
  * zero-render channels (subscribeView / subscribeCursor in src/lib/map/cursor.ts) and written
  * straight into DOM refs, with reverse geocoding (/api/geo/reverse, 3 s debounce, 0.1° cache;
- * coordinates only while the geocoder does not answer). Owner: design-system-hud.
+ * coordinates only while the geocoder does not answer). The terrain status has one home, the
+ * map's imagery-chip stack (`imagery-chip-terrain`, alert tone on error): r7 m removed the
+ * duplicate line that used to sit here. Owner: design-system-hud.
  */
 import { m } from 'motion/react';
-import { Globe, Layers2, LocateFixed, MapPinned, Maximize, Minimize, Mountain, Navigation2, Satellite } from 'lucide-react';
+import { Globe, Layers2, LocateFixed, MapPinned, Maximize, Minimize, Navigation2, Satellite } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { useLayerStatus, useMapInstanceStore } from '@/lib/layer-host';
+import { useMapInstanceStore } from '@/lib/layer-host';
 import { getCursor, getView, subscribeCursor, subscribeView, type MapPoint } from '@/lib/map/cursor';
-import { TERRAIN_STATUS_TEXT, type TerrainStatus } from '@/lib/map/terrain';
 import { useUiStore, type Settings } from '@/lib/store';
 import { toggleFullscreen } from './actions';
 import { locateOnce } from './Boot';
@@ -186,29 +186,6 @@ export function useClearOfAttribution(row: RefObject<HTMLElement | null>) {
   }, [row]);
 }
 
-/** Terrain status from the layer status the map host reports for `terrain_elevation`. */
-export function terrainText(state: string): string {
-  const s: TerrainStatus = state === 'loading' ? 'loading' : state === 'reference' || state === 'live' ? 'ready' : state === 'offline' ? 'error' : 'idle';
-  return TERRAIN_STATUS_TEXT[s];
-}
-
-function TerrainLine() {
-  const on = useUiStore((s) => s.activeLayers.has('terrain_elevation'));
-  const status = useLayerStatus('terrain_elevation');
-  if (!on) return null;
-  const error = status.state === 'offline';
-  return (
-    <p
-      role="status"
-      data-map-inset="terrain-line"
-      className="hud-micro fixed bottom-[140px] left-[120px] z-[var(--z-hud)] flex items-center gap-1.5 phone:bottom-auto phone:left-3 phone:top-[112px]"
-      style={{ color: error ? 'var(--alert-orange)' : 'var(--text-secondary)' }}
-    >
-      <Mountain size={12} aria-hidden /> {terrainText(status.state)}
-    </p>
-  );
-}
-
 /** The compass shows only while the view is rotated or tilted (MapLibre's own threshold is similar). */
 export function compassVisible(bearing: number, pitch: number): boolean {
   const b = (((bearing % 360) + 540) % 360) - 180;
@@ -358,7 +335,6 @@ export default function ViewControls() {
         <CompassButton />
         <FullscreenButton />
       </div>
-      <TerrainLine />
       {/* data-map-inset on both status lines: route framing keeps endpoints out from under them (round 5 m1). */}
       {locating === 'failed' && (
         <p

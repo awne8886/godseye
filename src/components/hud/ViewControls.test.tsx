@@ -8,7 +8,7 @@ import { publishCursor, publishView } from '@/lib/map/cursor';
 import { TERRAIN_STATUS_TEXT } from '@/lib/map/terrain';
 import { DEFAULT_SETTINGS, useUiStore } from '@/lib/store';
 import { LayerRow } from './LayerRows';
-import ViewControls, { GEOCODE_DEBOUNCE_MS, Readout, terrainText } from './ViewControls';
+import ViewControls, { GEOCODE_DEBOUNCE_MS, Readout } from './ViewControls';
 import { getLayer } from '@/lib/layer-registry';
 import { routeListed } from './hooks';
 
@@ -78,19 +78,17 @@ describe('MAP | SAT and 3D | 2D', () => {
     expect(useUiStore.getState().projection).toBe('mercator');
   });
 
-  it('shows the terrain status line only while 3D terrain is on', () => {
-    useUiStore.getState().setLayer('terrain_elevation', false);
-    render(<ViewControls />);
-    expect(screen.queryByText(TERRAIN_STATUS_TEXT.loading)).toBeNull();
+  it('r7 m: never prints a second terrain status line (the map imagery-chip stack is the one copy)', () => {
     act(() => {
       useUiStore.getState().setLayer('terrain_elevation', true);
       useLayerStatusStore.getState().update('terrain_elevation', { state: 'loading' });
     });
-    expect(screen.getByText(TERRAIN_STATUS_TEXT.loading)).toBeTruthy();
+    render(<ViewControls />);
+    for (const t of Object.values(TERRAIN_STATUS_TEXT)) expect(screen.queryByText(t, { exact: false })).toBeNull();
+    expect(document.querySelector('[data-map-inset="terrain-line"]')).toBeNull();
     act(() => useLayerStatusStore.getState().update('terrain_elevation', { state: 'offline' }));
-    expect(screen.getByText(TERRAIN_STATUS_TEXT.error)).toBeTruthy();
-    expect(terrainText('reference')).toBe(TERRAIN_STATUS_TEXT.ready);
-    expect(terrainText('idle')).toBe(TERRAIN_STATUS_TEXT.idle);
+    for (const t of Object.values(TERRAIN_STATUS_TEXT)) expect(screen.queryByText(t, { exact: false })).toBeNull();
+    act(() => useUiStore.getState().setLayer('terrain_elevation', false));
   });
 });
 

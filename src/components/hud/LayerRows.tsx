@@ -2,7 +2,8 @@
 /**
  * Layer toggle rows shared by the rail flyouts and the LAYERS panel: 28×14 sliding toggle
  * (aria-pressed), count badge, refresh interval, freshness LED + label, and the feed's source
- * line (providers / attribution; SOURCE OFFLINE with last-good time). Owner: design-system-hud.
+ * line (providers / attribution, several credits behind a SOURCES (N) disclosure; SOURCE OFFLINE
+ * with last-good time). Owner: design-system-hud.
  */
 import { useId } from 'react';
 import { freshnessLabel, FRESHNESS_COLOR_TOKEN } from '@/lib/freshness';
@@ -65,6 +66,35 @@ export function AttributionLine({ a }: { a: Attribution }) {
 }
 
 /**
+ * The row's source credit. One credit stays inline; several collapse to a SOURCES (N) disclosure
+ * (r7 m: CCTV's ~45 lines of licence links pushed the rest of SURVEILLANCE two screens down). The
+ * full wording is still one click away here and always listed in the Sources & Licences panel.
+ */
+export function SourcesLine({ layerId, attribution }: { layerId: string; attribution: Attribution[] }) {
+  if (attribution.length === 1)
+    return (
+      <p className="font-sans text-[12px] text-[var(--text-muted)]" data-testid={`attribution-${layerId}`}>
+        <AttributionLine a={attribution[0]!} />
+      </p>
+    );
+  return (
+    <details className="group" data-testid={`sources-${layerId}`}>
+      <summary className="hud-micro hud-control flex min-h-6 cursor-pointer list-none items-center gap-1 text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:min-h-11 [&::-webkit-details-marker]:hidden">
+        SOURCES ({attribution.length})
+        <span aria-hidden className="inline-block transition-transform group-open:rotate-90">›</span>
+      </summary>
+      <ul className="mt-0.5 space-y-0.5 font-sans text-[12px] text-[var(--text-muted)]" data-testid={`attribution-${layerId}`}>
+        {attribution.map((a) => (
+          <li key={`${a.text}|${a.url ?? ''}`}>
+            <AttributionLine a={a} />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/**
  * A layer toggle. The button holds only what names it (toggle, label, REFERENCE chip, count), so
  * its accessible name contains the visible label (WCAG 2.5.3); description, refresh interval,
  * freshness and the source line sit beside it and are linked with aria-describedby.
@@ -123,16 +153,7 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
             NEEDS KEY · {needsKey.join(', ').toUpperCase()}
           </p>
         )}
-        {on && attribution.length > 0 && (
-          <p className="font-sans text-[12px] text-[var(--text-muted)]" data-testid={`attribution-${layer.id}`}>
-            {attribution.map((a, i) => (
-              <span key={a.text}>
-                {i > 0 && ' · '}
-                <AttributionLine a={a} />
-              </span>
-            ))}
-          </p>
-        )}
+        {on && attribution.length > 0 && <SourcesLine layerId={layer.id} attribution={attribution} />}
         {on && attribution.length === 0 && providers.length > 0 && <p className="font-sans text-[12px] text-[var(--text-muted)]">Source: {providers.join(', ')}</p>}
       </div>
     </li>
