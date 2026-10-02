@@ -7,7 +7,8 @@
  *
  * Protocol (main → worker):
  *   {type:'load', url}                       fetch + parse + build (initial load and every refresh)
- *   {type:'view', camera, visible, palette, selectedId}   re-filters the newest propagation at once
+ *   {type:'view', camera, visible, palette, selectedId, flat}   re-filters the newest propagation at once
+ *                                            (flat: mercator, markers at z = 0 on their ground points)
  *   {type:'camera', camera}                  far-side camera only (throttled while the map moves);
  *                                            re-filters the newest propagation (no SGP4) and posts it
  *   {type:'tick', at}                        propagate for `at` (ms) and post one frame
@@ -15,7 +16,7 @@
  *   {type:'catalogue', version, summary, packed | null}   packed null = same version, nothing rebuilt
  *   {type:'catalogue-error', status, meta, providers}      503 = SOURCE OFFLINE with last-good meta
  *   {type:'frame', version, at, count, positions, colors, sizes, index, categoryOffsets,
- *                                            hidden, failed, selected, camera}  rows sorted by category
+ *                                            hidden, failed, selected, camera, flat}  rows sorted by category
  */
 import type { SatRec } from 'satellite.js';
 import type { FeedMeta, Mission, Providers, SatCategory } from '@/lib/types';
@@ -26,7 +27,7 @@ import { compactFrame, propagateVisible, type BatchOptions, type BatchResult, ty
 
 export type WorkerIn =
   | { type: 'load'; url: string }
-  | { type: 'view'; camera: FarSideCamera | null; visible: number[]; palette: [number, number, number, number][]; selectedId: number | null }
+  | { type: 'view'; camera: FarSideCamera | null; visible: number[]; palette: [number, number, number, number][]; selectedId: number | null; flat: boolean }
   | { type: 'camera'; camera: FarSideCamera | null }
   | { type: 'tick'; at: number };
 
@@ -70,7 +71,7 @@ interface SatellitesBody {
 
 export function createPropagator(post: Post, fetchImpl: FetchLike) {
   let loaded: Loaded | null = null;
-  let view: Omit<BatchOptions, 'at'> = { palette: [], visible: new Set(), camera: null, selectedId: null };
+  let view: Omit<BatchOptions, 'at'> = { palette: [], visible: new Set(), camera: null, selectedId: null, flat: false };
   /** The newest propagation of `loaded` (re-filtered on camera moves without running SGP4 again). */
   let last: Propagated | null = null;
   let loading: Promise<void> | null = null;
@@ -154,7 +155,7 @@ export function createPropagator(post: Post, fetchImpl: FetchLike) {
         return run;
       }
       if (msg.type === 'view' || msg.type === 'camera') {
-        view = msg.type === 'view' ? { camera: msg.camera, visible: new Set(msg.visible), palette: msg.palette, selectedId: msg.selectedId } : { ...view, camera: msg.camera };
+        view = msg.type === 'view' ? { camera: msg.camera, visible: new Set(msg.visible), palette: msg.palette, selectedId: msg.selectedId, flat: msg.flat } : { ...view, camera: msg.camera };
         // The camera moved (or the view changed): nothing behind the globe may stay drawn until the
         // next tick, so the newest propagation is re-filtered now. A category switched on appears
         // with the next tick (its satellites were not propagated).
