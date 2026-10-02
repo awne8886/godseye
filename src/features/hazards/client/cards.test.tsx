@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import EntityCardFrame from '@/components/cards/EntityCardFrame';
 import { useLayerStatusStore, type Selection } from '@/lib/layer-host';
 import type { Earthquake, WeatherEvent } from '@/lib/types';
-import { EarthquakeCard, FireCard, GpsJamCard, WeatherEventCard } from './cards';
+import { EarthquakeCard, FireCard, GpsJamCard, WeatherEventCard, zoneList } from './cards';
 
 vi.mock('next/image', () => ({ default: () => null }));
 
@@ -87,6 +87,14 @@ describe('hazards cards', () => {
     expect(screen.getByText('<b>Flood Warning</b>')).toBeTruthy();
     expect(screen.queryByText('Source report')).toBeNull();
     expect(screen.getByText(/centre of an affected NWS zone/)).toBeTruthy();
+  });
+
+  it('weather card lists the alert zones (shared-outline alerts carry zoneRefs, no inline geometry)', () => {
+    const e: WeatherEvent = { id: 'nws-2', lat: 42, lng: -88, observedAt: '2026-09-30T18:02:00.000Z', source: 'nws', title: 'Flood Warning', type: 'flood', severity: 'medium', provider: 'NOAA/NWS', expiresAt: null, area: 'Boone; Winnebago', url: null, geometry: null, zones: ['ILC007', 'ILC201'], zoneRefs: ['ILC007', 'ILC201'], positionBasis: 'zone-centroid' };
+    render(<WeatherEventCard selection={sel('weather_event', 'weather', e, 'nws', e.observedAt)} />);
+    expect(screen.getByText('ILC007, ILC201')).toBeTruthy();
+    const many = Array.from({ length: 15 }, (_, i) => `TXZ${100 + i}`);
+    expect(zoneList(many)).toBe(`${many.slice(0, 12).join(', ')} +3 more`);
   });
 
   it('gps jam card names the basis, the licence and the UTC day of a daily aggregate', () => {
