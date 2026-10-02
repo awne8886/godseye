@@ -11,6 +11,7 @@ import type { LayerDef, LayerId } from '@/lib/layer-registry';
 import { useLayerStatus, type LayerStatus } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import type { Attribution } from '@/lib/types';
+import { sourceDisplayName } from '@/components/cards/source-name';
 import { refreshLabel, zoomGateLabel } from './status-logic';
 
 /** The knob slides with a CSS transition (base.css), so this module stays free of motion (perf m-d). */
@@ -105,7 +106,9 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
   const toggle = useUiStore((s) => s.toggleLayer);
   const status = useLayerStatus(id);
   const attribution = statusAttribution(status);
-  const providers = status.providers ? Object.keys(status.providers) : [];
+  // Fallback credit when the feed sent no attribution: only providers that served (never a skipped,
+  // licence-gated or unconfigured one), by catalogue name and de-duplicated.
+  const providers = status.providers ? [...new Set(Object.entries(status.providers).filter(([, p]) => !p.skipped).map(([name]) => sourceDisplayName(name)))] : [];
   // Providers the server skipped for want of a key (e.g. TfL cameras on a keyless instance).
   const needsKey = status.providers ? Object.entries(status.providers).filter(([, p]) => p.skipped === 'not-configured').map(([name]) => name) : [];
   const offline = status.state === 'offline';

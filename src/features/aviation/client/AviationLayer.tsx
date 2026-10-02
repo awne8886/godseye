@@ -236,6 +236,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
         observedAt: data.meta.observedAt,
         lastGoodAt: data.meta.lastGoodAt,
         providers: data.providers,
+        attribution: data.meta.attribution,
         ...(data.offline ? { error: 'SOURCE OFFLINE' } : {}),
       });
     }
