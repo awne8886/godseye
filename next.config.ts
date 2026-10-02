@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { NextConfig } from 'next';
 import { securityHeaders } from './src/config/csp';
-import { IMAGE_HOSTS } from './src/config/hosts';
+import { OPTIMISED_IMAGE_HOSTS } from './src/config/hosts';
 
 const dev = process.env.NODE_ENV !== 'production';
 
@@ -34,7 +34,9 @@ const nextConfig: NextConfig = {
     formats: ['image/webp'],
     // The optimiser re-checks redirects for private IPs but not against remotePatterns: follow none.
     maximumRedirects: 0,
-    remotePatterns: IMAGE_HOSTS.map((h) => {
+    // Quicklooks are a few hundred KB each; bound the optimiser's on-disk cache (bytes).
+    maximumDiskCacheSize: 256 * 1024 * 1024,
+    remotePatterns: OPTIMISED_IMAGE_HOSTS.map((h) => {
       const u = new URL(h);
       return { protocol: 'https' as const, hostname: u.hostname, pathname: u.pathname === '/' ? '/**' : `${u.pathname}**` };
     }),
