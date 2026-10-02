@@ -300,7 +300,7 @@ export function MobileSheetBody({ id }: { id: PanelId }) {
       data-exiting={present ? undefined : ''}
       data-testid="mobile-sheet"
       data-map-inset="sheet"
-      className="fixed inset-x-0 z-[var(--z-docked)] flex max-h-[55vh] min-h-[40vh] flex-col"
+      className="godseye-mobile-sheet fixed inset-x-0 z-[var(--z-docked)] flex max-h-[55vh] min-h-[40vh] flex-col"
       style={{ bottom: 'calc(56px + env(safe-area-inset-bottom))' }}
     >
       <div className="glass-3 flex min-h-0 flex-1 flex-col rounded-b-none">

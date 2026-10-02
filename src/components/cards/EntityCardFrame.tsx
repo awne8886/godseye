@@ -3,15 +3,19 @@
  * Entity-card frame (§0.3, §7): kind + display-name header, freshness badge (entityFreshness over the layer's
  * observation cadence, never better than the feed), source line with attribution, observed-at time
  * kept separate from fetched-at, SOURCE OFFLINE with last-good time, and tabs Overview / Sources.
- * The body comes from the feature module registered for the entity kind. Owner: design-system-hud.
+ * The body comes from the feature module registered for the entity kind. The badge is computed
+ * here only, once; a body that has the feed's own state or a newer observation reports it through
+ * useCardFreshness (card-freshness.tsx) and renders this same badge (r8: header and body
+ * disagreed). Owner: design-system-hud.
  */
 import { X } from 'lucide-react';
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { FRESHNESS_COLOR_TOKEN } from '@/lib/freshness';
 import { getLayer } from '@/lib/layer-registry';
 import type { LayerStatus, Selection } from '@/lib/layer-host';
 import { statusAttribution } from '@/components/hud/LayerRows';
-import { cardBadge } from '@/components/hud/status-logic';
+import { cardBadge, type CardBadge } from '@/components/hud/status-logic';
+import { CardFreshnessContext, applyReport, sameReport, type CardFreshnessReport } from './card-freshness';
 import { entityDisplayName } from './display-name';
 import { sourceDisplayName } from './source-name';
 
@@ -26,11 +30,12 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
-export function FreshnessBadge({ selection, feed, now }: { selection: Selection; feed: LayerStatus | undefined; now?: number }) {
-  const b = cardBadge({ layer: selection.layer, observedAt: selection.observedAt, feed, now });
+/** The frame's badge chip (`badge` from cardBadge, or computed here from the selection and feed). */
+export function FreshnessBadge({ selection, feed, now, badge }: { selection: Selection; feed: LayerStatus | undefined; now?: number; badge?: CardBadge }) {
+  const b = badge ?? cardBadge({ layer: selection.layer, observedAt: selection.observedAt, feed, now });
   const color = `var(${FRESHNESS_COLOR_TOKEN[b.state]})`;
   return (
-    <span className="instrument-chip inline-flex items-center gap-1" style={{ color }} data-state={b.state}>
+    <span className="instrument-chip inline-flex items-center gap-1" style={{ color }} data-state={b.state} data-testid="card-badge">
       <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {b.label}
     </span>
@@ -49,10 +54,16 @@ export default function EntityCardFrame({
   children: ReactNode;
 }) {
   const [tab, setTab] = useState<'overview' | 'sources'>('overview');
-  const now = useNow(15_000);
+  // 1 s: the badge (header and body) and the "Ns ago" age read the same clock as the body's own.
+  const now = useNow(1000);
   const titleId = useId();
   const layer = selection.layer ? getLayer(selection.layer) : undefined;
-  const badge = cardBadge({ layer: selection.layer, observedAt: selection.observedAt, feed, now });
+  const [reported, setReported] = useState<CardFreshnessReport | null>(null);
+  const report = useCallback((r: CardFreshnessReport) => setReported((prev) => (sameReport(prev, r) ? prev : r)), []);
+  const inputs = applyReport({ observedAt: selection.observedAt, feed }, reported);
+  const badge = cardBadge({ layer: selection.layer, ...inputs, now });
+  // Only bodies that report (useCardFreshness) read this; they re-render on the 1 s clock anyway.
+  const freshness = { badge, report };
   const sourceName = sourceDisplayName(selection.source, selection.layer ?? undefined);
   const attribution = feed ? statusAttribution(feed) : [];
   const offline = feed?.state === 'offline';
@@ -75,7 +86,7 @@ export default function EntityCardFrame({
             </p>
           )}
         </div>
-        <FreshnessBadge selection={selection} feed={feed} now={now} />
+        <FreshnessBadge selection={selection} feed={feed} badge={badge} />
         <button type="button" onClick={onClose} aria-label="Close card" className="hud-control grid h-7 w-7 shrink-0 place-items-center text-[var(--text-secondary)] hover:text-[var(--gold-light)] phone:h-11 phone:w-11">
           <X size={15} />
         </button>
@@ -88,7 +99,7 @@ export default function EntityCardFrame({
         </dd>
         <dt className="hud-micro text-[var(--text-muted)]">OBSERVED</dt>
         <dd className="font-mono text-[var(--text-primary)] tabular-nums">
-          {layer?.kind === 'reference' ? 'REFERENCE DATA' : iso(selection.observedAt)}
+          {layer?.kind === 'reference' ? 'REFERENCE DATA' : iso(inputs.observedAt)}
           {badge.age && <span className="ml-2 text-[var(--text-secondary)]">{badge.age}</span>}
         </dd>
         {offline && (
@@ -112,10 +123,13 @@ export default function EntityCardFrame({
           </button>
         ))}
       </div>
-      <div role="tabpanel" className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
-        {tab === 'overview' ? (
-          children
-        ) : (
+      {/* The body stays mounted (hidden) on the Sources tab, so its queries and its freshness
+          report keep running and the header badge does not change with the tab. */}
+      <div role="tabpanel" hidden={tab !== 'overview'} className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <CardFreshnessContext value={freshness}>{children}</CardFreshnessContext>
+      </div>
+      {tab === 'sources' && (
+        <div role="tabpanel" className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <div className="space-y-2 text-[12px] text-[var(--text-secondary)]">
             <p className="break-all">
               <span className="hud-micro text-[var(--text-muted)]">ID </span>
@@ -157,8 +171,8 @@ export default function EntityCardFrame({
               ),
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }

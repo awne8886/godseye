@@ -512,12 +512,13 @@
   /* An open phone sheet or entity card publishes the height it covers (useBottomReserve); the
      credits ride above it instead of disappearing under it (m2). */
   .maplibregl-map .maplibregl-ctrl-bottom-right {
+    --map-stack-bottom: max(calc(57px + env(safe-area-inset-bottom)), calc(var(--sheet-occupied, 0px) + 4px), calc(var(--card-occupied, 0px) + 4px));
     right: 0;
     left: 0;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
-    bottom: max(calc(57px + env(safe-area-inset-bottom)), calc(var(--sheet-occupied, 0px) + 4px), calc(var(--card-occupied, 0px) + 4px));
+    bottom: var(--map-stack-bottom);
   }
   /* Phones: the credits wrap inside the viewport (never clipped, never collapsed behind a button). */
   .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
@@ -542,6 +543,57 @@
     margin-block: -15px;
     line-height: 14px;
     position: relative;
+  }
+}
+/*
+ * Landscape phone (the short half of the phone query) with a sheet or entity card open (r8): the
+ * space above the sheet is the header row, so a full-width stack lifted above the sheet ran under
+ * the view bar (attribution hidden) and its chips under the STATUS telemetry. Here the stack keeps
+ * to the column right of the view bar (--view-controls-right, published by ViewControls) and below
+ * the telemetry row (--telemetry-bottom, published by Telemetry). The credits never shrink and wrap
+ * inside that column; the chip controls give way first, clipped from the top so the row nearest the
+ * credits stays (with it the phone summary chip's expand/hide toggle, which is last). Chip lists
+ * wrap as right-aligned rows here to show more of them in the little height there is.
+ */
+@media (max-height: 499px) and (orientation: landscape) {
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right {
+    left: calc(var(--view-controls-right, 50%) + 8px);
+    max-height: calc(100% - var(--map-stack-bottom) - var(--telemetry-bottom, 32px) - 6px);
+    justify-content: flex-end;
+  }
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl:not(.maplibregl-ctrl-attrib) {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    flex-shrink: 1;
+    min-height: 0;
+    max-width: calc(100% - 10px);
+    margin-bottom: 4px;
+    overflow: hidden;
+  }
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl:not(.maplibregl-ctrl-attrib) ul {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: flex-end;
+  }
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib {
+    flex-shrink: 0;
+  }
+  /* Narrow landscape phones (r8 minor, 568x320): the column right of the view bar is ~190 px, the
+     credits wrap to 5 lines there and a 55vh sheet left them too little height, so they ran up over
+     the STATUS telemetry. The sheet and the entity card stop low enough to leave the credits
+     (--map-attrib-height, published by ViewControls) their own row between them and the telemetry
+     (the 10 px are the stack's 4 px lift + the 6 px gap under the telemetry). Wider screens never
+     reach the cap (844x390: 259 px against a 214 px sheet), and a 30vh floor keeps the sheet usable. */
+  .godseye-mobile-sheet {
+    --sheet-cap: calc(100dvh - 56px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    max-height: min(55vh, max(30vh, var(--sheet-cap)));
+    min-height: min(40vh, max(30vh, var(--sheet-cap)));
+  }
+  .godseye-card-sheet {
+    --sheet-cap: calc(100dvh - 60px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    max-height: min(50vh, max(30vh, var(--sheet-cap)));
   }
 }
 /* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome (z ≥ 40). The map wrapper

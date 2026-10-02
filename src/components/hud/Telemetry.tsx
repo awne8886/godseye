@@ -6,13 +6,13 @@
  * Owner: design-system-hud.
  */
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { APP_VERSION } from '@/lib/config';
 import { useLayerStatusStore } from '@/lib/layer-host';
 import { useDrawPending } from '@/lib/map/admission-scheduler';
 import { useUiStore } from '@/lib/store';
 import type { SpaceWeatherResponse } from '@/lib/types';
-import { useHealth, useVisibleLayers } from './hooks';
+import { useHealth, usePublishedEdge, useVisibleLayers } from './hooks';
 import { STATUS_COLOR, activeVisible, entitiesLabel, hudStatus } from './status-logic';
 
 function useZulu(): string {
@@ -55,10 +55,13 @@ export default function Telemetry() {
   const sw = useSpaceWeather();
   const kp = sw.data?.kp.kp;
   const xray = sw.data?.xray.class;
+  // base.css keeps the map's corner stack below this row on a landscape phone with a sheet open (r8).
+  const row = useRef<HTMLDivElement>(null);
+  usePublishedEdge(row, '--telemetry-bottom', 'bottom');
   const kpColor = typeof kp === 'number' ? (kp >= 5 ? 'var(--alert-red)' : kp >= 4 ? 'var(--alert-orange)' : 'var(--alert-green)') : 'var(--text-secondary)';
 
   return (
-    <div className="hud-micro fixed right-4 top-4 z-[var(--z-hud)] flex items-center gap-3 text-[var(--text-secondary)]" aria-label="Telemetry" role="group" data-map-inset="telemetry">
+    <div ref={row} className="hud-micro fixed right-4 top-4 z-[var(--z-hud)] flex items-center gap-3 text-[var(--text-secondary)]" aria-label="Telemetry" role="group" data-map-inset="telemetry">
       <span className="inline font-bold text-[var(--cyan-primary)] phone:hidden">ZULU {zulu}Z</span>
       <span aria-live="polite" className="flex items-center gap-1.5" style={{ color: STATUS_COLOR[st] }}>
         <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[st], boxShadow: st === 'LIVE' ? '0 0 6px var(--alert-green)' : undefined }} />

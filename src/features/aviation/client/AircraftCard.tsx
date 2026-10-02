@@ -1,19 +1,21 @@
 'use client';
 /**
  * Aircraft entity card body (`cards.aircraft`; the HUD supplies the frame). Shows the source, the
- * observed-at time and an honest freshness badge (entityFreshness with the 60 s observation
- * cadence), live telemetry from the flights feed, adsb.lol/adsbdb identity, the route, and a
- * Watch toggle for Flight Watch. Upstream strings render as text only.
+ * observed-at time and an honest freshness badge (the frame's one verdict: entityFreshness with the
+ * 60 s observation cadence, fed this aircraft's latest observation and the flights feed's own
+ * state through useCardFreshness), live telemetry from the flights feed, adsb.lol/adsbdb identity,
+ * the route, and a Watch toggle for Flight Watch. Upstream strings render as text only.
  */
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Eye, EyeOff, Plane, Route, TriangleAlert } from 'lucide-react';
 import type { CardProps } from '@/lib/feature-module';
-import { OBSERVATION_CADENCE_MS, type LayerId } from '@/lib/layer-registry';
+import type { LayerId } from '@/lib/layer-registry';
 import { useLayerStatus } from '@/lib/layer-host';
 import { MAX_WATCHED_FLIGHTS, useUiStore } from '@/lib/store';
-import { FRESHNESS_COLOR_TOKEN, entityFreshness, formatAge, freshnessLabel } from '@/lib/freshness';
+import { FRESHNESS_COLOR_TOKEN, formatAge, freshnessLabel, toIso } from '@/lib/freshness';
 import type { FreshnessState } from '@/lib/types';
+import { useCardFreshness } from '@/components/cards/card-freshness';
 import type { FlightRecord } from '../adsb';
 import { airlineCodeOf } from '../classify';
 import { deadReckon } from '../codec';
@@ -148,14 +150,16 @@ function RouteEnd({ a, align }: { a: NonNullable<FlightRoute['origin']>; align?:
   );
 }
 
-export function FreshnessBadge({ state, at, now }: { state: FreshnessState; at: number | null; now: number }) {
+/** Freshness pill. `label` (the card frame's verdict) wins over one derived from `at`/`now`. */
+export function FreshnessBadge({ state, at, now, label }: { state: FreshnessState; at: number | null; now: number; label?: string }) {
   return (
     <span
       data-testid="freshness-badge"
+      data-state={state}
       className="rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tabular-nums tracking-[0.16em]"
       style={{ color: `var(${FRESHNESS_COLOR_TOKEN[state]})`, borderColor: `var(${FRESHNESS_COLOR_TOKEN[state]})` }}
     >
-      {freshnessLabel(state, at, now)}
+      {label ?? freshnessLabel(state, at, now)}
     </span>
   );
 }
@@ -168,11 +172,12 @@ export default function AircraftCard({ selection }: CardProps) {
   const r: FlightRecord = live ?? snapshot;
   const layer = (selection.layer ?? BUCKET_LAYER[r.bucket]) as LayerId;
   const status = useLayerStatus(layer);
-  // The feed's own state, not the rail state: the rail is downgraded when most of the layer's
-  // positions are past the 60 s cap, which says nothing about this aircraft's own observation.
-  const feedState: FreshnessState = flights?.meta.state ?? (status.state === 'idle' || status.state === 'loading' ? 'recent' : status.state);
   const observedMs = r.seenAt * 1000;
-  const state = entityFreshness({ kind: 'live', at: observedMs, observationCadenceMs: OBSERVATION_CADENCE_MS[layer], feedState, now });
+  // One verdict with the card frame's header (r8): this aircraft's latest observation and the
+  // feed's own state go to the frame, which shows the same badge in both places. Not the rail
+  // state: the rail is downgraded when most of the layer's positions are past the 60 s cap, which
+  // says nothing about this aircraft's own observation.
+  const badge = useCardFreshness({ layer, feed: status, feedState: flights?.meta.state ?? null, observedAt: toIso(observedMs), now });
   const reckoned = deadReckon(r, now);
   const detail = useAircraftDetail(/^[0-9a-f]{6}$/.test(r.id) ? r.id : null);
   const route = useFlightRoute(r.callsign, r.onGround ? null : { lat: r.lat, lng: r.lng, gsKt: r.gsKt, trackDeg: r.trackDeg }, r.id);
@@ -201,7 +206,7 @@ export default function AircraftCard({ selection }: CardProps) {
             {airline ? ` · ${airline}` : ''}
           </p>
         </div>
-        <FreshnessBadge state={state} at={observedMs} now={now} />
+        <FreshnessBadge state={badge.state} at={observedMs} now={now} label={badge.label} />
       </header>
 
       {r.emergency && (

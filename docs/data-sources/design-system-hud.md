@@ -183,3 +183,9 @@ No upstream added or changed. The round-7 fixes (desktop sensor chip below the h
 terrain status in the map's imagery-chip stack, phone sheet tab reveal, SOURCES (N) disclosure in
 layer rows) are client-only and render the `meta.attribution` each feed already reports; the full
 credits stay listed in the Sources & Licences panel.
+
+## Round 8 follow-up (2026-10-02)
+
+No upstream added or changed. The narrow-landscape fix (the phone sheet and entity card stop low
+enough to leave the map credits a row above the STATUS telemetry at 568x320) is client-only CSS
+plus a measured `--map-attrib-height`; the attribution text itself is MapLibre's, unchanged.

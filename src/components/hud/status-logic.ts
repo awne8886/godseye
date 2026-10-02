@@ -71,11 +71,17 @@ export interface CardBadge {
  * Entity-card freshness badge: the entity's own observation time against its sensor cadence,
  * never better than the feed. Before the feed has reported, the badge shows the entity's age
  * (RECENT) rather than claiming LIVE.
+ *
+ * `feedState` is the feed's own state (meta.state) when the card body has it (r8): the rail state
+ * can be an aggregate over the whole layer (aviation downgrades LIVE to RECENT when most of the
+ * layer's positions are past the 60 s cap), which says nothing about this entity's observation.
+ * It replaces the rail state; null/undefined = use the rail.
  */
 export function cardBadge(opts: {
   layer: LayerId | null;
   observedAt: string | null;
   feed: Pick<LayerStatus, 'state'> | undefined;
+  feedState?: FreshnessState | null;
   now?: number;
 }): CardBadge {
   const now = opts.now ?? Date.now();
@@ -84,7 +90,7 @@ export function cardBadge(opts: {
   const atMs = Number.isFinite(at) ? at : null;
   const kind = def?.kind ?? 'live';
   const cadence = opts.layer ? (OBSERVATION_CADENCE_MS as Record<string, number | null>)[opts.layer] ?? null : null;
-  const feedState = feedStateOf(opts.feed) ?? 'recent';
+  const feedState = opts.feedState ?? feedStateOf(opts.feed) ?? 'recent';
   // No published time: inherit the feed state and read UNTIMED below (never LIVE, never a false OFFLINE).
   let state = entityFreshness({ kind, at: atMs, observationCadenceMs: atMs === null ? null : cadence, feedState, now });
   // Event layers (no per-entity cadence) inherit the feed state, but an event older than one
