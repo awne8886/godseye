@@ -69,12 +69,6 @@ for (const proj of ['mercator', 'globe'] as const) {
 
 test('?route=LHR-JFK: the gold arc is on screen on the desktop globe within 30 s of style parse (pixels, visual-qa R4-M1)', async ({ page }, info) => {
   test.skip(info.project.name !== 'desktop', 'desktop globe draw check (1600×1000)');
-  test.fixme(
-    true,
-    'Fails on the map-engine deck admission delay (visual-qa R4-M1; owner map-engine, src/components/map/DeckOverlay.tsx + src/lib/map/deck-admission.ts), not on flight paths: ' +
-      'on 2026-10-01 ~08:30Z in this sandbox the map was ready 12.5 s after load but data-deck-layers stayed 0 with data-admission-pending=4 at 46 s; ' +
-      'the gold arc was first on screen 38.9 s after style parse (samples 7.7 s: 0 px, 22.4 s: 0 px, 38.9 s: 63 px). Remove this fixme once the route layers are admitted inside 30 s.',
-  );
   test.setTimeout(180_000);
   await gotoMap(page, { params: { route: 'LHR-JFK', proj: 'globe' } });
   await waitForMapStyle(page, 90_000);
