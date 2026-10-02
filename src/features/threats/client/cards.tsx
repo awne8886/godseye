@@ -166,20 +166,25 @@ export function GdeltCard({ selection }: CardProps) {
 }
 
 /**
- * An in-zone GDELT event (observed, not REFERENCE). Its selection is attributed to the GDELT events
- * layer; the conflict-zone feed that delivered it is restated here when it is stale or offline.
+ * An in-zone GDELT event or Live Alert (observed, not REFERENCE). Its selection is attributed to the
+ * GDELT events or alert pins layer; the conflict-zone feed that delivered it is restated here when it is stale or offline.
  */
 function ConflictEventBody({ e }: { e: ConflictEventCardData }) {
   const feed = useLayerStatus('conflict_zones');
   const degraded = feed.state === 'stale' || feed.state === 'offline';
+  const alert = e.source === 'alerts';
   return (
-    <Body testId="card-conflict-event" title={e.title} chips={<Chip tone="red">GDELT event</Chip>}>
+    <Body testId="card-conflict-event" title={e.title} chips={<Chip tone="red">{alert ? 'Live Alert' : 'GDELT event'}</Chip>}>
       <Row label="Zone">{dash(e.zoneLabel)}</Row>
       <Row label="Precision">{e.precision}</Row>
-      <Row label="Reported">{iso(e.observedAt)}</Row>
+      <Row label={alert ? 'Published' : 'Reported'}>{iso(e.observedAt)}</Row>
       {degraded && <Row label="Feed">{`${feed.state === 'offline' ? 'Source offline' : 'Stale'} · last good ${iso(feed.lastGoodAt)}`}</Row>}
-      <Note>Drawn at the event’s own geocoded coordinates, never moved toward a zone anchor.</Note>
-      <Link href={e.url}>Source article</Link>
+      <Note>
+        {alert
+          ? 'Drawn at the post’s keyword-geoparsed place, never moved toward a zone anchor. The post is not verified.'
+          : 'Drawn at the event’s own geocoded coordinates, never moved toward a zone anchor.'}
+      </Note>
+      <Link href={e.url}>{alert ? 'Source post' : 'Source article'}</Link>
     </Body>
   );
 }
@@ -194,7 +199,7 @@ export function ConflictZoneCard({ selection }: CardProps) {
       <Row label="Region">{z.region}</Row>
       <Row label="Live events (≤ 24 h)">{z.liveEventCount}</Row>
       <Note>{z.description}</Note>
-      <Note>The polygon is a curated reference area, not a frontline. Event counts are GDELT material/verbal-conflict reports geocoded inside it.</Note>
+      <Note>The polygon is a curated reference area, not a frontline. Event counts are GDELT material/verbal-conflict reports and geoparsed Live Alerts located inside it (country-level locations excluded).</Note>
       {z.references.map((r) => (
         <div key={r}>
           <Link href={r}>{new URL(r).hostname}</Link>

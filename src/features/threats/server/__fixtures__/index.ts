@@ -35,6 +35,7 @@ export const FX = {
   nvd: 'nvd-CVE-2021-44228.2026-09-30.json',
   ioda: 'ioda-outages-events.2026-09-30.json',
   cfRadar401: 'cloudflare-radar-401.2026-09-30.json',
+  news: 'news-items.2026-10-02.json',
 } as const;
 
 /** URL substring → fixture name, Buffer, an HTTP status to fail with, 304, or a function of the request. */

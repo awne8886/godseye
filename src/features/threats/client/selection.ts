@@ -30,7 +30,9 @@ export function zoneSelection(z: ConflictZone): Selection {
  */
 export function conflictEventSelection(e: ConflictEvent, zone: Pick<ConflictZone, 'label'> | undefined): Selection {
   const data: ConflictEventCardData = { ...e, zoneLabel: zone ? zoneDisplayName(zone) : null };
-  return { kind: 'conflict_zone', id: e.id, layer: 'gdelt_events', source: 'gdelt', observedAt: e.observedAt, data: record(data), lngLat: [e.lng, e.lat] };
+  // In-zone Live Alerts are attributed to the (live) alert pins layer, GDELT rows to GDELT events.
+  const layer = e.source === 'alerts' ? 'alert_pins' : 'gdelt_events';
+  return { kind: 'conflict_zone', id: e.id, layer, source: e.source, observedAt: e.observedAt, data: record(data), lngLat: [e.lng, e.lat] };
 }
 
 export function chokepointSelection(c: Chokepoint): Selection {

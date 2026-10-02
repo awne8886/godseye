@@ -11,10 +11,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import EntityCardFrame from '@/components/cards/EntityCardFrame';
 import { buildChokepoints, buildPorts } from '@/features/maritime/server/maritime';
 import { useLayerStatusStore, type Selection } from '@/lib/layer-host';
+import type { AlertItem } from '@/lib/types';
 import { gdeltCoverage } from '../shared/gdelt';
 import { ChokepointCard, ConflictZoneCard, GdeltCard, PortCard } from './cards';
 import { fixture, FX } from '../server/__fixtures__';
-import { buildConflicts, loadZones } from '../server/conflicts';
+import { alertsToConflictEvents, buildConflicts, loadZones } from '../server/conflicts';
 import { parseExport } from '../server/gdelt';
 import { readRef } from '../server/refdata';
 import { unzipFirst } from '../server/zip';
@@ -112,6 +113,20 @@ describe('card headers name curated records, never their minted ids (visual-qa r
     } finally {
       useLayerStatusStore.setState({ status: {} });
     }
+  });
+
+  // TODO L121: in-zone Live Alert pins (recorded runNews() output, 2026-10-02) are their own source.
+  it('an in-zone Live Alert is attributed to the alert pins layer and says it is a geoparsed post', () => {
+    const news = JSON.parse(fixture(FX.news).toString('utf8')) as { _meta: { capturedAt: string }; items: AlertItem[] };
+    const ev = alertsToConflictEvents(news.items, loadZones(), undefined, Date.parse(news._meta.capturedAt)).find((e) => e.zoneId === 'ukraine')!;
+    const sel = conflictEventSelection(ev, byId.get('ukraine'));
+    expect(sel).toMatchObject({ id: ev.id, layer: 'alert_pins', source: 'alerts', observedAt: ev.observedAt });
+    const { container } = render(<ConflictZoneCard selection={sel} />);
+    expect(within(container).getByText('Live Alert')).toBeTruthy();
+    expect(within(container).queryByText('GDELT event')).toBeNull();
+    expect(within(container).getByText('Published')).toBeTruthy();
+    expect(container.textContent).toContain('keyword-geoparsed place');
+    expect(within(container).getByText('Source post').closest('a')!.getAttribute('href')).toBe(ev.url);
   });
 
   it('chokepoints and curated ports are headed by their names; WPI / Natural Earth ports keep the upstream index', () => {
