@@ -98,9 +98,13 @@ test.describe('map-engine round 5', () => {
     }
     const h1 = await readPixels(page);
     const wall = Date.now() - t0;
-    // ≤ 10 Hz, and ≤ 25 % of the main thread (+ slack for timing): before, one pick per frame (90 %).
+    // ≤ 10 Hz, and ≤ 25 % of the main thread: before, one pick per frame (90 %). The gate keeps
+    // 3× a pick's cost free after it, which bounds the long-run share at 25 %; in one finite window
+    // the pick in flight at its edge adds up to one more pick (a SwiftShader pick costs 1–3 s, so
+    // ms/wall alone read 0.50–0.53 in CI with the gate working as designed). Bound: 25 % of the
+    // window plus the largest single pick, plus 5 % for timing.
     expect(h1.n - h0.n).toBeLessThanOrEqual(Math.ceil(wall / 100) + 2);
-    expect((h1.ms - h0.ms) / wall).toBeLessThan(0.4);
+    expect(h1.ms - h0.ms).toBeLessThanOrEqual(0.3 * wall + h1.max);
   });
 
   test('m-l: data requests start at style parse, before any GPU start-up unit is admitted', async ({ page }) => {
@@ -149,20 +153,22 @@ function withoutAbortedTiles(errors: readonly string[]): string[] {
 
 async function countReadPixels(page: Page): Promise<void> {
   await page.addInitScript(() => {
-    const st = { n: 0, ms: 0 };
+    const st = { n: 0, ms: 0, max: 0 };
     (window as unknown as { __rp: typeof st }).__rp = st;
     const P = WebGL2RenderingContext.prototype as unknown as { readPixels: (...a: unknown[]) => unknown };
     const o = P.readPixels;
     P.readPixels = function (this: unknown, ...a: unknown[]) {
       const t = performance.now();
       const r = o.apply(this, a);
+      const ms = performance.now() - t;
       st.n++;
-      st.ms += performance.now() - t;
+      st.ms += ms;
+      st.max = Math.max(st.max, ms);
       return r;
     };
   });
 }
 
-function readPixels(page: Page): Promise<{ n: number; ms: number }> {
-  return page.evaluate(() => ({ ...(window as unknown as { __rp: { n: number; ms: number } }).__rp }));
+function readPixels(page: Page): Promise<{ n: number; ms: number; max: number }> {
+  return page.evaluate(() => ({ ...(window as unknown as { __rp: { n: number; ms: number; max: number } }).__rp }));
 }

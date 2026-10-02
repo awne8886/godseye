@@ -291,6 +291,12 @@ terrain status in the map's imagery-chip stack, phone sheet tab reveal, SOURCES 
 layer rows) are client-only and render the `meta.attribution` each feed already reports; the full
 credits stay listed in the Sources & Licences panel.
 
+### Round 8 follow-up (2026-10-02)
+
+No upstream added or changed. The narrow-landscape fix (the phone sheet and entity card stop low
+enough to leave the map credits a row above the STATUS telemetry at 568x320) is client-only CSS
+plus a measured `--map-attrib-height`; the attribution text itself is MapLibre's, unchanged.
+
 ### feature-flight-paths
 
 Probed 2026-09-30 20:02 UTC from the build sandbox with
@@ -838,6 +844,20 @@ LIVE. The upstream `timestamp` was up to 2 s after our receive time in round 7, 
 `src/features/space/__fixtures__/wheretheiss-tles.json`. Rate cost: one extra request per hour
 against the 350 / 5 min limit.
 
+### Re-probe 2026-10-02 10:30 UTC (Phase 3 round 8: NASA embed readiness)
+
+| URL | Status | Latency | Size | CORS / framing | Notes |
+|---|---|---|---|---|---|
+| `https://www.youtube-nocookie.com/embed/awQzjn72bI0?autoplay=0&mute=1&playsinline=1&rel=0&enablejsapi=1&origin=…` | 200 | 0.46 s | player shell | CSP `require-trusted-types-for 'script'`; no `X-Frame-Options` (embeddable) | Loads `/s/_/ytembeds/…/m=root,base` (embed client) and `/s/player/8ab5c328/player_embed.vflset/en_US/base.js`. |
+| `https://www.youtube-nocookie.com/s/_/ytembeds/_/js/k=ytembeds.base.en_US…/m=root,base` | 200 | — | 558 543 B | — | The IFrame Player API lives here: on a JSON-string message `{"event":"listening","id",…}` it stores the sender's origin as its target and answers `initialDelivery` + `onReady` (or `alreadyInitialized` to a repeat), JSON strings with `channel: "widget"`. Messages are accepted only from `typeof data === "string"`. |
+
+Why: Chrome fires the iframe `load` event for its own network-error page too, so `onLoad` cannot
+mean "the player loaded" (round 8 MINOR). The SPACE panel embeds with `enablejsapi=1&origin=<page
+origin>`, posts the "listening" handshake to `https://www.youtube-nocookie.com` only (an error page
+never receives it), and shows the player only when that origin answers from that frame with
+onReady / initialDelivery / infoDelivery / alreadyInitialized. No answer in 15 s = "did not load
+here; open it on YouTube". Only the `event` name of a player message is read; nothing is rendered.
+
 ### layers-surveillance
 
 Probed **2026-09-30 19:58–20:45 UTC** from the build sandbox with
@@ -1123,6 +1143,16 @@ Probe 2026-10-02 00:35–00:40 UTC (Phase 3 round-6, alert pins counted in confl
 | Al Jazeera `xml/rss/all.xml` | 200 · 0.48 s | none | Wire RSS; server-side only. |
 
 Round-6 verification fix 2026-10-02 (no new upstream; the conflicts feed still reads `newsFeed.get()` in-process): only AlertItems with `kind` `rocket` or `event` become conflict events; `kind=news` headlines are dropped even inside a zone (in the recorded fixture this removes the Africanews Khartoum item and a TASS Kyiv item classed news). In-zone alert events now carry the AlertItem's `source` (as `sourceHandle`), `sourceName`, `lean`, `bloc` and `alertKind`; the card selection source is that handle (e.g. `t.me/rybar_in_english`) and the card shows a Channel · stance row.
+
+Re-probe 2026-10-02 11:40 UTC (Phase 3 round-8 fixes; UA `GODSEYE/0.1 (+https://github.com/godseye; probe)`, `Origin: https://example.org`, IPv4):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| GDELT `lastupdate.txt` (https) | 200 · 0.40 s · 3 lines | `*` | Named batch `20261002114500`; Last-Modified 11:36:01 (label again ahead of publication). Plain `http://` answers 301 → https from this sandbox; we fetch https. |
+| GDELT `…/20261002114500.export.CSV.zip` | 200 · 0.15 s · 66 kB | `*` | 989 rows, all 61 columns; 185 QuadClass 3/4 rows with ActionGeo_Type ≥ 2. Unchanged format. |
+| `/api/conflicts` on a local `next start` (GDELT + news in-process) | 200 · 3.1 s | n/a | `live` with `gdelt {ok, count 67}` and `alerts {ok, count 12}`: every counted alert carries weapon/combat language (strikes, drones, explosions, attacks). |
+
+Round-8 verification fixes (no new upstream): (1) the alert classifier's `kind=event` also matches `earthquake` and `fire`, so the conflicts feed now also requires kinetic text (`isKineticAlertText`: weapon/combat terms, or explosion/casualty/siren terms with no hazard, fire or accident named; idioms such as "hunger strike" and "heart attack" removed first). A deterministic keyword test, never called AI; it errs towards not counting. (2) When GDELT has never answered (no last-good pull) the conflicts state is capped at RECENT (it read LIVE from in-zone alerts alone); `providers.gdelt.age_s` is then `null`. Zones with no in-zone event stay REFERENCE.
 
 ## map-engine — probe log
 
