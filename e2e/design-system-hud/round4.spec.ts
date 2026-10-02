@@ -80,7 +80,9 @@ test.describe('desktop', () => {
 test.describe('phone', () => {
   test.skip(({ isMobile }) => !isMobile, 'phone layout');
 
-  test('visual-qa m4: the Style Studio sheet has one header row (tools beside close) and no STANDBY chip', async ({ page }) => {
+  // r7 m reverses the m4 placement: the tools sit at the top of the sheet body so the tab strip keeps
+  // its width on a 390 px phone; there is still one header row (tabs + close) and no STANDBY chip.
+  test('visual-qa m4: the Style Studio sheet has one header row and no STANDBY chip; its tools are 44 px', async ({ page }) => {
     await boot(page, '/?layers=&panel=style-studio');
     const sheet = page.getByTestId('mobile-sheet');
     await expect(sheet.getByTestId('style-studio-sheet')).toBeVisible();
@@ -88,16 +90,16 @@ test.describe('phone', () => {
     await expect(headers).toHaveCount(1);
     const header = headers.first();
     for (const name of ['Import theme JSON from clipboard', 'Copy theme JSON', 'Reset custom edits', 'Close STYLE STUDIO']) {
-      const b = header.getByRole('button', { name, exact: true });
+      const b = (name.startsWith('Close') ? header : sheet.getByTestId('style-studio-sheet')).getByRole('button', { name, exact: true });
       await expect(b, name).toBeVisible();
       const box = (await b.boundingBox())!;
       expect(box.height, name).toBeGreaterThanOrEqual(44);
     }
     await expect(sheet.locator('.instrument-chip')).toHaveCount(0);
     await expect(sheet.getByText('STANDBY', { exact: true })).toHaveCount(0);
-    // The preset grid starts right under the header row (no second icon row in between).
+    // The preset grid starts right under the header row and the one 44 px tool row.
     const headerBox = (await header.boundingBox())!;
     const presets = (await sheet.getByRole('radiogroup', { name: 'Theme preset' }).boundingBox())!;
-    expect(presets.y - (headerBox.y + headerBox.height)).toBeLessThan(80);
+    expect(presets.y - (headerBox.y + headerBox.height)).toBeLessThan(130);
   });
 });

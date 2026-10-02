@@ -5,7 +5,9 @@
  * and the sensor mode overlay (CRT/NVG/FLIR/Noir; the map canvas filter lives in base.css).
  * At most one ambient animation (the CRT sweep). The sensor chip is also the clear control: a
  * 44 px TAP TO CLEAR button on phones and touch screens (no 0 key there), placed under the view bar
- * so it never covers the wordmark (r6 m). Owner: design-system-hud.
+ * so it never covers the wordmark (r6 m). On desktop it sits centred below the header row (96 px),
+ * one z step above the HUD: on that row the header's void scrim painted over it and the right-aligned
+ * status strip could run under it (r7 m). Owner: design-system-hud.
  */
 import { useUiStore } from '@/lib/store';
 
@@ -35,7 +37,7 @@ export default function Overlays() {
         <div
           role="status"
           data-testid="sensor-chip"
-          className="hud-micro fixed left-1/2 top-4 z-[var(--z-hud)] flex -translate-x-1/2 items-center gap-2 rounded-[var(--radius-chip)] border border-[var(--border-active)] bg-[var(--glass-3)] py-0.5 pl-2 pr-0.5 text-[var(--gold-light)] phone:left-auto phone:right-3 phone:top-[calc(env(safe-area-inset-top)+124px)] phone:translate-x-0"
+          className="hud-micro fixed left-1/2 top-24 z-[calc(var(--z-hud)+1)] flex -translate-x-1/2 items-center gap-2 rounded-[var(--radius-chip)] border border-[var(--border-active)] bg-[var(--glass-3)] py-0.5 pl-2 pr-0.5 text-[var(--gold-light)] phone:left-auto phone:right-3 phone:top-[calc(env(safe-area-inset-top)+124px)] phone:translate-x-0"
         >
           <span>SENSOR · {sensor.toUpperCase()}</span>
           <button

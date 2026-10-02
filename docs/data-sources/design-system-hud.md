@@ -176,3 +176,10 @@ No upstream added or changed. The round-6 HUD fixes (rail flyout placement and s
 chip tap-to-clear, one-row phone sheet chrome, glass blur, `--map-route-airways` token) are
 client-only. The FAA ADDS ATS_Route data the new token colours is a build-time snapshot owned and
 probed by feature-flight-paths (`public/data/airways-us.min.json`); the HUD makes no request for it.
+
+## Round 7 (2026-10-02)
+
+No upstream added or changed. The round-7 fixes (desktop sensor chip below the header row, one
+terrain status in the map's imagery-chip stack, phone sheet tab reveal, SOURCES (N) disclosure in
+layer rows) are client-only and render the `meta.attribution` each feed already reports; the full
+credits stay listed in the Sources & Licences panel.

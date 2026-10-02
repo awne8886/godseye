@@ -151,7 +151,7 @@ describe('r6 m: phone sheets spend one row on chrome', () => {
     expect(sheet.querySelector('.glass-3')).not.toBeNull();
   });
 
-  it('keeps a panel\'s own header tools on that same row (round 4 m4)', async () => {
+  it('r7 m: Style Studio tools live in the sheet body so the tab strip keeps its width', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({ matches: true, media: query, addEventListener: () => {}, removeEventListener: () => {}, onchange: null, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false }));
     render(
       <Providers>
@@ -162,7 +162,11 @@ describe('r6 m: phone sheets spend one row on chrome', () => {
     );
     const header = screen.getByTestId('mobile-sheet').querySelector('[data-frame-header]')!;
     expect(header.contains(screen.getByRole('tablist', { name: 'Sheet sections' }))).toBe(true);
-    expect(header.contains(await screen.findByRole('button', { name: 'Copy theme JSON' }))).toBe(true);
+    const copy = await screen.findByRole('button', { name: 'Copy theme JSON' });
+    expect(header.contains(copy)).toBe(false);
+    expect(screen.getByRole('toolbar', { name: 'Theme JSON' }).contains(copy)).toBe(true);
+    expect(screen.getByTestId('style-studio-sheet').contains(copy)).toBe(true);
+    expect(screen.getByRole('tab', { selected: true }).textContent).toBe('STYLE STUDIO');
     vi.unstubAllGlobals();
   });
 });

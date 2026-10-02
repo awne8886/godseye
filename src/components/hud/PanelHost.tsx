@@ -14,6 +14,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { isPanelAvailable, useBottomReserve, useHasBluetooth, useIsMobile } from './hooks';
 import { InstrumentFrame } from './PanelChrome';
 import { MODAL_PANELS, panelLabel, tabForPanel } from './panel-meta';
+import { revealSelectedTab } from './tab-reveal';
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
@@ -245,8 +246,26 @@ export default function PanelHost() {
 }
 
 /** The frame (and so the tab row) remounts per section: keep the selected tab scrolled into view. */
-function revealTab(el: HTMLButtonElement | null) {
-  el?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+/**
+ * Keep the selected sheet tab readable. A one-shot reveal at mount is not enough: the state chip
+ * and the panel's header tools join the row after the tabs have laid out and squeeze the strip, so
+ * this re-reveals whenever the strip or the tab changes size (r7 m). Scrolls only the strip itself
+ * (scrollIntoView could also move the page or the sheet).
+ */
+function useRevealSelectedTab(id: PanelId) {
+  const [list, setList] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!list) return;
+    const reveal = () => revealSelectedTab(list);
+    reveal();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(reveal);
+    ro.observe(list);
+    const tab = list.querySelector('[role="tab"][aria-selected="true"]');
+    if (tab) ro.observe(tab);
+    return () => ro.disconnect();
+  }, [list, id]);
+  return setList;
 }
 
 function MobileSheet({ id }: { id: PanelId | null }) {
@@ -268,6 +287,7 @@ export function MobileSheetBody({ id }: { id: PanelId }) {
   const tab = tabForPanel(id);
   const siblings = (tab ? (MOBILE_SHEETS[tab] as readonly PanelId[]) : [id]).filter((p) => isPanelAvailable(p, bt));
   const close = () => (id === 'dossier' ? closeDossier() : setOpenPanel(null));
+  const tablistRef = useRevealSelectedTab(id);
   return (
     <m.div
       ref={ref}
@@ -293,14 +313,13 @@ export function MobileSheetBody({ id }: { id: PanelId }) {
           className="min-h-0 flex-1"
           tabs={
             siblings.length > 1 ? (
-              <div role="tablist" aria-label="Sheet sections" className="hud-fade-right flex scroll-px-3 gap-1 overflow-x-auto pl-3 pr-6">
+              <div ref={tablistRef} role="tablist" aria-label="Sheet sections" className="hud-fade-right flex scroll-px-3 gap-1 overflow-x-auto pl-3 pr-6">
                 {siblings.map((p) => (
                   <button
                     key={p}
                     role="tab"
                     type="button"
                     aria-selected={p === id}
-                    ref={p === id ? revealTab : undefined}
                     onClick={() => setOpenPanel(p)}
                     className={`hud-micro hud-control min-h-[44px] shrink-0 border px-3 ${p === id ? 'border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.12)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
                   >
