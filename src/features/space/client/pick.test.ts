@@ -12,6 +12,7 @@ import {
   latestPosition,
   nearestInTable,
   nearestSatellite,
+  prewarmScreenTable,
   projectFrame,
   sameCamera,
   type PickFrame,
@@ -339,5 +340,52 @@ describe('hover hit-test cost: one projection per (frame, camera)', () => {
     // Same camera: the worker's filter already applied, so the row is projected without a re-test.
     expect(Number.isNaN(projectFrame({ ...frame(rows), camera: { ...camera } }, m, GLOBE)[0]!)).toBe(false);
     expect(nearestInTable(new Float32Array([Number.NaN, Number.NaN, Number.NaN, Number.NaN]), 1, { x: 0, y: 0 })).toBeNull();
+  });
+  it('round 8 MINOR: the table is built in idle time when a frame arrives, so the first hover after it projects nothing', () => {
+    const { m, state } = countingGlobe();
+    const cache = new SatelliteScreenCache();
+    let latest: PickFrame = bigFrame(9_000);
+    const queued: (() => void)[] = [];
+    const schedule = (cb: () => void) => {
+      queued.push(cb);
+      return () => queued.splice(queued.indexOf(cb), 1);
+    };
+    const src = { frame: () => latest, view: () => GLOBE };
+    prewarmScreenTable(cache, m, src, schedule);
+    expect(cache.builds).toBe(0); // nothing until the browser is idle
+    queued.shift()!();
+    expect(cache.builds).toBe(1);
+    state.calls = 0;
+    hitTestSatellites(latest, { x: 420, y: 420 }, m, GLOBE, () => null, cache);
+    expect(cache.builds).toBe(1);
+    expect(state.calls).toBe(1); // the camera-key probe only
+    // An idle pass for an already-fresh table does not rebuild it.
+    prewarmScreenTable(cache, m, src, schedule);
+    queued.shift()!();
+    expect(cache.builds).toBe(1);
+    // The next frame is projected at idle time too.
+    latest = bigFrame(9_000);
+    prewarmScreenTable(cache, m, src, schedule);
+    queued.shift()!();
+    expect(cache.builds).toBe(2);
+  });
+
+  it('prewarm skips a moving camera, a hidden page, an empty frame, and is cancellable', () => {
+    const { m } = countingGlobe();
+    const cache = new SatelliteScreenCache();
+    const f = bigFrame(100);
+    const queued: (() => void)[] = [];
+    const schedule = (cb: () => void) => {
+      queued.push(cb);
+      return () => void queued.splice(queued.indexOf(cb), 1);
+    };
+    prewarmScreenTable(cache, m, { frame: () => f, view: () => GLOBE, moving: () => true }, schedule);
+    prewarmScreenTable(cache, m, { frame: () => f, view: () => GLOBE, hidden: () => true }, schedule);
+    prewarmScreenTable(cache, m, { frame: () => null, view: () => GLOBE }, schedule);
+    for (const cb of queued.splice(0)) cb();
+    expect(cache.builds).toBe(0);
+    const cancel = prewarmScreenTable(cache, m, { frame: () => f, view: () => GLOBE }, schedule);
+    cancel();
+    expect(queued).toHaveLength(0);
   });
 });

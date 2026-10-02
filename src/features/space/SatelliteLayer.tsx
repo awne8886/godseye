@@ -21,9 +21,10 @@ import { CATEGORY_TOKEN, LAYER_CATEGORY, SAT_CATEGORIES } from './lib/catalog';
 import { ISS_NORAD_ID, displayAltM } from './lib/orbit-math';
 import type { WorkerIn, WorkerOut } from './lib/propagator';
 import type { BatchResult } from './lib/propagate-batch';
-import { SatelliteScreenCache, hitTestSatellites, latestPosition } from './client/pick';
+import { SatelliteScreenCache, hitTestSatellites, latestPosition, prewarmScreenTable, type PickView, type ProjectMap } from './client/pick';
+import { afterIdle } from '@/lib/map/defer';
 import { registerDeckPick, registerHitTester, type DeckPickInfo } from '@/lib/map/picking';
-import { cameraFromMap, getFarSideCamera, isFacing } from '@/lib/map/far-side';
+import { cameraFromMap, getFarSideCamera, isFacing, type CameraMapLike } from '@/lib/map/far-side';
 import { catalogue, fetchOrbit, indexOfId, orbitQueryKey, recordAt, selectionDataFor, setCatalogue, useSpaceStore, type SatelliteSelectionData } from './client/data';
 import type { Attribution, SatCategory } from '@/lib/types';
 import { hudFontFamily } from '@/lib/tokens';
@@ -249,6 +250,14 @@ function subscribeReduced(cb: () => void): () => void {
   return () => mq.removeEventListener('change', cb);
 }
 
+/** The hit-test view for the current camera (the hover and the idle prewarm must agree on it). */
+function pickView(globe: boolean, m: CameraMapLike): PickView {
+  return { globe, camera: globe ? (getFarSideCamera() ?? cameraFromMap(m)) : null };
+}
+
+/** Upper bound on waiting for idle time before projecting a new frame for the hit-test (frames are 1 s apart). */
+const PREWARM_IDLE_TIMEOUT_MS = 500;
+
 function useReducedMotion(): boolean {
   const pref = useUiStore((s) => s.settings.motion);
   const system = useSyncExternalStore(subscribeReduced, () => window.matchMedia(REDUCED_QUERY).matches, () => false);
@@ -336,14 +345,17 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
   // unavailable). Satellites behind the globe for the CURRENT camera are never hit. The host
   // runs it on every pointer-move frame: the screen cache projects the frame once per (frame,
   // camera) and every other hover is a scan (verification round 8: 33 ms → a scan per hover).
+  // The table itself is built in idle time when each frame arrives (prewarm effect below).
+  const screenRef = useRef<SatelliteScreenCache | null>(null);
+  screenRef.current ??= new SatelliteScreenCache();
   useEffect(() => {
-    const screen = new SatelliteScreenCache();
+    const screen = screenRef.current!;
     const off = registerHitTester('space', (point, m) =>
       hitTestSatellites(
         latestFrame.current,
         point,
         m,
-        { globe: globeRef.current, camera: globeRef.current ? (getFarSideCamera() ?? cameraFromMap(m)) : null },
+        pickView(globeRef.current, m),
         (catIndex, lngLat) => {
           const s = selectionFor(catIndex, lngLat, latestFrame.current?.at ?? Date.now(), activeRef.current);
           return s ? { layer: s.layer ?? 'satellites', selection: s } : null;
@@ -356,6 +368,19 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
       screen.clear();
     };
   }, []);
+
+  // Project each new frame for the hover hit-test while the browser is idle (not inside the first
+  // hover after the frame). Skipped while the camera moves or the page is hidden.
+  useEffect(() => {
+    if (!map || !frame) return;
+    const m = map as unknown as ProjectMap & CameraMapLike & { isMoving?: () => boolean };
+    return prewarmScreenTable(
+      screenRef.current!,
+      m,
+      { frame: () => latestFrame.current, view: () => pickView(globeRef.current, m), moving: () => m.isMoving?.() ?? false, hidden: () => document.hidden },
+      (cb) => afterIdle(cb, PREWARM_IDLE_TIMEOUT_MS),
+    );
+  }, [map, frame]);
 
   // GPU pick → selection (the map's click router calls it for each 'space-satellites-<category>'
   // layer). The picked `drawIndex` belongs to the frame that layer instance drew; the card opens at the satellite's position in

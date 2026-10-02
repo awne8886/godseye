@@ -20,7 +20,8 @@
  * points (`fitGlobeProjection`; without a verified fit, one `project()` per satellite).
  * `SatelliteScreenCache` keeps that table for one (frame, camera) pair, so every further hover or
  * click until the next 1 Hz frame or camera change is a scan over a Float32Array with a single
- * `project()` (the camera key's globe-centre probe).
+ * `project()` (the camera key's globe-centre probe). `prewarmScreenTable` builds that table in idle
+ * time when a frame arrives, so the hover callback itself rarely projects anything.
  * Pure; unit-tested. Owner: layers-space.
  */
 import type { HitTestMap, PickCandidate } from '@/lib/map/picking';
@@ -373,6 +374,13 @@ export class SatelliteScreenCache {
     return this.xy;
   }
 
+  /** True when the table for `frame` under the map's current camera is already built. */
+  fresh(frame: PickFrame, map: ProjectMap, view: PickView): boolean {
+    if (this.frame !== frame || !this.xy) return false;
+    cameraKey(map, view, this.probe);
+    return sameKey(this.key, this.probe);
+  }
+
   nearest(frame: PickFrame | null, point: { x: number; y: number }, map: ProjectMap, view: PickView): SatelliteHit | null {
     if (!frame || !frame.count) return null;
     const hit = nearestInTable(this.table(frame, map, view), frame.count, point);
@@ -384,6 +392,33 @@ export class SatelliteScreenCache {
     this.frame = null;
     this.xy = null;
   }
+}
+
+/** What `prewarmScreenTable` reads when its idle callback runs (never earlier: the camera may move). */
+export interface PrewarmSource {
+  /** The newest frame (a frame superseded before the callback runs is not projected). */
+  frame: () => PickFrame | null;
+  view: () => PickView;
+  /** True while the camera moves (the table would be stale before the next hover). */
+  moving?: () => boolean;
+  /** True while the page is hidden (nobody can hover). */
+  hidden?: () => boolean;
+}
+
+/**
+ * Build the screen table for the newest frame in idle time, as soon as the frame arrives, so the
+ * first hover after each 1 Hz frame is a scan instead of a full projection inside the pointer
+ * callback (verification round 8: under SwiftShader ≈ 1 fps nearly every hover rebuilt it, 204 of
+ * 301 ms of hover CPU). `schedule` runs the callback when the main thread is idle and returns a
+ * cancel function (`afterIdle`). Returns that cancel function.
+ */
+export function prewarmScreenTable(cache: SatelliteScreenCache, map: ProjectMap, src: PrewarmSource, schedule: (cb: () => void) => () => void): () => void {
+  return schedule(() => {
+    const f = src.frame();
+    if (!f || !f.count || src.moving?.() || src.hidden?.()) return;
+    const view = src.view();
+    if (!cache.fresh(f, map, view)) cache.table(f, map, view);
+  });
 }
 
 /**

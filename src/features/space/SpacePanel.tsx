@@ -75,6 +75,12 @@ export const YOUTUBE_EMBED_ORIGIN = 'https://www.youtube-nocookie.com';
 /** How often the panel repeats the IFrame Player API "listening" handshake until the player answers. */
 export const PLAYER_HANDSHAKE_MS = 250;
 /**
+ * After PLAYER_TIMEOUT_MS the handshake keeps going at this slower pace, so a player that answers
+ * late (seen at 18 s through a slow proxy) still flips the panel to ready instead of leaving the
+ * "did not load" note over a working stream.
+ */
+export const PLAYER_LATE_HANDSHAKE_MS = 2_000;
+/**
  * Player API events that only a loaded player sends. Checked against the embed client on
  * 2026-10-02: on a "listening" message it answers initialDelivery + onReady (alreadyInitialized
  * to a repeated one), JSON strings with channel "widget", posted to the sender's origin.
@@ -132,7 +138,9 @@ export function spaceChip(
  * YouTube IFrame Player API handshake (`enablejsapi=1` + `origin`): after each load it posts the
  * API's "listening" message to the frame — addressed to the YouTube origin, so an error page never
  * receives it — and the player counts as ready only when the YouTube origin, from this very frame,
- * answers with onReady / initialDelivery / infoDelivery. No answer within PLAYER_TIMEOUT_MS = failed.
+ * answers with onReady / initialDelivery / infoDelivery. No answer within PLAYER_TIMEOUT_MS = failed,
+ * but the handshake continues (every PLAYER_LATE_HANDSHAKE_MS) until the player answers, so a late
+ * player still becomes ready.
  */
 function usePlayerState(frameRef: RefObject<HTMLIFrameElement | null>): { player: PlayerState; onLoad: () => void } {
   const [player, setPlayer] = useState<PlayerState>('loading');
@@ -151,11 +159,11 @@ function usePlayerState(frameRef: RefObject<HTMLIFrameElement | null>): { player
     return () => window.removeEventListener('message', onMessage);
   }, [frameRef]);
   useEffect(() => {
-    if (!loads || player !== 'loading') return;
+    if (!loads || player === 'ready') return;
     const listening = JSON.stringify({ event: 'listening', id: 1, channel: 'widget' });
     const send = () => frameRef.current?.contentWindow?.postMessage(listening, YOUTUBE_EMBED_ORIGIN);
     send();
-    const t = setInterval(send, PLAYER_HANDSHAKE_MS);
+    const t = setInterval(send, player === 'loading' ? PLAYER_HANDSHAKE_MS : PLAYER_LATE_HANDSHAKE_MS);
     return () => clearInterval(t);
   }, [loads, player, frameRef]);
   return { player, onLoad: () => setLoads((n) => n + 1) };

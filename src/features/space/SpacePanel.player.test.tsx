@@ -30,7 +30,7 @@ vi.mock('@/components/hud/PanelChrome', () => ({
   },
 }));
 
-const { SpacePanel, PLAYER_HANDSHAKE_MS, PLAYER_TIMEOUT_MS, YOUTUBE_EMBED_ORIGIN, isPlayerReadyMessage, spaceChip } = await import('./SpacePanel');
+const { SpacePanel, PLAYER_HANDSHAKE_MS, PLAYER_LATE_HANDSHAKE_MS, PLAYER_TIMEOUT_MS, YOUTUBE_EMBED_ORIGIN, isPlayerReadyMessage, spaceChip } = await import('./SpacePanel');
 const { FeedOfflineError } = await import('./client/data');
 
 function issBody(): IssResponse {
@@ -113,6 +113,27 @@ describe('SPACE panel: the NASA player is ready only when the YouTube player API
     act(() => void vi.advanceTimersByTime(PLAYER_HANDSHAKE_MS * 4));
     expect(post.mock.calls.length).toBe(sent); // handshake stops once the player answered
     expect(screen.queryByTestId('space-player-status')).toBeNull();
+  });
+
+  it('a player that answers after the timeout still becomes ready (round 8: onReady seen at 18 s)', () => {
+    vi.useFakeTimers();
+    mount();
+    const post = vi.spyOn(frame().contentWindow!, 'postMessage');
+    fireEvent.load(frame());
+    act(() => void vi.advanceTimersByTime(PLAYER_TIMEOUT_MS));
+    expect(playerState()).toBe('failed');
+    const atTimeout = post.mock.calls.length;
+    act(() => void vi.advanceTimersByTime(PLAYER_LATE_HANDSHAKE_MS * 2));
+    const late = post.mock.calls.length - atTimeout;
+    expect(late).toBeGreaterThanOrEqual(2); // handshake keeps going after the timeout
+    expect(late).toBeLessThanOrEqual(3); // at the slower pace
+    for (const [, target] of post.mock.calls) expect(target).toBe(YOUTUBE_EMBED_ORIGIN);
+    reply(JSON.stringify({ event: 'onReady', channel: 'widget', id: 1 }));
+    expect(playerState()).toBe('ready');
+    expect(screen.queryByTestId('space-player-status')).toBeNull();
+    const sent = post.mock.calls.length;
+    act(() => void vi.advanceTimersByTime(PLAYER_LATE_HANDSHAKE_MS * 3));
+    expect(post.mock.calls.length).toBe(sent);
   });
 
   it('ignores messages from another origin, another window, or that are not player events', () => {
