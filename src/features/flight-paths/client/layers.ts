@@ -10,13 +10,14 @@
  *
  * Dashes come from deck's PathStyleExtension (planned arc and remaining leg [2,2], filed plans dotted
  * [1,2] on every leg), imported only here, inside the lazily loaded route chunk. On the globe the
- * planned arc (glow, dashed arc, return-leg line) and the comet head rise on ArcLayer's paraboloid
- * for getHeight 0.3 — z(t) = 0.3·D·√(t(1−t)) above the surface lift — while the flown track, the
+ * planned arc (glow, dashed arc, return-leg line) and the comet head rise to ArcLayer's getHeight-0.3
+ * apex (0.15·D) on a sin² profile — z(t) = 0.15·D·sin²(πt) above the surface lift, tangent to the
+ * surface at both endpoints (round 7) — while the flown track, the
  * remaining leg, the endpoints and the aircraft stay at the surface lift.
  *
  * Clicks (the map host's router, src/lib/map/picking.ts; far side excluded there and by the facing
- * filter here): endpoints and diversions select the airport (AirportCard), matched live aircraft
- * select the aircraft through `aircraftSelect` (aviation's AircraftCard).
+ * filter here): endpoints and diversions select the airport (AirportCard), live aircraft (matched
+ * and corridor-inferred) select the aircraft through `aircraftSelect` (aviation's AircraftCard).
  *
  * Antimeridian (R4-B1): everything drawn for one route or flight is put into ONE longitude frame —
  * the planned arc's, which the server unwraps from the origin (it may run past ±180°). The flown
@@ -263,8 +264,11 @@ export function routeFrame(plan: Plan | null, live: Live | null, flight: Flight 
 
 // ── Arc height (globe) ────────────────────────────────────────────────────────────
 /**
- * Heights (m) of the arc vertices on deck ArcLayer's paraboloid for `getHeight` h:
- * z(t) = h·D·√(t(1−t)), D the route length (m), t the cumulative fraction along the arc.
+ * Heights (m) of the arc vertices for `getHeight` h: z(t) = (h/2)·D·sin²(πt), D the route length
+ * (m), t the cumulative fraction along the arc. The apex (h/2)·D matches deck ArcLayer's
+ * paraboloid for the same getHeight, but not its shape: deck's shader uses √(t(1−t)) (an ellipse,
+ * vertical at the ends), which on the globe climbed ~165 km in the first 1 % of LHR→JFK and
+ * projected the route past its endpoint (round 7). sin² leaves each endpoint tangent to the surface.
  */
 export function arcHeights(arc: readonly LngLatTuple[], h = ARC_HEIGHT): number[] {
   const cum = [0];
@@ -277,13 +281,23 @@ export function arcHeights(arc: readonly LngLatTuple[], h = ARC_HEIGHT): number[
 /** Height (m) at fraction t along an arc of `km` kilometres (the comet head rides this profile). */
 export function arcHeightAt(t: number, km: number, h = ARC_HEIGHT): number {
   const u = Math.max(0, Math.min(1, t));
-  return h * km * 1000 * Math.sqrt(u * (1 - u));
+  const s = Math.sin(Math.PI * u);
+  return (h / 2) * km * 1000 * s * s;
 }
 
 function pathKm(path: readonly LngLatTuple[]): number {
   let km = 0;
   for (let i = 1; i < path.length; i++) km += distanceKm(path[i - 1]!, path[i]!);
   return km;
+}
+
+/**
+ * Whether the route layer needs the shared flights query (the click resolver reads it): while any
+ * live aircraft on the pair — matched or corridor-inferred, both clickable — or a tracked flight's
+ * position is drawn.
+ */
+export function routeNeedsFlights(live: Pick<Live, 'aircraft'> | null | undefined, flight: Pick<Flight, 'position'> | null | undefined): boolean {
+  return (live?.aircraft ?? []).length > 0 || !!flight?.position;
 }
 
 // ── Click selections ──────────────────────────────────────────────────────────────
@@ -355,7 +369,7 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
   }
 
   if (frame.arc.length > 1) {
-    // Globe: the planned arc rises on ArcLayer's getHeight-0.3 paraboloid (same server vertices).
+    // Globe: the planned arc rises to the getHeight-0.3 apex on the sin² profile (same server vertices).
     const z = o.globe ? arcHeights(frame.arc) : undefined;
     out.push(pathLayer('route-planned-glow', [frame.arc], color('--map-route-planned', 0.15), 6, { z }));
     if (frame.reverse) out.push(pathLayer('route-reverse-arc', [frame.arc], color('--map-route-planned', 0.25), 1, { z }));
@@ -510,7 +524,12 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: trigger,
-      }),
+        pickable: !!o.aircraftSelect,
+        toSelection: (info: { object?: unknown }) => {
+          const a = picked<Aircraft>(info);
+          return a && o.aircraftSelect ? o.aircraftSelect(a.id) : null;
+        },
+      } as ConstructorParameters<typeof TextLayer<Aircraft>>[0]),
     );
   }
   const matched = aircraft.filter((a) => a.matched);
@@ -685,7 +704,7 @@ export function buildRouteAnimLayers(o: RouteAnimInput): LayersList {
   const comet = Array.from({ length: COMET_TAIL + 1 }, (_, k) => ({ position: pointAlong(arc, head - k * 0.006)!, k })).filter((c) => head - c.k * 0.006 >= 0 && vis(c.position));
   const planned = color('--map-route-planned');
   const km = o.globe ? pathKm(arc) : 0;
-  // Globe: the head rides the planned arc's paraboloid (same profile as the drawn arc).
+  // Globe: the head rides the planned arc's sin² height profile (same profile as the drawn arc).
   const z = (k: number) => (o.globe ? GLOBE_LIFT_M + arcHeightAt(head - k * 0.006, km) : 0);
   return [
     new ScatterplotLayer<{ position: LngLatTuple; t: number }>({

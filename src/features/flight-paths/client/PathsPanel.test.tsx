@@ -184,7 +184,7 @@ describe('PATHS panel', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('tab', { name: 'LIVE' }));
     });
-    await waitFor(() => expect(screen.getByText(/Live feed offline — last snapshot 03:12Z/)).toBeTruthy(), { timeout: 5000 });
+    await waitFor(() => expect(screen.getByText(/Live feed offline — last snapshot 03:12 UTC/)).toBeTruthy(), { timeout: 5000 });
   });
 
   it('FLIGHT mode tracks BA117 and shows tracker links', async () => {
@@ -326,6 +326,27 @@ describe('round 6: known-service badges, winds grid cell, OSM aerodrome disclosu
     expect(flightsUsable({ providers: { flights: ok }, flightsState: 'stale' })).toBe(false);
     expect(flightsUsable({ providers: { flights: ok } })).toBe(false);
     expect(flightsUsable({ providers: { flights: { ...ok, ok: false, error: 'stale_snapshot' } }, flightsState: 'stale' })).toBe(false);
+  });
+
+  it('round 7: the KNOWN SERVICES offline/stale note carries the last snapshot time in UTC', async () => {
+    const { flightsOfflineNote } = await import('./PathsPanel');
+    const ts = '2026-10-02T03:20:30.000Z';
+    const stale = { ok: false, count: 0, ms: 0, age_s: 498, error: 'stale_snapshot' };
+    expect(flightsOfflineNote({ providers: { flights: stale }, flightsState: 'stale', timestamp: ts })).toBe(
+      'Live flights snapshot is stale — last snapshot 03:12 UTC (LIVE badges unavailable).',
+    );
+    expect(flightsOfflineNote({ providers: { flights: stale }, flightsState: 'offline', timestamp: ts })).toBe(
+      'Live feed offline — last snapshot 03:12 UTC (LIVE badges unavailable).',
+    );
+    // A snapshot from a previous UTC day names its date.
+    expect(flightsOfflineNote({ providers: { flights: { ...stale, age_s: 4 * 3600 } }, flightsState: 'offline', timestamp: ts })).toBe(
+      'Live feed offline — last snapshot 2026-10-01 23:20 UTC (LIVE badges unavailable).',
+    );
+    // No snapshot at all: never a made-up time.
+    expect(flightsOfflineNote({ providers: { flights: { ...stale, age_s: null, error: 'no_flights_snapshot' } }, flightsState: 'offline', timestamp: ts })).toBe(
+      'Live feed offline — no snapshot yet (LIVE badges unavailable).',
+    );
+    expect(flightsOfflineNote({ providers: {}, timestamp: ts })).toBe('Live feed offline — no snapshot yet (LIVE badges unavailable).');
   });
 
   it('winds name the model grid point and the forecast hour', async () => {
