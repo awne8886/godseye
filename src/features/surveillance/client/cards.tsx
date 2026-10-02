@@ -51,8 +51,12 @@ export function CameraCard({ selection }: CardProps) {
         </p>
       )}
       <ProviderBlock provider={provider} />
-      {/* m21: the actions and the report link stay in view inside the card's scroll container (phones). */}
-      <div className="sticky bottom-0 -mx-4 bg-[var(--bg-panel)] px-4 pb-1 pt-2" data-testid="camera-card-footer">
+      {/* m21: the actions and the report link stay in view inside the card's scroll container (phones).
+          r7: opaque token background + top edge so scrolled body rows never show through the footer. */}
+      <div
+        className="sticky bottom-0 -mx-4 border-t border-[var(--border-primary)] bg-[var(--bg-panel-solid)] px-4 pb-1 pt-2"
+        data-testid="camera-card-footer"
+      >
         <div className="flex flex-wrap items-center gap-3">
             {provider?.link_out_only || cam.streamType === 'link' ? (
             <OutLink href={cam.externalUrl ?? provider?.terms_url ?? null} testId="camera-open-operator">

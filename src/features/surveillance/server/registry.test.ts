@@ -134,7 +134,9 @@ describe('camera provider registry (§5)', () => {
   it('round 6: Windy is disclosed as not wired (keyed API only); Edmonton and MLIT are wired, not listed as missing', () => {
     const windy = NOT_WIRED_SOURCES.find((s) => s.id === 'windy');
     expect(windy).toMatchObject({ operator: 'Windy.com Webcams', region: 'Global', country: '—' });
-    expect(windy!.reason).toMatch(/WINDY_WEBCAMS_KEY/);
+    // r7: nothing reads a Windy key, so the reason must say it is not implemented, not "not configured".
+    expect(windy!.reason).toMatch(/not implemented/i);
+    expect(windy!.reason).not.toMatch(/WINDY_WEBCAMS_KEY|not configured/);
     expect(windy!.probedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(NOT_WIRED_SOURCES.map((s) => s.id).sort()).toEqual(['ibi511', 'windy']);
     for (const s of NOT_WIRED_SOURCES) expect(PROVIDERS.some((p) => p.row.id === s.id), s.id).toBe(false);

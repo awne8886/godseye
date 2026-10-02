@@ -46,7 +46,10 @@ describe('camera card', () => {
     render(wrap(<CameraCard selection={sel} />));
     await screen.findByTestId('camera-operator');
     const footer = screen.getByTestId('camera-card-footer');
-    expect(footer.className.split(' ')).toEqual(expect.arrayContaining(['sticky', 'bottom-0', 'bg-[var(--bg-panel)]']));
+    const cls = footer.className.split(' ');
+    expect(cls).toEqual(expect.arrayContaining(['sticky', 'bottom-0', 'bg-[var(--bg-panel-solid)]', 'border-t', 'border-[var(--border-primary)]']));
+    // r7: the translucent panel token let body rows show through the sticky footer on phones.
+    expect(cls).not.toContain('bg-[var(--bg-panel)]');
     for (const id of ['camera-open-viewer', 'camera-report']) {
       const el = screen.getByTestId(id);
       expect(footer.contains(el), id).toBe(true);
