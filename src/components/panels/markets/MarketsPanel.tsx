@@ -115,7 +115,7 @@ export function MarketsPanel(_: PanelProps) {
                         <button
                           type="button"
                           onClick={() => setChart(q.group === 'crypto' ? { symbol: `${q.symbol}-USD`, name: q.name } : { symbol: q.symbol, name: q.name })}
-                          className="grid min-h-11 md:min-h-8 w-full grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-sm px-1 text-left hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+                          className="grid min-h-8 phone:min-h-11 w-full grid-cols-[1fr_auto_auto_auto] items-center gap-2 rounded-sm px-1 text-left hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
                           title={`${q.source}${q.unofficial ? ' (unofficial)' : ''} · observed ${q.observedAt ?? 'unknown'}${q.lastGoodAt ? ` · source offline, last good ${q.lastGoodAt}` : ''}`}
                         >
                           <span className="truncate font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-primary)]">{q.name}</span>

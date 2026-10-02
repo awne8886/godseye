@@ -66,10 +66,10 @@ function WatchRow({ hex, live, feed, feedState, now }: { hex: string; live: Flig
         <span className={`${mono10} text-[var(--text-muted)]`}>{hex.toUpperCase()}</span>
         <span className="ml-auto" />
         <FreshnessBadge state={state} at={at} now={now} />
-        <button type="button" aria-label={`Centre map on ${title}`} disabled={!pos} onClick={() => pos && flyTo({ lng: pos.lng, lat: pos.lat, zoom: 8 })} className="grid size-11 place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--gold-primary)] focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] md:size-7">
+        <button type="button" aria-label={`Centre map on ${title}`} disabled={!pos} onClick={() => pos && flyTo({ lng: pos.lng, lat: pos.lat, zoom: 8 })} className="grid size-7 place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--gold-primary)] focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] phone:size-11">
           <Crosshair aria-hidden className="size-4" />
         </button>
-        <button type="button" aria-label={`Stop watching ${title}`} onClick={() => unwatch(hex)} className="grid size-11 place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--alert-red)] focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] md:size-7">
+        <button type="button" aria-label={`Stop watching ${title}`} onClick={() => unwatch(hex)} className="grid size-7 place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--alert-red)] focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] phone:size-11">
           <X aria-hidden className="size-4" />
         </button>
       </div>
@@ -104,14 +104,14 @@ export default function FlightWatchPanel({ onClose }: PanelProps) {
   const chip = data?.offline ? 'SOURCE OFFLINE' : watched.length ? `${watched.length} WATCHED` : 'STANDBY';
 
   return (
-    <section aria-label="Flight Watch" data-testid="flight-watch" className="glass-panel relative flex w-full flex-col gap-3 p-4 md:w-[360px]">
+    <section aria-label="Flight Watch" data-testid="flight-watch" className="glass-panel relative flex w-[360px] flex-col gap-3 p-4 phone:w-full">
       <span aria-hidden className="absolute inset-y-4 left-0 w-0.5 rounded bg-[var(--gold-primary)]" />
       <header className="flex items-center gap-2">
         <h2 className="font-mono text-[11px] uppercase tracking-[0.22em] text-[var(--text-heading)]">FLIGHT WATCH</h2>
         <span className={`${mono10} rounded-full border border-[var(--gold-primary)]/50 px-2 py-0.5 text-[var(--gold-primary)]`} aria-live="polite">
           {chip}
         </span>
-        <button type="button" aria-label="Close Flight Watch" onClick={onClose} className="ml-auto grid size-11 place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] md:size-7">
+        <button type="button" aria-label="Close Flight Watch" onClick={onClose} className="ml-auto grid size-7 place-items-center rounded text-[var(--text-secondary)] hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] phone:size-11">
           <X aria-hidden className="size-4" />
         </button>
       </header>
@@ -124,7 +124,7 @@ export default function FlightWatchPanel({ onClose }: PanelProps) {
             type="button"
             aria-pressed={colorMode === m}
             onClick={() => setColorMode(m)}
-            className={`${mono10} min-h-11 rounded border px-2 md:min-h-7 ${colorMode === m ? 'border-[var(--gold-primary)] text-[var(--gold-primary)]' : 'border-[var(--text-muted)]/40 text-[var(--text-secondary)]'} focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]`}
+            className={`${mono10} min-h-7 rounded border px-2 phone:min-h-11 ${colorMode === m ? 'border-[var(--gold-primary)] text-[var(--gold-primary)]' : 'border-[var(--text-muted)]/40 text-[var(--text-secondary)]'} focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]`}
           >
             {m === 'bucket' ? 'CLASS' : 'ALTITUDE'}
           </button>

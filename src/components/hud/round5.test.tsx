@@ -90,9 +90,12 @@ describe('r1 M2: the HUD is fully phone or fully desktop (one media query for JS
     expect(at).toBeGreaterThan(css.indexOf('.xl\\:flex'));
   });
 
-  it('no HUD or card source switches layout on the `md:` width breakpoint any more', () => {
-    const files = [...sources('src/components/hud'), ...sources('src/components/cards')];
-    expect(files.length).toBeGreaterThan(30);
+  it('no HUD, card, panel or feature-client source switches layout on the `md:` width breakpoint any more', () => {
+    const featureClients = readdirSync(join(ROOT, 'src/features'))
+      .map((d) => join('src/features', d, 'client'))
+      .filter((d) => { try { return statSync(join(ROOT, d)).isDirectory(); } catch { return false; } });
+    const files = [...sources('src/components/hud'), ...sources('src/components/cards'), ...sources('src/components/panels'), ...featureClients.flatMap(sources)];
+    expect(files.length).toBeGreaterThan(60);
     for (const f of files) expect(read(f), f).not.toMatch(/(?:^|[\s"'`])(?:max-)?md:/m);
   });
 

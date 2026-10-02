@@ -17,6 +17,23 @@ const recorded = (async (url: string) => {
  * navigation verb ("drive to paris") never plans a flight. Ports R1's repro (r1r4.test.ts R1r4-m-pal).
  */
 describe('palette route parsing is position-aware (round 4 m4)', () => {
+  // Every inflected verb named in the round 5 MAJOR, alone, after "I'm"/"we are", and as the origin.
+  const INFLECTED = ['flying', 'flies', 'flew', 'going', 'goes', 'went', 'heading', 'headed', 'driving', 'drove', 'travelling',
+    'traveling', 'walking', 'riding', 'sailing', 'cruising', 'moving', 'returning', 'commuting'];
+  const LEADS = ['', "i'm ", 'im ', "we're ", 'i am ', 'we are '];
+  it.each(INFLECTED.flatMap((v) => LEADS.map((l) => `${l}${v} to rome`)))('%s is speech, not a route', (q) => {
+    expect(parseRouteQuery(q)).toBeNull();
+    expect(queryItems(q, () => true)).toEqual([]);
+  });
+  it.each(['trip', 'journey', 'way', 'distance', 'welcome'])('"%s" is never a route origin', (w) => {
+    expect(parseRouteQuery(`${w} to paris`)).toBeNull();
+    expect(parseRouteQuery(`${w} to jfk`)).toBeNull();
+  });
+  it('a speech word that spells a code is still a code in capitals', () => {
+    expect(parseRouteQuery('WAY to JFK')).toEqual({ kind: 'codes', from: 'WAY', to: 'JFK' });
+    expect(parseRouteQuery('map to rome')).toBeNull();
+  });
+
   it.each([
     ['Can Tho to Hanoi', 'Can Tho', 'Hanoi'],
     ['In Salah to Algiers', 'In Salah', 'Algiers'],
