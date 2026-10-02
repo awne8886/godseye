@@ -15,7 +15,8 @@
  */
 import 'server-only';
 import { hasCapability } from '@/lib/capabilities';
-import { errorReason } from '@/lib/http';
+import { errorReason, httpStream } from '@/lib/http';
+import { CitationGate, StreamError, claudeDelta, geminiDelta, ollamaDelta, streamRecords } from './ai-stream';
 import { getJson } from './get-json';
 import type { AiOverviewResponse } from '@/lib/types';
 
@@ -98,24 +99,27 @@ export interface ChatTurn {
   content: string;
 }
 
-/** One non-streaming completion. Throws on any upstream failure (the caller falls back). */
-export async function callModel(choice: ProviderChoice, system: string, turns: ChatTurn[], env: Env = process.env, signal?: AbortSignal): Promise<{ text: string; model: string }> {
-  if (choice.provider === 'analyst') throw new Error('analyst');
-  const model = await discoverModel(choice.provider, choice.key, env, signal);
-  let text = '';
+interface ModelRequest {
+  url: string;
+  headers: Record<string, string>;
+  body: string;
+  timeoutMs: number;
+}
+
+/** The one request shape per provider, shared by the buffered and the streaming call. */
+function modelRequest(choice: ProviderChoice, model: string, system: string, turns: ChatTurn[], env: Env, stream: boolean): ModelRequest {
   if (choice.provider === 'claude') {
-    const r = await getJson<{ content?: { type: string; text?: string }[] }>('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
+    return {
+      url: 'https://api.anthropic.com/v1/messages',
       headers: anthropicHeaders(choice.key!),
-      body: JSON.stringify({ model, max_tokens: 800, system, messages: turns }),
+      body: JSON.stringify({ model, max_tokens: 800, system, messages: turns, ...(stream ? { stream: true } : {}) }),
       timeoutMs: 45_000,
-      retries: 0,
-      signal,
-    });
-    text = (r.data.content ?? []).map((c) => (c.type === 'text' ? (c.text ?? '') : '')).join('');
-  } else if (choice.provider === 'gemini') {
-    const r = await getJson<{ candidates?: { content?: { parts?: { text?: string }[] } }[] }>(`https://generativelanguage.googleapis.com/v1beta/${model.startsWith('models/') ? model : `models/${model}`}:generateContent`, {
-      method: 'POST',
+    };
+  }
+  if (choice.provider === 'gemini') {
+    const path = model.startsWith('models/') ? model : `models/${model}`;
+    return {
+      url: `https://generativelanguage.googleapis.com/v1beta/${path}:${stream ? 'streamGenerateContent?alt=sse' : 'generateContent'}`,
       headers: { 'x-goog-api-key': choice.key!, 'content-type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
@@ -123,24 +127,57 @@ export async function callModel(choice: ProviderChoice, system: string, turns: C
         generationConfig: { maxOutputTokens: 800, temperature: 0.3 },
       }),
       timeoutMs: 45_000,
-      retries: 0,
-      signal,
-    });
-    text = (r.data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
+    };
+  }
+  return {
+    url: `${ollamaBase(env)}/api/chat`,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, stream, messages: [{ role: 'system', content: system }, ...turns] }),
+    timeoutMs: 90_000,
+  };
+}
+
+/** One non-streaming completion. Throws on any upstream failure (the caller falls back). */
+export async function callModel(choice: ProviderChoice, system: string, turns: ChatTurn[], env: Env = process.env, signal?: AbortSignal): Promise<{ text: string; model: string }> {
+  if (choice.provider === 'analyst') throw new Error('analyst');
+  const model = await discoverModel(choice.provider, choice.key, env, signal);
+  const q = modelRequest(choice, model, system, turns, env, false);
+  const r = await getJson<unknown>(q.url, { method: 'POST', headers: q.headers, body: q.body, timeoutMs: q.timeoutMs, retries: 0, signal });
+  let text = '';
+  if (choice.provider === 'claude') {
+    const d = r.data as { content?: { type: string; text?: string }[] };
+    text = (d.content ?? []).map((c) => (c.type === 'text' ? (c.text ?? '') : '')).join('');
+  } else if (choice.provider === 'gemini') {
+    const d = r.data as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    text = (d.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
   } else {
-    const r = await getJson<{ message?: { content?: string } }>(`${ollamaBase(env)}/api/chat`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ model, stream: false, messages: [{ role: 'system', content: system }, ...turns] }),
-      timeoutMs: 90_000,
-      retries: 0,
-      signal,
-    });
-    text = r.data.message?.content ?? '';
+    text = (r.data as { message?: { content?: string } }).message?.content ?? '';
   }
   text = text.trim();
   if (!text) throw new Error('empty');
   return { text, model: model.replace(/^models\//, '') };
+}
+
+/** Whole-stream cap: a chat answer is <= 800 tokens; 2 MB of SSE framing is far above that. */
+const STREAM_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Token stream from the chosen model: the same request, headers and timeouts as callModel with
+ * streaming switched on, read through httpStream (no retries; `timeoutMs` bounds the wait for headers
+ * and every gap between chunks). Yields text deltas as they arrive. `info.model` is set once the
+ * model id is known (before the first delta). Throws on any upstream failure or error record.
+ */
+export async function* streamModel(choice: ProviderChoice, system: string, turns: ChatTurn[], env: Env = process.env, signal?: AbortSignal, info: { model?: string } = {}): AsyncGenerator<string> {
+  if (choice.provider === 'analyst') throw new Error('analyst');
+  const model = await discoverModel(choice.provider, choice.key, env, signal);
+  info.model = model.replace(/^models\//, '');
+  const q = modelRequest(choice, model, system, turns, env, true);
+  const res = await httpStream(q.url, { method: 'POST', headers: q.headers, body: q.body, timeoutMs: q.timeoutMs, maxBytes: STREAM_MAX_BYTES, deadlineMs: 180_000, signal });
+  const extract = choice.provider === 'claude' ? claudeDelta : choice.provider === 'gemini' ? geminiDelta : ollamaDelta;
+  for await (const rec of streamRecords(res.body, choice.provider === 'ollama' ? 'ndjson' : 'sse')) {
+    const d = extract(rec);
+    if (d) yield d;
+  }
 }
 
 // ── Citations ──────────────────────────────────────────────────────────────────────
@@ -204,4 +241,81 @@ export async function answer(
     }
   }
   return { generatedBy: 'analyst', model: null, fallbackReason: choice.reason, keySource: 'none', text: prompt.analystText, citations: prompt.analystCitations };
+}
+
+export type ChatEvent =
+  | { type: 'meta'; generatedBy: Provider; model: string | null; fallbackReason: string | null; keySource: AiOverviewResponse['keySource'] }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; citations: CitableRow[]; timestamp: string; truncated: string | null };
+
+const failReason = (e: unknown): string => (e instanceof StreamError ? e.reason : e instanceof Error && ['no_model', 'empty'].includes(e.message) ? e.message : errorReason(e));
+
+/** Split the ANALYST text into ~word-boundary chunks for progressive rendering. */
+export function analystChunks(text: string, size = 48): string[] {
+  const out: string[] = [];
+  let buf = '';
+  for (const part of text.split(/(\s+)/)) {
+    buf += part;
+    if (buf.length >= size) {
+      out.push(buf);
+      buf = '';
+    }
+  }
+  if (buf) out.push(buf);
+  return out;
+}
+
+/**
+ * Streamed chat answer: `meta` is sent when the first model delta arrives (so a model that fails
+ * before saying anything still falls back to the ANALYST, labelled as such), then every delta as it
+ * comes through the CitationGate, then `done` with the verified citations. A failure after text has
+ * been sent cannot be retracted: `done.truncated` carries the reason and the meta stays the model's.
+ */
+export async function* answerStream(
+  choice: ProviderChoice,
+  prompt: { system: string; turns: ChatTurn[]; allowed: readonly CitableRow[]; analystText: string; analystCitations: CitableRow[] },
+  env: Env = process.env,
+  signal?: AbortSignal,
+  now: () => number = Date.now,
+): AsyncGenerator<ChatEvent> {
+  let fallbackReason = choice.reason;
+  if (choice.provider !== 'analyst') {
+    const gate = new CitationGate(prompt.allowed);
+    const info: { model?: string } = {};
+    let started = false;
+    let truncated: string | null = null;
+    try {
+      for await (const delta of streamModel(choice, prompt.system, prompt.turns, env, signal, info)) {
+        const pushed = gate.push(delta);
+        const text = started ? pushed : pushed.replace(/^\s+/, '');
+        if (!text) continue;
+        if (!started) {
+          started = true;
+          yield { type: 'meta', generatedBy: choice.provider, model: info.model ?? null, fallbackReason: null, keySource: choice.keySource };
+        }
+        yield { type: 'delta', text };
+      }
+    } catch (e) {
+      if (!started) fallbackReason = `${choice.provider} unavailable (${failReason(e)})`;
+      else truncated = failReason(e);
+    }
+    if (!started && fallbackReason === null) {
+      const rest = gate.flush().trim();
+      if (rest) {
+        yield { type: 'meta', generatedBy: choice.provider, model: info.model ?? null, fallbackReason: null, keySource: choice.keySource };
+        yield { type: 'delta', text: rest };
+        yield { type: 'done', citations: gate.citations(), timestamp: new Date(now()).toISOString(), truncated };
+        return;
+      }
+    } else if (started) {
+      const rest = gate.flush().replace(/\s+$/, '');
+      if (rest) yield { type: 'delta', text: rest };
+      yield { type: 'done', citations: gate.citations(), timestamp: new Date(now()).toISOString(), truncated };
+      return;
+    }
+    fallbackReason ??= `${choice.provider} unavailable (empty)`;
+  }
+  yield { type: 'meta', generatedBy: 'analyst', model: null, fallbackReason, keySource: 'none' };
+  for (const text of analystChunks(prompt.analystText)) yield { type: 'delta', text };
+  yield { type: 'done', citations: prompt.analystCitations, timestamp: new Date(now()).toISOString(), truncated: null };
 }

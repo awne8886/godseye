@@ -10,7 +10,7 @@ each file name.
 ## Live Alerts — Telegram public previews (`/api/news`)
 
 Public channel previews (`https://t.me/s/<handle>`), server-rendered HTML with no API. Low volume
-(8 newest posts per channel — OSIRIS and contract §6; was 10 before 2026-09-30 round-1 fix — 2-minute feed TTL, `providerBucket('t.me', 2/s)`), shown to people with a
+(8 newest posts per channel — OSIRIS and contract §6; was 10 before 2026-09-30 round-1 fix — 3-minute per-channel cache `news:tg:<handle>` with last-good (wire RSS 2 min per feed), 60 s feed rebuild, `providerBucket('t.me', 2/s)`), shown to people with a
 link to the post; never used for training. Posts without their own `<time datetime>` are dropped.
 
 | Handle | Name / declared stance | Bloc | Status | Latency | Size | CORS |
@@ -125,8 +125,13 @@ Holiday calendars bundled in `src/components/panels/intel/server/sessions.ts` (r
 NYSE/Nasdaq from `https://www.nyse.com/markets/hours-calendars` (200, 0.35 s; 2026 column: Jan 1, Jan 19,
 Feb 16, Apr 3, May 25, Jun 19, Jul 3, Sep 7, Nov 26, Dec 25); SSE from the Shanghai Futures Exchange
 circular of 2025-12-17 "Trading Schedule during National Holidays for Year 2026" (mainland calendar:
-Jan 1–3, Feb 15–23, Apr 4–6, May 1–5, Jun 19–21, Sep 25–27, Oct 1–7); HKEX 2026 securities-market
-full-day closures (14 dates, as published by HKEX and reported by globalexchanges.com). Every other
+Jan 1–3, Feb 15–23, Apr 4–6, May 1–5, Jun 19–21, Sep 25–27, Oct 1–7); HKEX from the HKSAR general-holiday calendar
+`https://www.1823.gov.hk/common/ical/en.json` (1823 contact centre, HKSARG; retrieved 2026-10-01,
+re-probed 2026-10-02: 200, 1.2 s, no CORS header, no auth, Hong Kong government open data;
+`vcalendar[0].vevent[].dtstart[0]` YYYYMMDD + `summary`): the HKEX securities market closes on weekday
+general holidays, giving 14 full-day closures in 2026 (Apr 4, Sep 26, Dec 26 are Saturdays). Half days
+(Lunar New Year's Eve, Christmas Eve, New Year's Eve) and typhoon/black-rainstorm closures are not
+modelled. Every other
 exchange reports `holidaysModelled: false` and the panel marks it with `*`.
 
 Region Dossier live layers read other owners' feeds in-process (no HTTP): `cctv:<region>` (the regions
@@ -155,3 +160,13 @@ Honest UA `GODSEYE/0.1.0 (+https://github.com/awne8886/godseye; contact …/issu
 | `https://api.worldbank.org/v2/country/TW/indicator/SP.POP.TOTL?format=json&mrnev=1` | 200 | 0.23 s | `*` | none | `[{"page":0,…,"total":0}, null]`: economy not covered → no figure (provider ok, count 0); the dossier keeps Wikidata's figure with its own year |
 | `https://query.wikidata.org/sparql` (country query, best-rank `p:P1082/ps:P1082` + `pq:P585 ?popDate`) | 200 | 0.33 s | `*` | none | CC0. UA → `pop 41167335`, `popDate 2022-01-01T00:00:00Z`: the old figure is a 2022 value, now shown with that year when the World Bank has no figure |
 | `https://www.scmp.com/rss/91/feed/` | 200 | 0.48 s | none | none | 50 items; the slash-less URL → 301 to `http://` (0.55 s) |
+
+### Round 6 (probed 2026-10-02)
+
+| URL | Status | Latency | CORS | Auth | Notes |
+|---|---|---|---|---|---|
+| `https://t.me/s/Osintdefender` | 200 | 0.99 s | none | none | Now read through a 3 min per-channel cache (`news:tg:<handle>`, last-good kept on failure, `providers['tg:<handle>'].age_s` = cache age); wire RSS 2 min per feed; the news feed rebuilds every 60 s |
+| `POST https://api.anthropic.com/v1/messages` (`stream:true`, no key) | 401 | 0.09 s | none | `x-api-key` | Keyed answers are SSE: `content_block_delta` → `delta.text` (`text_delta`); mid-stream `event: error` (e.g. `overloaded_error`). Format from platform.claude.com streaming docs (re-read 2026-10-02); fixture `stream-claude.documented.sse` is written to that format, not recorded (no key available) |
+| `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse` (no key) | 403 | 0.36 s | reflects Origin | `x-goog-api-key` | SSE `data:` = GenerateContentResponse, text at `candidates[0].content.parts[].text`, CRLF framing; fixture `stream-gemini.documented.sse` (documented format, not recorded) |
+| `POST <OLLAMA_URL>/api/chat` (`stream:true`) | not probed | — | — | operator host | NDJSON, `message.content` per line, last line `done:true`; fixture `stream-ollama.documented.ndjson` (documented format; no Ollama host in the build sandbox) |
+| `https://www.1823.gov.hk/common/ical/en.json` | 200 | 1.21 s | none | none | HKSAR general holidays (HK government open data). 2026: 17 events, 14 on weekdays = the HKEX full-day closures in `sessions.ts`; recorded as `hk-1823-holidays-2026.2026-10-02.json` (2026 events only). Half days not modelled |

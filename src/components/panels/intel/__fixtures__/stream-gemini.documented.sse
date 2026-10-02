@@ -1,0 +1,6 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Bottom line: drone strikes near Kyiv "}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 410},"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "[news:tg:A/1] and a quake "}],"role": "model"},"index": 0}],"modelVersion": "gemini-2.5-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"text": "[quake:us1]."}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 410,"candidatesTokenCount": 21,"totalTokenCount": 431},"modelVersion": "gemini-2.5-flash"}
+

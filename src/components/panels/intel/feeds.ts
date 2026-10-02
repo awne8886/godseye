@@ -22,7 +22,9 @@ export const NEWS_ATTRIBUTION = [
 
 export const newsFeed = defineFeed<NewsData>({
   key: 'news',
-  ttlMs: 2 * MIN,
+  // Rebuild (merge, dedupe, geoparse) every 60 s from the per-source caches (Telegram 3 min, wire 2 min).
+  ttlMs: MIN,
+  pollMs: MIN,
   kind: 'live',
   attribution: NEWS_ATTRIBUTION,
   note: 'Claims from partisan channels are shown with their declared stance; posts are not verified. Pins are keyword geoparsed (precision shown).',

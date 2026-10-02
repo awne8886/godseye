@@ -44,6 +44,21 @@ export const FX = {
   ripeNeighbours: 'ripe-asn-neighbours-AS15169.2026-09-30.json',
 } as const;
 
+/**
+ * Model token streams. No provider key or Ollama host is available to the build, so these are NOT
+ * recordings: they are written to each provider's documented wire format (Anthropic Messages
+ * streaming SSE, Gemini `streamGenerateContent?alt=sse` with CRLF framing, Ollama /api/chat NDJSON),
+ * re-read 2026-10-02. Replace with captures when a keyed probe is run.
+ */
+export const STREAM_FX = {
+  claude: 'stream-claude.documented.sse',
+  claudeError: 'stream-claude-error.documented.sse',
+  gemini: 'stream-gemini.documented.sse',
+  ollama: 'stream-ollama.documented.ndjson',
+} as const;
+
+const STREAM_CHUNK = 7;
+
 /** Fixture capture time (the probes ran 2026-09-30 ~20:03 UTC); tests pin Date.now near it. */
 export const CAPTURED_AT = Date.parse('2026-09-30T20:05:00Z');
 
@@ -81,6 +96,15 @@ export function httpMock(routes: () => Route[], HttpError: ErrorCtor, calls: Cal
     httpJson: async (input: string | URL, opts?: { headers?: Record<string, string>; body?: string }) => {
       const r = await request(input, opts);
       return { ...r, data: JSON.parse(r.body.toString('utf8')) as unknown };
+    },
+    /** Replays the fixture in 7-byte chunks so line and UTF-8 boundaries fall mid-chunk. */
+    httpStream: async (input: string | URL, opts?: { headers?: Record<string, string>; body?: string }) => {
+      const r = await request(input, opts);
+      const bytes = new Uint8Array(r.body);
+      async function* body(): AsyncGenerator<Uint8Array> {
+        for (let i = 0; i < bytes.length; i += STREAM_CHUNK) yield bytes.slice(i, i + STREAM_CHUNK);
+      }
+      return { status: 200, headers: {}, url: r.url, body: body() };
     },
   };
 }
