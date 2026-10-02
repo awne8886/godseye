@@ -113,6 +113,11 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
             {status.staleCount.toLocaleString('en-US')} OLDER THAN 60 S
           </p>
         )}
+        {on && typeof status.unplacedCount === 'number' && status.unplacedCount > 0 && (
+          <p className="hud-micro text-[var(--text-muted)] tabular-nums" data-testid={`unplaced-${layer.id}`}>
+            {status.unplacedCount.toLocaleString('en-US')} ALERTS AWAITING ZONE OUTLINES
+          </p>
+        )}
         {on && needsKey.length > 0 && (
           <p className="hud-micro text-[var(--text-muted)]" data-testid={`needs-key-${layer.id}`}>
             NEEDS KEY · {needsKey.join(', ').toUpperCase()}

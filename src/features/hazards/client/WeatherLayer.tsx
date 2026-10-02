@@ -17,6 +17,7 @@ import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from
 import { entitySelection } from './pick';
 import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
 import { useHazardData } from './useHazardData';
+import { useWeatherUnplaced } from './weather-status';
 
 const Z = LAYERS.find((l) => l.id === 'weather')!.z;
 const count = (b: WeatherResponse) => b.items.length;
@@ -25,6 +26,7 @@ const css = ([r, g, b, a]: Rgba) => `rgba(${r},${g},${b},${(a / 255).toFixed(3)}
 export default function WeatherLayer() {
   const data = useHazardData<WeatherResponse>('weather', '/api/weather', count);
   const items = data?.items;
+  useWeatherUnplaced(data);
   const push = useFeedEventStore((s) => s.push);
   const byId = useRef(new Map<string, WeatherEvent>());
 
