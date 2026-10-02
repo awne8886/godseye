@@ -138,3 +138,12 @@ The flights snapshot behind KNOWN SERVICES is read in-process (no upstream call)
 `honestFlights(feed.peek())`, reports `flights: {ok:false, error:'stale_snapshot'}` unless the snapshot is LIVE
 or RECENT, and returns each callsign's own `seenAt` (`knownServices[].observedAt`); `live` is true only when
 `entityFreshness()` with `OBSERVATION_CADENCE_MS.flights` says LIVE. The plan carries `flightsState`.
+
+### 2026-10-02 07:04 UTC (Phase 3 round 7 verification fixes)
+
+No new upstream is wired this round. Local check of the in-process flights snapshot behind KNOWN SERVICES:
+`GET /api/route/plan?from=LHR&to=JFK` (own build, port 3311) → `timestamp 2026-10-02T07:04:18.644Z`,
+`flightsState live`, `providers.flights {ok: true, count: 5203, ms: 0, age_s: 11}`. When the snapshot is
+stale/offline the PATHS note now prints the last snapshot time as `timestamp − providers.flights.age_s`
+("Live feed offline — last snapshot HH:MM UTC (LIVE badges unavailable).", with the date when it is from an
+earlier UTC day), or "no snapshot yet" when `age_s` is null — never a made-up time.

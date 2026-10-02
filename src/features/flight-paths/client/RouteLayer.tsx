@@ -36,7 +36,7 @@ import { useFlight, useLive, usePlan } from './api';
 import { fitState, getFitNotice, setFitNotice, useFitNotice } from './fit';
 import { frameArea, type FrameFit, intersects, labelOffsetCandidates, markBoxes, MARK_CLEAR_PX, pickLabelOffset, type Rect, solveFrame } from './framing';
 import { isPhoneLayout, measureObstacles, overlayElements, publishedSheet, sheetOccupiedPx } from './insets';
-import { buildRouteAnimLayers, buildRouteLayers, frameBounds, routeFrame, type RouteFrame, type ScreenSpace } from './layers';
+import { buildRouteAnimLayers, buildRouteLayers, frameBounds, routeFrame, routeNeedsFlights, type RouteFrame, type ScreenSpace } from './layers';
 
 /** Above aviation (80–83) so the route and its aircraft rings sit on top. */
 const Z = 90;
@@ -215,8 +215,9 @@ export default function RouteLayer() {
   const live = useLive(route, openPanel === 'paths' || !!route);
   const flight = useFlight(route ? null : ident);
   // Route clicks on a live aircraft open aviation's AircraftCard with its feed record: the shared
-  // flights query (already running while the aviation layers are on) only while one is drawn.
-  const hasAircraft = (live.data?.aircraft ?? []).some((a) => a.basis === 'matched') || !!flight.data?.position;
+  // flights query (already running while the aviation layers are on) only while one — matched or
+  // corridor-inferred — is drawn.
+  const hasAircraft = routeNeedsFlights(live.data, flight.data);
   useFlights(hasAircraft);
   const queryClient = useQueryClient();
   // Read at click time from the shared query cache (the layers are not rebuilt on every flights poll).

@@ -280,3 +280,86 @@ for (const proj of ['globe', 'mercator'] as const) {
     }
   });
 }
+
+/**
+ * Round 7: on the globe the lifted planned arc used to climb vertically at each end (deck
+ * ArcLayer's √(t(1−t)) paraboloid), which projected ~45 px past LHR so the gold route seemed to run
+ * on toward Belgium. Count `--map-route-planned` pixels in a band leaving each endpoint (outside
+ * every endpoint dot/label box): toward the other end there is route (control), beyond the
+ * endpoint there is none. No data layers and reduced motion, so nothing else is drawn in gold.
+ */
+async function routeBandPixels(page: Page, from: Box, to: Box, marks: Box[]): Promise<{ toward: number; beyond: number }> {
+  const png = (await page.screenshot()).toString('base64');
+  return page.evaluate(
+    async ({ png, from, to, marks, token }) => {
+      const probe = document.createElement('i');
+      probe.style.color = `var(${token})`;
+      document.body.append(probe);
+      const ref = getComputedStyle(probe).color.match(/\d+(\.\d+)?/g)!.map(Number).slice(0, 3);
+      probe.remove();
+      const img = new Image();
+      img.src = `data:image/png;base64,${png}`;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const px = ctx.getImageData(0, 0, c.width, c.height).data;
+      const scale = img.width / window.innerWidth;
+      const refLen = Math.hypot(ref[0]!, ref[1]!, ref[2]!);
+      const cx = (b: number[]) => (b[0]! + b[2]!) / 2;
+      const cy = (b: number[]) => (b[1]! + b[3]!) / 2;
+      const ax = cx(from);
+      const ay = cy(from);
+      let dx = cx(to) - ax;
+      let dy = cy(to) - ay;
+      const len = Math.hypot(dx, dy) || 1;
+      dx /= len;
+      dy /= len;
+      const inMark = (x: number, y: number) => marks.some((b) => x >= b[0]! - 3 && x <= b[2]! + 3 && y >= b[1]! - 3 && y <= b[3]! + 3);
+      const gold = (x: number, y: number) => {
+        const i = (Math.round(y * scale) * c.width + Math.round(x * scale)) * 4;
+        const l = Math.hypot(px[i]!, px[i + 1]!, px[i + 2]!);
+        if (!(l >= refLen * 0.2)) return false;
+        return (px[i]! * ref[0]! + px[i + 1]! * ref[1]! + px[i + 2]! * ref[2]!) / (l * refLen) >= 0.993;
+      };
+      // A band ±8 px wide on each side of the endpoint along the screen direction to the other end:
+      // 120 px toward it (the route, the control), 60 px beyond it (the round-7 overshoot was ~45 px).
+      const count = (sign: number) => {
+        let n = 0;
+        for (let s = 4; s <= (sign > 0 ? 124 : 64); s++)
+          for (let w = -8; w <= 8; w++) {
+            const x = ax + sign * dx * s - dy * w;
+            const y = ay + sign * dy * s + dx * w;
+            if (x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight || inMark(x, y)) continue;
+            if (gold(x, y)) n++;
+          }
+        return n;
+      };
+      return { toward: count(1), beyond: count(-1) };
+    },
+    { png, from, to, marks, token: '--map-route-planned' },
+  );
+}
+
+test('desktop · LHR-JFK on the globe (no data layers): the planned arc ends at its endpoints, never beyond them (round 7)', async ({ page }, info) => {
+  test.skip(info.project.name !== 'desktop', 'one viewport is enough for the profile');
+  test.setTimeout(240_000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expectClearFraming(page, 'LHR-JFK', 'globe', { layers: '' });
+  await page.waitForTimeout(1_500);
+  const marks = await readMarks(page);
+  const dot = (code: string) => marks.find((m) => m.label === code && m.kind === 'dot')!.box;
+  const all = marks.map((m) => m.box);
+  const lhr = await routeBandPixels(page, dot('LHR'), dot('JFK'), all);
+  const jfk = await routeBandPixels(page, dot('JFK'), dot('LHR'), all);
+  console.log(`route band pixels: LHR ${JSON.stringify(lhr)} JFK ${JSON.stringify(jfk)}`);
+  await page.screenshot({ path: info.outputPath('route-ends-globe.png'), animations: 'disabled', mask: [page.locator('time')] });
+  // Matched aircraft rings near an endpoint are amber (--map-flight-watch), a hue this filter rejects;
+  // their anti-aliased edges can still leave a stray pixel or two.
+  for (const [code, b] of [['LHR', lhr], ['JFK', jfk]] as const) {
+    expect(b.toward, `the route leaves ${code}`).toBeGreaterThan(8);
+    expect(b.beyond, `route pixels beyond ${code} (toward ${b.toward})`).toBeLessThanOrEqual(Math.max(3, Math.floor(b.toward / 8)));
+  }
+});

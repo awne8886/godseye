@@ -7,7 +7,7 @@ import j80 from '../__fixtures__/faa-adds-ats-route-J80.json';
 import { greatCircle } from '../lib/geometry';
 import { mergeAirwayFeatures } from '../lib/airways';
 import type { Live, Plan } from './api';
-import { airportSelection, arcHeightAt, arcHeights, ARC_HEIGHT, buildRouteAnimLayers, buildRouteLayers, GLOBE_LIFT_M, routeFrame } from './layers';
+import { airportSelection, arcHeightAt, arcHeights, ARC_HEIGHT, buildRouteAnimLayers, buildRouteLayers, GLOBE_LIFT_M, routeFrame, routeNeedsFlights } from './layers';
 import { draftMessage, nearText, type DraftSuggestion } from './draft';
 
 const endpoint = (ident: string, iata: string, lng: number, lat: number) => ({ ident, icao: ident, iata, name: `${iata} Intl`, lat, lng, tz: null, municipality: null, isoCountry: 'US' });
@@ -25,8 +25,8 @@ const plan = {
 const byId = (layers: unknown[], id: string) => (layers as Layer[]).find((l) => l.id === id);
 type Picker = (info: { object?: unknown }) => Selection | null;
 
-describe('arc height (globe): ArcLayer getHeight 0.3 paraboloid', () => {
-  it('z(t) = 0.3·D·√(t(1−t)): 0 at the ends, 0.15·D at the middle', () => {
+describe('arc height (globe): getHeight-0.3 apex on a sin² profile', () => {
+  it('z(t) = 0.15·D·sin²(πt): 0 at the ends, 0.15·D at the middle', () => {
     const z = arcHeights(gc.points);
     const D = gc.distanceKm * 1000;
     expect(z[0]).toBe(0);
@@ -34,6 +34,22 @@ describe('arc height (globe): ArcLayer getHeight 0.3 paraboloid', () => {
     const mid = Math.max(...z);
     expect(mid / D).toBeCloseTo(ARC_HEIGHT * 0.5, 2);
     expect(arcHeightAt(0.5, gc.distanceKm)).toBeCloseTo(ARC_HEIGHT * gc.distanceKm * 1000 * 0.5, 6);
+  });
+
+  it('round 7: the ends are tangent to the surface (no vertical climb projected past the endpoint)', () => {
+    const km = 5555; // LHR→JFK
+    // The old √(t(1−t)) profile climbed ~165 km in the first 1 %; sin² stays under 1 km there.
+    expect(arcHeightAt(0.01, km)).toBeLessThan(1_000);
+    expect(arcHeightAt(0.99, km)).toBeLessThan(1_000);
+    // Slope (height per horizontal metre) → 0 at both ends, finite everywhere, symmetric.
+    const slope = (t: number, dt = 1e-4) => (arcHeightAt(t + dt, km) - arcHeightAt(t, km)) / (dt * km * 1000);
+    expect(slope(0)).toBeLessThan(0.001);
+    expect(Math.abs(slope(1 - 1e-4))).toBeLessThan(0.001);
+    for (let t = 0; t < 1; t += 0.01) expect(Math.abs(slope(t))).toBeLessThan(ARC_HEIGHT * Math.PI / 2 + 1e-3);
+    expect(arcHeightAt(0.3, km)).toBeCloseTo(arcHeightAt(0.7, km), 6);
+    // The drawn arc's first vertices hug the lift too.
+    const z = arcHeights(gc.points);
+    expect(z[1]!).toBeLessThan(ARC_HEIGHT * gc.distanceKm * 1000 * 0.01);
   });
 
   it('planned glow, arc and return line rise on the profile; flown/remaining/endpoints stay at the lift', () => {
@@ -95,6 +111,36 @@ describe('route clicks', () => {
     expect(asked).toEqual(['a0b1c2']);
     const without = buildRouteLayers({ plan, live, flight: null, globe: false, center: [-95, 40], theme: 0 });
     expect(byId(without, 'route-live-aircraft')!.props.pickable).toBe(false);
+  });
+
+  it('round 7: a corridor-inferred aircraft is pickable and opens the aircraft card too', () => {
+    const live = { aircraft: [{ hex: 'c0ffee', callsign: 'SWA9', lat: 39.4, lng: -96, basis: 'inferred', direction: 'forward', progress: null, observedAt: '2026-10-02T00:00:00Z' }] } as unknown as Live;
+    const sel: Selection = { kind: 'aircraft', id: 'c0ffee', layer: 'flights', source: 'adsblol_tiles', observedAt: '2026-10-02T00:00:00Z', data: {}, lngLat: [-96, 39.4] };
+    const asked: string[] = [];
+    const aircraftSelect = (hex: string) => {
+      asked.push(hex);
+      return hex === 'c0ffee' ? sel : null;
+    };
+    const layers = buildRouteLayers({ plan, live, flight: null, globe: false, center: [-95, 40], theme: 0, aircraftSelect });
+    expect(byId(layers, 'route-live-aircraft')).toBeUndefined();
+    const l = byId(layers, 'route-inferred-aircraft')!;
+    expect(l.props.pickable).toBe(true);
+    const pick = (l.props as unknown as { toSelection: Picker }).toSelection;
+    expect(pick({ object: (l.props.data as unknown[])[0] })).toBe(sel);
+    expect(pick({})).toBeNull();
+    expect(asked).toEqual(['c0ffee']);
+    const without = buildRouteLayers({ plan, live, flight: null, globe: false, center: [-95, 40], theme: 0 });
+    expect(byId(without, 'route-inferred-aircraft')!.props.pickable).toBe(false);
+  });
+
+  it('round 7: the shared flights query is enabled for inferred aircraft as well as matched ones', () => {
+    const inferred = { aircraft: [{ hex: 'c0ffee', basis: 'inferred' }] } as unknown as Live;
+    const matched = { aircraft: [{ hex: 'a0b1c2', basis: 'matched' }] } as unknown as Live;
+    expect(routeNeedsFlights(inferred, null)).toBe(true);
+    expect(routeNeedsFlights(matched, undefined)).toBe(true);
+    expect(routeNeedsFlights({ aircraft: [] } as unknown as Live, null)).toBe(false);
+    expect(routeNeedsFlights(undefined, { position: { lat: 1, lng: 2 } } as never)).toBe(true);
+    expect(routeNeedsFlights(undefined, { position: null } as never)).toBe(false);
   });
 });
 

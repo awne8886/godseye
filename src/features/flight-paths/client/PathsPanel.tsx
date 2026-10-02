@@ -289,6 +289,24 @@ export function flightsUsable(plan: Pick<Plan, 'providers' | 'flightsState'>): b
   return plan.providers.flights?.ok === true && (plan.flightsState === 'live' || plan.flightsState === 'recent');
 }
 
+/**
+ * §8/§0: the KNOWN SERVICES note when the flights snapshot cannot back LIVE badges, with the last
+ * snapshot time (plan timestamp − providers.flights.age_s, as the server measured it), or "no
+ * snapshot yet" when there is none.
+ */
+export function flightsOfflineNote(plan: Pick<Plan, 'providers' | 'flightsState' | 'timestamp'>): string {
+  const age = plan.providers.flights?.age_s;
+  const at = Date.parse(plan.timestamp);
+  let last = 'no snapshot yet';
+  if (typeof age === 'number' && Number.isFinite(age) && Number.isFinite(at)) {
+    const iso = new Date(at - age * 1000).toISOString();
+    const sameDay = iso.slice(0, 10) === plan.timestamp.slice(0, 10);
+    last = `last snapshot ${sameDay ? '' : `${iso.slice(0, 10)} `}${iso.slice(11, 16)} UTC`;
+  }
+  const head = plan.flightsState === 'stale' ? 'Live flights snapshot is stale' : 'Live feed offline';
+  return `${head} — ${last} (LIVE badges unavailable).`;
+}
+
 export function PlanView({ plan }: { plan: Plan }) {
   const o = plan.origin;
   const d = plan.destination;
@@ -366,9 +384,7 @@ export function PlanView({ plan }: { plan: Plan }) {
       <Section title="KNOWN SERVICES" count={plan.knownServices.length} open={plan.knownServices.length > 0}>
         {!flightsOk && (
           <Note tone="warn">
-            {plan.flightsState === 'stale'
-              ? 'Live flights snapshot is stale — LIVE badges unavailable.'
-              : 'Live feed offline — LIVE badges unavailable.'}
+            {flightsOfflineNote(plan)}
           </Note>
         )}
         {plan.knownServices.length === 0 ? (
@@ -477,7 +493,7 @@ export function liveChip(aircraft: readonly { basis: 'matched' | 'inferred' }[])
 export function LiveView({ live, error }: { live: Live | undefined; error: unknown }) {
   if (error instanceof ApiFailure && error.status === 503) {
     const last = error.meta?.lastGoodAt;
-    return <Note tone="warn">Live feed offline{last ? ` — last snapshot ${fmtUtc(last)}` : ' — no snapshot yet'}.</Note>;
+    return <Note tone="warn">Live feed offline{last ? ` — last snapshot ${fmtUtc(last).replace(/Z$/, ' UTC')}` : ' — no snapshot yet'}.</Note>;
   }
   if (!live) return <Note>Loading live aircraft…</Note>;
   const partial = live.coverage && !live.coverage.complete ? live.coverage : null;
