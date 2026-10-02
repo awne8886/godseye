@@ -74,6 +74,8 @@ test.describe('image optimiser host list', () => {
     test(`refuses ${url}`, async ({ request }) => {
       const res = await request.get(`/_next/image?url=${encodeURIComponent(url)}&w=64&q=75`);
       expect(res.status()).toBe(400);
+      // Refused for its host, not for the width or quality (that 400 would pass for the wrong reason).
+      expect((await res.text()).trim()).toMatch(/^"url" parameter (is not allowed|cannot be a protocol-relative URL \(\/\/\))$/);
     });
   }
 });

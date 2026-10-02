@@ -23,6 +23,37 @@ describe('/privacy', () => {
     for (const h of [...TILE_HOSTS, ...FRAME_HOSTS, ...MEDIA_HOSTS, ...IMAGE_HOSTS]) expect(decoded).toContain(h.replace('https://', ''));
   });
 
+  it('names every image the browser loads straight from a third party, here and in README / ARCHITECTURE', () => {
+    // Every plain <img> in shipped code is either a same-origin camera still (/api/cctv/proxy) or a
+    // direct third-party load that /privacy must disclose. A new <img> fails this until it is classified.
+    const root = path.resolve(import.meta.dirname, '../../..');
+    const imgFiles: string[] = [];
+    for (const rel of readdirSync(path.join(root, 'src'), { recursive: true, encoding: 'utf8' })) {
+      if (!/\.tsx$/.test(rel) || /\.test\.tsx$/.test(rel)) continue;
+      if (/<img\b/.test(readFileSync(path.join(root, 'src', rel), 'utf8'))) imgFiles.push(rel.split(path.sep).join('/'));
+    }
+    // File → the code that makes its <img> source same-origin (a blob of a proxied frame, or stillPath()).
+    const sameOriginStills: Record<string, string> = {
+      'features/surveillance/client/CameraViewer.tsx': 'URL.createObjectURL(',
+      'features/surveillance/client/CctvPreviews.tsx': 'useTileFrame(video ? null : stillPath(cam)',
+    };
+    const direct = ['features/aviation/client/AircraftCard.tsx'];
+    expect(imgFiles.sort()).toEqual([...Object.keys(sameOriginStills), ...direct].sort());
+    for (const [rel, evidence] of Object.entries(sameOriginStills)) expect(readFileSync(path.join(root, 'src', rel), 'utf8'), rel).toContain(evidence);
+
+    // The aircraft photo is a plain <img> sent without a referrer; the page must say so, not "optimiser".
+    const card = readFileSync(path.join(root, 'src/features/aviation/client/AircraftCard.tsx'), 'utf8');
+    expect(/<img\b[^>]*src=\{id\.photoThumbUrl\}[^>]*referrerPolicy="no-referrer"/.test(card)).toBe(true);
+    expect(IMAGE_HOSTS.some((h) => new URL(h.replace('*.', 'x.')).hostname.endsWith('airport-data.com'))).toBe(true);
+    const text = decoded.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+    expect(text).toContain('Aircraft photos on the aircraft card load directly from airport-data.com in your browser, with no referrer sent');
+    expect(text).not.toMatch(/Normally fetched by this server.s image optimiser/);
+
+    const flat = (rel: string) => readFileSync(path.join(root, rel), 'utf8').replace(/\s+/g, ' ');
+    expect(flat('README.md')).toContain('aircraft photos (from airport-data.com, sent without a referrer) load directly in the browser');
+    expect(flat('docs/ARCHITECTURE.md')).toContain('aircraft photos (a plain `<img>` from airport-data.com with no referrer;');
+  });
+
   it('covers consent-based location, AI key handling, storage, retention, cameras and responsible use', () => {
     for (const id of ['upstreams', 'browser', 'location', 'ai', 'storage', 'retention', 'cameras', 'responsible-use', 'contact']) {
       expect(html).toContain(`id="${id}"`);

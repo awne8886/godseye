@@ -168,8 +168,8 @@ both are off when `COMMERCIAL_DEPLOYMENT=true`, as are the keyed `aeroapi` and `
 ## Privacy and responsible use
 
 - No accounts, no cookies, no analytics. Data APIs are called by the server, never with the visitor's IP
-  address. Map tiles, official video embeds and some camera video load directly in the browser from the
-  hosts listed on `/privacy`, and `/api/geo` sends the visitor's IP to a geolocation provider only after
+  address. Map tiles, official video embeds, some camera video and aircraft photos (from airport-data.com,
+  sent without a referrer) load directly in the browser from the hosts listed on `/privacy`, and `/api/geo` sends the visitor's IP to a geolocation provider only after
   they click "centre on my region". `/privacy` also lists every third party that receives something a
   visitor typed, generated from the endpoint catalogue.
 - The visitor is never geolocated automatically: "centre on my region" is an explicit click.

@@ -150,9 +150,11 @@ export default function PrivacyPage() {
               <HostList hosts={MEDIA_HOSTS} />
             </div>
             <div>
-              <h3 className="hud-text text-[11px] text-fg-heading">Thumbnails</h3>
+              <h3 className="hud-text text-[11px] text-fg-heading">Aircraft photos and other images</h3>
               <p className="mt-1 text-[12px] leading-relaxed text-fg-secondary">
-                Normally fetched by this server&apos;s image optimiser; a plain image fallback loads them directly.
+                Aircraft photos on the aircraft card load directly from airport-data.com in your browser, with no referrer sent:
+                airport-data.com sees your IP address and User-Agent when you open a card that has a photo. Sentinel-2 quicklooks
+                are fetched by this server&apos;s image optimiser instead. Images are allowed only from:
               </p>
               <HostList hosts={IMAGE_HOSTS} />
             </div>
