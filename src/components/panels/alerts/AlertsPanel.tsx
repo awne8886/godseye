@@ -15,7 +15,11 @@ import { formatAge } from '@/lib/freshness';
 import { useUiStore } from '@/lib/store';
 import type { AlertItem } from '@/lib/types';
 import { AiReadout } from '../intel/AiReadout';
-import { BLOC_SHORT, BLOC_TOKEN, FeedOfflineError, KIND_TOKEN, NEWS_QUERY_KEY, fetchNews, safeHref, useNow } from '../intel/client';
+import { BLOC_SHORT, BLOC_TOKEN, KIND_TOKEN, NEWS_QUERY_KEY, fetchNews, safeHref, useNow } from '../intel/client';
+import { failureChip, failureText, queryFailure } from '../intel/query-state';
+
+/** What a 503 from /api/news means (feedJson: nothing served, not even a last-good snapshot). */
+const NEWS_DOWN = 'no channel or wire answered';
 
 const KINDS = ['all', 'rocket', 'event', 'news'] as const;
 const BLOCS = ['all', 'western', 'russian', 'regional', 'independent'] as const;
@@ -89,9 +93,15 @@ export function AlertsPanel(_: PanelProps) {
     () => (q.data?.items ?? []).filter((it) => (kind === 'all' || it.kind === kind) && (bloc === 'all' || it.bloc === bloc) && (!thread || thread.has(it.id))),
     [q.data, kind, bloc, thread],
   );
-  const offline = q.error instanceof FeedOfflineError ? q.error : null;
+  // A failed refetch keeps the last data in q.data: the failure, not the retained count, owns the chip.
+  const failure = queryFailure(q, (d) => d.meta.fetchedAt);
   const state = q.data?.meta.state;
-  usePanelChip(q.data ? `${items.length} RESULTS` : q.isPending ? 'PLOTTING' : 'SOURCE OFFLINE', q.data ? (state === 'live' ? 'live' : 'warn') : q.isPending ? 'busy' : 'error');
+  const chip = failure
+    ? failureChip(failure, NEWS_DOWN, now)
+    : q.data
+      ? { text: `${items.length} RESULTS`, tone: state === 'live' ? ('live' as const) : ('warn' as const), title: undefined }
+      : { text: q.isPending ? 'PLOTTING' : 'SOURCE OFFLINE', tone: q.isPending ? ('busy' as const) : ('error' as const), title: undefined };
+  usePanelChip(chip.text, chip.tone, chip.title);
   const failed = (q.data?.sources ?? []).filter((s) => !s.ok);
 
   return (
@@ -120,11 +130,11 @@ export function AlertsPanel(_: PanelProps) {
         ))}
       </div>
       <p aria-live="polite" className="font-mono text-[11px] uppercase tabular-nums tracking-[0.08em] text-[var(--text-secondary)]">
-        {q.data ? `${items.length} of ${q.data.items.length} alerts${thread ? ' · thread filter' : ''}` : q.isPending ? 'Acquiring feed…' : 'Source offline'}
+        {q.data ? `${items.length} of ${q.data.items.length} alerts${thread ? ' · thread filter' : ''}${failure ? ' · last copy received' : ''}` : q.isPending ? 'Acquiring feed…' : 'Source offline'}
       </p>
-      {offline && (
-        <p className="font-sans text-[12px] text-[var(--alert-red)]">
-          SOURCE OFFLINE — no channel or wire answered{offline.meta?.lastGoodAt ? `; last good ${offline.meta.lastGoodAt.slice(11, 16)} UTC` : ''}.
+      {failure && (
+        <p role="status" data-testid="alerts-offline" className="font-sans text-[12px] text-[var(--alert-red)]">
+          {failureText(failure, NEWS_DOWN, now)}
         </p>
       )}
       {items.length > 0 && (

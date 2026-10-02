@@ -1,0 +1,67 @@
+<?xml version="1.0"?>
+<rss version="2.0" xml:base="link" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:fb="http://www.facebook.com/2008/fbml" xmlns:foaf="http://xmlns.com/foaf/0.1/" xmlns:media="http://www.rssboard.org/media-rss" xmlns:og="http://ogp.me/ns#" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xmlns:schema="http://schema.org/" xmlns:sioc="http://rdfs.org/sioc/ns#" xmlns:sioct="http://rdfs.org/sioc/types#" xmlns:skos="http://www.w3.org/2004/02/skos/core#" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <channel>
+    <title>News - South China Morning Post</title>
+    <link>https://www.scmp.com/rss/91/feed</link>
+    <description>All the latest breaking news from Hong Kong, China and around the world</description>
+    <language>en</language>
+    <image>
+      <url>https://assets-v2.i-scmp.com/production/static/img/icons/scmp-meta-1200x630.png</url>
+      <title>News - South China Morning Post</title>
+      <link>https://www.scmp.com</link>
+    </image>
+    <atom:link href="https://www.scmp.com/rss/91/feed" rel="self" type="application/rss+xml"/>
+    <item>
+      <author>Gabriel Dominguez</author>
+      <dc:creator>Gabriel Dominguez</dc:creator>
+      <description>Taiwan has hailed the much-delayed arrival of two F-16V fighter jets as a demonstration of continuing US military support, despite the summit between President Xi Jinping and US President Donald Trump.
+The two single-seat aircraft, which reached Chihhang Air Base in the eastern county of Taitung on Friday, are the first new F-16s received by the island since deliveries of its original F-16A/B fleet began in 1997.
+Compared with the earlier versions, the F-16V configuration incorporates the...</description>
+      <guid isPermaLink="true">https://www.scmp.com/news/china/military/article/3369584/taiwan-hails-f-16v-delivery-sign-us-support-holds-after-xi-trump-summit?utm_source=rss_feed</guid>
+      <link>https://www.scmp.com/news/china/military/article/3369584/taiwan-hails-f-16v-delivery-sign-us-support-holds-after-xi-trump-summit?utm_source=rss_feed</link>
+      <pubDate>Fri, 02 Oct 2026 10:00:48 +0000</pubDate>
+      <title>Taiwan hails F-16V delivery as sign US support holds after Xi-Trump summit</title>
+      <enclosure length="4095" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/fbe97db1-e464-4cd6-89ed-09a054d13ead_c525724b.jpg?itok=9RhPQM2t&amp;v=1790935245"/>
+      <media:content height="2731" medium="image" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/fbe97db1-e464-4cd6-89ed-09a054d13ead_c525724b.jpg?itok=9RhPQM2t&amp;v=1790935245" width="4095"/>
+    </item>
+<item>
+      <author>Alice Yan</author>
+      <dc:creator>Alice Yan</dc:creator>
+      <description>A 60-year-old woman in southern China has defied public stereotypes surrounding senior citizens by becoming a popular e-game live-streamer.
+Zhong Juanjuan, affectionately known as Auntie Juan by internet users, has amassed 527,000 followers on social media. She hosts two daily live-streaming sessions, each typically attracting around 10,000 viewers, as reported by Beijing News.
+Zhong, who lives in a suburban area of Meizhou in Guangdong province, only began playing computer games six years ago....</description>
+      <guid isPermaLink="true">https://www.scmp.com/news/people-culture/trending-china/article/3369504/chinese-woman-60-becomes-gaming-streamer-after-playing-understand-sons-addiction?utm_source=rss_feed</guid>
+      <link>https://www.scmp.com/news/people-culture/trending-china/article/3369504/chinese-woman-60-becomes-gaming-streamer-after-playing-understand-sons-addiction?utm_source=rss_feed</link>
+      <pubDate>Fri, 02 Oct 2026 10:00:07 +0000</pubDate>
+      <title>Chinese woman, 60, becomes gaming streamer after playing to understand son’s addiction</title>
+      <enclosure length="3000" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/42229908-a3ae-468d-93a8-e166ddca52b1_478a64ff.jpg?itok=0XR7_Frj&amp;v=1790910559"/>
+      <media:content height="1688" medium="image" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/42229908-a3ae-468d-93a8-e166ddca52b1_478a64ff.jpg?itok=0XR7_Frj&amp;v=1790910559" width="3000"/>
+    </item>
+<item>
+      <author>SCMP’s Asia desk</author>
+      <dc:creator>SCMP’s Asia desk</dc:creator>
+      <description>AirAsia co-founder Tony Fernandes has caused a stir online after taking aim at Singapore Airlines’ (SIA) in-flight meals, claiming the food served by the carrier lagged behind his own airline’s offerings.
+“Just flew with Singapore Airlines, couldn’t get AirAsia, service was great, internet amazing, food was poor, Santan is far far better and crew admitted. Great flight but we are not far off,” Fernandes wrote in a social media post on Thursday, referring to AirAsia’s in-flight dining brand.
+The...</description>
+      <guid isPermaLink="true">https://www.scmp.com/week-asia/people/article/3369583/airasia-chief-mocks-singapore-airlines-food-and-social-media-hits-back?utm_source=rss_feed</guid>
+      <link>https://www.scmp.com/week-asia/people/article/3369583/airasia-chief-mocks-singapore-airlines-food-and-social-media-hits-back?utm_source=rss_feed</link>
+      <pubDate>Fri, 02 Oct 2026 09:59:11 +0000</pubDate>
+      <title>AirAsia chief mocks Singapore Airlines’ food – and social media hits back</title>
+      <enclosure length="4095" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/ed5cde9f-e0f1-4594-9c5a-bdacc58aff7b_4e5eb2f1.jpg?itok=ADs4WFME&amp;v=1790935151"/>
+      <media:content height="2791" medium="image" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/ed5cde9f-e0f1-4594-9c5a-bdacc58aff7b_4e5eb2f1.jpg?itok=ADs4WFME&amp;v=1790935151" width="4095"/>
+    </item>
+<item>
+      <author>Agence France-Presse</author>
+      <dc:creator>Agence France-Presse</dc:creator>
+      <description>French high school students lit fires outside schools and faced off with police on Friday as a protest movement that has forced the closure of some 400 establishments showed no sign of abating.
+The movement, which began last week in the Paris region and rapidly spread nationwide, has seen teenage pupils at lycees in their final years of schooling block access to buildings and clash with police.
+The students say their school hours are excessively long, conditions are inadequate including...</description>
+      <guid isPermaLink="true">https://www.scmp.com/news/world/europe/article/3369582/hundreds-french-high-schools-shut-new-violence-erupts?utm_source=rss_feed</guid>
+      <link>https://www.scmp.com/news/world/europe/article/3369582/hundreds-french-high-schools-shut-new-violence-erupts?utm_source=rss_feed</link>
+      <pubDate>Fri, 02 Oct 2026 09:50:26 +0000</pubDate>
+      <title>Hundreds of French high schools shut as new violence erupts</title>
+      <enclosure length="2725" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/0014f4ab-bcca-4a16-9620-53195af230da_a46e40f6.jpg?itok=HUyzz6sQ&amp;v=1790934621"/>
+      <media:content height="1817" medium="image" type="image/jpeg" url="https://cdn.i-scmp.com/sites/default/files/styles/1280x720/public/d8/images/canvas/2026/10/02/0014f4ab-bcca-4a16-9620-53195af230da_a46e40f6.jpg?itok=HUyzz6sQ&amp;v=1790934621" width="2725"/>
+    </item>
+</channel>
+</rss>

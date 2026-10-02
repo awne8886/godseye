@@ -20,6 +20,9 @@ export const FX = {
   /** Untrimmed page (20 posts), captured 2026-09-30 22:47 UTC. */
   tgOsintFull: 'tg-Osintdefender-full.2026-09-30.html',
   bbc: 'bbc-world.2026-09-30.xml',
+  /** Round 8 (captured 2026-10-02 10:26 UTC, first 4 of 50 items): the stance-label regression (SCMP, Africanews). */
+  scmp: 'scmp-world.2026-10-02.xml',
+  africanews: 'africanews.2026-10-02.xml',
   yahooGspc: 'yahoo-gspc-1d-5m.2026-09-30.json',
   yahooGc: 'yahoo-gcf-1mo-1d.2026-09-30.json',
   binance: 'binance-24hr.2026-09-30.json',

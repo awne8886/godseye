@@ -13,7 +13,8 @@ import type { PanelProps } from '@/lib/feature-module';
 import { formatAge } from '@/lib/freshness';
 import type { ChainBriefResponse, MarketsResponse, Quote, ScmSuppliersResponse, SpaceWeatherResponse } from '@/lib/types';
 import { AiReadout } from '../intel/AiReadout';
-import { FeedOfflineError, fmtNum, fmtPct, getJson, useNow } from '../intel/client';
+import { fmtNum, fmtPct, getJson, useNow } from '../intel/client';
+import { failureChip, failureText, queryFailure, type QueryFailure } from '../intel/query-state';
 import { marketsChip, utcLabel, yahooLastGood } from './markets-chip';
 import { scmStatusLine } from './scm-status';
 
@@ -50,8 +51,25 @@ function Section({ title, children, note }: { title: string; children: React.Rea
   );
 }
 
-const offlineText = (e: unknown, what: string) =>
-  e instanceof FeedOfflineError ? `SOURCE OFFLINE — ${what}${e.meta?.lastGoodAt ? `; last good ${e.meta.lastGoodAt.slice(11, 16)} UTC` : ''}.` : `SOURCE OFFLINE — ${what}.`;
+/** What a 503 from each route means for this panel. */
+const DOWN = {
+  quotes: 'no quote provider answered',
+  spaceWeather: 'NOAA SWPC did not answer',
+  scm: 'hazard feeds unavailable, sites not checked',
+  chain: 'DefiLlama and NVD did not answer',
+} as const;
+
+/** A section whose refetch failed while it still shows the last copy: say so under the copy. */
+function RetainedNote({ f, upstream, now, testId }: { f: QueryFailure | null; upstream: string; now: number; testId: string }) {
+  if (!f?.retained) return null;
+  return (
+    <p role="status" data-testid={testId} className="font-sans text-[12px] text-[var(--alert-red)]">
+      {failureText(f, upstream, now)}
+    </p>
+  );
+}
+
+const noData = (pending: boolean, pendingText: string, f: QueryFailure | null, upstream: string, now: number) => (pending ? pendingText : f ? failureText(f, upstream, now) : 'SOURCE OFFLINE.');
 
 export function MarketsPanel(_: PanelProps) {
   const now = useNow(30_000);
@@ -60,7 +78,15 @@ export function MarketsPanel(_: PanelProps) {
   const scm = useQuery({ queryKey: ['intel', 'scm'], queryFn: ({ signal }) => getJson<ScmSuppliersResponse>('/api/scm-suppliers', signal), refetchInterval: 900_000, staleTime: 600_000 });
   const chain = useQuery({ queryKey: ['intel', 'chain', 30], queryFn: ({ signal }) => getJson<ChainBriefResponse>('/api/chain/daily?days=30', signal), staleTime: 1_800_000 });
   const [chart, setChart] = useState<{ symbol: string; name: string } | null>(null);
-  const chip = m.data ? marketsChip(m.data, now) : null;
+  // react-query keeps the last data when a refetch fails: an error owns the chip and each section
+  // labels the copy it still shows (r8).
+  const fail = {
+    quotes: queryFailure(m, (x) => x.meta.fetchedAt),
+    spaceWeather: queryFailure(sw, (x) => x.meta.fetchedAt),
+    scm: queryFailure(scm, (x) => x.meta.fetchedAt),
+    chain: queryFailure(chain, (x) => x.meta.fetchedAt),
+  };
+  const chip = fail.quotes ? failureChip(fail.quotes, DOWN.quotes, now) : m.data ? marketsChip(m.data, now) : null;
   usePanelChip(chip ? chip.text : m.isPending ? 'PLOTTING' : 'SOURCE OFFLINE', chip ? chip.tone : m.isPending ? 'busy' : 'error', chip?.title);
 
   const d = m.data;
@@ -74,7 +100,8 @@ export function MarketsPanel(_: PanelProps) {
   return (
     <div className="flex flex-col gap-3" data-testid="markets-panel">
       <AiReadout path="/api/ai/overview" body={{ scope: 'markets' }} label="Market read-out" />
-      {!d && <p className="font-sans text-[12px] text-[var(--text-secondary)]">{m.isPending ? 'Acquiring quotes…' : offlineText(m.error, 'no quote provider answered')}</p>}
+      {!d && <p className="font-sans text-[12px] text-[var(--text-secondary)]">{noData(m.isPending, 'Acquiring quotes…', fail.quotes, DOWN.quotes, now)}</p>}
+      <RetainedNote f={fail.quotes} upstream={DOWN.quotes} now={now} testId="markets-offline" />
       {d && (
         <>
           <Section
@@ -158,8 +185,9 @@ export function MarketsPanel(_: PanelProps) {
             ))}
           </dl>
         ) : (
-          <p className="font-sans text-[12px] text-[var(--text-secondary)]">{sw.isPending ? 'Acquiring…' : offlineText(sw.error, 'NOAA SWPC did not answer')}</p>
+          <p className="font-sans text-[12px] text-[var(--text-secondary)]">{noData(sw.isPending, 'Acquiring…', fail.spaceWeather, DOWN.spaceWeather, now)}</p>
         )}
+        <RetainedNote f={fail.spaceWeather} upstream={DOWN.spaceWeather} now={now} testId="space-weather-offline" />
       </Section>
 
       <Section title="Supply chain" note="Reference sites (city-level); threats are distance rules with the method shown.">
@@ -192,8 +220,9 @@ export function MarketsPanel(_: PanelProps) {
             </li>
           </ul>
         ) : (
-          <p className="font-sans text-[12px] text-[var(--text-secondary)]">{scm.isPending ? 'Checking sites…' : offlineText(scm.error, 'hazard feeds unavailable, sites not checked')}</p>
+          <p className="font-sans text-[12px] text-[var(--text-secondary)]">{noData(scm.isPending, 'Checking sites…', fail.scm, DOWN.scm, now)}</p>
         )}
+        <RetainedNote f={fail.scm} upstream={DOWN.scm} now={now} testId="scm-offline" />
       </Section>
 
       <Section title="Chain brief · 30 days" note="DefiLlama hacks, NVD CVEs; sanctioned wallets need an OpenSanctions key.">
@@ -214,8 +243,9 @@ export function MarketsPanel(_: PanelProps) {
             {chain.data.degraded.length > 0 && <p className="text-[var(--text-muted)]">Degraded: {chain.data.degraded.join(', ')}</p>}
           </div>
         ) : (
-          <p className="font-sans text-[12px] text-[var(--text-secondary)]">{chain.isPending ? 'Loading…' : offlineText(chain.error, 'DefiLlama and NVD did not answer')}</p>
+          <p className="font-sans text-[12px] text-[var(--text-secondary)]">{noData(chain.isPending, 'Loading…', fail.chain, DOWN.chain, now)}</p>
         )}
+        <RetainedNote f={fail.chain} upstream={DOWN.chain} now={now} testId="chain-offline" />
       </Section>
     </div>
   );

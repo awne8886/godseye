@@ -8,7 +8,8 @@ import { CandlestickSeries, createChart, type IChartApi, type UTCTimestamp } fro
 import { useEffect, useRef, useState } from 'react';
 import { hudFontFamily } from '@/lib/tokens';
 import type { MarketHistoryResponse, MarketRange } from '@/lib/types';
-import { FeedOfflineError, getJson } from '../intel/client';
+import { getJson } from '../intel/client';
+import { failureText, queryFailure } from '../intel/query-state';
 
 const RANGES: MarketRange[] = ['24H', '1W', '1M', '6M', '1Y'];
 
@@ -47,7 +48,8 @@ export default function MarketChart({ symbol, name }: { symbol: string; name: st
     };
   }, [q.data, range]);
 
-  const offline = q.error instanceof FeedOfflineError;
+  // An error wins over retained candles (a failed refetch keeps them drawn; the caption says so).
+  const failure = queryFailure(q, (d) => d.meta.fetchedAt);
   return (
     <figure className="flex flex-col gap-1" data-testid="market-chart">
       <div className="flex items-center gap-1">
@@ -71,7 +73,7 @@ export default function MarketChart({ symbol, name }: { symbol: string; name: st
       </div>
       <div ref={ref} className="h-[180px] w-full" role="img" aria-label={`${name} candlestick chart, range ${range}`} />
       <p className="font-sans text-[12px] text-[var(--text-muted)]">
-        {q.isPending ? 'Loading candles…' : offline ? 'SOURCE OFFLINE — Yahoo chart did not answer.' : q.data ? `${q.data.candles.length} candles · ${q.data.interval} · Yahoo chart (unofficial, delayed)` : ''}
+        {q.isPending ? 'Loading candles…' : failure ? failureText(failure, 'Yahoo chart did not answer') : q.data ? `${q.data.candles.length} candles · ${q.data.interval} · Yahoo chart (unofficial, delayed)` : ''}
       </p>
     </figure>
   );

@@ -26,3 +26,26 @@ export function eventTime(e: Pick<FeedEvent, 'layer' | 'observedAt'>, now: numbe
   }
   return { text: `${formatAge(now - Date.parse(e.observedAt))} ago`, title: e.observedAt };
 }
+
+/**
+ * INTEL FEED header chip. The store keeps the events a layer published even after that layer's
+ * feed fails, so a count alone would read green beside offline layers (r8). The chip is toned by the
+ * state of the layers that published the events: all of them offline → SOURCE OFFLINE (error);
+ * some offline or stale → the count in the warning tone, naming them; otherwise the count, live.
+ * Feed-only layers (no map layer, no rail status) do not change the tone.
+ */
+export function feedChip(shown: number, publishing: readonly string[], stateOf: (layer: string) => string | undefined): { text: string; tone: 'idle' | 'live' | 'warn' | 'error'; title?: string } {
+  if (!publishing.length) return { text: 'STANDBY', tone: 'idle' };
+  const known = publishing.filter((l) => stateOf(l) !== undefined);
+  const offline = known.filter((l) => stateOf(l) === 'offline');
+  const stale = known.filter((l) => stateOf(l) === 'stale');
+  const names = (ls: readonly string[]) => ls.map(eventLayerLabel).join(', ');
+  if (known.length > 0 && offline.length === known.length) {
+    return { text: 'SOURCE OFFLINE', tone: 'error', title: `Source offline: ${names(offline)}. ${shown} rows are the last copy received.` };
+  }
+  if (offline.length || stale.length) {
+    const parts = [offline.length ? `source offline: ${names(offline)}` : '', stale.length ? `stale: ${names(stale)}` : ''].filter(Boolean);
+    return { text: `${shown} RESULTS`, tone: 'warn', title: `${shown} results; ${parts.join('; ')}.` };
+  }
+  return { text: `${shown} RESULTS`, tone: 'live' };
+}

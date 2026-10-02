@@ -11,7 +11,7 @@ import { earthquakeFeed } from '@/features/hazards/server/usgs';
 import type { AlertItem, Earthquake, Quote } from '@/lib/types';
 import { chainFeed, getNews, marketsFeed } from '../feeds';
 import { SYSTEM_BASE, type ChatTurn, type CitableRow } from './ai';
-import { buildAlertBrief, timeAgo, type AlertBrief, BLOC_LABEL } from './digest';
+import { BLOC_LABEL, buildAlertBrief, sourceWithStance, timeAgo, type AlertBrief } from './digest';
 import type { ChainData } from './chain';
 
 export interface Prompt {
@@ -49,7 +49,7 @@ function headlineLines(news: readonly AlertItem[], now: number, max = 40): strin
   return [...news]
     .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt))
     .slice(0, max)
-    .map((r) => `- [news:${r.id}] ${timeAgo(r.publishedAt, now) || 'undated'} · ${r.sourceName} (${BLOC_LABEL[r.bloc]}; ${r.lean})${r.alsoReportedBy.length ? `, also carried by ${r.alsoReportedBy.length} other channel(s)` : ''}: ${r.title}`)
+    .map((r) => `- [news:${r.id}] ${timeAgo(r.publishedAt, now) || 'undated'} · ${r.sourceName} (stance: ${r.lean}; digest group: ${BLOC_LABEL[r.bloc]})${r.alsoReportedBy.length ? `, also carried by ${r.alsoReportedBy.length} other channel(s)` : ''}: ${r.title}`)
     .join('\n');
 }
 
@@ -175,7 +175,7 @@ export function chatPrompt(turns: ChatTurn[], s: Snapshot, now = Date.now()): Pr
   const words = new Set((last.toLowerCase().match(WORD) ?? []).filter((w) => !['what', 'about', 'there', 'which', 'with', 'from', 'this', 'that', 'have'].includes(w)));
   const hits = s.news.filter((n) => [...words].some((w) => n.title.toLowerCase().includes(w))).slice(0, 6);
   const analyst = hits.length
-    ? [`${hits.length} report(s) in the current feed match your question (keyword match, not verified):`, ...hits.map((h) => `• ${h.sourceName} (${BLOC_LABEL[h.bloc]}), ${timeAgo(h.publishedAt, now)}: ${h.title} [news:${h.id}]`)].join('\n')
+    ? [`${hits.length} report(s) in the current feed match your question (keyword match, not verified):`, ...hits.map((h) => `• ${sourceWithStance(h)}, ${timeAgo(h.publishedAt, now)}: ${h.title} [news:${h.id}]`)].join('\n')
     : `No report in the current feed matches those keywords. ${brief.bottomLine}`;
   const context = `CURRENT FEED\nBOTTOM LINE: ${brief.bottomLine}\nFACTS:\n${brief.facts.map((f) => `- ${f}`).join('\n')}\nHEADLINES:\n${headlineLines(s.news, now, 30)}`;
   return {
