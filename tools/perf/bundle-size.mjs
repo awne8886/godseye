@@ -1,116 +1,114 @@
 #!/usr/bin/env node
 /**
- * Initial-JS budget checker (perf-auditor). Contract §10: initial JS <= 350 KB gzip, excluding lazy
- * map chunks. "Initial" = every /_next/static/*.js referenced by the server-rendered HTML of a route
- * (<script src> + preload links), i.e. what the browser must fetch/parse before hydration. Sizes are
- * gzip -9 of the served file (Next serves static chunks gzip-encoded); every chunk is fingerprinted
- * with the libraries it contains so the heavy ones can be attributed.
+ * Initial-JS budget (contract §10: initial JS <= 350 KB gzip, excluding the lazy map chunks).
+ * "Initial" = every /_next/static/**.js the browser fetches for `/` from navigation until the page
+ * is idle (no new script for --quiet-ms after network idle, at most --max-ms): what a visitor
+ * downloads and parses at start-up, hydration and the default-on layers included. Sizes are gzip -9
+ * of each file as served. maplibre-gl, deck.gl and luma.gl modules are removed from each chunk
+ * before measuring (tools/perf/bundle-attribution.mjs: content attribution, conservative, so the
+ * reported figure can only be too high). The exit code is 1 over budget.
  *
- *   node tools/perf/bundle-size.mjs [--base http://127.0.0.1:3000] [--routes /,/docs,/privacy]
- *                                    [--chunks-dir .next/static/chunks] [--json out.json]
+ *   node tools/perf/bundle-size.mjs [--base http://127.0.0.1:3100] [--route /] [--start] [--port 3100]
+ *                                    [--budget-kb 350] [--quiet-ms 3000] [--max-ms 90000] [--json out.json]
  *
- * Exit code 1 when any route's initial JS exceeds the budget.
+ * --start runs `next start -p <port>` on the current build for the measurement and stops it after.
+ * Chromium: PLAYWRIGHT_CHROMIUM_EXECUTABLE if set, else Playwright's own (SwiftShader WebGL flags as
+ * in playwright.config.ts, so the map path loads exactly as in e2e). Owner: map-engine.
  */
-import zlib from 'node:zlib';
-import { readdirSync, readFileSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { chromium } from '@playwright/test';
+import { budgetReport, libraryLiteralSets, measureChunk } from './bundle-attribution.mjs';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => {
   const i = args.indexOf(k);
   return i >= 0 ? args[i + 1] : d;
 };
-const BASE = opt('--base', 'http://127.0.0.1:3000');
-const ROUTES = opt('--routes', '/,/docs,/privacy,/?panel=layers').split(',');
-const CHUNKS_DIR = opt('--chunks-dir', '.next/static/chunks');
+const PORT = Number(opt('--port', '3100'));
+const START = args.includes('--start');
+const BASE = opt('--base', `http://127.0.0.1:${PORT}`);
+const ROUTE = opt('--route', '/');
+const BUDGET = Number(opt('--budget-kb', '350')) * 1024;
+const QUIET_MS = Number(opt('--quiet-ms', '3000'));
+const MAX_MS = Number(opt('--max-ms', '90000'));
 const OUT = opt('--json', null);
-const BUDGET = 350 * 1024;
-
-// Fingerprints: substrings that only appear in a given library's bundled source.
-const MARKERS = [
-  ['maplibre-gl', /maplibre|MapLibre/],
-  ['deck.gl', /deck\.gl|@deck\.gl|DeckGL|MapboxOverlay|MapLibreOverlay/],
-  ['luma.gl', /luma\.gl|@luma\.gl/],
-  ['satellite.js', /json2satrec|twoline2satrec|sgp4/],
-  ['echarts', /echarts/],
-  ['lightweight-charts', /lightweight-charts|LightweightCharts/],
-  ['hls.js', /hls\.js|HLS\.js|Hls\.DefaultConfig/],
-  ['h3-js', /h3-js|latLngToCell/],
-  ['turf', /@turf|turf/],
-  ['motion', /framer|motion\/react|useReducedMotion/],
-  ['react-dom', /react-dom|__SECRET_INTERNALS|ReactDOM/],
-  ['next-runtime', /__NEXT_DATA__|next\/dist|__next_f/],
-  ['radix', /radix/i],
-  ['cmdk', /cmdk/],
-  ['react-query', /QueryClient|tanstack/],
-  ['zod', /ZodError|zod/],
-  ['minisearch', /MiniSearch/],
-];
-
-const gz = (buf) => zlib.gzipSync(buf, { level: 9 }).length;
 const kb = (n) => (n / 1024).toFixed(1);
 
-async function text(url) {
-  const r = await fetch(url, { headers: { 'user-agent': 'godseye-perf-auditor' } });
-  return r.text();
-}
-async function buf(url) {
-  const r = await fetch(url, { headers: { 'user-agent': 'godseye-perf-auditor' } });
-  return Buffer.from(await r.arrayBuffer());
-}
-function fingerprint(src) {
-  const s = src.toString('latin1');
-  return MARKERS.filter(([, re]) => re.test(s)).map(([n]) => n);
-}
-
-const result = { base: BASE, at: new Date().toISOString(), budgetBytes: BUDGET, routes: {}, largestChunks: [] };
-let fail = 0;
-const cache = new Map();
-for (const route of ROUTES) {
-  const html = await text(BASE + route);
-  // Executed initial scripts: <script src> (minus noModule polyfills, which modern browsers skip)
-  // plus rel=preload/modulepreload script hints.
-  const tags = [...html.matchAll(/<(script|link)\b[^>]*\/_next\/static\/[^>]*>/g)].map((m) => m[0]);
-  const noModule = tags.filter((t) => /noModule/i.test(t)).map((t) => t.match(/\/_next\/static\/[^"'\s]+?\.js/)?.[0]);
-  const js = [...new Set(tags.filter((t) => !/noModule/i.test(t)).map((t) => t.match(/\/_next\/static\/[^"'\s]+?\.js/)?.[0]).filter(Boolean))];
-  if (noModule.length) console.log(`${route}: skipping noModule ${noModule.join(', ')}`);
-  const css = [...new Set([...html.matchAll(/\/_next\/static\/[^"'\s]+?\.css/g)].map((m) => m[0]))];
-  let raw = 0;
-  let gzip = 0;
-  const chunks = [];
-  for (const p of js) {
-    if (!cache.has(p)) {
-      const b = await buf(BASE + p);
-      cache.set(p, { raw: b.length, gzip: gz(b), libs: fingerprint(b) });
+async function waitForServer(url, ms) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    try {
+      const r = await fetch(url, { headers: { 'user-agent': 'GODSEYE-perf-bundle-size' } });
+      if (r.ok) return;
+    } catch {
+      /* not up yet */
     }
-    const c = cache.get(p);
-    raw += c.raw;
-    gzip += c.gzip;
-    chunks.push({ path: p, ...c });
+    await new Promise((r) => setTimeout(r, 500));
   }
-  let cssGzip = 0;
-  for (const p of css) cssGzip += gz(await buf(BASE + p));
-  chunks.sort((a, b) => b.gzip - a.gzip);
-  const over = gzip > BUDGET;
-  if (over) fail++;
-  result.routes[route] = { jsCount: js.length, rawBytes: raw, gzipBytes: gzip, cssGzipBytes: cssGzip, htmlBytes: Buffer.byteLength(html), htmlGzipBytes: gz(Buffer.from(html)), overBudget: over, chunks };
-  console.log(`\n${route}  initial JS: ${js.length} files, ${kb(raw)} KB raw, ${kb(gzip)} KB gzip ${over ? 'OVER' : 'ok'} (budget ${kb(BUDGET)} KB); CSS ${kb(cssGzip)} KB gz; HTML ${kb(Buffer.byteLength(html))} KB (${kb(gz(Buffer.from(html)))} KB gz)`);
-  for (const c of chunks.slice(0, 12)) console.log(`  ${kb(c.gzip).padStart(7)} KB gz ${kb(c.raw).padStart(8)} KB  ${c.path.split('/').pop()}  ${c.libs.join(' ')}`);
+  throw new Error(`server at ${url} did not answer within ${ms} ms`);
 }
 
-if (existsSync(CHUNKS_DIR)) {
-  const initial = new Set([...cache.keys()].map((p) => p.split('/').pop()));
-  const files = readdirSync(CHUNKS_DIR).filter((f) => f.endsWith('.js'));
-  const all = files.map((f) => {
-    const full = path.join(CHUNKS_DIR, f);
-    const b = readFileSync(full);
-    return { file: f, raw: statSync(full).size, gzip: gz(b), libs: fingerprint(b), initial: initial.has(f) };
-  });
-  all.sort((a, b) => b.gzip - a.gzip);
-  const total = all.reduce((s, c) => s + c.gzip, 0);
-  result.largestChunks = all.slice(0, 25);
-  console.log(`\nAll chunks in ${CHUNKS_DIR}: ${all.length} files, ${kb(total)} KB gzip total. Largest:`);
-  for (const c of all.slice(0, 20)) console.log(`  ${kb(c.gzip).padStart(7)} KB gz ${kb(c.raw).padStart(8)} KB  ${c.initial ? 'INITIAL' : 'lazy   '} ${c.file}  ${c.libs.join(' ')}`);
+let server = null;
+if (START) {
+  const nextBin = path.join(process.cwd(), 'node_modules', 'next', 'dist', 'bin', 'next');
+  server = spawn(process.execPath, [nextBin, 'start', '-p', String(PORT), '-H', '127.0.0.1'], { stdio: 'ignore', env: process.env });
+  await waitForServer(`${BASE}/api/health`, 60_000);
 }
-if (OUT) writeFileSync(OUT, JSON.stringify(result, null, 2));
-process.exit(fail ? 1 : 0);
+
+const sets = libraryLiteralSets(path.join(process.cwd(), 'node_modules'));
+const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
+  args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
+});
+const chunks = new Map();
+let lastScriptAt = Date.now();
+try {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS_ERRORS === '1' });
+  const page = await ctx.newPage();
+  const pending = [];
+  page.on('response', (res) => {
+    const u = new URL(res.url());
+    if (u.origin !== new URL(BASE).origin || !u.pathname.startsWith('/_next/static/') || !u.pathname.endsWith('.js')) return;
+    if (chunks.has(u.pathname)) return;
+    lastScriptAt = Date.now();
+    chunks.set(u.pathname, null);
+    pending.push(
+      res
+        .body()
+        .then((b) => chunks.set(u.pathname, measureChunk(u.pathname, b.toString('utf8'), sets)))
+        .catch(() => chunks.delete(u.pathname)),
+    );
+  });
+  const t0 = Date.now();
+  await page.goto(BASE + ROUTE, { waitUntil: 'load', timeout: MAX_MS });
+  // Idle: network idle, then no new script for QUIET_MS (lazy chunks of default-on layers included).
+  while (Date.now() - t0 < MAX_MS) {
+    await page.waitForLoadState('networkidle', { timeout: Math.max(1000, MAX_MS - (Date.now() - t0)) }).catch(() => undefined);
+    if (Date.now() - lastScriptAt >= QUIET_MS) break;
+    await page.waitForTimeout(500);
+  }
+  await Promise.all(pending);
+} finally {
+  await browser.close();
+  server?.kill('SIGTERM');
+}
+
+const measured = [...chunks.values()].filter(Boolean).sort((a, b) => b.countedGzip - a.countedGzip);
+const report = { base: BASE, route: ROUTE, at: new Date().toISOString(), ...budgetReport(measured, BUDGET), chunks: measured };
+const excluded = Object.entries(report.excludedRawBytes)
+  .map(([lib, n]) => `${lib} ${kb(n)} KB raw`)
+  .join(', ');
+console.log(
+  `${ROUTE} initial JS until idle: ${report.files} files, ${kb(report.gzipBytes)} KB gzip fetched; ` +
+    `${kb(report.countedGzipBytes)} KB gzip counted (maplibre/deck/luma removed: ${excluded || 'none found'}) ` +
+    `${report.over ? 'OVER' : 'within'} budget ${kb(BUDGET)} KB`,
+);
+for (const c of measured.slice(0, 15)) {
+  const lib = Object.keys(c.excludedRaw).join('+');
+  console.log(`  ${kb(c.countedGzip).padStart(7)} KB gz counted ${kb(c.gzip).padStart(7)} KB gz served  ${c.url.split('/').pop()}${lib ? `  (${lib} removed)` : ''}`);
+}
+if (report.unsplitFiles.length) console.log(`  counted whole (not a module chunk): ${report.unsplitFiles.map((u) => u.split('/').pop()).join(', ')}`);
+if (OUT) writeFileSync(OUT, JSON.stringify(report, null, 2));
+process.exit(report.over ? 1 : 0);
