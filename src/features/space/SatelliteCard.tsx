@@ -41,6 +41,21 @@ function Field({ label, value, accent }: { label: string; value: string; accent?
   );
 }
 
+/** An epoch further ahead of the viewer's clock than this is shown as "in the future", never as "0s old". */
+export const FUTURE_EPOCH_SLACK_MS = 60_000;
+
+/**
+ * The parenthesised age of the element set on the card. CelesTrak publishes some element sets with
+ * a predicted epoch (CXO, NORAD 25867, was 51 h ahead): those are "epoch in the future", not
+ * "0s old" (verification round 10, MINOR 2).
+ */
+export function epochAgeNote(epochIso: string, now: number): string {
+  const age = now - Date.parse(epochIso);
+  if (!Number.isFinite(age)) return 'epoch unknown';
+  if (age < -FUTURE_EPOCH_SLACK_MS) return 'epoch in the future';
+  return `${formatAge(age)} old`;
+}
+
 /** Shared body: used by `cards.satellite` and `panels.satellite`. */
 export function SatelliteDetails({ data, onClose }: { data: SatelliteSelectionData; onClose?: () => void }) {
   const telemetry = useSpaceStore((s) => (s.telemetry?.noradId === data.noradId ? s.telemetry : null));
@@ -54,7 +69,7 @@ export function SatelliteDetails({ data, onClose }: { data: SatelliteSelectionDa
   const cls = orbitClass(data.meanMotion, data.eccentricity);
   const period = periodMinutes(data.meanMotion);
   const now = useNow(10_000);
-  const epochAge = formatAge(now - Date.parse(data.epoch));
+  const epochAge = epochAgeNote(data.epoch, now);
   const fallback = data.catalogueSource === 'satnogs-fallback';
 
   return (
@@ -95,7 +110,7 @@ export function SatelliteDetails({ data, onClose }: { data: SatelliteSelectionDa
           </span>
         )}
         <span className="font-sans text-[12px] text-[var(--text-secondary)]">
-          Propagated from elements of {fmtUtc(data.epoch)} ({epochAge} old)
+          Propagated from elements of {fmtUtc(data.epoch)} ({epochAge})
         </span>
       </p>
 

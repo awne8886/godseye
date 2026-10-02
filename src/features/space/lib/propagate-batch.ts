@@ -13,11 +13,17 @@
  * sees drawn rows). A plain "within 90° of the map centre" test is wrong both ways: it drew LEO
  * satellites behind the limb and hid GEO satellites that rise above it.
  *
+ * Mercator (`flat`, verification round 10 MAJOR 1): the markers are drawn ON their sub-satellite
+ * points (z = 0). A z of 450–1750 km under MapLibre's perspective camera displaced the GEO belt
+ * ~120 px off its ground points at z5 and put it behind the camera at z7, while the hit-test still
+ * accepted the ground point. A flat map has no "above": the honest marker is the ground point.
+ *
  * Output layout (compacted to the visible set, ready for deck.gl binary attributes). Rows are
  * SORTED BY CATEGORY (SAT_CATEGORIES order, catalogue order within a category) so the client can
  * draw one IconLayer per mission glyph over `subarray` views — deck.gl's IconLayer cannot take
  * `getIcon` as a binary attribute:
- *   positions        Float32Array  [lng, lat, zMeters] × n   (z = display altitude, see displayAltM)
+ *   positions        Float32Array  [lng, lat, zMeters] × n   (z = display altitude, see displayAltM;
+ *                                                             0 when `flat`: see below)
  *   colors           Uint8Array    [r, g, b, a] × n           (mission colour; alpha dimmed in Earth's shadow)
  *   sizes            Float32Array  [px] × n                   (glyph height; ISS / selected enlarged)
  *   index            Uint32Array   [catalogue index] × n      (picking → row)
@@ -60,6 +66,8 @@ export interface BatchOptions {
    */
   camera: FarSideCamera | null;
   selectedId: number | null;
+  /** Mercator: draw every marker at z = 0, on its sub-satellite point (see the header). */
+  flat?: boolean;
   /** Alpha multiplier for satellites in Earth's shadow. */
   shadowAlpha?: number;
 }
@@ -90,6 +98,8 @@ export interface BatchResult {
   selected: SelectedTelemetry | null;
   /** The camera this frame was far-side filtered with (null: mercator / not published yet). */
   camera: FarSideCamera | null;
+  /** True when every row is drawn at z = 0 (mercator). */
+  flat: boolean;
 }
 
 /** One tick of SGP4 for the visible categories, before the far-side filter (worker-internal). */
@@ -195,12 +205,13 @@ const cursor = new Uint32Array(SAT_CATEGORY_COUNT);
 export function compactFrame(
   input: Pick<BatchInput, 'noradIds' | 'categories'>,
   prop: Propagated,
-  opts: Pick<BatchOptions, 'palette' | 'visible' | 'camera' | 'selectedId' | 'shadowAlpha'>,
+  opts: Pick<BatchOptions, 'palette' | 'visible' | 'camera' | 'selectedId' | 'shadowAlpha' | 'flat'>,
 ): BatchResult {
   if (slotScratch.length < prop.n) slotScratch = new Uint8Array(prop.n);
   const slots = slotScratch;
   const categoryOffsets = new Uint32Array(SAT_CATEGORY_COUNT + 1);
   const shadowAlpha = opts.shadowAlpha ?? 0.3;
+  const flat = opts.flat === true;
   let count = 0;
   let hidden = prop.categoryHidden;
   let selected: SelectedTelemetry | null = null;
@@ -248,7 +259,7 @@ export function compactFrame(
     const id = input.noradIds[i]!;
     positions[k * 3] = prop.lng[j]!;
     positions[k * 3 + 1] = prop.lat[j]!;
-    positions[k * 3 + 2] = prop.displayAltM[j]!;
+    positions[k * 3 + 2] = flat ? 0 : prop.displayAltM[j]!;
     const c = opts.palette[input.categories[i]!] ?? opts.palette[opts.palette.length - 1]!;
     colors[k * 4] = c[0];
     colors[k * 4 + 1] = c[1];
@@ -269,6 +280,7 @@ export function compactFrame(
     failed: prop.failed,
     selected,
     camera: opts.camera ? { ...opts.camera } : null,
+    flat,
   };
 }
 
