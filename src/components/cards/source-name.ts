@@ -15,6 +15,11 @@ const PRODUCT_NAMES: Readonly<Record<string, string>> = {
   urlhaus: 'abuse.ch URLhaus',
   threatfox: 'abuse.ch ThreatFox',
   feodo: 'abuse.ch Feodo Tracker',
+  // One FIRMS (LANCE) catalogue entry, four instruments: the fire card lists each on its own row.
+  firms_viirs_snpp: 'NASA FIRMS VIIRS S-NPP',
+  firms_viirs_noaa20: 'NASA FIRMS VIIRS NOAA-20',
+  firms_viirs_noaa21: 'NASA FIRMS VIIRS NOAA-21',
+  firms_modis: 'NASA FIRMS MODIS',
 };
 const ALIASES: Readonly<Record<string, string>> = {
   adsblol_tiles: 'adsblol',

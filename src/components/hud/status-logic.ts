@@ -138,3 +138,22 @@ export function entitiesLabel(count: number, drawPending: boolean): string {
   if (!drawPending) return `${n} ENTITIES`;
   return count > 0 ? `${n} RECEIVED + DRAWING` : 'ENTITIES LOADING';
 }
+
+type ProviderRun = NonNullable<LayerStatus['providers']>[string];
+
+/**
+ * Why a provider did not run (`skipped`, the same field the rail's "NEEDS KEY · …" line reads),
+ * worded for people. A skipped provider never reads FAILED: it was not asked.
+ */
+export const SKIPPED_LABEL: Record<NonNullable<ProviderRun['skipped']>, string> = {
+  'not-configured': 'NOT CONFIGURED · NEEDS KEY',
+  licence: 'LICENCE GATE',
+  disabled: 'DISABLED BY CONFIG',
+  budget: 'DAILY BUDGET SPENT',
+};
+
+/** One provider's state for card Sources lists: OK, FAILED, or why it was skipped. */
+export function providerStateLabel(p: Pick<ProviderRun, 'ok' | 'skipped'>): string {
+  if (p.skipped) return SKIPPED_LABEL[p.skipped];
+  return p.ok ? 'OK' : 'FAILED';
+}
