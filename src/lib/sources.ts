@@ -118,7 +118,7 @@ export const SOURCES: readonly SourceEntry[] = [
   { id: 'inform', name: 'INFORM Risk Index (EC JRC)', group: 'conflict', usedFor: 'Country risk', licence: 'CC BY 4.0', url: 'https://drmkc.jrc.ec.europa.eu/inform-index', mode: 'live' },
   { id: 'wgi', name: 'World Bank Worldwide Governance Indicators', group: 'conflict', usedFor: 'Country risk (political stability)', licence: 'CC BY 4.0', url: 'https://www.worldbank.org/en/publication/worldwide-governance-indicators', mode: 'live' },
   { id: 'wikidata-nuclear', name: 'Wikidata (nuclear facilities)', group: 'conflict', usedFor: 'Nuclear power plants', licence: 'CC0 (structured data)', url: 'https://www.wikidata.org/wiki/Wikidata:Licensing', mode: 'reference' },
-  { id: 'osiris-curated', name: 'OSIRIS curated lists', group: 'conflict', usedFor: 'Chokepoints, nuclear facilities, zones, major ports (REFERENCE)', licence: 'MIT', url: 'https://opensource.org/license/mit', mode: 'reference' },
+  { id: 'osiris-curated', name: 'GODSEYE curated reference lists', group: 'conflict', usedFor: 'Chokepoints, nuclear facilities, zones, major ports (REFERENCE)', licence: 'MIT; tables derived from an MIT-licensed project (OSIRIS, MIT)', url: 'https://opensource.org/license/mit', mode: 'reference' },
 
   // ── Network & cyber ──────────────────────────────────────────────────────────
   { id: 'abusech', name: 'abuse.ch (URLhaus, Feodo Tracker, ThreatFox)', group: 'network', usedFor: 'Malware / C2 INDICATOR points', licence: 'abuse.ch terms of use (not-for-profit); commercial use needs an agreement', url: 'https://abuse.ch/terms-of-use/', mode: 'live', gate: NC },
@@ -188,7 +188,7 @@ export const SOURCES: readonly SourceEntry[] = [
   { id: 'nominatim', name: 'Nominatim (OSMF)', group: 'geo', usedFor: 'Geocoding fallback (≤ 1 request/s, cached)', licence: 'OSMF usage policy; data ODbL', url: 'https://operations.osmfoundation.org/policies/nominatim/', mode: 'on-demand' },
   { id: 'valhalla', name: 'Valhalla (FOSSGIS public instance)', group: 'geo', usedFor: 'Directions and elevation profiles', licence: 'FOSSGIS fair use; data ODbL', url: 'https://www.fossgis.de/', mode: 'on-demand' },
   { id: 'osrm', name: 'OSRM demo server / FOSSGIS routed', group: 'geo', usedFor: 'Directions fallback', licence: 'Demo server fair use; data ODbL', url: 'https://github.com/Project-OSRM/osrm-backend/wiki/Api-usage-policy', mode: 'on-demand' },
-  { id: 'ipwhois', name: 'ipwho.is', group: 'geo', usedFor: '"Centre on my region" fallback (only after consent), OSINT IP lookups', licence: 'Free tier, fair use', url: 'https://ipwho.is/', mode: 'on-demand' },
+  { id: 'ipwhois', name: 'ipwho.is', group: 'geo', usedFor: '"Centre on my region" fallback (only after consent), OSINT IP lookups', licence: 'Free endpoint, keyless: 1,000 requests/day, commercial use allowed (we stop at the daily budget and fall back to FreeIPAPI)', url: 'https://ipwho.is/', mode: 'on-demand' },
   { id: 'freeipapi', name: 'FreeIPAPI', group: 'geo', usedFor: 'IP geolocation fallback', licence: 'Free tier (60 requests/min)', url: 'https://freeipapi.com/', mode: 'on-demand' },
 
   // ── OSINT tools (passive, infrastructure only) ───────────────────────────────
@@ -206,9 +206,10 @@ export const SOURCES: readonly SourceEntry[] = [
   { id: 'mempool', name: 'mempool.space', group: 'osint', usedFor: 'Bitcoin address lookups', licence: 'Free public API', url: 'https://mempool.space/docs/api/rest', mode: 'on-demand' },
   { id: 'blockscout', name: 'Blockscout (Ethereum)', group: 'osint', usedFor: 'Ethereum address lookups', licence: 'Free public API', url: 'https://eth.blockscout.com/', mode: 'on-demand' },
   { id: 'solana-rpc', name: 'Solana public RPC', group: 'osint', usedFor: 'Solana address balance', licence: 'Public RPC terms', url: 'https://solana.com/tos', mode: 'on-demand' },
-  { id: 'opensanctions', name: 'OpenSanctions', group: 'osint', usedFor: 'Sanctions screening (OFAC SDN bulk), entity graph, chain wallets', licence: 'CC BY-NC 4.0; commercial use needs a licence', url: 'https://www.opensanctions.org/licensing/', mode: 'on-demand', gate: NC },
+  { id: 'opensanctions', name: 'OpenSanctions', group: 'osint', usedFor: 'Sanctions screening (OFAC SDN bulk), entity graph, chain wallets', licence: 'Bulk data CC BY-NC 4.0 (commercial use needs a licence); the keyed API runs under the key holder\'s OpenSanctions licence', url: 'https://www.opensanctions.org/licensing/', mode: 'on-demand', gate: { capability: 'nc_sources', note: 'Bulk data off when COMMERCIAL_DEPLOYMENT=true; the keyed API (OPENSANCTIONS_KEY) is used under the key holder\'s terms' } },
 
   // ── Knowledge & entity graph ─────────────────────────────────────────────────
+  { id: 'worldbank-wdi', name: 'World Bank World Development Indicators', group: 'knowledge', usedFor: 'Region Dossier population (SP.POP.TOTL)', licence: 'CC BY 4.0', url: 'https://data.worldbank.org/indicator/SP.POP.TOTL', mode: 'on-demand' },
   { id: 'wikipedia', name: 'Wikipedia', group: 'knowledge', usedFor: 'Region Dossier extracts', licence: 'CC BY-SA 4.0', url: 'https://en.wikipedia.org/wiki/Wikipedia:Text_of_the_Creative_Commons_Attribution-ShareAlike_4.0_International_License', mode: 'on-demand' },
   { id: 'wikidata', name: 'Wikidata', group: 'knowledge', usedFor: 'Dossier facts, entity graph', licence: 'CC0 (structured data)', url: 'https://www.wikidata.org/wiki/Wikidata:Licensing', mode: 'on-demand' },
 

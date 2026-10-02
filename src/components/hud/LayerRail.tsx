@@ -9,6 +9,11 @@
  * background child), so a flyout can sit at --z-docked above the view strip (--z-hud) and the status
  * bar (--z-status) while staying next to its button in the DOM and tab order. Each flyout is clamped
  * between the first rail button and the status bar and scrolls inside that height.
+ *
+ * One flyout (r10 m): a single AnimatePresence, keyed by the shown group, lives in the group that
+ * was shown last. Switching groups unmounts the previous flyout at once instead of leaving it
+ * mid-exit next to a stalled entry; closing still animates out. Opacity/transform only (no filter
+ * keyframe, which runs on the main thread); reduced motion comes from HudMotion's MotionConfig.
  */
 import { AnimatePresence, m } from 'motion/react';
 import { Ghost, Settings2, SlidersHorizontal } from 'lucide-react';
@@ -65,13 +70,17 @@ export default function LayerRail() {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const railRef = useRef<HTMLElement>(null);
   const shown = pinned ?? hover;
-  const flyoutRef = useRef<HTMLDivElement>(null);
+  // The group whose cell hosts the flyout presence: the shown one, or the last one while it exits.
+  const [host, setHost] = useState<LayerGroupId | null>(shown);
+  if (shown && shown !== host) setHost(shown);
+  // Callback ref: the placement effect re-runs for whichever flyout element is mounted.
+  const [flyoutEl, setFlyoutEl] = useState<HTMLDivElement | null>(null);
   const [placement, setPlacement] = useState<FlyoutPlacement | null>(null);
 
   // Clamp the open flyout between the first rail button and the status bar (re-run on resize and
   // when its rows change height, e.g. a layer's status line appears).
   useLayoutEffect(() => {
-    const el = flyoutRef.current;
+    const el = flyoutEl;
     if (!shown || !el) return;
     const place = () => {
       const anchor = el.parentElement?.getBoundingClientRect().top ?? FLYOUT_TOP_PX;
@@ -90,7 +99,7 @@ export default function LayerRail() {
       ro?.disconnect();
       window.removeEventListener('resize', place);
     };
-  }, [shown]);
+  }, [shown, flyoutEl]);
 
   // A pinned flyout closes on a click anywhere outside the rail (and on ESC via the key handler).
   useEffect(() => {
@@ -138,40 +147,42 @@ export default function LayerRail() {
                 </span>
               )}
             </button>
-            <AnimatePresence>
-              {expanded && (
-                <m.div
-                  ref={flyoutRef}
-                  id={panelId}
-                  key={panelId}
-                  data-flyout=""
-                  style={{ top: placement?.offset ?? 0, maxHeight: placement?.maxHeight ?? `calc(100dvh - ${FLYOUT_TOP_PX}px - 36px)` }}
-                  initial={{ opacity: 0, x: -8, filter: 'blur(4px)' }}
-                  animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, x: -8 }}
-                  transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                  className="glass-panel instrument-corners absolute left-[52px] z-[var(--z-docked)] flex w-[320px] flex-col p-3"
-                  role="region"
-                  aria-label={`${g.label} layers`}
-                >
-                  <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
-                    <span className="hud-title">{g.label}</span>
-                    <button
-                      type="button"
-                      className="hud-micro hud-control min-h-[24px] px-2 text-[var(--gold-primary)] hover:bg-[rgba(var(--gold-rgb),0.08)]"
-                      onClick={() => inGroup.forEach((l) => setLayer(l.id as LayerId, on === 0))}
-                    >
-                      {on === 0 ? 'ALL' : 'NONE'}
-                    </button>
-                  </div>
-                  <div data-flyout-list="" className="hud-scroll -mr-2 min-h-0 overflow-y-auto overscroll-contain pr-2">
-                    <div>
-                      <LayerList layers={inGroup} />
+            {host === g.id && (
+              <AnimatePresence>
+                {expanded && (
+                  <m.div
+                    ref={setFlyoutEl}
+                    id={panelId}
+                    key={panelId}
+                    data-flyout=""
+                    style={{ top: placement?.offset ?? 0, maxHeight: placement?.maxHeight ?? `calc(100dvh - ${FLYOUT_TOP_PX}px - 36px)` }}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -8 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="glass-panel instrument-corners absolute left-[52px] z-[var(--z-docked)] flex w-[320px] flex-col p-3"
+                    role="region"
+                    aria-label={`${g.label} layers`}
+                  >
+                    <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                      <span className="hud-title">{g.label}</span>
+                      <button
+                        type="button"
+                        className="hud-micro hud-control min-h-[24px] px-2 text-[var(--gold-primary)] hover:bg-[rgba(var(--gold-rgb),0.08)]"
+                        onClick={() => inGroup.forEach((l) => setLayer(l.id as LayerId, on === 0))}
+                      >
+                        {on === 0 ? 'ALL' : 'NONE'}
+                      </button>
                     </div>
-                  </div>
-                </m.div>
-              )}
-            </AnimatePresence>
+                    <div data-flyout-list="" className="hud-scroll -mr-2 min-h-0 overflow-y-auto overscroll-contain pr-2">
+                      <div>
+                        <LayerList layers={inGroup} />
+                      </div>
+                    </div>
+                  </m.div>
+                )}
+              </AnimatePresence>
+            )}
           </div>
         );
       })}

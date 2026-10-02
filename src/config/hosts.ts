@@ -1,6 +1,6 @@
 /**
- * Browser-facing host allow-lists. These drive the Content-Security-Policy and
- * `next/image` remotePatterns. The browser may only talk to map tile hosts and
+ * Browser-facing host allow-lists. These drive the Content-Security-Policy, and OPTIMISED_IMAGE_HOSTS
+ * the `next/image` remotePatterns. The browser may only talk to map tile hosts and
  * official video/embed hosts directly (§11: "no browser request to an upstream
  * except tiles and video embeds"); every data feed goes through /api.
  *
@@ -39,6 +39,13 @@ export const IMAGE_HOSTS = [
   'https://zipper.creodias.eu/odata/v1/', // Copernicus Data Space quicklooks (final URL; no redirects followed)
   'https://*.telesco.pe/file/', // public Telegram channel media (t.me/s previews)
 ] as const;
+
+/**
+ * The only IMAGE_HOSTS the server-side optimiser (/_next/image) fetches: the Sentinel quicklook card
+ * is its only consumer. Every other image loads directly in the browser (img-src), so the optimiser
+ * is not an open proxy with a disk cache for the rest (r10 security).
+ */
+export const OPTIMISED_IMAGE_HOSTS = ['https://zipper.creodias.eu/odata/v1/'] as const satisfies readonly (typeof IMAGE_HOSTS)[number][];
 
 /**
  * Direct video/HLS sources for official public camera streams and channel media: each entry is

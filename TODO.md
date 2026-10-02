@@ -25,8 +25,15 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
         /api/iss envelope stops saying kind/state live; the SPACE panel already badges COMPUTED
   - [ ] pages-docs-privacy-ops: re-capture the mislabelled Style Studio shots and the README hero shots;
         replace the stale "re-capture on a GPU machine" note with the capture environment
-- [ ] Verification rounds: round 6 had 2 BLOCKING / 8 MAJOR (fixed); round 7 clean; round 8 had 4 BLOCKING
-      / 5 MAJOR (lead fixes in; owner fixes in progress); need two consecutive clean rounds again
+  - [ ] layers-aviation: on the globe every 100 ms camera rebuild during a drag swaps the visible set, so
+        deck regenerates every attribute for ~9k aircraft (~14 ms of deck CPU per rebuild frame on a
+        4-vCPU SwiftShader box, round 10 perf). Keep the data stable across camera moves (GPU far-side
+        discard or a DataFilterExtension filter attribute); acceptance: luma _animationFrame ≤ 4 ms
+        during drag with the recorded snapshots
+- [ ] Verification rounds (a round is clean with no BLOCKING or MAJOR finding; MINORs are fixed alongside):
+      round 6 had 2 BLOCKING / 8 MAJOR; round 7 clean; round 8 had 4 BLOCKING / 5 MAJOR; round 9 clean
+      (7 MINOR, fixed in #5–#8); round 10 had 4 BLOCKING / 9 MAJOR (fix PRs #9–#12 and the cloud fix
+      sessions in flight). Need rounds 11 and 12 clean.
 
 ## Repository owner actions (cannot be done from the codebase)
 - [ ] Provision a hardware-GPU Actions runner and set the repository variable `LIGHTHOUSE_GPU_RUNNER`

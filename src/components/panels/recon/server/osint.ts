@@ -17,7 +17,7 @@ import { HttpError, httpJson, httpText } from '@/lib/http';
 import { nvdBucket, providerBucket } from '@/lib/ratelimit';
 import type { Providers } from '@/lib/types';
 import { probe, skipped, type Finding } from './lookup';
-import { ipwhoBucket } from './geo';
+import { ipwhoBucket, ipwhoProbe } from './geo';
 import { mergeStatus, ripe } from './ripe';
 import type { Chain } from '../targets';
 
@@ -309,7 +309,7 @@ const ipapiBucket = () => providerBucket('ip-api.com', 0.75, 2); // 45/min docum
 export async function ipLookup(ip: string): Promise<ToolResult> {
   const providers: Providers = {};
   const findings: Finding[] = [];
-  const geoA = await probe(`ipwho:${ip}`, HOUR, async () => fromIpwho((await httpJson<IpwhoFull>(`https://ipwho.is/${ip}`, { timeoutMs: 6000, retries: 0, limiter: ipwhoBucket() })).data ?? {}));
+  const geoA = await ipwhoProbe(`ipwho:${ip}`, HOUR, async () => fromIpwho((await httpJson<IpwhoFull>(`https://ipwho.is/${ip}`, { timeoutMs: 6000, retries: 0, limiter: ipwhoBucket() })).data ?? {}));
   providers['ipwho.is'] = geoA.status;
   let geo = geoA.value;
   if (!geo) {
@@ -450,7 +450,7 @@ export async function sweepLookup(ip: string, cidr: number): Promise<ToolResult>
   const findings: Finding[] = [];
   if (!hasCapability('nc_sources')) {
     providers.internetdb = skipped('licence');
-    const owner = await probe(`ipwho:${addrs[0]}`, HOUR, async () => fromIpwho((await httpJson<IpwhoFull>(`https://ipwho.is/${addrs[0]}`, { timeoutMs: 6000, retries: 0, limiter: ipwhoBucket() })).data ?? {}));
+    const owner = await ipwhoProbe(`ipwho:${addrs[0]}`, HOUR, async () => fromIpwho((await httpJson<IpwhoFull>(`https://ipwho.is/${addrs[0]}`, { timeoutMs: 6000, retries: 0, limiter: ipwhoBucket() })).data ?? {}));
     providers['ipwho.is'] = owner.status;
     return { data: { prefix, scanned: 0, owner: owner.value, hosts: [] }, findings, providers };
   }

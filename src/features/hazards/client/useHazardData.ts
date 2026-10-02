@@ -128,12 +128,13 @@ export function hazardStatus<T>(q: HazardQueryState<T>, count: (body: T) => numb
         lastGoodAt: meta?.lastGoodAt ?? null,
         error: error ?? 'source_offline',
         providers,
+        attribution: meta?.attribution,
       },
       recheckAt: null,
     };
   }
   const { meta, providers } = result.body;
-  const times = { fetchedAt: meta.fetchedAt, observedAt: meta.observedAt, lastGoodAt: meta.lastGoodAt, providers };
+  const times = { fetchedAt: meta.fetchedAt, observedAt: meta.observedAt, lastGoodAt: meta.lastGoodAt, providers, attribution: meta?.attribution };
   if (failedAt !== null) {
     const state = failedState(meta, result.receivedAt, failedAt, refreshMs);
     return { patch: { ...times, state, count: state === 'offline' ? null : count(result.body), error }, recheckAt: null };

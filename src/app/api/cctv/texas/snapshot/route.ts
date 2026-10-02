@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import { parseTxdotId } from '@/features/surveillance/server/adapters';
 import { findCamera } from '@/features/surveillance/server/catalog';
-import { fetchTxdotSnapshot, frameResponse } from '@/features/surveillance/server/frames';
+import { fetchFrame, frameResponse } from '@/features/surveillance/server/frames';
 import { apiError, parseQuery, withRoute } from '@/lib/respond';
 
 export const dynamic = 'force-dynamic';
@@ -20,5 +20,6 @@ export const GET = withRoute('/api/cctv/texas/snapshot', async (req) => {
   if (!parseTxdotId(q.data.id)) return apiError(400, 'invalid_request', 'id: expected txdot-<DISTRICT>-<icd_Id>');
   const hit = await findCamera(q.data.id);
   if (!hit) return apiError(404, 'not_found', 'No catalogued TxDOT camera with this id.');
-  return frameResponse(await fetchTxdotSnapshot(hit.camera, hit.def));
+  // fetchFrame applies the provider gate (link-out-only regions, proxy_allowed) before any fetch.
+  return frameResponse(await fetchFrame(hit.camera, hit.def));
 });
