@@ -5,7 +5,8 @@
  * sketch, imported ArcGIS layers) and, only while a DRAW tool is active, takes the canvas clicks
  * to add vertices — entity selection is suppressed meanwhile (draw/map-capture.ts); FINISH,
  * double-click or Enter finishes, CANCEL or Esc cancels. Colours come from `--map-directions*`
- * tokens. Owner: panels-recon.
+ * tokens. Shapes, the route and ArcGIS features are pickable (draw/pick.ts → DrawnShapeCard) except
+ * while a tool is armed. Owner: panels-recon.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { GeoJsonLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers';
@@ -15,6 +16,8 @@ import { getFarSideCamera, isFacing, type FarSideCamera } from '@/lib/map/far-si
 import { readCssColor } from '@/lib/tokens';
 import { addDrawPoint, useOverlayStore } from './overlay-store';
 import { captureMapClicks, isRepeatClick, keyForSketch, type LastClick } from '../draw/map-capture';
+import { registerDeckPick } from '@/lib/map/picking';
+import { arcgisDeckId, arcgisSelection, DRAW_DECK_ID, drawnShapeSelection, ROUTE_DECK_IDS, routeSelection } from '../draw/pick';
 
 /** Above basemap-ish layers, below live entities. */
 const Z = 45;
@@ -65,6 +68,31 @@ function useDrawInteraction() {
   }, [map, mode]);
 }
 
+/**
+ * Drawn shapes, the route (line, casing, alternates) and imported ArcGIS features open a
+ * `drawn_shape` card through the map's click router; the resolvers read the store at click time
+ * and return null while a DRAW tool is armed (drawing clicks never open cards).
+ */
+function useOverlayPicks() {
+  const arcgisIds = useOverlayStore((s) => s.arcgis.map((l) => l.id).join('\n'));
+  useEffect(() => {
+    const st = useOverlayStore.getState;
+    const off = [registerDeckPick(DRAW_DECK_ID, (info) => drawnShapeSelection(info, st())), ...ROUTE_DECK_IDS.map((id) => registerDeckPick(id, (info) => routeSelection(info, st())))];
+    return () => off.forEach((f) => f());
+  }, []);
+  useEffect(() => {
+    if (!arcgisIds) return;
+    const off = arcgisIds.split('\n').map((lid) =>
+      registerDeckPick(arcgisDeckId(lid), (info) => {
+        const s = useOverlayStore.getState();
+        const layer = s.arcgis.find((l) => l.id === lid);
+        return layer ? arcgisSelection(layer, info, s) : null;
+      }),
+    );
+    return () => off.forEach((f) => f());
+  }, [arcgisIds]);
+}
+
 /** Re-evaluates the far-side filter after each camera move. */
 function useMoveEndTick(): number {
   const map = useMapInstance();
@@ -82,6 +110,7 @@ function useMoveEndTick(): number {
 
 export default function ReconOverlays() {
   useDrawInteraction();
+  useOverlayPicks();
   const tick = useMoveEndTick();
   const route = useOverlayStore((s) => s.route);
   const features = useOverlayStore((s) => s.features);
@@ -97,7 +126,7 @@ export default function ReconOverlays() {
       if (!l.visible) continue;
       out.push(
         new GeoJsonLayer({
-          id: `recon-arcgis-${l.id}`,
+          id: arcgisDeckId(l.id),
           data: l.fc,
           stroked: true,
           filled: true,
@@ -110,7 +139,7 @@ export default function ReconOverlays() {
           lineWidthUnits: 'pixels',
           getLineWidth: 1.5,
           parameters: GLOBE,
-          pickable: false,
+          pickable: true,
         }),
       );
     }
@@ -130,7 +159,7 @@ export default function ReconOverlays() {
           lineWidthUnits: 'pixels',
           getLineWidth: 2,
           parameters: GLOBE,
-          pickable: false,
+          pickable: true,
         }),
       );
     }
@@ -167,6 +196,7 @@ export default function ReconOverlays() {
           id: 'recon-route-alternates',
           data: alt,
           getPath: (d) => d.path,
+          pickable: true,
           getColor: readCssColor('--map-directions', 0.35),
           getWidth: 4,
           widthUnits: 'pixels',
@@ -178,6 +208,7 @@ export default function ReconOverlays() {
           id: 'recon-route-casing',
           data: act,
           getPath: (d) => d.path,
+          pickable: true,
           getColor: readCssColor('--map-directions-casing', 0.9),
           getWidth: 8,
           widthUnits: 'pixels',
@@ -189,6 +220,7 @@ export default function ReconOverlays() {
           id: 'recon-route',
           data: act,
           getPath: (d) => d.path,
+          pickable: true,
           getColor: readCssColor('--map-directions', 1),
           getWidth: 4,
           widthUnits: 'pixels',
