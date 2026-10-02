@@ -84,6 +84,111 @@ export function simplifyGeometry(g: Geo, decimals = 2): Geo {
     : { type: 'MultiPolygon', coordinates: g.coordinates.map((p) => p.map(ring)) };
 }
 
+/** Perpendicular distance² of p from segment a–b (planar degrees; display thinning only). */
+function segDist2(p: GeoJSON.Position, a: GeoJSON.Position, b: GeoJSON.Position): number {
+  const [px = 0, py = 0] = p;
+  const [ax = 0, ay = 0] = a;
+  const [bx = 0, by = 0] = b;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+  const ex = ax + t * dx - px;
+  const ey = ay + t * dy - py;
+  return ex * ex + ey * ey;
+}
+
+/** Douglas-Peucker over an open polyline; returns the kept indices (iterative, no recursion depth). */
+function dpKeep(pts: readonly GeoJSON.Position[], tol2: number, keep: Uint8Array, from: number, to: number): void {
+  const stack: [number, number][] = [[from, to]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    let best = -1;
+    let bestD = tol2;
+    for (let i = a + 1; i < b; i++) {
+      const d = segDist2(pts[i]!, pts[a]!, pts[b]!);
+      if (d > bestD) {
+        bestD = d;
+        best = i;
+      }
+    }
+    if (best < 0) continue;
+    keep[best] = 1;
+    stack.push([a, best], [best, b]);
+  }
+}
+
+/**
+ * Douglas-Peucker for a closed ring at `tol` degrees. The ring is split at its first vertex and
+ * the vertex farthest from it, so both halves keep their extremes. Always returns a valid closed
+ * ring (≥ 4 positions): a zone smaller than the tolerance keeps its three most extreme vertices
+ * instead of collapsing to nothing. Rings that are already invalid are returned unchanged.
+ */
+export function simplifyRing(ring: readonly GeoJSON.Position[], tol: number): GeoJSON.Position[] {
+  const n = ring.length - 1; // distinct vertices (closed ring repeats the first)
+  if (n < 4) return ring.map((p) => [...p]);
+  const pts = ring.slice(0, n);
+  let far = 0;
+  let farD = -1;
+  for (let i = 1; i < n; i++) {
+    const d = segDist2(pts[i]!, pts[0]!, pts[0]!);
+    if (d > farD) {
+      farD = d;
+      far = i;
+    }
+  }
+  const closed = [...pts, pts[0]!];
+  const keep = new Uint8Array(n + 1);
+  keep[0] = keep[far] = keep[n] = 1;
+  const tol2 = tol * tol;
+  dpKeep(closed, tol2, keep, 0, far);
+  dpKeep(closed, tol2, keep, far, n);
+  let out = closed.filter((_, i) => keep[i]);
+  if (out.length < 4) {
+    // Tiny zone: keep a triangle of its extremes (first, farthest, farthest from that chord).
+    let third = -1;
+    let thirdD = -1;
+    for (let i = 1; i < n; i++) {
+      if (i === far) continue;
+      const d = segDist2(pts[i]!, pts[0]!, pts[far]!);
+      if (d > thirdD) {
+        thirdD = d;
+        third = i;
+      }
+    }
+    out = [0, far, third].filter((i) => i >= 0).sort((a, b) => a - b).map((i) => pts[i]!);
+    out.push(pts[0]!);
+  }
+  return out.map((p) => [...p]);
+}
+
+export const vertexCount = (g: Geo): number =>
+  g.type === 'Polygon' ? g.coordinates.reduce((s, r) => s + r.length, 0) : g.coordinates.reduce((s, p) => s + p.reduce((t, r) => t + r.length, 0), 0);
+
+/** Display tolerance (degrees, ~1.1 km) and per-outline vertex cap for NWS zones / alert polygons / NHC cones. */
+export const THIN_TOLERANCE_DEG = 0.01;
+export const MAX_OUTLINE_VERTICES = 400;
+
+/**
+ * Display thinning for an outline: round (`simplifyGeometry`), then Douglas-Peucker at `tol` per
+ * ring; while the outline still has more than `maxVertices` positions the tolerance doubles (a
+ * ring never drops below 4 positions, so a many-part zone can stay above the cap). Moves no event
+ * and drops no part: every ring of the input is still there.
+ */
+export function thinGeometry(g: Geo, tol = THIN_TOLERANCE_DEG, maxVertices = MAX_OUTLINE_VERTICES, decimals = 2): Geo {
+  const rounded = simplifyGeometry(g, decimals);
+  let t = tol;
+  for (let pass = 0; ; pass++) {
+    const thin = (r: GeoJSON.Position[]) => simplifyRing(r, t);
+    const out: Geo =
+      rounded.type === 'Polygon'
+        ? { type: 'Polygon', coordinates: rounded.coordinates.map(thin) }
+        : { type: 'MultiPolygon', coordinates: rounded.coordinates.map((p) => p.map(thin)) };
+    if (vertexCount(out) <= maxVertices || pass >= 8) return out;
+    t *= 2;
+  }
+}
+
 // ── NWS ─────────────────────────────────────────────────────────────────────────
 /**
  * NWS active alerts. §6.2: api.weather.gov REJECTS a `limit` parameter (400) and requires an
@@ -159,13 +264,37 @@ export function zonesNeeded(fc: NwsCollection): string[] {
 }
 
 /**
- * Alerts with their own polygon use it; the rest are placed on their affected zones' geometry
- * (from the 30-day zone cache): position = the zone centroid nearest the mean of the resolved
- * centroids, footprint = the zones' outlines. Alerts whose zones are not resolved yet are
+ * Key of a zone in the response's shared `zones` map: its UGC code (`TXZ123`, `ILC007`) for
+ * forecast and county zones; other zone types (fire, …) can reuse a forecast zone's code with a
+ * different outline, so they are prefixed with their type (`fire/CAZ211`).
+ */
+export function zoneKey(url: string, zone: Pick<ZoneGeom, 'id'>): string {
+  const type = /\/zones\/([^/]+)\//.exec(url)?.[1] ?? 'forecast';
+  return type === 'forecast' || type === 'county' ? zone.id : `${type}/${zone.id}`;
+}
+
+// Thinned outlines per cached zone object (zones live 30 days in nws-zones; thin each once).
+const THINNED = new WeakMap<ZoneGeom, Geo>();
+const thinnedZone = (z: ZoneGeom): Geo => {
+  let g = THINNED.get(z);
+  if (!g) THINNED.set(z, (g = thinGeometry(z.geometry)));
+  return g;
+};
+
+/**
+ * Alerts with their own polygon use it (thinned for display); the rest are placed on their
+ * affected zones' geometry (from the 30-day zone cache): position = the zone centroid nearest the
+ * mean of the resolved centroids, footprint = the zones' outlines. Each zone outline is returned
+ * once in `zones` (keyed by `zoneKey`) and the alert lists its keys in `zoneRefs`, so alerts on
+ * the same zones do not repeat the same outlines. Alerts whose zones are not resolved yet are
  * returned as `unplaced` (never guessed).
  */
-export function normalizeNws(fc: NwsCollection, zones: ReadonlyMap<string, ZoneGeom>): { items: WeatherEvent[]; unplaced: number } {
+export function normalizeNws(
+  fc: NwsCollection,
+  zones: ReadonlyMap<string, ZoneGeom>,
+): { items: WeatherEvent[]; unplaced: number; zones: Record<string, Geo> } {
   const items: WeatherEvent[] = [];
+  const shapes: Record<string, Geo> = {};
   let unplaced = 0;
   for (const f of fc.features ?? []) {
     const p = f.properties ?? {};
@@ -187,25 +316,28 @@ export function normalizeNws(fc: NwsCollection, zones: ReadonlyMap<string, ZoneG
     if (isPolygonal(f.geometry)) {
       const c = geometryCentroid(f.geometry);
       if (!c) continue;
-      items.push({ ...base, lng: c[0], lat: c[1], geometry: f.geometry, positionBasis: 'geometry' });
+      items.push({ ...base, lng: c[0], lat: c[1], geometry: thinGeometry(f.geometry), positionBasis: 'geometry' });
       continue;
     }
-    const resolved = (p.affectedZones ?? []).map((z) => zones.get(z)).filter((z): z is ZoneGeom => !!z);
+    const resolved = (p.affectedZones ?? []).flatMap((u) => {
+      const z = zones.get(u);
+      return z ? [{ key: zoneKey(u, z), z }] : [];
+    });
     if (!resolved.length) {
       unplaced++;
       continue;
     }
-    const mx = resolved.reduce((s, z) => s + z.centroid[0], 0) / resolved.length;
-    const my = resolved.reduce((s, z) => s + z.centroid[1], 0) / resolved.length;
-    const anchor = resolved.reduce((a, b) => (Math.hypot(b.centroid[0] - mx, b.centroid[1] - my) < Math.hypot(a.centroid[0] - mx, a.centroid[1] - my) ? b : a));
-    const polys: GeoJSON.Position[][][] = [];
-    for (const z of resolved) {
-      if (z.geometry.type === 'Polygon') polys.push(z.geometry.coordinates);
-      else polys.push(...z.geometry.coordinates);
+    const mx = resolved.reduce((s, r) => s + r.z.centroid[0], 0) / resolved.length;
+    const my = resolved.reduce((s, r) => s + r.z.centroid[1], 0) / resolved.length;
+    const anchor = resolved.reduce((a, b) => (Math.hypot(b.z.centroid[0] - mx, b.z.centroid[1] - my) < Math.hypot(a.z.centroid[0] - mx, a.z.centroid[1] - my) ? b : a)).z;
+    const refs: string[] = [];
+    for (const r of resolved) {
+      shapes[r.key] ??= thinnedZone(r.z);
+      if (!refs.includes(r.key)) refs.push(r.key);
     }
-    items.push({ ...base, lng: anchor.centroid[0], lat: anchor.centroid[1], geometry: { type: 'MultiPolygon', coordinates: polys }, positionBasis: 'zone-centroid' });
+    items.push({ ...base, lng: anchor.centroid[0], lat: anchor.centroid[1], geometry: null, zoneRefs: refs, positionBasis: 'zone-centroid' });
   }
-  return { items, unplaced };
+  return { items, unplaced, zones: shapes };
 }
 
 /** api.weather.gov `/zones/{type}/{id}` → ZoneGeom (simplified outline + centroid). */
@@ -356,7 +488,7 @@ export function normalizeNhc(res: { activeStorms?: NhcStorm[] }, cones: Readonly
 
 /** First polygonal feature of a MapServer `f=geojson` query answer (the 5-day cone). */
 export function parseCone(fc: { features?: { geometry?: unknown }[] }): Geo | null {
-  for (const f of fc.features ?? []) if (isPolygonal(f.geometry)) return simplifyGeometry(f.geometry, 3);
+  for (const f of fc.features ?? []) if (isPolygonal(f.geometry)) return thinGeometry(f.geometry, THIN_TOLERANCE_DEG / 2, MAX_OUTLINE_VERTICES, 3);
   return null;
 }
 

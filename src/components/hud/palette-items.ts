@@ -4,6 +4,7 @@
  * at map centre"). Pure over its inputs so the list is unit-tested. Owner: design-system-hud.
  */
 import { resolvePlace, routeOrDraft, setPathsDraft } from '@/features/flight-paths/client/draft';
+import { planRoute, trackFlight } from '@/features/flight-paths/client/handoff';
 import { KEY_BINDINGS, type KeyAction } from '@/lib/keyboard';
 import type { LayerDef, LayerId } from '@/lib/layer-registry';
 import { REGION_PRESETS } from '@/lib/presets';
@@ -303,11 +304,7 @@ export function queryItems(query: string, available: (id: PanelId) => boolean, f
       group: 'ACTIONS',
       label: `Plan route ${route.from} → ${route.to}`,
       keywords: [q, 'route', 'plan', 'flight path'],
-      run: () => {
-        ui().setFlightIdent(null);
-        ui().setPlannedRoute({ from: route.from, to: route.to });
-        ui().setOpenPanel('paths');
-      },
+      run: () => planRoute({ from: route.from, to: route.to }),
     });
   } else if (route?.kind === 'names') {
     out.push({
@@ -320,12 +317,10 @@ export function queryItems(query: string, available: (id: PanelId) => boolean, f
       run: () => {
         ui().setOpenPanel('paths');
         void Promise.all([resolvePlace(route.from, fetchImpl), resolvePlace(route.to, fetchImpl)]).then(([a, b]) => {
-          const { route: planned, draft } = routeOrDraft(route.from, route.to, a, b);
-          if (planned) {
-            setPathsDraft(null);
-            ui().setFlightIdent(null);
-            ui().setPlannedRoute(planned);
-          } else if (draft) {
+          const { route: planned, draft, metro } = routeOrDraft(route.from, route.to, a, b);
+          // A name resolved through a metro group: PATHS lists the group's airports as chips (§8).
+          if (planned) planRoute(planned, metro);
+          else if (draft) {
             // Tell the planner which names did not resolve (or whose search failed) instead of failing silently.
             setPathsDraft(draft);
           }
@@ -340,10 +335,8 @@ export function queryItems(query: string, available: (id: PanelId) => boolean, f
       group: 'ACTIONS',
       label: `Track flight ${flight}`,
       keywords: [q, 'flight', 'track', 'callsign', 'registration'],
-      run: () => {
-        ui().setFlightIdent(flight);
-        ui().setOpenPanel('paths');
-      },
+      // Replaces a planned route, as PATHS's own TRACK does (round 10).
+      run: () => trackFlight(flight),
     });
   }
   return out;

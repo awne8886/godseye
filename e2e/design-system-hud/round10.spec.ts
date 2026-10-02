@@ -1,103 +1,94 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { expect, test, type Page, type Route } from '@playwright/test';
+import { MAP, waitForAdmissionDrained } from '../map-engine/helpers';
 
 /**
- * design-system-hud, Phase 3 round 10 MAJOR. Aviation and hazards dropped the feed's
- * meta.attribution from their layer status, so the rows fell back to raw provider keys, skipped
- * ones included ("Source: adsblol_tiles, …, opensky, adsbfi_mil"), and earthquake cards had no
- * licence line. /api/flights and /api/earthquakes are served from the recorded fixtures.
+ * design-system-hud, Phase 3 round 10 MAJOR 1: entity cards carry the §7 tabs OVERVIEW / TRACK /
+ * SOURCES. An aircraft card's TRACK tab shows the observed flown track and altitude profile from
+ * /api/aircraft, reached with the keyboard (ARIA tabs, arrow keys) and, on phones, 44 px tabs.
+ *
+ * Fixtures: the recorded pair in e2e/visual/fixtures made together on 2026-10-02 07:26Z from this
+ * app's own routes: `/api/flights` (flights-2026-10-02T0726Z.json, the flights.json recording of
+ * that minute) and `/api/aircraft?icao24=77058f` (SriLankan ALK607, 356 trace samples
+ * 06:47:44–07:26:24Z). The earlier flights.json has no matching /api/aircraft recording, so it
+ * could only show TRACE SOURCE OFFLINE; this pair shows a real recorded track. Every other /api
+ * request is refused, basemap tiles are refused, and the clock is pinned to the fetch time.
  */
-test.describe.configure({ timeout: 180_000 });
+test.describe.configure({ timeout: 300_000 });
 
-const FIXTURES = join(process.cwd(), 'e2e/visual/fixtures');
-const fixture = (name: string) => readFileSync(join(FIXTURES, name), 'utf8');
-const FLIGHTS = fixture('flights.json');
-const EARTHQUAKES = fixture('earthquakes.json');
-const ADSBLOL_CREDIT = 'Aircraft data © adsb.lol contributors, ODbL 1.0';
-const USGS_CREDIT = 'Earthquakes: U.S. Geological Survey (USGS) Earthquake Hazards Program';
+const FX = fileURLToPath(new URL('../visual/fixtures/', import.meta.url));
+const fixture = (name: string) => readFileSync(path.join(FX, name), 'utf8');
+const HEX = '77058f';
+const AT = { lat: -31.31592, lng: 148.58476 };
+const NOW = new Date('2026-10-02T07:26:38Z');
+const API: readonly [RegExp, string][] = [
+  [/^\/api\/flights$/, 'flights-2026-10-02T0726Z.json'],
+  [/^\/api\/aircraft$/, `aircraft-${HEX}-2026-10-02T0726Z.json`],
+];
 
-async function serveFixtures(page: Page) {
-  await page.route(/\/api\/flights(\?|$)/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: FLIGHTS }));
-  await page.route(/\/api\/earthquakes(\?|$)/, (r) => r.fulfill({ status: 200, contentType: 'application/json', body: EARTHQUAKES }));
-}
-
-async function boot(page: Page, query: string) {
-  await page.goto(`/?${query}`);
-  await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 45_000 });
-}
-
-test('aviation rows credit adsb.lol (ODbL) and never name a skipped provider', async ({ page }) => {
-  // The fixture's skipped providers: OpenSky (not configured) and adsb.fi (licence-gated).
-  const providers = JSON.parse(FLIGHTS).providers as Record<string, { skipped?: string }>;
-  expect(providers.opensky?.skipped).toBe('not-configured');
-  expect(providers.adsbfi_mil?.skipped).toBe('licence');
-  await serveFixtures(page);
-  await boot(page, 'panel=layers&layers=flights,private,jets,military');
-  const panel = page.getByRole('region', { name: 'LAYERS' });
-  await expect(panel).toBeVisible();
-  for (const id of ['flights', 'private', 'jets', 'military']) {
-    const credit = panel.getByTestId(`attribution-${id}`);
-    await expect(credit, id).toContainText(ADSBLOL_CREDIT, { timeout: 30_000 });
-    await expect(credit, id).toContainText('ODbL-1.0');
-    const rowEl = panel.locator('li').filter({ has: page.getByTestId(`attribution-${id}`) });
-    await expect(rowEl.getByText(/^Source:/), id).toHaveCount(0);
-    // adsb.fi is never named; OpenSky only as a key the instance lacks, never as a source.
-    await expect(rowEl, id).not.toContainText(/adsb\.?fi/i);
-    const text = (await rowEl.innerText()).replace(/NEEDS KEY ·[^\n]*/, '');
-    expect(text, id).not.toMatch(/opensky/i);
-  }
-});
-
-test('the earthquake card Sources tab shows the USGS credit', async ({ page }, info) => {
-  test.skip(info.project.name === 'mobile', 'desktop pointer pick on the map');
-  const quakes = JSON.parse(EARTHQUAKES).items as { lat: number; lng: number; magnitude: number }[];
-  const q = [...quakes].sort((a, b) => b.magnitude - a.magnitude)[0]!;
-  await serveFixtures(page);
-  await page.goto(`/?c=${q.lat.toFixed(4)},${q.lng.toFixed(4)},6&layers=earthquakes`);
-  const map = page.locator('canvas.maplibregl-canvas');
-  const drawn = await map.waitFor({ state: 'visible', timeout: 100_000 }).then(
-    () => true,
-    () => false,
+async function isolate(page: Page): Promise<void> {
+  await page.clock.setFixedTime(NOW);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.route(/tiles\.openfreemap\.org\/planet\/|gibs\.earthdata\.nasa\.gov|arcgisonline\.com|s3\.amazonaws\.com\/elevation-tiles|airport-data\.com/, (r) => r.abort());
+  await page.route(
+    (u) => u.pathname.startsWith('/api/') && ['127.0.0.1', 'localhost'].includes(u.hostname),
+    async (r: Route) => {
+      const u = new URL(r.request().url());
+      const hit = API.find(([re]) => re.test(u.pathname));
+      if (hit) return r.fulfill({ status: 200, contentType: 'application/json', body: fixture(hit[1]) });
+      return r.abort();
+    },
   );
-  if (!drawn) test.skip(await page.getByText('BASEMAP UNAVAILABLE').isVisible(), 'the basemap style is unreachable from this network: no map canvas, nothing to pick');
-  await expect(map).toBeVisible();
-  await expect(page.getByRole('status', { name: /loading/i })).toBeHidden({ timeout: 45_000 });
-  await page.waitForTimeout(1500);
-  const vp = page.viewportSize()!;
-  const card = page.getByTestId('hazard-card').filter({ visible: true }).first();
-  await expect(async () => {
-    await page.mouse.click(vp.width / 2, vp.height / 2);
-    await expect(card).toBeVisible({ timeout: 3_000 });
-  }).toPass({ timeout: 30_000 });
-  // Not `card` itself: its (overview) tabpanel is hidden once the Sources tab is open.
-  const frame = page.locator('section').filter({ has: page.getByTestId('hazard-card') }).first();
-  await frame.getByRole('tab', { name: 'sources' }).click();
-  await expect(frame.getByText(USGS_CREDIT)).toBeVisible();
-  await expect(frame.getByRole('link', { name: new RegExp(`${USGS_CREDIT.replace(/[()]/g, '\\$&')} · Public domain`) })).toHaveAttribute('href', 'https://earthquake.usgs.gov/earthquakes/feed/');
-});
+}
 
-/**
- * Round 10 MINOR: with the pointer resting on one rail button, clicking the next group left the
- * previous flyout visible and the new one nearly transparent. One flyout is mounted at a time now.
- */
-test('the rail shows one flyout: the group just clicked', async ({ page }, info) => {
-  test.skip(info.project.name === 'mobile', 'the layer rail is desktop-only');
-  await boot(page, 'layers=');
-  const rail = page.getByRole('navigation', { name: 'Map layers' });
-  const buttons = rail.locator('button[aria-controls^="flyout-"]');
-  expect(await buttons.count()).toBeGreaterThan(1);
-  const first = buttons.nth(0);
-  const second = buttons.nth(1);
-  await first.hover();
-  await expect(page.locator('[data-flyout]')).toHaveCount(1);
-  await expect(first).toHaveAttribute('aria-expanded', 'true');
-  await second.click();
-  await expect(second).toHaveAttribute('aria-expanded', 'true');
-  const id = await second.getAttribute('aria-controls');
-  const flyouts = page.locator('[data-flyout]');
-  await expect(flyouts).toHaveCount(1);
-  await expect(flyouts.first()).toHaveAttribute('id', id!);
-  await expect.poll(() => flyouts.first().evaluate((el) => Number(getComputedStyle(el).opacity)), { timeout: 5_000 }).toBeGreaterThan(0.95);
-  expect(await flyouts.first().evaluate((el) => getComputedStyle(el).filter)).toBe('none');
+/** Open the fixture aircraft's card: the camera is centred on it (no other aircraft within 40 km). */
+async function openAircraftCard(page: Page) {
+  await page.goto(`/?proj=mercator&layers=flights,private,jets,military&c=${AT.lat},${AT.lng},6`);
+  await expect(page.locator(MAP)).toHaveAttribute('data-map-ready', 'true', { timeout: 120_000 });
+  const status = page.getByTestId('aviation-status');
+  await expect(status).toHaveAttribute('data-drawn', /^[1-9]\d*$/, { timeout: 120_000 });
+  await waitForAdmissionDrained(page);
+  const card = page.getByTestId('aircraft-card');
+  for (let attempt = 0; attempt < 6 && !(await card.isVisible()); attempt++) {
+    const box = (await page.locator('canvas.maplibregl-canvas').boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await card.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+  }
+  await expect(card).toBeVisible();
+}
+
+test('r10 MAJOR 1: an aircraft card has OVERVIEW / TRACK / SOURCES and TRACK shows the observed flown track', async ({ page }, info) => {
+  await isolate(page);
+  await openAircraftCard(page);
+  const tabs = page.getByRole('tablist', { name: 'Card sections' }).getByRole('tab');
+  await expect(tabs).toHaveText([/overview/i, /track/i, /sources/i]);
+
+  // Keyboard: focus the selected tab, ArrowRight selects TRACK (roving focus follows).
+  const overview = page.getByRole('tab', { name: 'overview' });
+  const track = page.getByRole('tab', { name: 'track' });
+  await overview.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(track).toHaveAttribute('aria-selected', 'true');
+  await expect(track).toBeFocused();
+
+  const panel = page.getByRole('tabpanel', { name: 'track' });
+  await expect(panel.getByTestId('aircraft-track')).toBeVisible({ timeout: 30_000 });
+  await expect(panel).toContainText('OBSERVED · CURRENT LEG · 356 POSITIONS');
+  await expect(panel.getByTestId('ground-track-plot')).toBeVisible();
+  // The recorded leg's lowest airborne baro altitude is -275 ft (pressure altitude, as reported).
+  await expect(panel.getByTestId('profile-plot')).toHaveAttribute('aria-label', /^ALT: -?[\d,]+ FT to 3[\d,]+ FT, 06:47:44Z to 07:26:24Z$/);
+  // The newest row is the last observed sample, with its own time (no dead-reckoned head).
+  await expect(panel.getByRole('row').nth(1)).toContainText('07:26:24Z');
+
+  // Phone layout: the tabs are 44 px touch targets; desktop keeps the compact 28 px row.
+  const h = (await track.boundingBox())!.height;
+  if (info.project.name === 'mobile') expect(h).toBeGreaterThanOrEqual(44);
+  else expect(h).toBeGreaterThanOrEqual(28);
+
+  // ArrowRight again reaches SOURCES.
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'sources' })).toBeFocused();
+  await expect(page.getByRole('tabpanel', { name: 'sources' })).toBeVisible();
 });

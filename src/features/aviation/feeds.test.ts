@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { MemoryStore, clearL1, setStore } from '@/lib/cache';
+import { MemoryStore, clearL1, gateSignature, setStore } from '@/lib/cache';
 import type { ProviderRun } from '@/lib/feeds';
 import type { Providers } from '@/lib/types';
 import { flightsFeed, positionsCap } from './feeds';
 
+// Snapshots are signed with the flights feed's licence gates (round 10): an unsigned one is never served.
+const gateSig = () => gateSignature(flightsFeed.def.gates ?? []);
 const status = (ok: boolean, age_s: number | null, extra: Partial<Providers[string]> = {}): Providers[string] => ({ ok, count: 0, ms: 5, age_s, ...(ok ? {} : { error: 'http_429' }), ...extra });
 
 describe('flights feed state cap (R2 round 5 MINOR-1: /api/health agrees with /api/flights)', () => {
@@ -42,7 +44,7 @@ describe('flights feed state cap (R2 round 5 MINOR-1: /api/health agrees with /a
     const failing: ProviderRun = { status: { ok: false, count: 0, ms: 900, age_s: null, error: 'http_429' }, okAt: now - 120_000 };
     await store.set(
       'feed:flights',
-      { data: { records: [{ id: 'a12734' }] }, fetchedAt: now, lastAttemptAt: now, error: null, meta: { providers: { adsblol_tiles: failing }, observedAt: now - 5_000 } },
+      { data: { records: [{ id: 'a12734' }] }, fetchedAt: now, lastAttemptAt: now, error: null, meta: { providers: { adsblol_tiles: failing }, observedAt: now - 5_000, gateSignature: gateSig() } },
       3_600_000,
       { pinned: true },
     );
@@ -59,7 +61,7 @@ describe('flights feed state cap (R2 round 5 MINOR-1: /api/health agrees with /a
     clearL1();
     const now = Date.now();
     const ok: ProviderRun = { status: { ok: true, count: 0, ms: 900, age_s: 0 }, okAt: now - 3_000 };
-    await store.set('feed:flights', { data: { records: [{ id: 'a12734' }] }, fetchedAt: now, lastAttemptAt: now, error: null, meta: { providers: { adsblol_tiles: ok }, observedAt: now - 5_000 } }, 3_600_000, { pinned: true });
+    await store.set('feed:flights', { data: { records: [{ id: 'a12734' }] }, fetchedAt: now, lastAttemptAt: now, error: null, meta: { providers: { adsblol_tiles: ok }, observedAt: now - 5_000, gateSignature: gateSig() } }, 3_600_000, { pinned: true });
     await flightsFeed.get();
     flightsFeed.stop();
     expect(flightsFeed.health().state).toBe('live');

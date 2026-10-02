@@ -13,7 +13,14 @@ export const dynamic = 'force-dynamic';
 const Ident = z
   .string()
   .transform((v) => decodeURIComponent(v).trim().toUpperCase().replace(/\s+/g, ''))
-  .pipe(z.string().regex(/^[A-Z0-9-]{2,10}$/, 'ident must be a callsign, flight number, registration or 6-hex'));
+  // Round 10: at least 3 characters — "BA" is an airline designator, not a flight, and adsbdb
+  // rejects a 2-character callsign (that rejection is not an outage, so it never reaches SOURCE OFFLINE).
+  .pipe(
+    z
+      .string()
+      .min(3, 'ident needs at least 3 characters: a callsign (BAW117), flight number (BA117), registration (G-XWBA) or 6-hex — an airline code alone is not a flight')
+      .regex(/^[A-Z0-9-]{3,10}$/, 'ident must be a callsign, flight number, registration or 6-hex'),
+  );
 
 type Ctx = { params: Promise<{ ident: string }> };
 

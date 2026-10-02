@@ -61,3 +61,24 @@ describe('satellite palette follows Style Studio (style version)', () => {
     expect(views()[before - 1]!.palette.some((c) => c[0] === 0x12 && c[1] === 0x34 && c[2] === 0x56)).toBe(false);
   });
 });
+
+describe('r10 MAJOR 1: the worker draws flat in mercator', () => {
+  it('the view says `flat` exactly when the map is in mercator', async () => {
+    const { useMapInstanceStore } = await import('@/lib/layer-host');
+    const qc = new QueryClient();
+    act(() => useMapInstanceStore.getState().setProjection('globe'));
+    render(
+      <QueryClientProvider client={qc}>
+        <SatelliteLayer active={new Set(['satellites'])} />
+      </QueryClientProvider>,
+    );
+    const w = RecordingWorker.last!;
+    const views = () => w.posted.filter((m): m is Extract<WorkerIn, { type: 'view' }> => m.type === 'view');
+    expect(views().at(-1)!.flat).toBe(false);
+    act(() => useMapInstanceStore.getState().setProjection('mercator'));
+    expect(views().at(-1)!.flat).toBe(true);
+    expect(views().at(-1)!.camera).toBeNull();
+    act(() => useMapInstanceStore.getState().setProjection('globe'));
+    expect(views().at(-1)!.flat).toBe(false);
+  });
+});

@@ -8,6 +8,7 @@ import { defineModule, type CardProps, type FeatureModule, type LayerComponentPr
 
 const SatelliteLayer = dynamic(() => import('./SatelliteLayer'), { ssr: false }) as ComponentType<LayerComponentProps>;
 const SatelliteCard = dynamic(() => import('./SatelliteCard').then((m) => m.SatelliteCard), { ssr: false }) as ComponentType<CardProps>;
+const SatelliteTrack = dynamic(() => import('./SatelliteTrack').then((m) => m.SatelliteTrack), { ssr: false }) as ComponentType<CardProps>;
 const SatellitePanel = dynamic(() => import('./SatelliteCard').then((m) => m.SatellitePanel), { ssr: false }) as ComponentType<PanelProps>;
 const SpacePanel = dynamic(() => import('./SpacePanel').then((m) => m.SpacePanel), { ssr: false }) as ComponentType<PanelProps>;
 
@@ -17,6 +18,7 @@ const modules: FeatureModule[] = [
     layers: ['satellites', 'sat_comms', 'sat_military', 'sat_navigation', 'sat_earth', 'sat_science'],
     Layer: SatelliteLayer,
     cards: { satellite: SatelliteCard },
+    tracks: { satellite: SatelliteTrack },
     panels: { space: SpacePanel, satellite: SatellitePanel },
   }),
 ];

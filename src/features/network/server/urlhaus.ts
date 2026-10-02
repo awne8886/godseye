@@ -10,7 +10,11 @@
  * Only URLs whose host is a literal IPv4 are mapped (domains are never DNS-resolved: that tips
  * operators). Hosts are keyed by IP and geolocated through ipgeo.ts (precision labelled).
  * The SSE hub broadcasts `detections` only for IPs that were not in the previous snapshot and
- * `status` with the IPs that dropped out.
+ * `status` with the IPs that dropped out. A run that failed (CSV error, no rows, nothing
+ * geolocated) is not a diff (round 10 BLOCKING 2): it retires nothing (the cache keeps the
+ * last-good set) and broadcasts a degraded `status` ({state, lastGoodAt, error}) instead, so
+ * clients keep their hosts badged STALE; the next good run (or 304) broadcasts `status` with
+ * the served total and the state its observations support, which restores degraded clients.
  */
 import 'server-only';
 import { hasCapability } from '@/lib/capabilities';
@@ -21,6 +25,7 @@ import { httpText } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import { getHub } from '@/lib/sse';
 import type { MalwareHost } from '@/lib/types';
+import type { MalwareStatus } from '../client/malware-state';
 import { geolocate, isLookupableIp, type IpGeo } from './ipgeo';
 
 export const URLHAUS_CSV = 'https://urlhaus.abuse.ch/downloads/csv_recent/';
@@ -144,7 +149,30 @@ export function malwareSnapshot() {
 
 export const malwareHub = () => getHub('malware', malwareSnapshot);
 
+/** Whether the last run broadcast a degraded status (the next good run must announce recovery). */
+const degraded = (globalThis as unknown as { __godseyeMalwareDegraded?: { on: boolean } }).__godseyeMalwareDegraded ??= { on: false };
+
+/** Status after a good run: the served total and the state its observations support. */
+function goodStatus(retired: string[], items: readonly MalwareHost[]): MalwareStatus {
+  const now = Date.now();
+  let newest = 0;
+  for (const h of items) if (h.observedAt) newest = Math.max(newest, Date.parse(h.observedAt));
+  const maxAge = malwareFeed.def.maxObservationAgeMs ?? Infinity;
+  const at = new Date(now).toISOString();
+  return { retired, total: items.length, state: newest > 0 && now - newest > maxAge ? 'stale' : 'live', fetchedAt: at, lastGoodAt: at, at };
+}
+
+/** Broadcast that this run failed: no retirements, the last-good set and its time stand. */
+function broadcastDegraded(error: string): void {
+  const last = malwareFeed.peek();
+  const lastGoodAt = last.data ? last.meta.lastGoodAt : null;
+  const status: MalwareStatus = { retired: [], state: lastGoodAt ? 'stale' : 'offline', lastGoodAt, error, at: new Date().toISOString() };
+  degraded.on = true;
+  malwareHub().broadcast('status', status);
+}
+
 export const malwareFeed = defineFeed<MalwareData>({
+  gates: ['nc_sources'],
   key: 'malware',
   ttlMs: 5 * 60_000,
   pollMs: 60_000,
@@ -176,13 +204,20 @@ export const malwareFeed = defineFeed<MalwareData>({
       (r) => r.rows.length,
       { allowEmpty: true },
     );
-    if (notModified && previous) return { notModified: true };
+    if (notModified && previous) {
+      if (degraded.on) {
+        degraded.on = false;
+        malwareHub().broadcast('status', goodStatus([], previous.items));
+      }
+      return { notModified: true };
+    }
     providers.urlhaus = csv.run;
     const hosts = groupHosts(csv.result?.rows ?? []);
     // Online and newest hosts are geolocated first (the ip-api budget is 15 batches/minute).
     hosts.sort((a, b) => Number(b.online) - Number(a.online) || (b.lastSeen ?? '').localeCompare(a.lastSeen ?? ''));
     let located = new Map<string, IpGeo>();
     let pending = 0;
+    let geoOk = false;
     if (hosts.length) {
       const geo = await runProvider(
         () => geolocate(hosts.map((h) => h.ip), { signal, maxBatches: 6 }),
@@ -191,19 +226,28 @@ export const malwareFeed = defineFeed<MalwareData>({
       providers['ip-api'] = geo.run;
       located = geo.result?.located ?? new Map();
       pending = geo.result?.deferred ?? hosts.length;
+      geoOk = geo.run.status.ok;
     }
     const items = hosts.flatMap((h) => {
       const g = located.get(h.ip);
       return g ? [toMalwareHost(h, g)] : [];
     });
-    if (!csv.run.status.ok || csv.result?.rows.length === 0) providers.urlhaus = { ...csv.run, status: { ...csv.run.status, ok: false, error: csv.run.status.error ?? 'empty' } };
-    // Arrival beacons: NEW IPs only (never re-announce hosts the clients already have).
-    const { added, retired } = diffHosts(previous?.items ?? null, items);
-    const hub = malwareHub();
-    // Every added host is sent (in chunks of 200 per event), then the server's own total, so a
-    // client's set — and the count derived from it — always equals what is served.
-    for (let i = 0; i < added.length; i += 200) hub.broadcast('detections', added.slice(i, i + 200));
-    if (added.length || retired.length) hub.broadcast('status', { retired, total: items.length, at: new Date().toISOString() });
+    const csvOk = csv.run.status.ok && (csv.result?.rows.length ?? 0) > 0;
+    if (!csvOk) providers.urlhaus = { ...csv.run, status: { ...csv.run.status, ok: false, error: csv.run.status.error ?? 'empty' } };
+    if (!csvOk || !geoOk || items.length === 0) {
+      // A failed run is not "every host retired": the cache keeps the last-good set (this answer
+      // counts as empty), and clients are told it is stale instead of being emptied.
+      broadcastDegraded(!csvOk ? 'urlhaus_unavailable' : 'geolocation_unavailable');
+    } else {
+      // Arrival beacons: NEW IPs only (never re-announce hosts the clients already have).
+      const { added, retired } = diffHosts(previous?.items ?? null, items);
+      const hub = malwareHub();
+      // Every added host is sent (in chunks of 200 per event), then the server's own total, so a
+      // client's set — and the count derived from it — always equals what is served.
+      for (let i = 0; i < added.length; i += 200) hub.broadcast('detections', added.slice(i, i + 200));
+      if (added.length || retired.length || degraded.on) hub.broadcast('status', goodStatus(retired, items));
+      degraded.on = false;
+    }
     let newest = 0;
     for (const h of items) if (h.observedAt) newest = Math.max(newest, Date.parse(h.observedAt));
     return {

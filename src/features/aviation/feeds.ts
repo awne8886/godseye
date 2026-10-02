@@ -97,6 +97,8 @@ export const flightsFeed = defineFeed<FlightsSnapshot>({
   retryAfterErrorMs: 20_000,
   maxObservationAgeMs: 180_000,
   stateCap: () => positionsCap(snapshotProviders()),
+  // OpenSky / adsb.fi records must not outlive their licence gates (ctx.previous is merged per run).
+  gates: ['opensky', 'adsbfi'],
   count: (d) => d.records.length,
   run: async (ctx) => {
     const opensky = evaluateCapability('opensky');

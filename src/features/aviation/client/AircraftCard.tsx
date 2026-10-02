@@ -23,6 +23,7 @@ import type { AircraftDetail } from '../server/aircraft';
 import type { FlightRoute } from '../server/route-lookup';
 import { routeProgress } from '../route-geometry';
 import { BUCKET_LAYER, useFlights } from './useFlights';
+import { trackFlight } from '@/features/flight-paths/client/handoff';
 import { BUCKET_LABEL, EMERGENCY_LABEL, POS_SOURCE_LABEL, PROVIDER_LABEL, formatAlt, formatDeg, formatFpm, formatKt, traceSourceLabel } from './format';
 
 export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -187,7 +188,6 @@ export default function AircraftCard({ selection }: CardProps) {
   const watchFlight = useUiStore((s) => s.watchFlight);
   const unwatchFlight = useUiStore((s) => s.unwatchFlight);
   const openPanel = useUiStore((s) => s.setOpenPanel);
-  const setFlightIdent = useUiStore((s) => s.setFlightIdent);
   const id = detail.data?.identity ?? null;
   const posSource = r.posSource ? POS_SOURCE_LABEL[r.posSource] : traceSourceLabel(detail.data?.trackSource ?? null);
   const airline = airlineCodeOf(r.callsign);
@@ -318,10 +318,8 @@ export default function AircraftCard({ selection }: CardProps) {
       {/* Hands the flight to the Flight Path Planner (planned arc, flown track, remaining leg). */}
       <button
         type="button"
-        onClick={() => {
-          setFlightIdent((r.callsign ?? r.id.replace(/^~/, '')).toUpperCase());
-          openPanel('paths');
-        }}
+        // Replaces a planned route (one store update), so the flight is drawn and PATHS shows FLIGHT.
+        onClick={() => trackFlight((r.callsign ?? r.id.replace(/^~/, '')).toUpperCase())}
         className="flex min-h-11 items-center justify-center gap-2 rounded-md border border-[var(--gold-primary)]/40 bg-[var(--gold-primary)]/10 px-3 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--gold-primary)] hover:bg-[var(--gold-primary)]/20 focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
       >
         <Route aria-hidden className="size-4" />

@@ -86,6 +86,7 @@ export interface C2Data {
 }
 
 export const c2Feed = defineFeed<C2Data>({
+  gates: ['nc_sources'],
   key: 'cyber-attacks',
   ttlMs: 5 * 60_000,
   kind: 'live',
@@ -171,6 +172,7 @@ export function toIndicator(i: ThreatFoxIoc & { id: string }, geo: IpGeo | undef
 }
 
 export const threatFoxFeed = defineFeed<{ items: ThreatIndicator[]; located: number }>({
+  gates: ['nc_sources'],
   key: 'threatfox',
   ttlMs: 10 * 60_000,
   kind: 'live',

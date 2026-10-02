@@ -61,6 +61,7 @@ describe('satellite deck layers (globe rules)', () => {
     failed: 0,
     selected: null,
     camera: count === 2 ? null : { lng: -98, lat: 39, altitude: 5_700_000 },
+    flat: false,
   });
 
   const glyphs = buildGlyphAtlas();

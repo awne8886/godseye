@@ -291,6 +291,70 @@ describe('PATHS panel', () => {
     expect(useUiStore.getState().plannedRoute).toEqual({ from: 'ACY', to: 'LHR' });
     expect(screen.queryByText(/Did you mean/)).toBeNull();
   });
+
+  it('round 10 MAJOR 2: FROM/TO follow the planned route after mount, so PLOT never re-plans a stale pair', async () => {
+    useUiStore.setState({ plannedRoute: { from: 'LHR', to: 'JFK' } });
+    await act(async () => {
+      renderPanel();
+    });
+    const inputs = () => screen.getAllByRole('combobox').map((i) => (i as HTMLInputElement).value);
+    expect(inputs()).toEqual(['LHR', 'JFK']);
+    // The palette plans SYD-SCL while PATHS is open.
+    await act(async () => {
+      useUiStore.setState({ plannedRoute: { from: 'SYD', to: 'SCL' } });
+    });
+    expect(inputs()).toEqual(['SYD', 'SCL']);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /PLOT/ }));
+    });
+    expect(useUiStore.getState().plannedRoute).toEqual({ from: 'SYD', to: 'SCL' });
+  });
+
+  it('round 10 MAJOR 1/2: a flight tracked from outside PATHS replaces the route and shows FLIGHT with its ident; a new route shows ROUTE', async () => {
+    const { trackFlight, planRoute } = await import('./handoff');
+    useUiStore.setState({ plannedRoute: { from: 'DCA', to: 'MIA' } });
+    await act(async () => {
+      renderPanel();
+    });
+    expect(screen.getByRole('tab', { name: 'ROUTE' }).getAttribute('aria-selected')).toBe('true');
+    await act(async () => {
+      trackFlight('AAL401');
+    });
+    expect(useUiStore.getState().plannedRoute).toBeNull();
+    expect(useUiStore.getState().flightIdent).toBe('AAL401');
+    expect(screen.getByRole('tab', { name: 'FLIGHT' }).getAttribute('aria-selected')).toBe('true');
+    expect((screen.getByPlaceholderText(/BA117/) as HTMLInputElement).value).toBe('AAL401');
+    await act(async () => {
+      planRoute({ from: 'LHR', to: 'JFK' });
+    });
+    expect(useUiStore.getState().flightIdent).toBeNull();
+    expect(screen.getByRole('tab', { name: 'ROUTE' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getAllByRole('combobox').map((i) => (i as HTMLInputElement).value)).toEqual(['LHR', 'JFK']);
+  });
+
+  it('round 10 MAJOR 3: a route planned through metro groups lists each group as chips, the planned airport selected; one click re-plans', async () => {
+    const { planRoute } = await import('./handoff');
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      planRoute({ from: 'LHR', to: 'JFK' }, { from: { name: 'London', codes: ['LHR', 'LGW', 'STN', 'LTN', 'LCY', 'SEN'] }, to: { name: 'New York', codes: ['JFK', 'EWR', 'LGA'] } });
+    });
+    const chips = (side: string) => Array.from(screen.getByTestId(`paths-metro-${side}`).querySelectorAll('button')).map((b) => [b.textContent, b.getAttribute('aria-pressed')]);
+    expect(chips('from')).toEqual([['LHR', 'true'], ['LGW', 'false'], ['STN', 'false'], ['LTN', 'false'], ['LCY', 'false'], ['SEN', 'false']]);
+    expect(chips('to')).toEqual([['JFK', 'true'], ['EWR', 'false'], ['LGA', 'false']]);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'LGW' }));
+    });
+    expect(useUiStore.getState().plannedRoute).toEqual({ from: 'LGW', to: 'JFK' });
+    expect(chips('from').find(([c]) => c === 'LGW')?.[1]).toBe('true');
+    // Typing another place hides that end's chips.
+    await act(async () => {
+      fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: 'PAR' } });
+    });
+    expect(screen.queryByTestId('paths-metro-from')).toBeNull();
+    expect(screen.getByTestId('paths-metro-to')).toBeTruthy();
+  });
 });
 
 describe('FLIGHT chip freshness (round 4 M3)', () => {

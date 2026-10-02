@@ -681,6 +681,14 @@ Both rules are stated in the `/api/gps-interference` `meta.note` and on the card
 | USGS `…/summary/2.5_day.geojson` | 200 · 0.47 s · 27 kB (38 quakes) | `*` | `cache-control: public, max-age=60`, `Last-Modified` set; shape unchanged. |
 | OpenFreeMap `tiles.openfreemap.org/styles/dark` (basemap style, map-engine; checked for the e2e skip rule) | 200 · 0.67 s | n/a | Reachable now. The round-4 e2e failure of `earthquakes.spec.ts:65` was this style failing at the sandbox proxy (`net::ERR_TOO_MANY_RETRIES`, trace): BASEMAP UNAVAILABLE, no map canvas. Map steps now skip with that reason. |
 
+#### Re-probe 2026-10-02 17:20–17:40 UTC (Phase 3 round 10, /api/weather size)
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| NWS `api.weather.gov/zones?type=forecast&area=TX` (listing, 20 states) + `?type=county&area=…` (TX/OK/KS/GA) | 200 · 0.87 s · 519 kB (TX) | `*` | Listing carries **no geometry** even with `include_geometry=true`; 2,666 zone ids. |
+| NWS `api.weather.gov/zones/{forecast,county}/{id}` × 2,666 | 200 (2,657 with polygonal geometry) · ~0.3 s each at 4 req/s | `*` | Recorded rounded to 2 decimals (as the zone cache holds them) into `__fixtures__/nws-zones-busy.2026-10-02.json.gz` (983 kB gz) for the busy-day size test. |
+| NWS `alerts/active` via our `/api/weather` (live) | 200 | `*` | 240 NWS alerts, 126 distinct alert footprints. `/api/weather` was 2,732,652 B (main) → 479,594 B (r10: Douglas-Peucker 0.01°, ≤ 400 vertices per outline, 151 zone outlines sent once in `zones`, alerts reference them by `zoneRefs`). Brotli 217,825 → 77,522 B. |
+
 ## layers-space — probe log
 
 All probes 2026-09-30 18:05–18:10 UTC from the build sandbox with the honest UA
@@ -1153,6 +1161,14 @@ Re-probe 2026-10-02 11:40 UTC (Phase 3 round-8 fixes; UA `GODSEYE/0.1 (+https://
 | `/api/conflicts` on a local `next start` (GDELT + news in-process) | 200 · 3.1 s | n/a | `live` with `gdelt {ok, count 67}` and `alerts {ok, count 12}`: every counted alert carries weapon/combat language (strikes, drones, explosions, attacks). |
 
 Round-8 verification fixes (no new upstream): (1) the alert classifier's `kind=event` also matches `earthquake` and `fire`, so the conflicts feed now also requires kinetic text (`isKineticAlertText`: weapon/combat terms, or explosion/casualty/siren terms with no hazard, fire or accident named; idioms such as "hunger strike" and "heart attack" removed first). A deterministic keyword test, never called AI; it errs towards not counting. (2) When GDELT has never answered (no last-good pull) the conflicts state is capped at RECENT (it read LIVE from in-zone alerts alone); `providers.gdelt.age_s` is then `null`. Zones with no in-zone event stay REFERENCE.
+
+Re-probe 2026-10-02 17:00 UTC (Phase 3 round-10 fixes; UA `GODSEYE/0.1 (+https://github.com/godseye; probe)`):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| URLhaus `csv_recent/` | 200 · 0.74 s · 2.99 MB | none | Unchanged format. A failed run (CSV error, no rows, or ip-api located nothing) no longer diffs `[]` against the last-good set: nothing is retired, the cache keeps the last-good hosts and the stream sends `status {retired: [], state: 'stale' \| 'offline', lastGoodAt, error}`. The next good run (or 304) sends `status {retired, total, state, fetchedAt, lastGoodAt}`, which restores degraded clients. |
+
+Round-10 verification fixes (no new upstream): every polled threats/network/maritime layer (`useFeedData`) now treats a refresh that fails without the app's own 503 envelope (proxy 502/500, a bare 503, a network error, a non-envelope body) as a failure: the retained answer is at best STALE with its own last-good time, and SOURCE OFFLINE (`unreachable`) after 2 × the poll interval. The Live Malware stream is STALE while EventSource reconnects and when no frame (heartbeat, every 15 s) arrives for 45 s.
 
 ## map-engine — probe log
 

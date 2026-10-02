@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FIRE_FIELDS, FeedEvent } from '@/lib/schemas';
 import type { Earthquake, WeatherEvent } from '@/lib/types';
 import { MAP_TOKENS } from '@/lib/tokens';
-import { FIRE_ROW_FIELDS, aqiCategory, fireEvents, fireRadiusPx, fireRowObject, isSignificantQuake, jamLevel, magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken, weatherEvents, weatherToken } from './shared';
+import { FIRE_ROW_FIELDS, aqiCategory, fireEvents, fireRadiusPx, fireRowObject, isSignificantQuake, jamLevel, magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken, weatherEvents, weatherFootprint, weatherToken, withFootprints } from './shared';
 
 const quake = (over: Partial<Earthquake>): Earthquake => ({
   id: 'us1',
@@ -74,5 +74,32 @@ describe('GPS-interference fills stay translucent (visual-qa M11)', () => {
     expect(jamLevel({ badRatio: 0.5 }).alpha).toBeLessThanOrEqual(0.35);
     expect(jamLevel({ badRatio: 0.05 }).alpha).toBeLessThanOrEqual(0.35);
     expect(jamLevel({ badRatio: 0.01 }).alpha).toBeLessThanOrEqual(0.12);
+  });
+});
+
+describe('weather footprints from the shared zone map', () => {
+  const sq = (x: number): GeoJSON.Polygon => ({ type: 'Polygon', coordinates: [[[x, 0], [x + 1, 0], [x + 1, 1], [x, 1], [x, 0]]] });
+  const zones = { TXZ001: sq(0), TXZ002: { type: 'MultiPolygon', coordinates: [sq(2).coordinates, sq(4).coordinates] } as GeoJSON.MultiPolygon };
+  const base: WeatherEvent = { id: 'nws-a', lat: 0.5, lng: 0.5, observedAt: '2026-10-02T00:00:00.000Z', source: 'nws', title: 'Flood Watch', type: 'flood', severity: 'low', provider: 'NOAA/NWS', expiresAt: null, area: null, url: null, geometry: null };
+
+  it('builds the MultiPolygon of every referenced zone (same areas as inline geometry)', () => {
+    const g = weatherFootprint({ ...base, zoneRefs: ['TXZ001', 'TXZ002'] }, zones)!;
+    expect(g).toEqual({ type: 'MultiPolygon', coordinates: [sq(0).coordinates, sq(2).coordinates, sq(4).coordinates] });
+  });
+  it('keeps inline geometry (NHC cones, alert polygons, older responses)', () => {
+    expect(weatherFootprint({ ...base, geometry: sq(9) }, zones)).toEqual(sq(9));
+    expect(weatherFootprint({ ...base, geometry: sq(9), zoneRefs: ['TXZ001'] }, undefined)).toEqual(sq(9));
+  });
+  it('is null when no reference resolves, and ignores prototype keys', () => {
+    expect(weatherFootprint({ ...base, zoneRefs: ['NOPE', 'constructor'] }, zones)).toBeNull();
+    expect(weatherFootprint({ ...base, zoneRefs: ['TXZ001'] }, undefined)).toBeNull();
+  });
+  it('resolves every item and keeps the count', () => {
+    const items = [{ ...base, zoneRefs: ['TXZ001'] }, { ...base, id: 'b' }, { ...base, id: 'c', geometry: sq(7) }];
+    const out = withFootprints(items, zones);
+    expect(out).toHaveLength(3);
+    expect(out[0]!.geometry?.type).toBe('MultiPolygon');
+    expect(out[1]).toBe(items[1]);
+    expect(out[2]).toBe(items[2]);
   });
 });
