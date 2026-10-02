@@ -31,5 +31,5 @@ export const GET = withRoute('/api/airports/search', async (req: Request) => {
   const now = Date.now();
   const r = await searchAirports(q.data.q, { all: q.data.all, submit: q.data.submit });
   const providers: Providers = Object.fromEntries(Object.entries(r.providers).map(([k, p]) => [k, { ...p.status, age_s: p.okAt ? Math.max(0, Math.round((now - p.okAt) / 1000)) : p.status.age_s }]));
-  return json({ query: q.data.q, results: r.results, metro: r.metro, providers, timestamp: new Date(now).toISOString() }, { ttl: 600 });
+  return json({ query: q.data.q, results: r.results, metro: r.metro, ...(r.place !== undefined ? { place: r.place } : {}), providers, timestamp: new Date(now).toISOString() }, { ttl: 600 });
 });

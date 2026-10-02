@@ -171,7 +171,23 @@ const defaultDeps: SearchDeps = {
 export interface SearchResult {
   results: AirportMatch[];
   metro: { name: string; codes: string[] } | null;
+  /** The geocoded place the results are nearest to (only for the Photon/Nominatim place fallback). */
+  place?: GeocodedPlace | null;
   providers: Record<string, ProviderRun>;
+}
+
+export interface GeocodedPlace {
+  name: string;
+  country: string | null;
+  lat: number;
+  lng: number;
+  source: 'photon' | 'nominatim';
+}
+
+/** Country name for an ISO code from the bundled OurAirports countries, else the code itself. */
+export function countryName(code: string | null): string | null {
+  if (!code) return null;
+  return airportIndex('min').list.find((a) => a.isoCountry === code && a.country)?.country ?? code;
 }
 
 const bundled = (count: number): ProviderRun => ({ status: { ok: true, count, ms: 0, age_s: 0 }, okAt: Date.now() });
@@ -247,6 +263,10 @@ export async function searchAirports(q: string, opts: { all: boolean; submit: bo
     providers.nominatim = nom.run;
     if (nom.result?.[0]) origin = { p: nom.result[0], by: 'nominatim' };
   }
-  if (origin) push(nearestScheduled(origin.p.lat, origin.p.lng).map(({ a, km }) => match(a, 20 - km / 10, origin.by)));
-  return { results, metro: null, providers };
+  if (!origin) return { results, metro: null, providers };
+  const near = nearestScheduled(origin.p.lat, origin.p.lng);
+  push(near.map(({ a, km }) => ({ ...match(a, 20 - km / 10, origin.by), distanceKm: Math.round(km * 10) / 10 })));
+  // R4 m7: say which place the text was geocoded to, so "nearest to X" is never a silent guess.
+  const geocoded: GeocodedPlace = { name: origin.p.name, country: countryName(origin.p.countryCode), lat: origin.p.lat, lng: origin.p.lng, source: origin.by === 'nominatim' ? 'nominatim' : 'photon' };
+  return { results, metro: null, place: near.length ? geocoded : null, providers };
 }

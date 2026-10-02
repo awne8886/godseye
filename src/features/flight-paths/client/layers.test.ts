@@ -71,10 +71,18 @@ describe('buildRouteLayers', () => {
     expect((layers as Layer[]).find((l) => l.id === 'route-live-aircraft')!.props.data).toHaveLength(1);
     const arc = (layers as Layer[])[1]!;
     const data = arc.props.data as { path: number[][] }[];
-    // Dashed: several pieces whose vertices are exactly the server's unwrapped points.
-    expect(data.length).toBeGreaterThan(20);
-    expect(data[0]!.path[0]).toEqual(gc.points[0]);
-    expect(data.flatMap((d) => d.path).every((p) => gc.points.some((q) => q[0] === p[0] && q[1] === p[1]))).toBe(true);
+    // One path on exactly the server's unwrapped vertices, dashed by PathStyleExtension [2,2].
+    expect(data).toHaveLength(1);
+    expect(data[0]!.path).toEqual(gc.points);
+    const dashProps = arc.props as unknown as { getDashArray: number[]; dashJustified: boolean; dashGapPickable: boolean; extensions: { constructor: { extensionName?: string } }[] };
+    expect(dashProps.getDashArray).toEqual([2, 2]);
+    expect(dashProps.dashJustified).toBe(true);
+    expect(dashProps.dashGapPickable).toBe(false);
+    expect(dashProps.extensions).toHaveLength(1);
+    // Filed plans: dotted [1,2] along every leg (one path per plan, every waypoint kept).
+    const filed = (layers as Layer[]).find((l) => l.id === 'route-filed')!;
+    expect((filed.props.data as { path: number[][] }[])[0]!.path).toHaveLength(2);
+    expect((filed.props as unknown as { getDashArray: number[] }).getDashArray).toEqual([1, 2]);
     expect((arc.props.parameters as { cullMode: string }).cullMode).toBe('none');
     expect((arc.props as unknown as { antialiasing?: boolean }).antialiasing).toBe(true);
   });
@@ -103,9 +111,13 @@ describe('buildRouteLayers', () => {
     const layers = buildRouteLayers({ plan: null, live: null, flight, globe: true, center: [-5, 52], theme: 1 });
     expect(ids(layers)).toEqual(['route-planned-glow', 'route-planned-arc', 'route-flown-track', 'route-remaining', 'route-endpoints', 'route-endpoint-labels', 'route-live-aircraft']);
     expect(((layers as Layer[])[2]!.props.data as unknown[]).length).toBe(2);
-    // Globe: lines lifted off the surface mesh.
+    // Globe: lines lifted off the surface mesh; the arc's ends sit at the lift.
     const arcPath = ((layers as Layer[])[1]!.props.data as { path: number[][] }[])[0]!.path;
     expect(arcPath[0]![2]).toBe(8000);
+    // Remaining leg dashed [2,2] at the surface lift, not on the arc's paraboloid.
+    const rem = (layers as Layer[])[3]!;
+    expect((rem.props as unknown as { getDashArray: number[] }).getDashArray).toEqual([2, 2]);
+    expect((rem.props.data as { path: number[][] }[])[0]!.path.every((q) => q[2] === 8000)).toBe(true);
   });
 
   it('nothing to draw → no layers', () => {

@@ -1,0 +1,31 @@
+{
+ "_shape": "Shaped from FlightAware's published AeroAPI v4 OpenAPI document (https://www.flightaware.com/commercial/aeroapi/resources/aeroapi-openapi.yml, fetched 2026-10-02): field names and types only, values illustrative. NOT a live capture: a keyless probe of aeroapi.flightaware.com answers 401 INVALID_API_KEY and no key was available. Test-only.",
+ "keyless_probe": { "url": "https://aeroapi.flightaware.com/aeroapi/flights/BAW117", "status": 401, "body": { "title": "Invalid API key", "reason": "INVALID_API_KEY", "detail": "Provided API key is not valid", "status": 401 } },
+ "flights_to": {
+  "links": null,
+  "num_pages": 1,
+  "flights": [
+   { "segments": [ { "ident": "UAL1001", "ident_icao": "UAL1001", "ident_iata": "UA1001", "fa_flight_id": "UAL1001-1759300000-airline-0001", "registration": "N00001", "origin": { "code": "KDEN", "code_icao": "KDEN", "code_iata": "DEN", "code_lid": "DEN", "timezone": "America/Denver", "name": "Denver Intl", "city": "Denver" }, "destination": { "code": "KORD", "code_icao": "KORD", "code_iata": "ORD", "code_lid": "ORD", "timezone": "America/Chicago", "name": "Chicago O'Hare Intl", "city": "Chicago" }, "cancelled": false, "diverted": false, "status": "Arrived / Gate Arrival", "route": "FIX1 J00 FIX2", "filed_altitude": 350, "scheduled_out": "2026-10-01T14:00:00Z", "actual_off": "2026-10-01T14:15:00Z", "actual_on": "2026-10-01T16:20:00Z" } ] },
+   { "segments": [ { "ident": "UAL1002", "ident_icao": "UAL1002", "ident_iata": "UA1002", "fa_flight_id": "UAL1002-1759310000-airline-0002", "registration": "N00002", "origin": { "code": "KDEN", "code_icao": "KDEN", "code_iata": "DEN", "code_lid": "DEN", "timezone": "America/Denver", "name": "Denver Intl", "city": "Denver" }, "destination": { "code": "KORD", "code_icao": "KORD", "code_iata": "ORD", "code_lid": "ORD", "timezone": "America/Chicago", "name": "Chicago O'Hare Intl", "city": "Chicago" }, "cancelled": false, "diverted": false, "status": "En Route / On Time", "route": "FIX1 J00 FIX2", "filed_altitude": 370, "scheduled_out": "2026-10-01T18:00:00Z", "actual_off": "2026-10-01T18:10:00Z", "actual_on": null } ] },
+   { "segments": [ { "ident": "UAL1003", "ident_icao": "UAL1003", "ident_iata": "UA1003", "fa_flight_id": "UAL1003-1759320000-airline-0003", "registration": null, "origin": { "code": "KDEN", "code_icao": "KDEN", "code_iata": "DEN", "code_lid": "DEN", "timezone": "America/Denver", "name": "Denver Intl", "city": "Denver" }, "destination": { "code": "KORD", "code_icao": "KORD", "code_iata": "ORD", "code_lid": "ORD", "timezone": "America/Chicago", "name": "Chicago O'Hare Intl", "city": "Chicago" }, "cancelled": true, "diverted": false, "status": "Cancelled", "route": null, "filed_altitude": null, "scheduled_out": "2026-10-01T19:00:00Z", "actual_off": null, "actual_on": null } ] }
+  ]
+ },
+ "flight_route": {
+  "route_distance": "888 nm",
+  "fixes": [
+   { "name": "KDEN", "latitude": 39.8617, "longitude": -104.6731, "distance_from_origin": 0, "distance_this_leg": 0, "distance_to_destination": 888, "outbound_course": 70, "type": "Origin Airport" },
+   { "name": "FIX1", "latitude": 40.4, "longitude": -101.0, "distance_from_origin": 175, "distance_this_leg": 175, "distance_to_destination": 713, "outbound_course": 75, "type": "Waypoint" },
+   { "name": "NOPE", "latitude": null, "longitude": null, "distance_from_origin": null, "distance_this_leg": null, "distance_to_destination": null, "outbound_course": null, "type": "UNKNOWN" },
+   { "name": "FIX2", "latitude": 41.5, "longitude": -93.6, "distance_from_origin": 525, "distance_this_leg": 350, "distance_to_destination": 363, "outbound_course": 80, "type": "Reporting Point" },
+   { "name": "KORD", "latitude": 41.9786, "longitude": -87.9048, "distance_from_origin": 888, "distance_this_leg": 363, "distance_to_destination": 0, "outbound_course": null, "type": "Destination Airport" }
+  ]
+ },
+ "flights_ident": {
+  "links": null,
+  "num_pages": 1,
+  "flights": [
+   { "ident": "UAL1002", "ident_icao": "UAL1002", "ident_iata": "UA1002", "fa_flight_id": "UAL1002-1759396400-airline-0004", "registration": "N00002", "origin": { "code": "KDEN", "code_icao": "KDEN", "code_iata": "DEN", "code_lid": "DEN", "timezone": "America/Denver", "name": "Denver Intl", "city": "Denver" }, "destination": { "code": "KORD", "code_icao": "KORD", "code_iata": "ORD", "code_lid": "ORD", "timezone": "America/Chicago", "name": "Chicago O'Hare Intl", "city": "Chicago" }, "cancelled": false, "status": "Scheduled", "scheduled_out": "2026-10-02T18:00:00Z", "actual_off": null, "actual_on": null },
+   { "ident": "UAL1002", "ident_icao": "UAL1002", "ident_iata": "UA1002", "fa_flight_id": "UAL1002-1759310000-airline-0002", "registration": "N00002", "origin": { "code": "KDEN", "code_icao": "KDEN", "code_iata": "DEN", "code_lid": "DEN", "timezone": "America/Denver", "name": "Denver Intl", "city": "Denver" }, "destination": { "code": "KORD", "code_icao": "KORD", "code_iata": "ORD", "code_lid": "ORD", "timezone": "America/Chicago", "name": "Chicago O'Hare Intl", "city": "Chicago" }, "cancelled": false, "status": "Arrived / Gate Arrival", "scheduled_out": "2026-10-01T18:00:00Z", "actual_off": "2026-10-01T18:10:00Z", "actual_on": "2026-10-01T20:05:00Z" }
+  ]
+ }
+}

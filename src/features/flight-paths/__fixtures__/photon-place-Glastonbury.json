@@ -1,0 +1,40 @@
+{
+ "_captured": "2026-10-02T00:30Z from the live upstream with the GODSEYE UA (feature-flight-paths probe; first feature kept)",
+ "_url": "https://photon.komoot.io/api/?q=Glastonbury&limit=8",
+ "body": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "properties": {
+     "osm_type": "R",
+     "osm_id": 2913378,
+     "osm_key": "place",
+     "osm_value": "town",
+     "type": "city",
+     "name": "Glastonbury",
+     "county": "Somerset",
+     "state": "England",
+     "country": "United Kingdom",
+     "countrycode": "GB",
+     "extra": {
+      "admin_level": "10"
+     },
+     "extent": [
+      -2.7453734,
+      51.1699476,
+      -2.6611807,
+      51.1220733
+     ]
+    },
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      -2.716577,
+      51.14804
+     ]
+    }
+   }
+  ]
+ }
+}

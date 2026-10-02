@@ -4,6 +4,7 @@ import type * as HttpModule from '@/lib/http';
 import { AirportSearchResponse, ApiError } from '@/lib/schemas';
 import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { newMode, upstreamBody } from '@/features/flight-paths/__fixtures__/upstreams';
+import photonGlastonbury from '@/features/flight-paths/__fixtures__/photon-place-Glastonbury.json';
 
 const mode = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof newMode> }));
 
@@ -90,6 +91,23 @@ describe('GET /api/airports/search', () => {
     const down = await find('?q=zzqqyy&submit=1');
     expect(down.body!.providers.photon?.ok).toBe(false);
     expect(down.body!.providers.nominatim).toBeDefined();
+  });
+
+  it('R4 m7: a geocoded place fallback names the place, its country and source, and each distance', async () => {
+    // Recorded Photon answer for the free-text place "Glastonbury" (a town, no airport by that name).
+    mode.current.override.set('https://photon.komoot.io/api/?q=Glastonbury*', photonGlastonbury.body);
+    const r = (await find('?q=Glastonbury')).body!;
+    expect(r.place).toEqual({ name: 'Glastonbury', country: 'United Kingdom', lat: 51.14804, lng: -2.716577, source: 'photon' });
+    expect(r.results.length).toBeGreaterThan(0);
+    for (const m of r.results) {
+      expect(m.matchedBy).toBe('photon');
+      expect(m.distanceKm).toBeGreaterThanOrEqual(0);
+      expect(m.distanceKm).toBeLessThanOrEqual(150);
+    }
+    const km = r.results.map((m) => m.distanceKm!);
+    expect([...km].sort((x, y) => x - y)).toEqual(km);
+    // Code/name matches carry no place.
+    expect((await find('?q=LHR')).body!.place).toBeUndefined();
   });
 
   it('SSRF: user text only ever reaches the fixed geocoder hosts, as a query parameter', async () => {

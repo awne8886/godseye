@@ -16,7 +16,7 @@ const mode = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof n
 
 vi.mock('@/lib/ratelimit', async (orig) => {
   const actual = await orig<typeof RateLimitModule>();
-  return { ...actual, providerBucket: () => ({ take: async () => undefined }), rateLimit: async () => null };
+  return { ...actual, providerBucket: () => ({ take: async () => undefined, tryTake: () => true }), rateLimit: async () => null };
 });
 vi.mock('@/lib/http', async (orig) => {
   const actual = await orig<typeof HttpModule>();
@@ -114,6 +114,10 @@ describe('PATHS panel', () => {
     const legend = screen.getByRole('list', { name: 'Path types' });
     for (const li of Array.from(legend.querySelectorAll('li'))) expect((li as HTMLElement).style.opacity).toBe('');
     expect(legend.querySelectorAll('li[data-available="false"] .border-dashed').length).toBe(2);
+    // Round 6 M1: the US airways drawn near JFK are disclosed as FAA reference data, dated by the FAA's Last-Modified.
+    const airwaysRow = legend.querySelector('[data-testid="legend-airways"]');
+    expect(airwaysRow?.textContent).toMatch(/AIRWAYS \(FAA, REFERENCE\)/);
+    expect(airwaysRow?.textContent).toMatch(/FAA ADDS ATS_Route, data as of 2026-09-03\)\. Reference structure, not this flight's filed route\./);
     // visual-qa m3: km and nm on two lines, no dangling separator.
     expect(screen.getByText('5,540 KM')).toBeTruthy();
     expect(screen.getByText('2,991 NM')).toBeTruthy();

@@ -1,8 +1,10 @@
 /**
  * GET /api/route/plan builder (§8): great circle, block-time estimates, time zones, daylight,
  * known services (VRS standing data, LIVE when the callsign is in the flights snapshot),
- * historical routes (OpenFlights 2014), sim-community filed plans (keyed), METAR/TAF at both
- * ends, winds aloft (Open-Meteo, capability-gated) and diversion airports. Server-only.
+ * historical routes (OpenFlights 2014), filed plans (keyed: FlightAware AeroAPI real filed IFR
+ * routes, FlightPlanDatabase sim-community plans), US airways near the route (bundled FAA ADDS
+ * snapshot), METAR/TAF at both ends, winds aloft (Open-Meteo, capability-gated) and diversion
+ * airports. Server-only.
  */
 import 'server-only';
 import type { z } from 'zod';
@@ -14,6 +16,8 @@ import { DAYLIGHT_METHOD, DIVERSION_METHOD, ESTIMATE_METHOD, daylightSamples, es
 import { localTimeIso, offsetDeltaHours } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { airportIndex, openFlights, vrsIndex, type AirportRecord } from './data';
+import { aeroFiledPlans } from './aeroapi';
+import { routeAirways } from './airways';
 import { filedPlans } from './fpdb';
 import { stationFor, stationWeather } from './weather';
 import { windsAloft } from './winds';
@@ -107,10 +111,13 @@ export async function buildPlan(o: AirportRecord, d: AirportRecord, now = Date.n
   const exclude = new Set([o.iata, o.icao, o.ident, d.iata, d.icao, d.ident].filter((c): c is string => !!c));
   const diversions = selectDiversions(A, B, diversionCandidates(), exclude);
 
-  const [wx, winds, fpdb] = await Promise.all([
+  const airways = routeAirways(gc.points, now);
+  const pair = icaoOf(o) && icaoOf(d) ? ([icaoOf(o)!, icaoOf(d)!] as const) : null;
+  const [wx, winds, fpdb, aero] = await Promise.all([
     stationWeather([stationFor(o), stationFor(d)]),
     windsAloft(samplePoints(A, B, WIND_SAMPLES)),
-    icaoOf(o) && icaoOf(d) ? filedPlans(icaoOf(o)!, icaoOf(d)!) : Promise.resolve(null),
+    pair ? filedPlans(pair[0], pair[1]) : Promise.resolve(null),
+    pair ? aeroFiledPlans(pair[0], pair[1]) : Promise.resolve(null),
   ]);
   const oWx = wx.byStation.get(stationFor(o) ?? '') ?? emptyWeather();
   const dWx = wx.byStation.get(stationFor(d) ?? '') ?? emptyWeather();
@@ -125,8 +132,11 @@ export async function buildPlan(o: AirportRecord, d: AirportRecord, now = Date.n
     flights: live.run,
   };
   if (fpdb) runs.fpdb = fpdb.run;
+  if (aero) runs.aeroapi = aero.run;
+  runs.faa_adds = airways.run;
 
-  const filed = fpdb?.plans ?? [];
+  // Real filed IFR routes (AeroAPI) before sim-community plans.
+  const filed = [...(aero?.plans ?? []), ...(fpdb?.plans ?? [])];
   return {
     origin: endpoint(o),
     destination: endpoint(d),
@@ -141,6 +151,8 @@ export async function buildPlan(o: AirportRecord, d: AirportRecord, now = Date.n
     daylightMethod: DAYLIGHT_METHOD,
     knownServices: services,
     historicalRoutes: historical,
+    ...(airways.run.status.ok ? { airways: airways.airways } : {}),
+    ...(airways.run.status.ok && airways.source && airways.airways.length ? { airwaysSource: airways.source } : {}),
     ...(filed.length ? { filedPlans: filed } : {}),
     weather: { origin: oWx, destination: dWx, windsAloft: winds.winds },
     diversionAirports: diversions,

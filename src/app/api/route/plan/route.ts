@@ -11,6 +11,7 @@ import { apiError, json, parseQuery, withRoute } from '@/lib/respond';
 import { findAirport } from '@/features/flight-paths/server/data';
 import { buildPlan } from '@/features/flight-paths/server/plan';
 import { AIRPORT_CODE_RE } from '@/features/flight-paths/lib/idents';
+import { hasPendingProvider } from '@/features/flight-paths/lib/pending';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,5 +29,7 @@ export const GET = withRoute('/api/route/plan', async (req: Request) => {
   const d = findAirport(q.data.to);
   if (!o || !d) return apiError(404, 'not_found', `Unknown airport: ${[!o && q.data.from, !d && q.data.to].filter(Boolean).join(', ')}`);
   if (o.ident === d.ident) return apiError(400, 'invalid_request', 'from and to are the same airport');
-  return json(await buildPlan(o, d), { ttl: 300 });
+  const plan = await buildPlan(o, d);
+  // A filed route still loading in the background: never let a cache keep this answer.
+  return json(plan, { ttl: hasPendingProvider(plan.providers) ? 0 : 300 });
 });

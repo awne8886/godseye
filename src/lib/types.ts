@@ -162,6 +162,7 @@ export type ScmSuppliersResponse = z.infer<typeof S.ScmSuppliersResponse>;
 export type AirportType = z.infer<typeof S.AirportType>;
 export type Airport = z.infer<typeof S.Airport>;
 export type AirportMatch = z.infer<typeof S.AirportMatch>;
+export type GeocodedPlace = z.infer<typeof S.GeocodedPlace>;
 export type AirportSearchResponse = z.infer<typeof S.AirportSearchResponse>;
 export type FlightCategory = z.infer<typeof S.FlightCategory>;
 export type AirportWeather = z.infer<typeof S.AirportWeather>;

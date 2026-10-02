@@ -2,7 +2,7 @@
  * "Track my flight" (GET /api/flight/{ident}, §8). Resolves an ICAO callsign, IATA flight number
  * (via OpenFlights airlines.dat, disambiguated against VRS standing data), registration or hex;
  * then the route (aviation's VRS → adsbdb → hexdb chain; hexdb's years-old records are labelled
- * stale), the live position (flights snapshot, else adsb.lol /v2/callsign|hex through aviation's
+ * stale; when none knows the callsign and AEROAPI_KEY is set, FlightAware AeroAPI's schedule), the live position (flights snapshot, else adsb.lol /v2/callsign|hex through aviation's
  * shared bucket), the flown track + identity (aviation's adsbdb + adsb.lol trace lookup) and
  * METAR/TAF at both ends. OSIRIS corroboration: an observed departure beats the schedule; a
  * standing-data route is trusted only when its origin agrees with the observed departure or the
@@ -27,6 +27,7 @@ import { angleDiff, etaMs, flyingRoute, headingAlong, onCorridor, pathIntoFrame,
 import { localTimeIso } from '../lib/time';
 import { emptyWeather } from '../lib/metar';
 import { findAirport, openFlights, vrsIndex, type AirportRecord } from './data';
+import { aeroSchedule, type AeroSchedule } from './aeroapi';
 import { endpoint, icaoOf } from './plan';
 import { stationFor, stationWeather } from './weather';
 
@@ -50,6 +51,8 @@ export interface FlightDeps {
   route: (cs: string, pos: { lat: number; lng: number; speedKt: number | null } | null) => Promise<FlightRoute | null>;
   aircraft: typeof aircraftDetail;
   weather: typeof stationWeather;
+  /** FlightAware AeroAPI schedule (keyed; skipped without the capability). Optional for callers without it. */
+  aeroapi?: (callsign: string) => Promise<{ schedule: AeroSchedule | null; run: ProviderRun }>;
 }
 
 async function snapshotRecords(): Promise<{ records: FlightRecord[] | null; run: ProviderRun; state?: FreshnessState }> {
@@ -83,6 +86,7 @@ const defaultDeps: FlightDeps = {
   route: (cs, pos) => flightRoute(cs, pos),
   aircraft: aircraftDetail,
   weather: stationWeather,
+  aeroapi: (cs) => aeroSchedule(cs),
 };
 
 /** IATA flight number → ICAO callsign: active airlines with that designator, preferring one whose callsign is a VRS service. */
@@ -322,9 +326,23 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
   if (detail) for (const [k, p] of Object.entries(detail.providers)) runs[k] = toRun(p);
   let flownTrack: TrackPoint[] = detail?.track ?? [];
 
-  let origin = route?.found ? airportFromRoute(route.origin) : null;
-  let destination = route?.found ? airportFromRoute(route.destination) : null;
-  if (route?.found) {
+  // No standing-data route: FlightAware's schedule for the callsign (keyed upgrade). It names the
+  // pair only; the same corroboration below decides whether it is shown.
+  let aero: AeroSchedule | null = null;
+  if (!route?.found && resolved.callsign && deps.aeroapi) {
+    const a = await deps.aeroapi(resolved.callsign);
+    runs.aeroapi = a.run;
+    const s = a.schedule;
+    if (s?.origin && s.destination && findAirport(s.origin) && findAirport(s.destination)) {
+      aero = s;
+      resolved.iataFlight ??= s.iataFlight;
+    }
+  }
+  let origin = route?.found ? airportFromRoute(route.origin) : aero ? findAirport(aero.origin!) : null;
+  let destination = route?.found ? airportFromRoute(route.destination) : aero ? findAirport(aero.destination!) : null;
+  if (aero) {
+    sources.push({ name: 'route: aeroapi', ok: true, detail: `FlightAware AeroAPI schedule${aero.scheduledOut ? `, departure scheduled ${aero.scheduledOut}` : ''}${aero.status ? ` (${aero.status})` : ''}` });
+  } else if (route?.found) {
     const when = route.sourceUpdatedAt ? ` (record updated ${route.sourceUpdatedAt.slice(0, 10)})` : '';
     sources.push({ name: `route: ${route.source}`, ok: true, detail: route.stale ? `stale${when} — hexdb records can be years old` : `standing data${when}` });
   } else {
@@ -513,7 +531,7 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
     etaTz: destination?.tz ?? null,
     routeBasis,
     routeCheck,
-    routeSource: route?.found ? { name: route.source, stale: route.stale ?? false, updatedAt: route.sourceUpdatedAt ?? null } : null,
+    routeSource: route?.found ? { name: route.source, stale: route.stale ?? false, updatedAt: route.sourceUpdatedAt ?? null } : aero ? { name: 'aeroapi', stale: false, updatedAt: null } : null,
     identity: detail?.identity ?? null,
     weather: {
       origin: origin ? (wx.byStation.get(stationFor(origin) ?? '') ?? emptyWeather()) : null,
