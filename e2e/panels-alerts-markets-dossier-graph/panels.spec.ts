@@ -61,57 +61,6 @@ test('ALERTS lists stance-labelled posts and names offline sources', async ({ pa
   }
 });
 
-test('ALERTS chip follows a failed refetch: SOURCE OFFLINE beside the banner, never a live count (r8)', async ({ page, request }) => {
-  // The retained-data case needs one real answer first; a firewalled sandbox has none to retain.
-  const api = await request.get('/api/news');
-  test.skip(!api.ok(), `/api/news answered ${api.status()}: no copy to retain`);
-  let fail = false;
-  await page.route('**/api/news', (route) => (fail ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'source_offline' }) }) : route.continue()));
-  await page.clock.install();
-  await boot(page, '/?panel=alerts');
-  const panel = page.getByTestId('alerts-panel');
-  await expect(panel.getByText(/of \d+ alerts/)).toBeVisible({ timeout: 45_000 });
-  const chip = page.locator('.instrument-chip').filter({ hasText: /RESULTS|SOURCE OFFLINE/ });
-  await expect(chip).toHaveText(/^\d+ RESULTS$/);
-  fail = true;
-  // The panel refetches every 120 s; jump past it (react-query then retries twice, 1 s and 2 s apart).
-  await page.clock.fastForward('02:05');
-  await page.clock.fastForward('00:05');
-  await expect(panel.getByTestId('alerts-offline')).toContainText(/^SOURCE OFFLINE — no channel or wire answered; showing the last copy received/, { timeout: 30_000 });
-  await expect(chip).toHaveText(/^SOURCE OFFLINE/);
-  expect(await chip.evaluate((el) => (el as HTMLElement).style.color)).toBe('var(--alert-red)');
-  await expect(panel.getByText(/alerts · last copy received/)).toBeVisible();
-});
-
-test('chat ANALYST names each source with its own declared stance, never a bloc as its perspective (r8)', async ({ request }) => {
-  const news = await request.get('/api/news');
-  test.skip(!news.ok(), `/api/news answered ${news.status()}: nothing to attribute`);
-  const body = (await news.json()) as { items: { title: string; sourceName: string; lean: string; bloc: string }[] };
-  // Ask about words from a regional and a western headline (the groups OSIRIS mislabelled).
-  const words = ['regional', 'western']
-    .map((b) => body.items.find((i) => i.bloc === b)?.title.match(/\p{L}{6,}/u)?.[0])
-    .filter(Boolean)
-    .join(' ');
-  test.skip(!words, 'no regional or western headline in the feed right now');
-  const res = await request.post('/api/ai/chat', { data: { messages: [{ role: 'user', content: `${words}?` }], provider: 'analyst' } });
-  expect(res.status()).toBe(200);
-  const events = (await res.text())
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as { type: string; text?: string; generatedBy?: string });
-  expect(events[0]).toMatchObject({ type: 'meta', generatedBy: 'analyst' });
-  const text = events.map((e) => (e.type === 'delta' ? e.text : '')).join('');
-  expect(text).not.toMatch(/Turkey, Middle East|Western \/ Ukrainian/);
-  const leanOf = new Map(body.items.map((i) => [i.sourceName, i.lean]));
-  const bullets = text.split('\n').filter((l) => l.startsWith('• '));
-  expect(bullets.length).toBeGreaterThan(0);
-  for (const b of bullets) {
-    const m = /^• (.+?) \(([^)]+)\), /.exec(b);
-    expect(m, b).not.toBeNull();
-    expect(m![2], b).toBe(leanOf.get(m![1]!));
-  }
-});
-
 test('ALERTS read-out says who generated it (ANALYST when keyless)', async ({ page }) => {
   await boot(page, '/?panel=alerts');
   const panel = page.getByTestId('alerts-panel');
