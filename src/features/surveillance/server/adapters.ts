@@ -353,6 +353,43 @@ export function parseQuebec(raw: unknown): Row[] {
   return out;
 }
 
+/** City of Edmonton and its immediate surroundings (all 58 cameras of the 2026-10-02 list fall inside). */
+const EDMONTON_BOUNDS = { south: 53.2, north: 53.8, west: -114.0, east: -113.1 } as const;
+
+/**
+ * City of Edmonton `POST Default.aspx/GetCameras` (ASP.NET page method, body `{}`; probed
+ * 2026-10-02: 58 cameras, all `Status: "1"` / Online). Link-out only: the city's conditions of use
+ * allow personal, educational or non-commercial use, so the player host is never proxied or
+ * embedded — each camera opens edmontontrafficcam.com. Coordinates outside the city are dropped.
+ */
+export function parseEdmonton(raw: unknown): Row[] {
+  const out: Row[] = [];
+  for (const c of records<{ Code?: unknown; Latitude?: unknown; Longitude?: unknown; PrimaryRoad?: unknown; SecondaryRoad?: unknown; Status?: unknown }>(asRecord(raw)?.d)) {
+    const code = idOf(c.Code);
+    const lat = num(c.Latitude);
+    const lng = num(c.Longitude);
+    if (!code || !/^\d{1,6}$/.test(code) || c.Status !== '1' || !validLatLng(lat, lng)) continue;
+    const b = EDMONTON_BOUNDS;
+    if (lat < b.south || lat > b.north || lng! < b.west || lng! > b.east) continue;
+    const name = [text(c.PrimaryRoad), text(c.SecondaryRoad)].filter(Boolean).join(' & ');
+    out.push(
+      cam({
+        id: `edmonton-${code}`,
+        lat,
+        lng: lng!,
+        source: 'edmonton',
+        providerId: 'edmonton',
+        name: name || `Edmonton traffic camera ${code}`,
+        city: 'Edmonton',
+        country: 'CA',
+        streamType: 'link',
+        externalUrl: 'https://edmontontrafficcam.com/',
+      }),
+    );
+  }
+  return out;
+}
+
 export function parseToronto(raw: unknown): Row[] {
   const out: Row[] = [];
   for (const f of featuresOf(raw)) {
@@ -552,6 +589,61 @@ export function parseTrafikverket(raw: unknown): Row[] {
         stillUrl: c.HasFullSizePhoto === true ? `${photo}${photo.includes('?') ? '&' : '?'}type=fullsize` : photo,
         headingDeg: typeof c.Direction === 'number' && c.Direction >= 0 && c.Direction < 360 ? c.Direction : null,
         observedAt: isoWithOffset(c.PhotoTime),
+      }),
+    );
+  }
+  return out;
+}
+
+// ── Japan ───────────────────────────────────────────────────────────────────────
+/**
+ * MLIT 川の防災情報 area codes (`/kawabou/file/files/map/pref/prefarea.json`, `prefs[].prefCd`:
+ * 51 codes on 2026-10-02 — prefectures, with Hokkaido split into five areas). The camera master is
+ * published per code, so the list is taken from the operator, never hand-copied.
+ */
+export function parseMlitPrefCodes(raw: unknown): string[] {
+  const out = new Set<string>();
+  for (const p of records<{ prefCd?: unknown }>(asRecord(raw)?.prefs)) {
+    if (typeof p.prefCd === 'number' && Number.isInteger(p.prefCd) && p.prefCd > 0 && p.prefCd < 10_000) out.add(String(p.prefCd));
+  }
+  return [...out];
+}
+
+/** Japan's extent (Okinotorishima to Benten-jima, Yonaguni to Minamitorishima). */
+const JAPAN_BOUNDS = { south: 20, north: 46, west: 122, east: 154 } as const;
+
+/**
+ * MLIT river-camera master for one area (`/kawabou/file/gjson/scam/<prefCd>.json`, the GeoJSON
+ * the river.go.jp map draws; probed 2026-10-02: 11 733 cameras in 49 files). Only systems whose
+ * current frame is published on cam.river.go.jp as `/cam/now/<id>.jpg` are kept: `sys_id` 1
+ * (simple crisis-management river cameras, 6 141) and 3 (prefecture CCTV relayed by MLIT, 701),
+ * both checked against the per-camera master (`currProvUrl`). `sys_id` 2 (MLIT office CCTV) uses
+ * per-camera file names that are not in the master, so it is not listed. Paused cameras
+ * (`pause: 1`) are dropped. Link-out only (registry: no reuse terms, prefecture-owned frames):
+ * no still is catalogued and each camera opens its own river.go.jp page (`/kawabou/pc/tm?
+ * itmkndCd=200&scamId=<id>`, checked in a browser 2026-10-02 for sys 1 and 3 ids).
+ */
+export function parseMlit(raw: unknown): Row[] {
+  const out: Row[] = [];
+  for (const f of featuresOf(raw)) {
+    const p = asRecord(f.properties) ?? {};
+    const pt = pointOf(f.geometry);
+    const id = typeof p.id === 'number' && Number.isInteger(p.id) && p.id > 0 && p.id < 1e10 ? String(p.id) : null;
+    if (!pt || !id || (p.sys_id !== 1 && p.sys_id !== 3) || p.pause !== 0) continue;
+    const [lng, lat] = pt;
+    const b = JAPAN_BOUNDS;
+    if (lat < b.south || lat > b.north || lng < b.west || lng > b.east) continue;
+    out.push(
+      cam({
+        id: `mlit-${id}`,
+        lat,
+        lng,
+        source: 'mlit',
+        providerId: 'mlit',
+        name: text(p.name).trim() || `MLIT river camera ${id}`,
+        country: 'JP',
+        streamType: 'link',
+        externalUrl: `https://www.river.go.jp/kawabou/pc/tm?itmkndCd=200&scamId=${id}`,
       }),
     );
   }

@@ -5,7 +5,8 @@
  * pre-serialised and precompressed with a weak ETag (304 on If-None-Match), rebuilt at least once a
  * minute so `providers.*.age_s` is the inventory's real age (`cctvVersion`). A region whose every
  * provider needs a key this instance lacks is "not configured": it is never fetched, it is listed
- * in `disabledRegions` and its providers report `skipped: 'not-configured'` (200, no rows). 503
+ * in `disabledRegions` and its providers report `skipped: 'not-configured'` (or `'licence'` for a
+ * licence gate; 200, no rows). 503
  * SOURCE OFFLINE only when configured providers were asked and none of them answered.
  * Owner: layers-surveillance. Server-only.
  */
@@ -18,7 +19,7 @@ import type { Attribution, Camera, FeedMeta, FreshnessState, Providers } from '@
 import type { CctvRegion } from '../shared';
 import { INVENTORY_TTL_MS, regionFeed } from './catalog';
 import { publicCamera } from './frames';
-import { providerDef, providerRow, providersIn, regionDisabled } from './registry';
+import { providerDef, providerRow, providersIn, regionDisabled, skipReasonOf } from './registry';
 
 export const COLD_BUDGET_MS = 12_000;
 export const WARM_GRACE_MS = 2_000;
@@ -114,7 +115,7 @@ export function cctvVersion(
 /** Providers of not-configured regions, reported as skipped (never silently absent). */
 export function disabledProviders(regions: readonly CctvRegion[]): Providers {
   const out: Providers = {};
-  for (const r of regions) for (const d of providersIn(r)) out[d.row.id] = skippedProvider('not-configured').status;
+  for (const r of regions) for (const d of providersIn(r)) out[d.row.id] = skippedProvider(skipReasonOf(d)).status;
   return out;
 }
 

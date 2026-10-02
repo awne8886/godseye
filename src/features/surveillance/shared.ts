@@ -14,7 +14,7 @@ export type RemovalContact = z.infer<typeof RemovalContactSchema>;
  * Catalogue regions. One `/api/cctv?region=` response per region keeps every payload far under
  * the 4 MB cap (the largest, us-west, is ~6k rows ≈ 1.6 MB uncompressed).
  */
-export const CCTV_REGIONS = ['us-west', 'texas', 'us-midwest', 'canada', 'uk', 'europe', 'nordics', 'asia', 'oceania'] as const;
+export const CCTV_REGIONS = ['us-west', 'texas', 'us-midwest', 'canada', 'uk', 'europe', 'nordics', 'asia', 'japan', 'oceania'] as const;
 export type CctvRegion = (typeof CCTV_REGIONS)[number];
 
 /** `[west, south, east, north]` boxes used by `?lat=&lng=` region selection. */
@@ -27,6 +27,7 @@ export const REGION_BOUNDS: Record<CctvRegion, [number, number, number, number]>
   europe: [-10, 35.5, 8, 54],
   nordics: [-25, 53.8, 32, 71.5],
   asia: [100, 0.5, 125, 27],
+  japan: [122, 20, 154, 46],
   oceania: [140, -48, 179.9, -9],
 };
 

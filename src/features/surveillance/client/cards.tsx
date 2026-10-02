@@ -14,7 +14,7 @@ import { openCameraViewer, openLiveNews } from './store';
 import { refreshSeconds, useFrameHealth, useProviders } from './useProviders';
 
 const btn =
-  'inline-flex min-h-[32px] items-center gap-1.5 rounded border border-[var(--gold-primary)] px-2.5 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--gold-primary)] hover:bg-[var(--gold-primary)]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]';
+  'inline-flex min-h-8 phone:min-h-11 items-center gap-1.5 rounded border border-[var(--gold-primary)] px-2.5 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--gold-primary)] hover:bg-[var(--gold-primary)]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]';
 
 const TONE_CLASS = { ok: 'text-[var(--alert-green)]', warn: 'text-[var(--alert-orange)]', error: 'text-[var(--alert-red)]', idle: 'text-[var(--text-secondary)]' } as const;
 
@@ -51,17 +51,22 @@ export function CameraCard({ selection }: CardProps) {
         </p>
       )}
       <ProviderBlock provider={provider} />
-      <div className="flex flex-wrap items-center gap-3 pt-1">
-        {provider?.link_out_only || cam.streamType === 'link' ? (
-          <OutLink href={cam.externalUrl ?? provider?.terms_url ?? null}>Open at operator</OutLink>
-        ) : (
-          <button type="button" className={btn} onClick={() => openCameraViewer(cam)} data-testid="camera-open-viewer">
-            <MonitorPlay size={14} aria-hidden /> Open viewer
-          </button>
-        )}
-        {cam.externalUrl && !provider?.link_out_only && cam.streamType !== 'link' && <OutLink href={cam.externalUrl}>Operator page</OutLink>}
+      {/* m21: the actions and the report link stay in view inside the card's scroll container (phones). */}
+      <div className="sticky bottom-0 -mx-4 bg-[var(--bg-panel)] px-4 pb-1 pt-2" data-testid="camera-card-footer">
+        <div className="flex flex-wrap items-center gap-3">
+            {provider?.link_out_only || cam.streamType === 'link' ? (
+            <OutLink href={cam.externalUrl ?? provider?.terms_url ?? null} testId="camera-open-operator">
+              Open at operator
+            </OutLink>
+          ) : (
+            <button type="button" className={btn} onClick={() => openCameraViewer(cam)} data-testid="camera-open-viewer">
+              <MonitorPlay size={14} aria-hidden /> Open viewer
+            </button>
+          )}
+          {cam.externalUrl && !provider?.link_out_only && cam.streamType !== 'link' && <OutLink href={cam.externalUrl}>Operator page</OutLink>}
+        </div>
+        <ReportLink camera={cam} provider={provider} />
       </div>
-      <ReportLink camera={cam} provider={provider} />
     </div>
   );
 }

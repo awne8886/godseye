@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CameraProvider } from '@/lib/schemas/surveillance';
 import { matchesAllowList } from '@/lib/ssrf';
 import { CCTV_REGIONS, KEYED_REGIONS, requestableRegions } from '../shared';
-import { EXCLUDED_SOURCES, hasFrameRules, isRemoved, linkOutSet, PROVIDERS, providerRow, providersIn, regionDisabled, rulesFor } from './registry';
+import { EXCLUDED_SOURCES, hasFrameRules, isRemoved, linkOutSet, NOT_WIRED_SOURCES, PROVIDERS, providerRow, providersIn, regionDisabled, rulesFor, skipReasonOf } from './registry';
 
 const def = (id: string) => PROVIDERS.find((p) => p.row.id === id)!;
 const allowed = (id: string, url: string) => matchesAllowList(new URL(url), rulesFor(def(id), url));
@@ -129,6 +129,42 @@ describe('camera provider registry (§5)', () => {
     expect(providerRow(dgt, { CCTV_LINK_OUT_ONLY: 'europe' })).toMatchObject({ link_out_only: true, proxy_allowed: false });
     expect(providerRow(dgt, { CCTV_LINK_OUT_ONLY: 'ES' })).toMatchObject({ link_out_only: true, proxy_allowed: false });
     expect(providerRow(PROVIDERS.find((p) => p.row.id === 'rws')!, {})).toMatchObject({ link_out_only: true, proxy_allowed: false });
+  });
+
+  it('round 6: Windy is disclosed as not wired (keyed API only); Edmonton and MLIT are wired, not listed as missing', () => {
+    const windy = NOT_WIRED_SOURCES.find((s) => s.id === 'windy');
+    expect(windy).toMatchObject({ operator: 'Windy.com Webcams', region: 'Global', country: '—' });
+    expect(windy!.reason).toMatch(/WINDY_WEBCAMS_KEY/);
+    expect(windy!.probedAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(NOT_WIRED_SOURCES.map((s) => s.id).sort()).toEqual(['ibi511', 'windy']);
+    for (const s of NOT_WIRED_SOURCES) expect(PROVIDERS.some((p) => p.row.id === s.id), s.id).toBe(false);
+  });
+
+  it('Edmonton: non-commercial licence gate (nc_sources), link out only, nothing proxied or embedded', () => {
+    const edm = def('edmonton');
+    expect(edm.region).toBe('canada');
+    expect(edm.capability).toBe('nc_sources');
+    expect(skipReasonOf(edm)).toBe('licence');
+    expect(skipReasonOf(def('tfl'))).toBe('not-configured');
+    expect(providerRow(edm, {})).toMatchObject({ link_out_only: true, proxy_allowed: false, key_required: false, stream_type: 'link', frame_url_template: null, terms_url: 'https://www.edmonton.ca/conditionsofuse' });
+    expect(edm.rules).toEqual([]);
+    expect(hasFrameRules(edm)).toBe(false);
+    expect(edm.row.licence).toMatch(/non-commercial/);
+    // The canada region still runs keyless (Ottawa, Toronto, DriveBC…) with the gate off.
+    expect(regionDisabled('canada', () => false)).toBe(false);
+  });
+
+  it('MLIT: link out only (no reuse terms; prefecture-owned frames), nothing proxied, embedded or in the CSP', () => {
+    const m = def('mlit');
+    expect(m.region).toBe('japan');
+    expect(m.capability).toBeUndefined();
+    expect(providerRow(m, {})).toMatchObject({ link_out_only: true, proxy_allowed: false, stream_type: 'link', frame_url_template: null, key_required: false });
+    expect(m.rules).toEqual([]);
+    expect(m.fileRules).toBeUndefined();
+    expect(hasFrameRules(m)).toBe(false);
+    expect(m.row.licence).toMatch(/prefecture-owned/);
+    for (const u of ['https://cam.river.go.jp/cam/now/303329013.jpg', 'https://www.river.go.jp/kawabou/pc/tm?itmkndCd=200&scamId=303329013'])
+      expect(allowed('mlit', u), u).toBe(false);
   });
 
   it('removal requests take cameras out of the catalogue', () => {

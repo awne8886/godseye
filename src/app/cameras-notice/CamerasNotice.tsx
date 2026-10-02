@@ -9,7 +9,7 @@
  */
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { NOT_WIRED_SOURCES, PROVIDERS } from '@/features/surveillance/server/registry';
+import { NOT_WIRED_SOURCES, PROVIDERS, skipReasonOf } from '@/features/surveillance/server/registry';
 import { removalContact, removalHref } from '@/features/surveillance/shared';
 import { hasCapability } from '@/lib/capabilities';
 import { APP_NAME } from '@/lib/config';
@@ -29,7 +29,7 @@ const prose = 'mt-3 max-w-3xl font-sans text-[13px] leading-relaxed text-[var(--
 const link = 'text-[var(--gold-light)] underline underline-offset-2 hover:text-[var(--gold-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]';
 
 export default function CamerasNotice({ env }: { env: Record<string, string | undefined> }) {
-  const rows = PROVIDERS.map((p) => ({ ...p.row, configured: !p.capability || hasCapability(p.capability, env) }));
+  const rows = PROVIDERS.map((p) => ({ ...p.row, configured: !p.capability || hasCapability(p.capability, env), licenceGated: skipReasonOf(p) === 'licence' && !!p.capability }));
   const contact = removalContact(env);
   return (
     <div className="fixed inset-0 overflow-y-auto bg-[var(--bg-primary)] text-[var(--text-primary)]">
@@ -93,6 +93,7 @@ export default function CamerasNotice({ env }: { env: Record<string, string | un
                     <span className="block font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-muted)]">
                       {p.region}, {p.country}
                       {p.key_required ? (p.configured ? ' · operator key configured' : ' · needs operator key (not configured here)') : ''}
+                      {p.licenceGated ? (p.configured ? ' · non-commercial terms: shown on this non-commercial instance' : ' · non-commercial terms: off on this commercial instance') : ''}
                     </span>
                   </th>
                   <td className="border-b border-white/5 py-2 pr-3 text-[var(--text-secondary)]">{p.licence}</td>

@@ -43,7 +43,7 @@ export function OutLink({ href, children, testId }: { href: string | null; child
       target="_blank"
       rel="noopener noreferrer"
       data-testid={testId}
-      className="inline-flex min-h-[28px] items-center gap-1 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--gold-primary)] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--gold-primary)]"
+      className="inline-flex min-h-7 phone:min-h-11 items-center gap-1 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--gold-primary)] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--gold-primary)]"
     >
       {children}
       <ExternalLink size={12} aria-hidden />
@@ -77,7 +77,7 @@ export function ReportLink({ camera, provider }: { camera: Pick<Camera, 'id' | '
       target="_blank"
       rel="noopener noreferrer"
       data-testid="camera-report"
-      className="inline-flex min-h-[28px] items-center gap-1 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--alert-orange)] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--gold-primary)]"
+      className="inline-flex min-h-7 phone:min-h-11 items-center gap-1 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--alert-orange)] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--gold-primary)]"
     >
       <Flag size={12} aria-hidden />
       Report / remove this camera

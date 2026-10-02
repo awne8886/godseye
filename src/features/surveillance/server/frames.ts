@@ -254,6 +254,8 @@ export async function fetchFrame(camera: Camera, def: ProviderDef, deps: FrameDe
   if (!res.ok) return noted(def, camera, failed(502, `upstream_${res.status}`, { fetchedAt, httpStatus: res.status }));
   const type = acceptImage(res.headers['content-type'] as string | undefined, res.body);
   if (!type) return noted(def, camera, failed(502, 'not_an_image', { fetchedAt, upstreamType: declaredType(res.headers['content-type']), httpStatus: res.status }));
+  // The operator's "no image" placeholder (MLIT: a PNG with a fresh Last-Modified) is not a frame.
+  if (def.frameTypes && !def.frameTypes.includes(type)) return noted(def, camera, failed(502, 'operator_placeholder', { fetchedAt, upstreamType: type, httpStatus: res.status }));
   const t = frameTime(target.observedAt, httpDate(res.headers['last-modified']), Date.parse(fetchedAt));
   return noted(def, camera, { ok: true, body: res.body, contentType: type, ...t, fetchedAt, maxAgeS: row.max_poll_interval });
 }

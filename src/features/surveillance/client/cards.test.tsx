@@ -40,6 +40,21 @@ describe('camera card', () => {
     expect(feed.className).toContain('font-mono');
   });
 
+  it('m21: actions and report/remove sit in a sticky footer; both controls are >= 44 px on phones (phone: variant)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [provider] }), { status: 200 })));
+    const sel: Selection = { kind: 'camera', id: cam.id, layer: 'cctv', source: 'hktd', observedAt: null, data: cam as unknown as Record<string, unknown>, lngLat: [cam.lng, cam.lat] };
+    render(wrap(<CameraCard selection={sel} />));
+    await screen.findByTestId('camera-operator');
+    const footer = screen.getByTestId('camera-card-footer');
+    expect(footer.className.split(' ')).toEqual(expect.arrayContaining(['sticky', 'bottom-0', 'bg-[var(--bg-panel)]']));
+    for (const id of ['camera-open-viewer', 'camera-report']) {
+      const el = screen.getByTestId(id);
+      expect(footer.contains(el), id).toBe(true);
+      expect(el.className, id).toContain('phone:min-h-11');
+      expect(el.className, id).not.toMatch(/(^|\s)(md|max-md):/);
+    }
+  });
+
   it('sends removals to the instance contact when the server publishes one', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ items: [provider], removal: { kind: 'email', href: 'mailto:ops@example.org' } }), { status: 200 })));
     const sel: Selection = { kind: 'camera', id: cam.id, layer: 'cctv', source: 'hktd', observedAt: null, data: cam as unknown as Record<string, unknown>, lngLat: [cam.lng, cam.lat] };
