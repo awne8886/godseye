@@ -59,14 +59,29 @@ describe('satellite picking uses the latest propagated position', () => {
     expect(latestPosition(newer, 7)?.[2]).toBeCloseTo(displayAltM(420), -1);
   });
 
-  it('on the globe, tests the elevated (display-altitude) screen point as well as the ground point', () => {
+  it('r10 MAJOR 1: on the globe only the drawn (display-altitude) marker is hit, never the bare ground point under it', () => {
     const f = frame([[4, 30, 0, 20_200]]);
     const e = elevatedPoint(map, 30, 0, displayAltM(20_200), true);
     const g = map.project([30, 0]);
     expect(e.x).toBeGreaterThan(g.x + SAT_HIT_PX); // clearly off the ground point
     expect(nearestSatellite(f, e, map, GLOBE_NO_CAMERA)?.catIndex).toBe(4);
-    expect(nearestSatellite(f, g, map, GLOBE_NO_CAMERA)?.catIndex).toBe(4);
-    expect(nearestSatellite(f, e, map, MERCATOR)).toBeNull(); // mercator: no radial offset
+    expect(nearestSatellite(f, g, map, GLOBE_NO_CAMERA)).toBeNull();
+    expect(hitTestSatellites(f, g, map, GLOBE_NO_CAMERA, () => ({ layer: 'satellites', selection: { kind: 'satellite', id: '4', layer: 'satellites', source: 'celestrak', observedAt: null, data: {}, lngLat: [30, 0] } }))).toEqual([]);
+  });
+
+  it('r10 MAJOR 1: in mercator the worker draws flat (z = 0), so the marker IS the ground point and is hit there', () => {
+    const f = frame([[4, 30, 0, 35_786]]);
+    f.positions[2] = 0; // compactFrame with `flat: true`
+    const g = map.project([30, 0]);
+    expect(nearestSatellite(f, g, map, MERCATOR)?.catIndex).toBe(4);
+    expect(nearestSatellite(f, { x: g.x, y: g.y + SAT_HIT_PX + 1 }, map, MERCATOR)).toBeNull();
+  });
+
+  it('nearestInTable tests the drawn point only: a ground point under the pointer with its marker 200 px away is no hit', () => {
+    // [drawnX, drawnY, groundX, groundY]: GX5 on the globe at z5 (drawn 910,832; ground 845,637).
+    const table = new Float32Array([910, 832, 845, 637]);
+    expect(nearestInTable(table, 1, { x: 845, y: 637 })).toBeNull();
+    expect(nearestInTable(table, 1, { x: 913, y: 836 })).toEqual({ k: 0, d2: 25 });
   });
 
   it('returns one candidate with its pixel distance, or none', () => {
@@ -257,6 +272,36 @@ describe('hover hit-test cost: one projection per (frame, camera)', () => {
       worst = Math.max(worst, Math.hypot(table[k * 4 + 2]! - g.x, table[k * 4 + 3]! - g.y));
     }
     expect(worst).toBeLessThan(0.05);
+  });
+
+  it('r10 MAJOR 1: on a perspective globe the drawn point is the raised marker\'s true projection (radial screen lift is not)', () => {
+    // Camera 1.2 R above (10°, 3°), 800 px focal length: a z5-like close perspective view.
+    const emb = (lng: number, lat: number) => [Math.sin(lng * DEG) * Math.cos(lat * DEG), Math.sin(lat * DEG), Math.cos(lng * DEG) * Math.cos(lat * DEG)];
+    const T = emb(10, 3);
+    const C = T.map((t) => 2.2 * t);
+    const norm = (v: number[]) => v.map((x) => x / Math.hypot(...v));
+    const cross = (a: number[], b: number[]) => [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
+    const dot = (a: number[], b: number[]) => a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+    const fwd = norm(T.map((t, i) => t - C[i]!));
+    const right = norm(cross(fwd, [0, 1, 0]));
+    const up = cross(right, fwd);
+    const projectPoint = (p: number[]) => {
+      const d = p.map((q, i) => q - C[i]!);
+      const z = dot(d, fwd);
+      return { x: 500 + (800 * dot(d, right)) / z, y: 500 - (800 * dot(d, up)) / z };
+    };
+    const persp = { project: ([lng, lat]: [number, number]) => projectPoint(emb(lng, lat)), getCenter: () => ({ lng: 10, lat: 3 }) };
+    const view: PickView = { globe: true, camera: { lng: 10, lat: 3, altitude: 1.2 * EARTH_RADIUS_M } };
+    // A GEO satellite 3° north of the centre, drawn at its display altitude.
+    const f = { ...frame([[9, 11, 6, 35_786]]), camera: view.camera };
+    const k = 1 + displayAltM(35_786) / EARTH_RADIUS_M;
+    const truth = projectPoint(emb(11, 6).map((c) => c * k));
+    const table = projectFrame(f, persp, view);
+    expect(Math.hypot(table[0]! - truth.x, table[1]! - truth.y)).toBeLessThan(0.05);
+    const lifted = elevatedPoint(persp, 11, 6, displayAltM(35_786), true);
+    expect(Math.hypot(lifted.x - truth.x, lifted.y - truth.y)).toBeGreaterThan(SAT_HIT_PX); // why the fit is used
+    expect(nearestSatellite(f, truth, persp, view)?.catIndex).toBe(9);
+    expect(nearestSatellite(f, persp.project([11, 6]), persp, view)).toBeNull();
   });
 
   it('the screen table gives exactly the uncached answer (elevated and ground points, far side)', () => {

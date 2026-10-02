@@ -9,18 +9,24 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LAYERS, type LayerId } from '@/lib/layer-registry';
 import { useLayerStatusStore, useMapInstance, type LayerStatus, type Selection } from '@/lib/layer-host';
 import { registerDeckPick, registerNativePick, type DeckPickInfo, type NativeFeature } from '@/lib/map/picking';
-import type { FeedMeta, HealthResponse, ProviderStatus, Providers } from '@/lib/types';
+import type { FeedMeta, FreshnessState, HealthResponse, ProviderStatus, Providers } from '@/lib/types';
 
 export interface Enveloped {
   meta: FeedMeta;
   providers: Providers;
 }
 
-type Result<T> = { ok: true; body: T & Enveloped } | { ok: false; status: number; body: Partial<Enveloped> & { error?: string; detail?: string } };
+/**
+ * One answer: `ok` = a 200 envelope, `!ok` = the server's own SOURCE OFFLINE (503 + envelope) or a
+ * capability 403. `receivedAt` (ms epoch) is when this client received it.
+ */
+type Result<T> =
+  | { ok: true; body: T & Enveloped; receivedAt: number }
+  | { ok: false; status: number; body: Partial<Enveloped> & { error?: string; detail?: string }; receivedAt: number };
 
 export function refreshMsFor(layer: LayerId): number | null {
   return LAYERS.find((l) => l.id === layer)?.refreshMs ?? null;
@@ -36,12 +42,22 @@ export function refreshMsFor(layer: LayerId): number | null {
  */
 export const FEED_FETCH_INIT = { cache: 'no-cache', headers: { accept: 'application/json' } } as const satisfies RequestInit;
 
+/** A response that is our feed envelope (not a proxy error page or a truncated body). */
+function isEnvelope(body: unknown): body is Enveloped {
+  const meta = (body as { meta?: Partial<FeedMeta> } | null)?.meta;
+  return typeof meta === 'object' && meta !== null && typeof meta.state === 'string';
+}
+
 async function load<T>(url: string, signal: AbortSignal): Promise<Result<T>> {
   const res = await fetch(url, { ...FEED_FETCH_INIT, signal });
-  const body = (await res.json().catch(() => ({}))) as T & Enveloped;
-  if (res.status === 503 || res.status === 403) return { ok: false, status: res.status, body };
+  const body: unknown = await res.json().catch(() => null);
+  const receivedAt = Date.now();
+  // Only the app's own 503 (feedJson: envelope with the last-good meta) is SOURCE OFFLINE; a bare
+  // 503 from a reverse proxy carries no meta and must not wipe the last-good time: a failure.
+  if ((res.status === 503 && isEnvelope(body)) || res.status === 403) return { ok: false, status: res.status, body: (body ?? {}) as Partial<Enveloped>, receivedAt };
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return { ok: true, body };
+  if (!isEnvelope(body)) throw new Error('not a feed envelope');
+  return { ok: true, body: body as T & Enveloped, receivedAt };
 }
 
 /**
@@ -118,9 +134,58 @@ export function useCapabilityGate(layer: LayerId): CapabilityGate {
   return gate;
 }
 
+const RANK: Record<FreshnessState, number> = { reference: 0, live: 0, recent: 1, stale: 2, offline: 3 };
+const worse = (a: FreshnessState, b: FreshnessState): FreshnessState => (RANK[b] > RANK[a] ? b : a);
+
+export interface FeedStatus<T> {
+  /** Patch for useLayerStatusStore; null = nothing to publish yet. */
+  patch: Partial<LayerStatus> | null;
+  /** What the layer may draw: a 200 snapshot that is not SOURCE OFFLINE. */
+  body: (T & Enveloped) | null;
+  /** Wall-clock ms at which a failing snapshot turns SOURCE OFFLINE, null = no re-check. */
+  recheckAt: number | null;
+}
+
+/**
+ * Rail/card status for a query state at wall-clock `now` (pure). `failing`: the latest refresh
+ * failed (a 502/500 from a proxy, a network error, a non-envelope body) or is retrying after a
+ * failure. react-query then keeps the previous answer, whose meta.state is no longer observed
+ * (verification round 10 BLOCKING 1): it stays drawn at best STALE with its own last-good time,
+ * and once the failures outlast 2 × the poll interval it is SOURCE OFFLINE ('unreachable') and
+ * cleared, exactly like a 503. With no answer at all a failure is SOURCE OFFLINE at once.
+ */
+export function feedStatus<T>(result: Result<T> | undefined, failing: boolean, count: (body: T) => number | null, intervalMs: number | null, now: number): FeedStatus<T> {
+  const error = failing ? 'unreachable' : undefined;
+  if (!result) return { patch: failing ? { state: 'offline', count: null, error } : null, body: null, recheckAt: null };
+  if (!result.ok) {
+    const { meta, providers } = result.body;
+    return {
+      patch: {
+        state: 'offline',
+        count: null,
+        fetchedAt: meta?.fetchedAt ?? null,
+        observedAt: meta?.observedAt ?? null,
+        lastGoodAt: meta?.lastGoodAt ?? null,
+        error: result.status === 403 ? 'capability_disabled' : (error ?? 'source_offline'),
+        providers,
+        attribution: meta?.attribution,
+      },
+      body: null,
+      recheckAt: null,
+    };
+  }
+  const { meta, providers } = result.body;
+  const times = { fetchedAt: meta.fetchedAt, observedAt: meta.observedAt, lastGoodAt: meta.lastGoodAt, providers, attribution: meta.attribution };
+  if (!failing) return { patch: { ...times, state: meta.state, count: count(result.body), error: undefined }, body: result.body, recheckAt: null };
+  const offlineAt = intervalMs ? result.receivedAt + 2 * intervalMs : null;
+  if (offlineAt !== null && now > offlineAt) return { patch: { ...times, state: 'offline', count: null, error }, body: null, recheckAt: null };
+  return { patch: { ...times, state: worse(meta.state, 'stale'), count: count(result.body), error }, body: result.body, recheckAt: offlineAt === null ? null : offlineAt + 1 };
+}
+
 /**
  * Poll a route (registry refreshMs or a PollPolicy; react-query pauses while the tab is hidden) and
- * report status. A capability-gated layer is requested only once /api/health reports it enabled.
+ * report status (feedStatus). A capability-gated layer is requested only once /api/health reports
+ * it enabled.
  */
 export function useFeedData<T>(layer: LayerId, url: string | null, count: (body: T) => number | null, refreshMs: PollPolicy<T> = refreshMsFor(layer)) {
   const update = useLayerStatusStore((s) => s.update);
@@ -136,31 +201,26 @@ export function useFeedData<T>(layer: LayerId, url: string | null, count: (body:
     placeholderData: (prev) => prev,
   });
   const result = enabled ? q.data : undefined;
-  const failed = q.isError;
-  const loading = q.isPending && enabled;
+  // Failed for good, or (with an answer retained) failed once and waiting for a retry: the
+  // retained answer is no longer observed. A first load that is still retrying is ACQUIRING.
+  const failing = enabled && (q.isError || (q.failureCount > 0 && result !== undefined));
+  const loading = q.isPending && enabled && !q.isError;
+  const intervalMs = pollInterval(refreshMs, result) || null;
+  // When the failure was last seen: the latest error, or the re-check timer's wall clock (render
+  // stays pure; the timer moves a failing snapshot to SOURCE OFFLINE on time).
+  const [checkedAt, setCheckedAt] = useState(0);
+  const failedAt = Math.max(q.errorUpdatedAt, checkedAt);
+  const { patch, body, recheckAt } = useMemo(() => feedStatus(result, failing, count, intervalMs, failedAt), [result, failing, count, intervalMs, failedAt]);
   useEffect(() => {
     if (!enabled) return; // useCapabilityGate reports a gated layer
     if (loading) return update(layer, { state: 'loading' });
-    if (failed && !result) return update(layer, { state: 'offline', count: null, error: 'unreachable' });
-    if (!result) return;
-    if (!result.ok) {
-      const { meta, providers } = result.body;
-      return update(layer, {
-        state: 'offline',
-        count: null,
-        fetchedAt: meta?.fetchedAt ?? null,
-        observedAt: meta?.observedAt ?? null,
-        lastGoodAt: meta?.lastGoodAt ?? null,
-        error: result.status === 403 ? 'capability_disabled' : 'source_offline',
-        providers,
-        attribution: meta?.attribution,
-      });
-    }
-    const { meta, providers } = result.body;
-    update(layer, { state: meta.state, count: count(result.body), fetchedAt: meta.fetchedAt, observedAt: meta.observedAt, lastGoodAt: meta.lastGoodAt, error: undefined, providers, attribution: meta.attribution });
-  }, [layer, enabled, result, failed, loading, update, count]);
+    if (patch) update(layer, patch);
+    if (recheckAt === null) return;
+    const timer = setTimeout(() => setCheckedAt(Date.now()), Math.max(0, recheckAt - Date.now()));
+    return () => clearTimeout(timer);
+  }, [layer, enabled, loading, update, patch, recheckAt]);
   useEffect(() => () => update(layer, { state: 'idle', count: null }), [layer, update]);
-  return result?.ok ? result.body : null;
+  return body;
 }
 
 type Spec = Exclude<LayerSpecification, { type: 'background' | 'raster' | 'hillshade' | 'color-relief' }>;
