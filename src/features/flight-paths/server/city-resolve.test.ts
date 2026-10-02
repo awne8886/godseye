@@ -64,7 +64,8 @@ describe('a city name resolves to its main airport (round 5 B2, bundled index)',
   ];
   for (const [name, code] of MAIN) {
     it(`"${name}" → ${code}`, async () => {
-      expect(await resolvePlace(name, live)).toEqual({ kind: 'found', code });
+      // A metro city also carries its group's airports for the PATHS chooser (round 10).
+      expect(await resolvePlace(name, live)).toMatchObject({ kind: 'found', code });
     });
   }
 
@@ -104,6 +105,12 @@ describe('a city name resolves to its main airport (round 5 B2, bundled index)',
     expect(await resolvePlace('Atlantis', live)).toEqual({ kind: 'none', suggestion: { code: 'ACY', label: 'Atlantic City' } });
   });
 
+  it('round 10: a metro city carries its whole group, the main airport first (London, Tokyo)', async () => {
+    expect(await resolvePlace('London', live)).toEqual({ kind: 'found', code: 'LHR', metro: { name: 'London', codes: ['LHR', 'LGW', 'STN', 'LTN', 'LCY', 'SEN'] } });
+    expect(await resolvePlace('New York', live)).toEqual({ kind: 'found', code: 'JFK', metro: { name: 'New York', codes: ['JFK', 'EWR', 'LGA'] } });
+    expect(await resolvePlace('Lukla', live)).toEqual({ kind: 'found', code: 'LUA' });
+  });
+
   it('the palette flows from the report: "Bali to Sydney", "Bangalore to Delhi", "Kiev to Warsaw"', async () => {
     const plan = async (a: string, b: string) => routeOrDraft(a, b, await resolvePlace(a, live), await resolvePlace(b, live));
     expect((await plan('Bali', 'Sydney')).route).toEqual({ from: 'DPS', to: 'SYD' });
@@ -131,7 +138,8 @@ describe('a person\'s name in an airport name does not outrank the city (round 5
   ];
   for (const [name, code, was] of CITY) {
     it(`"${name}" → ${code} (was ${was})`, async () => {
-      expect(await resolvePlace(name, live)).toEqual({ kind: 'found', code });
+      // A metro city also carries its group's airports for the PATHS chooser (round 10).
+      expect(await resolvePlace(name, live)).toMatchObject({ kind: 'found', code });
     });
   }
 
@@ -194,7 +202,8 @@ describe('a short word that is also an airport code means the airport bearing th
   ];
   for (const [name, code, was] of WORD) {
     it(`"${name}" → ${code} (was ${was})`, async () => {
-      expect(await resolvePlace(name, live)).toEqual({ kind: 'found', code });
+      // A metro city also carries its group's airports for the PATHS chooser (round 10).
+      expect(await resolvePlace(name, live)).toMatchObject({ kind: 'found', code });
     });
   }
 
