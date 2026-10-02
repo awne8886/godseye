@@ -104,6 +104,34 @@ export function quakeEvents(items: readonly Earthquake[]): FeedEvent[] {
   return out;
 }
 
+type Outline = GeoJSON.Polygon | GeoJSON.MultiPolygon;
+
+/**
+ * An alert's footprint: its own `geometry` when it carries one (NHC cones, NWS alert polygons and
+ * responses from before the shared zone map), else the MultiPolygon of the shared `zones` outlines
+ * its `zoneRefs` name. Null when neither resolves (the alert is still drawn as a marker).
+ */
+export function weatherFootprint(e: Pick<WeatherEvent, 'geometry' | 'zoneRefs'>, zones: Readonly<Record<string, Outline>> | undefined): Outline | null {
+  if (e.geometry) return e.geometry;
+  if (!e.zoneRefs?.length || !zones) return null;
+  const polys: GeoJSON.Position[][][] = [];
+  for (const k of e.zoneRefs) {
+    const g = Object.hasOwn(zones, k) ? zones[k] : undefined;
+    if (g?.type === 'Polygon') polys.push(g.coordinates);
+    else if (g?.type === 'MultiPolygon') polys.push(...g.coordinates);
+  }
+  return polys.length ? { type: 'MultiPolygon', coordinates: polys } : null;
+}
+
+/** Items with each footprint resolved from the shared zone map (outline arrays are shared, not copied). */
+export function withFootprints(items: readonly WeatherEvent[], zones: Readonly<Record<string, Outline>> | undefined): WeatherEvent[] {
+  return items.map((e) => {
+    if (e.geometry || !e.zoneRefs?.length) return e;
+    const geometry = weatherFootprint(e, zones);
+    return geometry ? { ...e, geometry } : e;
+  });
+}
+
 export function weatherEvents(items: readonly WeatherEvent[]): FeedEvent[] {
   const out: FeedEvent[] = [];
   for (const e of items) {

@@ -78,6 +78,12 @@ export const WeatherEvent = EntityBase.extend({
    * centroid (zones cached 30 days) and `positionBasis` says so.
    */
   zones: z.array(z.string()).optional(),
+  /**
+   * Keys into the response's shared `zones` outline map (UGC code; `type/UGC` for non-forecast,
+   * non-county zones). The alert's footprint is the MultiPolygon of those outlines; `geometry` is
+   * then null so each zone outline is sent once however many alerts cover it.
+   */
+  zoneRefs: z.array(z.string()).optional(),
   positionBasis: z.enum(['geometry', 'point', 'zone-centroid']).optional(),
   /** GDACS alert level, lower-cased (GDACS answers `Orange`). */
   alertLevel: z.enum(['green', 'orange', 'red']).optional(),
@@ -89,6 +95,8 @@ export const WeatherResponse = Envelope.extend({
   items: z.array(WeatherEvent),
   /** NWS alerts without their own polygon whose zone geometry is still being looked up (not placed, never guessed). */
   unplacedAlerts: z.number().int().nonnegative().optional(),
+  /** Display-thinned NWS zone outlines, each sent once and referenced by items' `zoneRefs`. */
+  zones: z.record(z.string(), z.custom<GeoJSON.Polygon | GeoJSON.MultiPolygon>()).optional(),
 });
 
 export const AirQuality = EntityBase.extend({

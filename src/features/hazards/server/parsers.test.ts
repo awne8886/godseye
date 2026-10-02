@@ -180,7 +180,7 @@ describe('NWS alerts + zone geometry', () => {
     expect(zone.id).toBe('ILC007');
     expect(zone.name).toBe('Boone');
     const zones = new Map<string, ZoneGeom>([['https://api.weather.gov/zones/county/ILC007', zone]]);
-    const { items, unplaced } = normalizeNws(fc, zones);
+    const { items, unplaced, zones: shapes } = normalizeNws(fc, zones);
     for (const e of items) expect(WeatherEvent.safeParse(e).success).toBe(true);
     const poly = items.filter((e) => e.positionBasis === 'geometry');
     expect(poly.length).toBe(2);
@@ -188,6 +188,10 @@ describe('NWS alerts + zone geometry', () => {
     expect(zoned.length).toBeGreaterThan(0);
     expect(zoned[0]!.lat).toBeCloseTo(zone.centroid[1], 4);
     expect(zoned[0]!.zones).toContain('ILC007');
+    // The outline is sent once in the shared map; the alert references it by UGC.
+    expect(zoned[0]!.geometry).toBeNull();
+    expect(zoned[0]!.zoneRefs).toEqual(['ILC007']);
+    expect(Object.keys(shapes)).toEqual(['ILC007']);
     expect(unplaced).toBe(fc.features!.length - items.length);
     // Offsets are converted to UTC.
     expect(zoned[0]!.observedAt).toMatch(/Z$/);
