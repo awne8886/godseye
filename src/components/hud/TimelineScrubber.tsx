@@ -160,10 +160,11 @@ export default function TimelineScrubber() {
     >
       <div className="flex items-center gap-3 phone:contents">
         <span className="hud-micro text-[var(--text-secondary)] phone:hidden">TIMELINE · 24 H</span>
+        {/* Fixed width on phones: NOW → REPLAY must not move the track under a dragging finger. */}
         <span
           data-testid="timeline-time"
           aria-live="polite"
-          className="whitespace-nowrap font-mono text-[13px] font-bold uppercase tabular-nums tracking-[0.08em] phone:order-1 phone:text-[11px]"
+          className="whitespace-nowrap font-mono text-[13px] font-bold uppercase tabular-nums tracking-[0.08em] phone:order-1 phone:w-[18ch] phone:text-[11px]"
           style={{ color: replaying ? 'var(--gold-light)' : 'var(--cyan-primary)' }}
         >
           {headline}
