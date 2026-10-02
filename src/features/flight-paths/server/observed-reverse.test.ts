@@ -76,12 +76,27 @@ describe('observed-reverse relabel needs the reverse leg end to end (round 5 B1,
     });
   }
 
-  for (const c of cases.filter((x) => x.verdict === 'right' && x.cs !== 'SWT183')) {
+  // R2 round 5 (shared with the aircraft card, corroborate.ts `headingFor`): showing the reverse leg
+  // as flown needs the track within max(20°, asin(80 km / distance)) of the direct bearing to O.
+  // UAL374 flew 40° off ORD's bearing and landed at Phoenix, so a course 28–41° off is not enough to
+  // assert a leg no source lists; these six flew the reversed pair but are withheld, never mislabelled.
+  const WIDE_COURSE = ['AAL2227', 'AAY3005', 'AAY61', 'AAY676', 'RPA3694', 'SWA1264'];
+
+  for (const c of cases.filter((x) => x.verdict === 'right' && x.cs !== 'SWT183' && !WIDE_COURSE.includes(x.cs))) {
     it(`${c.cs}: flew ${c.shownRound5} — still shown AS FLOWN with progress`, async () => {
       const d = await detail(c);
       expect(`${d.origin?.iata}→${d.destination?.iata}`).toBe(c.shownRound5);
       expect(d.routeBasis).toBe('observed-reverse');
       expect(d.progress).toEqual(expect.any(Number));
+    });
+  }
+
+  for (const c of cases.filter((x) => WIDE_COURSE.includes(x.cs))) {
+    it(`${c.cs}: flew ${c.shownRound5} on a course 28–41° off ${c.routeO.iata} — withheld (the card's headingFor rule), not shown with progress`, async () => {
+      const d = await detail(c);
+      expect({ origin: d.origin, destination: d.destination, progress: d.progress, eta: d.eta, routeBasis: d.routeBasis }).toEqual({ origin: null, destination: null, progress: null, eta: null, routeBasis: null });
+      expect(d.routeCheck).toBe(`observed departure ${c.routeD.iata} contradicts standing data ${c.routeO.iata}→${c.routeD.iata}, and the aircraft is not on course for ${c.routeO.iata} — route not confirmed`);
+      expect(d.flownTrack.length).toBeGreaterThan(0);
     });
   }
 

@@ -61,7 +61,12 @@ describe('onCourseFor: the FLIGHT view’s flyingRoute AND the direct bearing', 
     const c = r5Case('UAL1789');
     const [rdu, iad] = legOf(c);
     const p = posOf(c);
-    expect(flyingRoute({ lat: p.lat, lng: p.lng, altFt: p.altFt!, gsKt: p.speedKt, trackDeg: p.trackDeg!, vrFpm: p.vrFpm! }, [iad.lng, iad.lat], [rdu.lng, rdu.lat])).toBe(true);
+    // Inside the corridor and within 60° of the path's local bearing (~199°), but RDU bears 152°: the
+    // FLIGHT view's flyingRoute now also needs the course within 45° of the direct bearing
+    // (flight-paths 0ac5b6a), so neither the lenient nor the strict test calls it IAD→RDU.
+    expect(alongCorridor(p, iad, rdu)).toBe(false);
+    expect(flyingRoute({ lat: p.lat, lng: p.lng, altFt: p.altFt!, gsKt: p.speedKt, trackDeg: p.trackDeg!, vrFpm: p.vrFpm! }, [iad.lng, iad.lat], [rdu.lng, rdu.lat])).toBe(false);
+    expect(headingFor(p, rdu)).toBe(false);
     expect(onCourseFor(p, iad, rdu)).toBe(false);
     expect(distanceKm([c.landed!.lng, c.landed!.lat], [-98.4698, 29.5337])).toBeLessThan(5); // KSAT
   });
