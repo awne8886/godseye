@@ -154,7 +154,7 @@ export default function EntityCardFrame({
             {feed?.providers &&
               Object.entries(feed.providers).map(([name, p]) => (
                 <p key={name} className="font-mono text-[11px]">
-                  {sourceDisplayName(name)}: {p.ok ? 'OK' : 'FAILED'} · {p.count} · {p.ms} ms
+                  {sourceDisplayName(name)}: {p.skipped ? `NOT ENABLED (${p.skipped})` : `${p.ok ? 'OK' : 'FAILED'} · ${p.count} · ${p.ms} ms`}
                 </p>
               ))}
             {attribution.map((a) =>
