@@ -7,9 +7,10 @@
  *
  * The host publishes the camera on every `move` (no React render); modules read it inside deck
  * accessors or filters with `isFacing(p, getFarSideCamera())`. In mercator the camera is null and
- * everything faces the viewer. Owner: map-engine. Pure and unit-tested.
+ * everything faces the viewer. The camera is pitch- and bearing-aware (`cameraFromMap` derives it
+ * from public map API; MapLibre 6.11 has no `map.transform`). Owner: map-engine. Pure and unit-tested.
  */
-import { centralAngle, normalizeLng, type LngLatTuple } from '@/lib/geo';
+import { centralAngle, destination, normalizeLng, type LngLatTuple } from '@/lib/geo';
 
 export const EARTH_RADIUS_M = 6_371_008.8;
 const DEG = 180 / Math.PI;
@@ -54,18 +55,53 @@ export function getFarSideCamera(): FarSideCamera | null {
 }
 
 interface TransformLike {
-  getCameraLngLat?: () => { lng: number; lat: number };
-  getCameraAltitude?: () => number;
+  getCameraLngLat?: () => { lng: number; lat: number } | undefined;
+  getCameraAltitude?: () => unknown;
 }
 
-/** Ground point and altitude of the MapLibre camera (reads the transform; pitch-aware). */
-export function cameraFromMap(map: { transform?: unknown; getCenter: () => { lng: number; lat: number }; getZoom: () => number; getCanvas?: () => { clientHeight: number } }): FarSideCamera {
+/** The public MapLibre Map API `cameraFromMap` reads (a `maplibregl.Map` satisfies it). */
+export interface CameraMapLike {
+  /** Not on a MapLibre 6.11 Map; read first only when a map exposes a working one. */
+  transform?: unknown;
+  getCenter: () => { lng: number; lat: number };
+  getZoom: () => number;
+  getPitch?: () => number;
+  getBearing?: () => number;
+  getCanvas?: () => { clientHeight: number };
+}
+
+/**
+ * Ground point and altitude of the MapLibre camera, pitch- and bearing-aware. A MapLibre 6.11 Map
+ * has no `transform`, so the camera is derived from public API (centre, zoom, pitch, bearing,
+ * viewport height) by `pitchedCamera()`.
+ */
+export function cameraFromMap(map: CameraMapLike): FarSideCamera {
   const tr = map.transform as TransformLike | undefined;
-  const ll = tr?.getCameraLngLat?.();
-  const alt = tr?.getCameraAltitude?.();
+  const ll = typeof tr?.getCameraLngLat === 'function' ? tr.getCameraLngLat() : undefined;
+  const alt = typeof tr?.getCameraAltitude === 'function' ? tr.getCameraAltitude() : undefined;
   if (ll && typeof alt === 'number' && Number.isFinite(alt)) return { lng: normalizeLng(ll.lng), lat: ll.lat, altitude: Math.max(0, alt) };
-  const c = map.getCenter();
-  return { lng: normalizeLng(c.lng), lat: c.lat, altitude: altitudeForZoom(c.lat, map.getZoom(), map.getCanvas?.().clientHeight ?? 800) };
+  return pitchedCamera(map.getCenter(), map.getZoom(), map.getPitch?.() ?? 0, map.getBearing?.() ?? 0, map.getCanvas?.().clientHeight ?? 800);
+}
+
+/**
+ * Camera ground point + altitude from centre, zoom, pitch (deg), bearing (deg) and viewport height.
+ * MapLibre's default 36.87° vertical FOV puts the camera 1.5 × viewport height px from the centre.
+ * With d that distance in Earth radii and p the pitch, the camera sits (1 + d·cos p) above the
+ * Earth's centre along the centre's normal and d·sin p behind it (towards bearing + 180°):
+ * altitude = (hypot(1 + d·cos p, d·sin p) − 1)·R, and the ground point under it lies
+ * γ = atan2(d·sin p, 1 + d·cos p) from the centre along bearing + 180°. Pure.
+ */
+export function pitchedCamera(center: { lng: number; lat: number }, zoom: number, pitchDeg: number, bearingDeg: number, viewportHeightPx: number): FarSideCamera {
+  const d = altitudeForZoom(center.lat, zoom, viewportHeightPx) / EARTH_RADIUS_M;
+  const p = Math.min(89.9, Math.max(0, Number.isFinite(pitchDeg) ? pitchDeg : 0)) / DEG;
+  const up = 1 + d * Math.cos(p);
+  const back = d * Math.sin(p);
+  const altitude = Math.max(0, (Math.hypot(up, back) - 1) * EARTH_RADIUS_M);
+  const gamma = Math.atan2(back, up);
+  if (!(gamma > 1e-9)) return { lng: normalizeLng(center.lng), lat: center.lat, altitude };
+  const bearing = Number.isFinite(bearingDeg) ? bearingDeg : 0;
+  const [lng, lat] = destination([center.lng, center.lat], bearing + 180, (gamma * EARTH_RADIUS_M) / 1000);
+  return { lng: normalizeLng(lng), lat, altitude };
 }
 
 /**

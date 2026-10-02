@@ -20,6 +20,7 @@ import type { TrackPoint } from '@/features/aviation/trace';
 import { aircraftDetail, adsbdbBucket } from '@/features/aviation/server/aircraft';
 import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
+import { headingFor } from '@/features/aviation/corroborate';
 import { honestFlights } from '@/features/aviation/server/view';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
 import { angleDiff, etaMs, flyingRoute, headingAlong, onCorridor, pathIntoFrame, positionOnPath, progressOn, reverseLegReason, reverseLegReject } from '../lib/geometry';
@@ -377,6 +378,11 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
       const s = { lat: live.lat, lng: live.lng, altFt: live.altFt, gsKt: live.gsKt, trackDeg: live.trackDeg, vrFpm: live.vrFpm };
       const fwd = flyingRoute(s, O, D, { a: origin.elevationFt, b: destination.elevationFt });
       const rev = flyingRoute(s, D, O, { a: destination.elevationFt, b: origin.elevationFt });
+      // Showing the reverse leg as flown needs the track to point AT the origin, not just along the
+      // corridor — the aircraft card's rule (corroborate.ts `headingFor`), so both views give one
+      // answer (R2 round 5: UAL1789 left IAD on 237° with RDU at 152° and landed at San Antonio;
+      // UAL374 left LAX on 100° with ORD at ~60° and landed at Phoenix).
+      const revShown = rev && headingFor(live, origin);
       // A trace that ends on the ground away from where the aircraft now flies is an earlier leg:
       // this leg's departure and track were not observed.
       const end = flownTrack[flownTrack.length - 1];
@@ -409,7 +415,7 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
           routeCheck = `departed ${codeO} but not observed on course for ${codeD} (${offKm} km off the great circle) — progress and ETA not shown`;
           sources.push({ name: 'progress', ok: false, detail: routeCheck });
         }
-      } else if (latest === 'D' && rev && !backReject) {
+      } else if (latest === 'D' && revShown && !backReject) {
         // Observed D→O: show the leg as flown, not the standing data's reversed direction.
         flownTrack = back.track;
         // A multi-stop VRS chain that flies D then O (AAL606 is KDFW-KJFK-KDFW) lists this leg:

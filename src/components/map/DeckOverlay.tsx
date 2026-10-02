@@ -99,11 +99,12 @@ export default function DeckOverlay({ beforeId, gpuOpen, onMounted }: DeckOverla
   const [lists] = useState(createLists);
   const [admittedVersion, setAdmittedVersion] = useState(0);
 
-  const { layers, waiting, focus } = useMemo(() => {
+  const { layers, waiting, focus, admitted } = useMemo(() => {
     const all = flattenLayers<Layer>(orderedDeckLayers(entries) as unknown[]);
     const r = admitLayers(all, admission);
     const focus = lists.focus(focusClassOrder(entries));
-    return { layers: lists.layers(r.pass, beforeId), waiting: lists.waiting(focusFirst(r.waiting, focus)), focus };
+    // `admitted`: how many classes this list was computed with (the passive effect skips stale lists).
+    return { layers: lists.layers(r.pass, beforeId), waiting: lists.waiting(focusFirst(r.waiting, focus)), focus, admitted: admission.admitted.size };
     // `admittedVersion` re-runs admission when a class was admitted.
   }, [entries, admittedVersion, beforeId]); // eslint-disable-line react-hooks/exhaustive-deps
   const { current: mapRef } = useMap();
@@ -163,11 +164,16 @@ export default function DeckOverlay({ beforeId, gpuOpen, onMounted }: DeckOverla
     }
   });
   useEffect(() => {
-    layersRef.current = layers;
+    // Stale list (computed before an admission slot admitted another class): the slot already
+    // handed deck a newer list, and re-applying this one would drop that class's layers (deck
+    // finalises them) and hand the same finalised instances back next time: deck then asserts
+    // `!internalState` (TextLayer route-endpoint-labels). setAdmittedVersion re-renders with a fresh list.
     beforeIdRef.current = beforeId;
+    if (admitted !== admission.admitted.size) return;
+    layersRef.current = layers;
     // Already handed over (by the admission slot): nothing new for deck.
     if (layers !== appliedRef.current) applyRef.current(layers);
-  }, [overlay, layers, beforeId]);
+  }, [overlay, layers, beforeId, admitted, admission]);
   // Waiting layer classes are admitted one per scheduler slot.
   const scheduler = useAdmissionStore((s) => s.scheduler);
   const waitingRef = useRef<string[]>([]);

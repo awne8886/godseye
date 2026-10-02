@@ -85,12 +85,15 @@ describe('observed departure and course beat the schedule (round 3 B1)', () => {
     expect(d.sources.some((s) => /another leg/.test(s.detail ?? ''))).toBe(false);
   });
 
-  it('UAL374 departed LAX eastbound: LAX→ORD as flown, progress from LAX', async () => {
+  // R2 round 5: UAL374 departed LAX on 100° (ORD bore ~60°) and landed at Phoenix 03:24Z (trace
+  // a5d31d, fetched 2026-10-01T16:49Z). Along the corridor is not "toward ORD": no LAX→ORD.
+  it('UAL374 departed LAX on 100° (ORD at ~60°): not shown as LAX→ORD; route not confirmed', async () => {
     const d = (await flightDetail('UAL374', deps(ual374, traceA5d31d.track), NOW))!;
-    expect([d.origin?.iata, d.destination?.iata]).toEqual(['LAX', 'ORD']);
-    expect(d.routeBasis).toBe('observed-reverse'); // VRS: ORD-LAX only
-    expect(d.routeCheck).toMatch(/standing data lists ORD→LAX/);
-    expect(d.progress).toBeLessThan(0.3);
+    expect(d.origin).toBeNull();
+    expect(d.destination).toBeNull();
+    expect(d.progress).toBeNull();
+    expect(d.routeBasis).toBeNull();
+    expect(d.routeCheck).toBe('observed departure LAX contradicts standing data ORD→LAX, and the aircraft is not on course for ORD — route not confirmed');
   });
 
   it('AAL869 departed MKE heading 200°: MKE→DFW as flown, ETA at DFW', async () => {
