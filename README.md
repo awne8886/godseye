@@ -161,7 +161,9 @@ both are off when `COMMERCIAL_DEPLOYMENT=true`, as are the keyed `aeroapi` and `
   split to stay under it), durations are capped (event streams close at `SSE_MAX_DURATION_MS`, 280 s by
   default there, and the browser reconnects), egress IPs are shared, so per-IP quotas such as CelesTrak
   and Nominatim behave worse, and the Hobby plan is non-commercial. Use one region and a Redis
-  (for example Upstash) `REDIS_URL`.
+  (for example Upstash) `REDIS_URL`. `vercel.json` pins one region and the 300 s function ceiling
+  (Fluid compute); `output`, the SSE cap and the trusted client-IP header switch automatically
+  when `VERCEL` is set, so no extra environment variables are required.
 - **Security headers** (CSP, HSTS, `X-Frame-Options`, `nosniff`, `Permissions-Policy`) are set by the
   app itself; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#accepted-trade-offs) for the trade-offs.
 
