@@ -25,8 +25,8 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
         /api/iss envelope stops saying kind/state live; the SPACE panel already badges COMPUTED
   - [ ] pages-docs-privacy-ops: re-capture the mislabelled Style Studio shots and the README hero shots;
         replace the stale "re-capture on a GPU machine" note with the capture environment
-- [ ] Verification rounds: round 6 had 2 BLOCKING / 8 MAJOR (fixed); round 7 clean (0 BLOCKING, 0 MAJOR,
-      12 MINOR fixed); need round 8 clean
+- [ ] Verification rounds: round 6 had 2 BLOCKING / 8 MAJOR (fixed); round 7 clean; round 8 had 4 BLOCKING
+      / 5 MAJOR (lead fixes in; owner fixes in progress); need two consecutive clean rounds again
 
 ## Repository owner actions (cannot be done from the codebase)
 - [ ] Provision a hardware-GPU Actions runner and set the repository variable `LIGHTHOUSE_GPU_RUNNER`
