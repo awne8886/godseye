@@ -2,7 +2,8 @@
 /**
  * Top-right telemetry row: ZULU clock · STATUS (LIVE only when ≥ 1 active layer is actually live) ·
  * LAYERS (capability-hidden layers excluded) · ENTITIES · SOLAR (GOES X-ray class) + Kp from
- * /api/space-weather ("—" when that feed is unavailable, never a guess) · version.
+ * /api/space-weather ("—" when that feed is unavailable, never a guess) · version. While the
+ * timeline scrubber replays the past, STATUS reads REPLAY hh:mm UTC (never LIVE).
  * Owner: design-system-hud.
  */
 import { useQuery } from '@tanstack/react-query';
@@ -14,6 +15,7 @@ import { useUiStore } from '@/lib/store';
 import type { SpaceWeatherResponse } from '@/lib/types';
 import { useHealth, usePublishedEdge, useVisibleLayers } from './hooks';
 import { STATUS_COLOR, activeVisible, entitiesLabel, hudStatus } from './status-logic';
+import { replayLabel, useTimeCursor } from './timeline';
 
 function useZulu(): string {
   const [now, setNow] = useState<string>('--:--:--');
@@ -52,6 +54,9 @@ export default function Telemetry() {
   // count stays visible but is worded as received while drawing is in progress (R3-m6).
   const drawPending = useDrawPending();
   const st = hudStatus({ active, visible: visibleIds, status, health: health.isError ? 'error' : health.data ? 'ok' : 'loading' });
+  const cursor = useTimeCursor();
+  const statusText = cursor !== null ? replayLabel(cursor) : st;
+  const statusColor = cursor !== null ? 'var(--gold-light)' : STATUS_COLOR[st];
   const sw = useSpaceWeather();
   const kp = sw.data?.kp.kp;
   const xray = sw.data?.xray.class;
@@ -63,9 +68,9 @@ export default function Telemetry() {
   return (
     <div ref={row} className="hud-micro fixed right-4 top-4 z-[var(--z-hud)] flex items-center gap-3 text-[var(--text-secondary)]" aria-label="Telemetry" role="group" data-map-inset="telemetry">
       <span className="inline font-bold text-[var(--cyan-primary)] phone:hidden">ZULU {zulu}Z</span>
-      <span aria-live="polite" className="flex items-center gap-1.5" style={{ color: STATUS_COLOR[st] }}>
-        <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: STATUS_COLOR[st], boxShadow: st === 'LIVE' ? '0 0 6px var(--alert-green)' : undefined }} />
-        STATUS: {st}
+      <span aria-live="polite" data-testid="telemetry-status" className="flex items-center gap-1.5" style={{ color: statusColor }}>
+        <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: statusColor, boxShadow: cursor === null && st === 'LIVE' ? '0 0 6px var(--alert-green)' : undefined }} />
+        STATUS: {statusText}
       </span>
       <span className="inline text-[var(--cyan-primary)] phone:hidden">{shown.length} LAYERS</span>
       <span

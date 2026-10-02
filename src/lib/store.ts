@@ -97,6 +97,12 @@ export interface UiState {
   /** True when the initial camera came from the URL, so the intro fly-to is skipped. */
   cameraFromUrl: boolean;
   splashDone: boolean;
+  /**
+   * Timeline scrubber cursor (epoch ms) or null = live. With a cursor set, the replayable layers
+   * (src/components/hud/timeline.ts) draw only what was observed at or before it. Not in the URL:
+   * the scrubber covers the last 24 h, so a shared absolute time would soon fall outside it.
+   */
+  timeCursor: number | null;
   settings: Settings;
 
   setLayer: (id: LayerId, on: boolean) => void;
@@ -123,6 +129,7 @@ export interface UiState {
   requestFlyTo: (r: Omit<FlyToRequest, 'ts'>) => void;
   setCamera: (c: Camera, fromUrl?: boolean) => void;
   setSplashDone: () => void;
+  setTimeCursor: (t: number | null) => void;
   updateSettings: (patch: Partial<Settings>) => void;
 }
 
@@ -177,6 +184,7 @@ export const useUiStore = create<UiState>()(
       camera: null,
       cameraFromUrl: false,
       splashDone: false,
+      timeCursor: null,
       settings: DEFAULT_SETTINGS,
 
       setLayer: (id, on) =>
@@ -235,6 +243,7 @@ export const useUiStore = create<UiState>()(
       requestFlyTo: (r) => set({ flyTo: { ...r, ts: ++flySeq } }),
       setCamera: (camera, fromUrl) => set(fromUrl ? { camera, cameraFromUrl: true } : { camera }),
       setSplashDone: () => set({ splashDone: true }),
+      setTimeCursor: (t) => set({ timeCursor: t !== null && Number.isFinite(t) ? t : null }),
       updateSettings: (patch) => set((s) => ({ settings: { ...s.settings, ...patch } })),
     }),
     {

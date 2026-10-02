@@ -124,7 +124,7 @@ describe('r8 M: base.css landscape-phone stack while a sheet or card is open', (
     expect(stack).toContain('max-height: calc(100% - var(--map-stack-bottom) - var(--telemetry-bottom, 32px) - 6px)');
     expect(stack).toContain('justify-content: flex-end');
     // The bottom it is measured from is the same one the phone block lifts the stack by.
-    expect(baseCss).toMatch(/--map-stack-bottom: max\(calc\(57px \+ env\(safe-area-inset-bottom\)\), calc\(var\(--sheet-occupied, 0px\) \+ 4px\), calc\(var\(--card-occupied, 0px\) \+ 4px\)\);/);
+    expect(baseCss).toMatch(/--map-stack-bottom: max\(calc\(57px \+ var\(--timeline-strip, 0px\) \+ env\(safe-area-inset-bottom\)\), calc\(var\(--sheet-occupied, 0px\) \+ 4px\), calc\(var\(--card-occupied, 0px\) \+ 4px\)\);/);
     expect(baseCss).toContain('bottom: var(--map-stack-bottom);');
   });
 

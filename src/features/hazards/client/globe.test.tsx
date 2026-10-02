@@ -145,7 +145,7 @@ interface Case {
 }
 
 const CASES: Case[] = [
-  { name: 'earthquakes', C: EarthquakeLayer, deckKey: 'hazards:earthquakes', deckIds: ['hazards-quakes'], scatter: true, points: { 'hazards-quakes': quakes.map((q) => [q.lng, q.lat]) } },
+  { name: 'earthquakes', C: EarthquakeLayer, deckKey: 'hazards:earthquakes', deckIds: ['hazards-quakes', 'hazards-quake-arrivals'], scatter: true, points: { 'hazards-quakes': quakes.map((q) => [q.lng, q.lat]), 'hazards-quake-arrivals': [] } },
   {
     name: 'fires',
     C: FireLayer,

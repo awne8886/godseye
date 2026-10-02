@@ -63,7 +63,8 @@ describe('initial camera', () => {
     expect(initialCamera(0)).toEqual({ longitude: -0, latitude: 20, zoom: 1.8, pitch: 20, bearing: 0 });
   });
   it('uses the §5 atmosphere', () => {
-    expect(GLOBE_SKY['sky-color']).toBe('#05070D');
+    // #05070D at zero alpha: the starfield behind the canvas shows through (r10).
+    expect(GLOBE_SKY['sky-color']).toBe('rgba(5, 7, 13, 0)');
     expect(GLOBE_SKY['atmosphere-blend']).toEqual(['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 7, 0]);
   });
 });

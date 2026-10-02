@@ -3,13 +3,18 @@
  * `alert_pins` layer: geoparsed Live Alerts as native MapLibre circles coloured by kind (keyword
  * rule), sized by precision (country-level pins are drawn hollow and larger — they are not event
  * locations). Clicks route through registerNativePick; alerts are published to the Intel Feed and
- * the layer status (count, freshness, providers) to the rail. Owner: panels-alerts-markets-dossier-graph.
+ * the layer status (count, freshness, providers) to the rail. With the timeline scrubber set, only
+ * alerts published at or before the cursor are pinned (hud/timeline.ts); pins new since the previous
+ * poll ring outward once (hud/arrival-rings.ts). Owner: panels-alerts-markets-dossier-graph.
  */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
+import { useArrivalRings } from '@/components/hud/arrival-rings';
+import { filterAtCursor, heldSpan, oldestMs, timeMs, useReportCoverage, useTimeCursor } from '@/components/hud/timeline';
+import { LAYERS } from '@/lib/layer-registry';
 import { useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
 import type { LayerComponentProps } from '@/lib/feature-module';
-import { useFeedEventStore, useLayerStatusStore, type LayerStatus } from '@/lib/layer-host';
+import { useDeckLayers, useFeedEventStore, useLayerStatusStore, type LayerStatus } from '@/lib/layer-host';
 import { registerNativePick } from '@/lib/map/picking';
 import { readCssColor, type MapToken } from '@/lib/tokens';
 import type { AlertItem, FeedEvent, NewsResponse } from '@/lib/types';
@@ -23,6 +28,12 @@ const css = (t: MapToken, a = 1) => {
   const [r, g, b, al] = readCssColor(t, a);
   return `rgba(${r},${g},${b},${(al / 255).toFixed(3)})`;
 };
+
+const Z = LAYERS.find((l) => l.id === 'alert_pins')!.z;
+const alertObservedMs = (it: AlertItem) => timeMs(it.publishedAt);
+const alertId = (it: AlertItem) => it.id;
+const alertPosition = (it: AlertItem): [number, number] => [it.place!.lng, it.place!.lat];
+const alertRadiusPx = (it: AlertItem) => (it.place!.precision === 'country' ? 9 : it.place!.precision === 'region' ? 7 : 5);
 
 export function severityOf(it: AlertItem): FeedEvent['severity'] {
   if (it.risk.score >= 8) return 'high';
@@ -85,7 +96,17 @@ export default function AlertPinsLayer(_: LayerComponentProps) {
   const push = useFeedEventStore((s) => s.push);
   const byId = useRef(new Map<string, AlertItem>());
 
-  const data = useMemo(() => (q.data ? toFeatures(q.data.items) : null), [q.data]);
+  const cursor = useTimeCursor();
+  // Timeline replay: only alerts published at or before the cursor (the same array when live).
+  const shown = useMemo(() => (q.data ? filterAtCursor(q.data.items, cursor, alertObservedMs) : null), [q.data, cursor]);
+  const data = useMemo(() => (shown ? toFeatures(shown) : null), [shown]);
+  const placed = useMemo(() => q.data?.items.filter((it) => it.place) ?? null, [q.data]);
+  // The wire/Telegram feed declares no window: it holds from its oldest item to the fetch.
+  const span = q.data ? heldSpan(q.data.meta.fetchedAt, null, oldestMs(q.data.items, alertObservedMs)) : null;
+  useReportCoverage('alert_pins', span && placed ? { ...span, shown: data?.features.length ?? 0, total: placed.length } : null);
+  const rings = useArrivalRings({ id: 'alert-pins-arrivals', items: placed, idOf: alertId, positionOf: alertPosition, observedMs: alertObservedMs, radiusPx: alertRadiusPx, color: readCssColor('--map-alert-event', 0.9) });
+  const deck = useMemo(() => (rings ? [rings] : null), [rings]);
+  useDeckLayers('alerts:arrivals', deck, Z);
   const layers = useMemo(
     () => [
       {

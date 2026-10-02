@@ -24,6 +24,8 @@ const LayerRail = dynamic(() => import('./HudMotion').then((mod) => mod.LayerRai
 const ViewControls = dynamic(() => import('./HudMotion').then((mod) => mod.ViewControlsMotion), { ssr: false });
 const PanelHost = dynamic(() => import('./HudMotion').then((mod) => mod.PanelHostMotion), { ssr: false });
 const CardHost = dynamic(() => import('./HudMotion').then((mod) => mod.CardHostMotion), { ssr: false });
+// The 24 h timeline scrubber: its own small chunk, after hydration (no motion, no first-paint cost).
+const TimelineScrubber = dynamic(() => import('./TimelineScrubber'), { ssr: false });
 
 export default function HudRoot() {
   return (
@@ -39,6 +41,7 @@ export default function HudRoot() {
       <ViewControls />
       <PanelHost />
       <CardHost />
+      <TimelineScrubber />
       <StatusBar />
       <MobileNav />
       <Splash />

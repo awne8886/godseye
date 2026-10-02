@@ -15,6 +15,7 @@ import { useUiStore } from '@/lib/store';
 import type { TickerResponse } from '@/lib/types';
 import { useApiRoute, useVisibleLayers } from './hooks';
 import { eventTickerAt, zoomGateLabel } from './status-logic';
+import { isTimelineLayer, useTimeCursor } from './timeline';
 
 function subscribeOnline(cb: () => void) {
   window.addEventListener('online', cb);
@@ -87,6 +88,7 @@ export default function StatusBar() {
   const visible = useVisibleLayers();
   const leds = visible.filter((l) => active.has(l.id as LayerId) && l.route && !l.parent);
   const items = useTickerItems();
+  const cursor = useTimeCursor();
 
   return (
     <footer data-map-inset="status-bar" className="hud-micro fixed inset-x-0 bottom-0 z-[var(--z-status)] flex h-7 items-center gap-3 border-t border-[var(--border-secondary)] bg-[var(--glass-3)] px-3 text-[var(--text-secondary)] phone:hidden">
@@ -99,7 +101,8 @@ export default function StatusBar() {
           const st = status[l.id as LayerId];
           const state = !st || st.state === 'idle' || st.state === 'loading' ? null : l.kind === 'reference' && st.state !== 'offline' ? 'reference' : st.state;
           const color = state ? `var(${FRESHNESS_COLOR_TOKEN[state]})` : 'var(--text-muted)';
-          const label = `${l.label}: ${state ? state.toUpperCase() : (zoomGateLabel(st) ?? 'ACQUIRING')}`;
+          const replay = cursor !== null && state !== null && state !== 'offline' && isTimelineLayer(l.id);
+          const label = `${l.label}: ${replay ? 'REPLAY' : state ? state.toUpperCase() : (zoomGateLabel(st) ?? 'ACQUIRING')}`;
           return (
             <li key={l.id} title={label} aria-label={label} className="grid h-4 w-3 place-items-center">
               <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color, opacity: state ? 1 : 0.5 }} />

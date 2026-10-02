@@ -19,6 +19,7 @@ import { GLOBE_POINT_PARAMETERS, lngLatOf, useFacing } from './globe';
 import { rgbaCss, useDeckPick, useFeedData, useNativeLayers, useNativePick } from './hooks';
 import { buildRiskGeometry } from './risk-geometry';
 import { conflictEventSelection, zoneSelection } from './selection';
+import { filterAtCursor, heldSpan, timeMs, useReportCoverage, useTimeCursor } from '@/components/hud/timeline';
 
 const zOf = (id: string) => LAYERS.find((l) => l.id === id)!.z;
 const css = (token: Parameters<typeof readCssColor>[0], alpha = 1) => rgbaCss(readCssColor(token, alpha));
@@ -146,16 +147,25 @@ const gdeltRadius = (e: GdeltEvent) => Math.min(9, 2.5 + Math.log2(1 + e.numMent
 /** The whole 1 h window (the feed keeps ≤ 5 000 events); `total`/`truncated` say if any were left out. */
 export const GDELT_EVENTS_URL = '/api/gdelt-events?limit=5000';
 
+const gdeltObservedMs = (e: GdeltEvent) => timeMs(e.dateAdded);
+
 function GdeltLayer() {
   const data = useFeedData<GdeltEventsResponse>('gdelt_events', GDELT_EVENTS_URL, (b) => b.items.length);
   const all = data?.items;
+  const cursor = useTimeCursor();
+  // Timeline replay: only events added at or before the cursor (the same array when live).
+  const replay = useMemo(() => (all ? filterAtCursor(all, cursor, gdeltObservedMs) : null), [all, cursor]);
+  // The feed holds its aggregated 15-minute export windows (window.from → the fetch).
+  const from = timeMs(data?.window.from);
+  const span = data && from !== null ? heldSpan(data.meta.fetchedAt, null, from) : null;
+  useReportCoverage('gdelt_events', span && all && replay ? { ...span, shown: replay.length, total: all.length } : null);
   const coverage = useMemo(() => (data ? gdeltCoverage(data) : null), [data]);
   const push = useFeedEventStore((s) => s.push);
   useEffect(() => {
     if (all) push(gdeltEvents(all));
   }, [all, push]);
   // Material conflict drawn last (on top).
-  const sorted = useMemo(() => (all ? [...all].sort((a, b) => a.quadClass - b.quadClass) : null), [all]);
+  const sorted = useMemo(() => (replay ? [...replay].sort((a, b) => a.quadClass - b.quadClass) : null), [replay]);
   const items = useFacing(sorted, lngLatOf);
   const layers = useMemo(() => {
     if (!items) return null;
