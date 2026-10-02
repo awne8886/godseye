@@ -266,7 +266,8 @@ export default function DeckOverlay({ beforeId, gpuOpen, onMounted }: DeckOverla
     if (!map) return;
     const gate = createHoverPickGate({
       // CPU hit-testers (aviation, space, hazards) resolve their own hover in the host's per-move
-      // `collectCandidates`; the GPU pick renders only the layers nobody hit-tests (perf L96).
+      // `collectCandidates`; the GPU pick renders only the layers nobody hit-tests (perf L96), plus
+      // any `autoHighlight` layer (deck highlights only what its own hover pick found).
       pick: (x, y) => {
         const ids = gpuHoverLayerIds(useDeckLayerStore.getState().entries, hitTesterIds());
         if (!ids.length) {

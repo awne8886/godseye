@@ -296,6 +296,25 @@ describe('scoped GPU hover picks (perf L96: CPU hit-testers first)', () => {
     expect(gpuHoverLayerIds(entries, new Set(['aviation', 'hazards', 'threats', 'network', 'flight-paths']))).toEqual([]);
   });
 
+  it('gpuHoverLayerIds keeps autoHighlight layers of CPU-covered modules in the GPU hover scope', () => {
+    const L = (id: string, props: Record<string, unknown>) => ({ id, props });
+    const entries = {
+      aviation: { layers: [L('aviation-icons', { pickable: true })] },
+      'hazards:fires': { layers: [L('hazards-fires', { pickable: true, autoHighlight: true })] },
+      'hazards:quakes': {
+        layers: [
+          L('hazards-quakes', { pickable: true, autoHighlight: true }),
+          L('hazards-quakes-hidden', { pickable: true, autoHighlight: true, visible: false }),
+          L('hazards-quakes-ring', { pickable: false, autoHighlight: true }),
+          L('hazards-quakes-label', { pickable: true, autoHighlight: false }),
+        ],
+      },
+      'threats:gdacs': { layers: [L('threats-gdacs', { pickable: true })] },
+    };
+    expect(gpuHoverLayerIds(entries, new Set(['aviation', 'hazards']))).toEqual(['hazards-fires', 'hazards-quakes', 'threats-gdacs']);
+    expect(gpuHoverLayerIds(entries, new Set(['aviation', 'hazards', 'threats']))).toEqual(['hazards-fires', 'hazards-quakes']);
+  });
+
   it('hitTesterIds reports the registered CPU hit-testers', () => {
     const off = registerHitTester('aviation', () => []);
     expect([...hitTesterIds()]).toEqual(['aviation']);

@@ -124,27 +124,34 @@ export interface HoverScopeEntry {
   layers: unknown;
 }
 
-function collectPickable(list: unknown, out: string[]): void {
+function collectPickable(list: unknown, out: string[], highlightOnly: boolean): void {
   if (Array.isArray(list)) {
-    for (const x of list) collectPickable(x, out);
+    for (const x of list) collectPickable(x, out, highlightOnly);
     return;
   }
   if (!list || typeof list !== 'object' || !('id' in list) || !('props' in list)) return;
-  const { id, props } = list as { id: unknown; props: { pickable?: unknown; visible?: unknown } | null };
-  if (typeof id === 'string' && props && props.pickable && props.visible !== false) out.push(id);
+  const { id, props } = list as {
+    id: unknown;
+    props: { pickable?: unknown; visible?: unknown; autoHighlight?: unknown } | null;
+  };
+  if (typeof id !== 'string' || !props || !props.pickable || props.visible === false) return;
+  if (highlightOnly && props.autoHighlight !== true) return;
+  out.push(id);
 }
 
 /**
  * Deck layers the GPU hover pick still has to cover (perf L96): the visible, pickable layers of
  * every published entry whose module has no CPU hit-tester. An entry key is `<module>` or
  * `<module>:<part>`; a hit-tester registered under `<module>` resolves that module's hover on the
- * CPU (projected positions), so its layers are left out of the picking render.
+ * CPU (projected positions), so its layers are left out of the picking render — except layers
+ * with `autoHighlight: true`: deck highlights only an object its own hover pick found, so those
+ * stay in the GPU scope or their highlight would never show.
  */
 export function gpuHoverLayerIds(entries: Readonly<Record<string, HoverScopeEntry>>, cpuCovered: ReadonlySet<string>): string[] {
   const out: string[] = [];
   for (const [key, entry] of Object.entries(entries)) {
-    if (cpuCovered.has(key) || cpuCovered.has(key.split(':')[0]!)) continue;
-    collectPickable(entry.layers, out);
+    const covered = cpuCovered.has(key) || cpuCovered.has(key.split(':')[0]!);
+    collectPickable(entry.layers, out, covered);
   }
   return out;
 }
