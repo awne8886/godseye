@@ -4,7 +4,7 @@ import { fx } from '../__fixtures__';
 import { ommToRecord, recordToOmm } from './catalog';
 import { anchorTime, groundTrack, orbitClass, orbitTrack, periodMinutes, propagateAt, satrecFromOmm, splitTrackAtAntimeridian, type TrackPoint } from './orbit';
 import { inEarthShadow, sunDirection } from './shadow';
-import { displayAltM, propagateBatch } from './propagate-batch';
+import { SELECTED_SIZE_PX, displayAltM, propagateBatch } from './propagate-batch';
 
 const AT = Date.parse('2026-09-30T18:00:00Z');
 const issRec = ommToRecord(fx.active.find((o) => o.NORAD_CAT_ID === 25544)!)!;
@@ -153,7 +153,7 @@ describe('bulk propagation (worker core)', () => {
     expect(a.count + a.hidden + a.failed).toBe(recs.length);
     expect(a.selected?.noradId).toBe(25544);
     const i = Array.from(a.index).findIndex((k) => recs[k]!.noradId === 25544);
-    expect(a.radii[i]).toBe(6);
+    expect(a.sizes[i]).toBe(SELECTED_SIZE_PX);
     expect(a.positions[i * 3 + 2]).toBeCloseTo(displayAltM(a.selected!.altKm), -1);
   });
 

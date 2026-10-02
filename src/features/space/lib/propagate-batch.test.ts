@@ -11,7 +11,7 @@ import { altitudeForZoom, EARTH_RADIUS_M, type FarSideCamera } from '@/lib/map/f
 import { centralAngle } from '@/lib/geo';
 import { SAT_CATEGORIES, ommToRecord, recordToOmm } from './catalog';
 import { satrecFromOmm } from './orbit';
-import { compactFrame, propagateBatch, propagateVisible } from './propagate-batch';
+import { ISS_SIZE_PX, SAT_CATEGORY_COUNT, SAT_SIZE_PX, SELECTED_SIZE_PX, compactFrame, propagateBatch, propagateVisible } from './propagate-batch';
 
 const AT = Date.parse('2026-09-30T18:00:00Z');
 const recs = fx.active.map((o) => ommToRecord(o)!);
@@ -132,5 +132,101 @@ describe('far-side filter: camera horizon + the satellite display altitude', () 
     const f = propagateBatch(input, { at: AT, palette, visible: all, camera: cam, selectedId: id });
     expect(f.selected?.noradId).toBe(id);
     expect(Array.from(f.index)).not.toContain(prop.catIndex[j]);
+  });
+});
+
+describe('category-sorted output for the per-mission IconLayers (L105)', () => {
+  const prop = propagateVisible(input, { at: AT, visible: all, selectedId: null });
+  const nav = SAT_CATEGORIES.indexOf('navigation');
+
+  it('SAT_CATEGORY_COUNT matches SAT_CATEGORIES', () => {
+    expect(SAT_CATEGORY_COUNT).toBe(SAT_CATEGORIES.length);
+  });
+
+  it.each([null, cameraAt(-98, 39, 4)])('rows are grouped by category with offsets, stable within a category (camera %o)', (cam) => {
+    const f = compactFrame(input, prop, { palette, visible: all, camera: cam, selectedId: null });
+    const o = f.categoryOffsets;
+    expect(o).toHaveLength(SAT_CATEGORY_COUNT + 1);
+    expect(o[0]).toBe(0);
+    expect(o[SAT_CATEGORY_COUNT]).toBe(f.count);
+    let nonEmpty = 0;
+    for (let c = 0; c < SAT_CATEGORY_COUNT; c++) {
+      expect(o[c + 1]!).toBeGreaterThanOrEqual(o[c]!);
+      if (o[c + 1]! > o[c]!) nonEmpty++;
+      for (let k = o[c]!; k < o[c + 1]!; k++) {
+        expect(input.categories[f.index[k]!]).toBe(c);
+        if (k > o[c]!) expect(f.index[k]!).toBeGreaterThan(f.index[k - 1]!);
+      }
+    }
+    expect(nonEmpty).toBeGreaterThan(1);
+    // The same satellites as an unsorted filter: every propagated row is either drawn or hidden once.
+    expect(new Set(f.index).size).toBe(f.count);
+    expect(f.count + f.hidden + f.failed).toBe(recs.length);
+  });
+
+  it('positions, colours and sizes travel with their row through the sort', () => {
+    const f = compactFrame(input, prop, { palette: SAT_CATEGORIES.map((_, c) => [c * 40, 10, 20, 255] as const), visible: all, camera: null, selectedId: 25544 });
+    const row = new Map(Array.from({ length: prop.n }, (_, j) => [prop.catIndex[j]!, j]));
+    for (let k = 0; k < f.count; k++) {
+      const i = f.index[k]!;
+      const j = row.get(i)!;
+      expect(f.positions[k * 3]).toBeCloseTo(prop.lng[j]!, 4);
+      expect(f.positions[k * 3 + 1]).toBeCloseTo(prop.lat[j]!, 4);
+      expect(f.colors[k * 4]).toBe(input.categories[i]! * 40);
+      const id = input.noradIds[i];
+      expect(f.sizes[k]).toBe(id === 25544 ? SELECTED_SIZE_PX : SAT_SIZE_PX);
+    }
+    const iss = compactFrame(input, prop, { palette, visible: all, camera: null, selectedId: null });
+    const k = Array.from(iss.index).findIndex((i) => input.noradIds[i] === 25544);
+    expect(k).toBeGreaterThanOrEqual(0);
+    expect(iss.sizes[k]).toBe(ISS_SIZE_PX);
+  });
+
+  it('a selected satellite in a hidden category is drawn in its own category slice', () => {
+    const id = input.noradIds[input.categories.findIndex((c) => c !== nav)]!;
+    const selCat = input.categories[input.noradIds.indexOf(id)]!;
+    const p = propagateVisible(input, { at: AT, visible: new Set([nav]), selectedId: id });
+    const f = compactFrame(input, p, { palette, visible: new Set([nav]), camera: null, selectedId: id });
+    const o = f.categoryOffsets;
+    expect(o[selCat + 1]! - o[selCat]!).toBe(1);
+    expect(input.noradIds[f.index[o[selCat]!]!]).toBe(id);
+  });
+
+  it('propagating into the previous tick reuses its buffers and gives the same answer as a fresh propagation', () => {
+    const first = propagateVisible(input, { at: AT, visible: all, selectedId: null });
+    const buffers = [first.catIndex, first.lng, first.lat, first.altKm, first.displayAltM, first.velocityKmS, first.shadow];
+    const next = propagateVisible(input, { at: AT + 1000, visible: all, selectedId: null }, first);
+    expect(next).toBe(first);
+    expect([next.catIndex, next.lng, next.lat, next.altKm, next.displayAltM, next.velocityKmS, next.shadow]).toEqual(buffers);
+    for (let b = 0; b < buffers.length; b++) expect([next.catIndex, next.lng, next.lat, next.altKm, next.displayAltM, next.velocityKmS, next.shadow][b]).toBe(buffers[b]);
+    const fresh = propagateVisible(input, { at: AT + 1000, visible: all, selectedId: null });
+    expect(next.n).toBe(fresh.n);
+    expect(Array.from(next.lng.subarray(0, next.n))).toEqual(Array.from(fresh.lng.subarray(0, fresh.n)));
+    expect(next.at).toBe(AT + 1000);
+    // A catalogue that grew does not fit: fresh buffers.
+    const bigger = { satrecs: [...input.satrecs, ...input.satrecs], noradIds: [...input.noradIds, ...input.noradIds], categories: [...input.categories, ...input.categories] };
+    expect(propagateVisible(bigger, { at: AT, visible: all, selectedId: null }, first)).not.toBe(first);
+  });
+
+  it('20k satellites: a camera re-filter stays far inside the 1 s tick (and the frame budget)', () => {
+    // Timing input only: the recorded sample tiled to 20k rows (never shipped, never drawn).
+    const reps = Math.ceil(20_000 / input.satrecs.length);
+    const big = {
+      satrecs: Array.from({ length: reps }, () => input.satrecs).flat(),
+      noradIds: Array.from({ length: reps }, () => input.noradIds).flat(),
+      categories: Array.from({ length: reps }, () => input.categories).flat(),
+    };
+    const p = propagateVisible(big, { at: AT, visible: all, selectedId: null });
+    expect(p.n).toBeGreaterThanOrEqual(19_000);
+    const cam = cameraAt(-98, 39, 3);
+    compactFrame(big, p, { palette, visible: all, camera: cam, selectedId: null }); // warm-up
+    const runs: number[] = [];
+    for (let r = 0; r < 5; r++) {
+      const t0 = performance.now();
+      compactFrame(big, p, { palette, visible: all, camera: cam, selectedId: null });
+      runs.push(performance.now() - t0);
+    }
+    runs.sort((a, b) => a - b);
+    expect(runs[2]!).toBeLessThan(40);
   });
 });

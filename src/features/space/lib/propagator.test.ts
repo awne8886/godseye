@@ -83,7 +83,7 @@ describe('tle-propagate worker protocol', () => {
     if (msg.type !== 'frame') throw new Error('expected a frame');
     expect(msg.count).toBeGreaterThan(0);
     expect(msg.selected?.noradId).toBe(25544);
-    expect(transfer).toEqual([msg.positions.buffer, msg.colors.buffer, msg.radii.buffer, msg.index.buffer]);
+    expect(transfer).toEqual([msg.positions.buffer, msg.colors.buffer, msg.sizes.buffer, msg.index.buffer, msg.categoryOffsets.buffer]);
   });
 
   it('a camera move re-filters the newest propagation at once (same `at`, no tick needed)', async () => {
@@ -108,7 +108,7 @@ describe('tle-propagate worker protocol', () => {
     expect(msg.camera).toEqual(camera);
     expect(msg.count).toBeLessThan(flat.count);
     expect(msg.count + msg.hidden + msg.failed).toBe(flat.count + flat.hidden + flat.failed);
-    expect(transfer).toEqual([msg.positions.buffer, msg.colors.buffer, msg.radii.buffer, msg.index.buffer]);
+    expect(transfer).toEqual([msg.positions.buffer, msg.colors.buffer, msg.sizes.buffer, msg.index.buffer, msg.categoryOffsets.buffer]);
     // The next tick keeps the camera.
     p.handle({ type: 'tick', at: at + 1000 });
     const next = sent.at(-1)!.msg;

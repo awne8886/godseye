@@ -13,7 +13,7 @@ Recorded fixtures (trimmed) live in `src/features/space/__fixtures__/` with `cap
 | `https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json` | 200 | 0.68 s | 9.3 kB | `*` | none | CelesTrak (Dr T.S. Kelso); cite CelesTrak | 22 OMM objects; `EPOCH` "2026-09-30T03:25:12.177120" (µs, **no Z**) |
 | `https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json` | 200 | 2.42 s | **6 993 014 B** | `*` | none | as above | 16 612 objects; max `NORAD_CAT_ID` 100830; **644 ids > 99999** (6-digit since 2026-07-11). Served as SATELLITE_FIELDS rows ≈ 191 B/row → 3.18 MB (cap reached near 21.9k rows) |
 | `…gp.php?GROUP=gps-ops&FORMAT=json` | 200 | 0.79 s | 13 kB | `*` | none | as above | 32 objects |
-| `…gp.php?GROUP=glonass-operational&FORMAT=json` | **TLS reset** (`curl: (35) Recv failure: Connection reset by peer`) after 11.3 s | — | — | — | — | — | Second group request in 3 s was reset. Not retried. The feed therefore paces CelesTrak at 1 request / 2 s, never auto-retries, stops a run at the first failing group, counts every failure in a rolling 2 h window and stops calling CelesTrak at 12 (their firewall trips at 50 errors / 2 h). Remaining group names (`galileo, beidou, military, radar, weather, resource, science, geodetic, other-comm`) are CelesTrak's documented GP groups and could not be re-verified without risking the firewall. |
+| `…gp.php?GROUP=glonass-operational&FORMAT=json` | **TLS reset** (`curl: (35) Recv failure: Connection reset by peer`) after 11.3 s | — | — | — | — | — | Second group request in 3 s was reset. Not retried. The feed therefore paces CelesTrak at 1 request / 2 s, never auto-retries, stops a run at the first failing group, counts every failure in a rolling 2 h window and stops calling CelesTrak at 12 (their firewall trips at 50 errors / 2 h). **All 12 groups the feed uses were verified on 2026-10-01** (Phase 3 round 4 re-probe below): 200 + OMM JSON for `stations, science, geodetic, gps-ops, glo-ops, galileo, military, radar, resource`; `beidou` 200 with 54 objects at 16:19Z; `weather` and `other-comm` were reset from the sandbox but downloaded by the running server (72 and 30 tagged rows in `/api/satellites`). `glonass-operational` does not exist (200 text "GROUP not found"): the feed uses `glo-ops`. Re-probed 2026-10-02 (last section). |
 | `https://db.satnogs.org/api/tle/?format=json` | 200 | 1.39 s | 520 kB | none | none | SatNOGS DB (Libre Space Foundation), CC BY-SA 4.0 | Plain array (not paged) of 1 679 `{tle0, tle1, tle2, tle_source, sat_id, norad_cat_id, updated}`; ISS TLE is the same element set CelesTrak serves (epoch 26273.14250205). Used only as a labelled fallback (`catalogueSource: 'satnogs-fallback'`) when CelesTrak has never answered or its last-good catalogue is > 24 h old. |
 
 Breaking changes encoded (§6.2): `FORMAT=json` always (default is CSV since 2026-05-09); NORAD ids read
@@ -87,6 +87,7 @@ Same honest UA, `curl -sS -m 90 --compressed`, one request each, ≥ 15 s apart,
 | `…GROUP=glo-ops` | 200 | 1.15 s | 2.3 kB | `*` | 29 objects — the correct GLONASS group (now used). |
 | `…GROUP=galileo` | 200 | 0.67 s | 2.4 kB | `*` | |
 | `…GROUP=beidou` | reset (000, 11.12 s) | | | | |
+| `…GROUP=beidou` (16:19Z) | 200 | — | — | `*` | 54 objects (BeiDou-2/-3) — the group name is valid; the 06:2x reset was the random sandbox reset. |
 | `…GROUP=military` | 200 | 21.5 s | 1.9 kB | `*` | slow |
 | `…GROUP=radar` | 200 | 21.4 s | 1.1 kB | `*` | slow |
 | `…GROUP=weather` | reset ×2 (000, 11.2 s) | | | | |
@@ -112,3 +113,34 @@ to 300 s and the rail shows a `FALLBACK · SatNOGS DB TLEs, n objects` line.
 
 **Payload:** `epoch` now travels as integer ms (`epochUnit: 'ms'`): ≈ 161 B/row on the live catalogue
 (≈ 2.68 MB for 16 612 rows, 64 % of the 4 MB cap, was 71 %); 20k rows stay < 80 % and 24k < 100 % (route test).
+
+## Re-probe 2026-10-02 00:20–00:29 UTC (Phase 3 round 6: all 12 groups)
+
+Same honest UA, `curl -sS -m 40 --compressed`, `Origin: https://example.org`, one request per group
+20 s apart (resets retried once, 45–60 s later; 6 errors in total, far under the 50 / 2 h firewall
+limit). Object count = length of the OMM JSON array; newest `EPOCH` as served (zone-less UTC).
+
+| Group | Status | Latency | Size (gzip) | CORS | Objects | Newest EPOCH / note |
+|---|---|---|---|---|---|---|
+| `stations` | 200 | 2.78 s | 9 295 B | `*` | 22 | 2026-10-01T14:41:22 (first row ISS (ZARYA)); max NORAD id 100 712 (6-digit) |
+| `science` | 200 | 2.69 s | 19 037 B | `*` | 46 | 2026-10-02T03:42:59 — CXO's epoch is again ahead of the download (cf. `celestrak-future-epoch.json`) |
+| `geodetic` | 200 | 0.75 s | 4 113 B | `*` | 10 | 2026-10-01T14:53:53 |
+| `gps-ops` | reset (000, 12.29 s); retry reset (000, 11.33 s) | | | | | verified 200 on 2026-10-01 (3.02 s); the resets are this network's, not the group's |
+| `glo-ops` | 200 | 1.44 s | 11 933 B | `*` | 29 | 2026-10-01T18:53:09 |
+| `galileo` | 200 | 7.79 s | 13 257 B | `*` | 32 | 2026-10-01T12:16:36 |
+| `beidou` | 200 | 4.99 s | 22 277 B | `*` | 54 | 2026-10-01T15:48:53 (first row BEIDOU-2 IGSO-1 (C06)) |
+| `military` | 200 | 6.43 s | 10 169 B | `*` | 24 | 2026-10-01T15:38:21 |
+| `radar` | 200 | 1.25 s | 4 212 B | `*` | 10 | 2026-10-01T15:39:11 |
+| `weather` | reset (000, 11.27 s); retry reset (000, 12.43 s) | | | | | not reachable from the sandbox on either day; 72 rows tagged by the server run of 2026-10-01 |
+| `resource` | 200 | 1.07 s | 69 615 B | `*` | 167 | 2026-10-01T18:51:16 |
+| `other-comm` | reset (000, 12.31 s); retry reset (000, 12.32 s) | | | | | not reachable from the sandbox on either day; 30 rows tagged by the server run of 2026-10-01 |
+
+9 of 12 answered 200 with OMM JSON today. `gps-ops` answered on 2026-10-01 and `science`/`beidou`
+(reset on 2026-10-01) answer today; `weather` and `other-comm` were reset from the sandbox on both
+days, so for those two the evidence is the server's tagged rows, not a sandbox probe. The feed's tolerance (≤ 2 failures per run, missing groups
+retried 20 min later, per-group download times) covers exactly this.
+
+**Client change recorded here (round 6):** satellites are drawn as mission glyphs (one deck.gl
+IconLayer per category over a 6-glyph mask atlas rasterised at runtime). The worker now sorts the
+drawn rows by category and posts `categoryOffsets`; `radii` became `sizes` (glyph px: 8, ISS 14,
+selected 16). No upstream or payload change.

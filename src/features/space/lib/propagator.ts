@@ -14,7 +14,8 @@
  * (worker → main):
  *   {type:'catalogue', version, summary, packed | null}   packed null = same version, nothing rebuilt
  *   {type:'catalogue-error', status, meta, providers}      503 = SOURCE OFFLINE with last-good meta
- *   {type:'frame', version, at, count, positions, colors, radii, index, hidden, failed, selected, camera}
+ *   {type:'frame', version, at, count, positions, colors, sizes, index, categoryOffsets,
+ *                                            hidden, failed, selected, camera}  rows sorted by category
  */
 import type { SatRec } from 'satellite.js';
 import type { FeedMeta, Mission, Providers, SatCategory } from '@/lib/types';
@@ -77,7 +78,7 @@ export function createPropagator(post: Post, fetchImpl: FetchLike) {
   function postFrame(prop: Propagated): void {
     if (!loaded) return;
     const r = compactFrame(loaded, prop, view);
-    post({ type: 'frame', version: loaded.version, ...r }, [r.positions.buffer, r.colors.buffer, r.radii.buffer, r.index.buffer] as ArrayBuffer[]);
+    post({ type: 'frame', version: loaded.version, ...r }, [r.positions.buffer, r.colors.buffer, r.sizes.buffer, r.index.buffer, r.categoryOffsets.buffer] as ArrayBuffer[]);
   }
 
   async function load(url: string): Promise<void> {
@@ -147,7 +148,8 @@ export function createPropagator(post: Post, fetchImpl: FetchLike) {
         return;
       }
       if (msg.type === 'tick' && loaded) {
-        last = propagateVisible(loaded, { ...view, at: msg.at });
+        // Propagates into the previous tick's buffers (no per-tick allocation for SGP4 output).
+        last = propagateVisible(loaded, { ...view, at: msg.at }, last);
         postFrame(last);
       }
     },
