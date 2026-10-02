@@ -114,6 +114,18 @@ Same honest User-Agent; `curl -I -L` (HEAD), falling back to GET where HEAD is r
 | `https://www.mlit.go.jp/link.html` | 200 | 1.06 s | not needed | none | 著作権は、特記されていない限り国土交通省に帰属; content usable under 公共データ利用規約（第1.0版）(PDL1.0) |
 | `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0?f=json` | 200 | 0.62 s | `*` | none | `copyrightText`: "Federal Aviation Administration, Air Traffic Organization, Mission Support Services, Aeronautical Information Services."; `Last-Modified: Thu, 03 Sep 2026 11:59:04 GMT`; US Government work (public domain) |
 
+## Aircraft photo hosts (probed 2026-10-02 11:50 UTC, for the /privacy disclosure)
+
+The aircraft card shows adsbdb's photo as a plain `<img referrerPolicy="no-referrer">`, so the visitor's
+browser fetches it from airport-data.com directly. `/privacy`, the README and ARCHITECTURE say so. GET with the
+honest User-Agent and an `Origin` header (to record CORS):
+
+| URL | Status | Latency | CORS | Auth | Finding |
+|---|---|---|---|---|---|
+| `https://api.adsbdb.com/v0/aircraft/400f02` | 200 | 0.75 s | not recorded (server-side call) | none | `url_photo_thumbnail` = `https://airport-data.com/images/aircraft/thumbnails/001/746/001746632.jpg`, `url_photo` = `https://image.airport-data.com/aircraft/001746632.jpg`: both photo hosts are on airport-data.com |
+| `https://airport-data.com/images/aircraft/thumbnails/001/746/001746632.jpg` | 200 | 0.54 s | none sent (not needed for `<img>`) | none | `image/jpeg`, 3 829 B, `server: nginx/1.27.4`, no `Set-Cookie` |
+| `https://image.airport-data.com/aircraft/001746632.jpg` | 200 | 1.14 s | none sent | none | `image/jpeg`, 449 095 B, `cache-control: max-age=86400`, no `Set-Cookie` |
+
 ## Container images pinned in the Dockerfile, CI and compose (resolved 2026-09-30 and 2026-10-01)
 
 | Image | Digest | How resolved |

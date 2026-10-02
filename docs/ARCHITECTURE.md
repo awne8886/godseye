@@ -2,18 +2,19 @@
 
 GODSEYE is one Next.js 16 application (App Router, React 19, TypeScript strict) that serves a WebGL
 globe and a same-origin JSON API over public data sources. The browser talks to this server for every
-data feed; it contacts third parties directly only for map tiles, official video embeds and public
-camera media (the CSP enforces that). This document describes how the pieces fit, the security model and
+data feed; it contacts third parties directly only for map tiles, official video embeds, public
+camera media and aircraft photos (a plain `<img>` from airport-data.com with no referrer; the CSP
+enforces that list). This document describes how the pieces fit, the security model and
 the trade-offs we accepted on purpose. The endpoint reference is [API.md](API.md) (also rendered at
 `/docs`); sources and licences are in [DATA_SOURCES.md](DATA_SOURCES.md).
 
 ```
  browser ──HTTPS──> Caddy (TLS, overwrites X-Forwarded-For) ──> Next.js server (node server.js)
    │                                                              │
-   │ tiles / embeds / camera media only (CSP allow-lists)         ├─ route handlers  (src/app/api/**)
+   │ tiles / embeds / camera media / aircraft photos (CSP lists)  ├─ route handlers  (src/app/api/**)
    ▼                                                              │     └─ feed.get() / lookup modules, never upstreams directly
  OpenFreeMap · Esri · GIBS · Terrarium · YouTube · DOT media      ├─ feeds + single-writer poller (src/lib/feeds.ts)
-                                                                  │     └─ httpJson / httpText (src/lib/http.ts) ──> upstream APIs
+ airport-data.com (aircraft photos, no referrer)                  │     └─ httpJson / httpText (src/lib/http.ts) ──> upstream APIs
                                                                   └─ SnapshotStore: memory | filesystem | Redis (src/lib/cache.ts)
 ```
 
