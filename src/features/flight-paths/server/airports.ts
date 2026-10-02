@@ -27,7 +27,7 @@ import { nominatimSearch, photonSearch } from '@/lib/geocode';
 import type { AirportMatch as AirportMatchSchema } from '@/lib/schemas/flight-paths';
 import type { Place } from '@/lib/types';
 import { metroFor, normalizePlace } from '../lib/metro';
-import { nameMatch, nameRank, wordNotCode } from '../lib/names';
+import { hasWords, nameMatch, nameRank, wordNotCode } from '../lib/names';
 import { compareRanked, exactOrName, mainAmong } from '../lib/place-rank';
 import { airportIndex, findAirport, servicesAt, type AirportIndex, type AirportRecord } from './data';
 
@@ -192,9 +192,22 @@ export function countryName(code: string | null): string | null {
 
 const bundled = (count: number): ProviderRun => ({ status: { ok: true, count, ms: 0, age_s: 0 }, okAt: Date.now() });
 
-/** Photon aerodromes → the local airport within 5 km of each (re-ranked by the local boosts). */
-function reRankAerodromes(places: readonly Place[], q: string): AirportMatch[] {
-  const idx = airportIndex('all');
+/**
+ * Does a Photon aerodrome hit carry what was typed? Its own name or its city/district (the first
+ * part of the label), or the matched local record's name/municipality/keywords. Round 6: Photon's
+ * aerodrome search is fuzzy ("Zermatt" → In Aménas Zarzaitine, Algeria; "127.0.0.1" → Polish
+ * airfields), so a hit without the typed words is not an answer and must not hide the place
+ * fallback (Zermatt → nearest scheduled airports to the geocoded town).
+ */
+export function aerodromeCarries(p: Pick<Place, 'name' | 'label'>, local: AirportRecord | null, typed: string): boolean {
+  if (hasWords(p.name, typed)) return true;
+  const city = p.label.split(',')[0]?.trim() ?? '';
+  if (city && city !== p.label && hasWords(city, typed)) return true;
+  return local !== null && nameMatch(local, typed) !== null;
+}
+
+/** Photon aerodromes that carry the query → the local airport within 5 km of each (re-ranked by the local boosts). */
+export function reRankAerodromes(places: readonly Place[], q: string, idx: AirportIndex = airportIndex('all')): AirportMatch[] {
   const out = new Map<string, AirportMatch>();
   for (const p of places) {
     let best: AirportRecord | null = null;
@@ -207,7 +220,9 @@ function reRankAerodromes(places: readonly Place[], q: string): AirportMatch[] {
         bestKm = km;
       }
     }
-    if (best && !out.has(best.ident)) out.set(best.ident, match(best, 10 + boost(best, q) - bestKm, 'photon'));
+    if (!best || out.has(best.ident) || !aerodromeCarries(p, best, q)) continue;
+    // Disclosed in the typeahead: the OSM aerodrome name the hit was matched by.
+    out.set(best.ident, { ...match(best, 10 + boost(best, q) - bestKm, 'photon'), osmName: p.name });
   }
   return [...out.values()].sort((x, y) => y.score - x.score);
 }

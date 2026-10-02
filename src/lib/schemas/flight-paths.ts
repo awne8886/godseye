@@ -40,6 +40,8 @@ export const AirportMatch = Airport.extend({
   services: z.number().int().nonnegative().optional(),
   /** Geocoded fallback (matchedBy photon/nominatim from a place name): distance (km) from the geocoded place. */
   distanceKm: z.number().nonnegative().optional(),
+  /** Photon aerodrome hit (matchedBy photon, no place): the OSM aerodrome name it was matched by, disclosed in the typeahead. */
+  osmName: z.string().optional(),
 });
 
 /** The place a free-text query was geocoded to when no airport matched it (R4 m7: disclosed, never silent). */
@@ -109,7 +111,16 @@ export const Daylight = z.object({
 export const KnownService = z.object({
   callsign: z.string(),
   airline: z.object({ icao: z.string().nullable(), iata: z.string().nullable(), name: z.string().nullable() }),
+  /**
+   * True only when the callsign's own position report is within the flights observation cadence
+   * (OBSERVATION_CADENCE_MS.flights) AND the flights snapshot itself is LIVE (`flightsState`).
+   */
   live: z.boolean(),
+  /**
+   * When the flights snapshot last observed this callsign (the record's own `seenAt`), null when it
+   * is not in a current (LIVE/RECENT) snapshot. Clients badge it with `entityFreshness()`.
+   */
+  observedAt: IsoTime.nullable().optional(),
   source: z.literal('vrs'),
   /** Full airport chain for multi-stop services, e.g. ['KLAS','EGLL']. */
   airportCodes: z.array(z.string()),
@@ -169,6 +180,8 @@ export const RoutePlanResponse = z.object({
   /** How the daylight samples were timed (departure now, widebody cruise). */
   daylightMethod: z.string().optional(),
   knownServices: z.array(KnownService),
+  /** State of the in-process flights snapshot behind `knownServices[].live` (honestFlights-capped). */
+  flightsState: FreshnessState.optional(),
   historicalRoutes: z.array(
     z.object({ airline: z.string(), codeshare: z.boolean(), stops: z.number().int().nonnegative(), equipment: z.array(z.string()) }),
   ),
@@ -191,7 +204,22 @@ export const RoutePlanResponse = z.object({
   weather: z.object({
     origin: AirportWeather,
     destination: AirportWeather,
-    windsAloft: z.array(z.object({ fraction: z.number(), lat: Lat, lng: Lng, speedKt: z.number().nullable(), dirDeg: z.number().nullable(), level: z.literal('250hPa') })),
+    windsAloft: z.array(
+      z.object({
+        fraction: z.number(),
+        /** The great-circle sample point. */
+        lat: Lat,
+        lng: Lng,
+        /** The model grid point the wind values belong to (up to ~150 km from lat/lng). */
+        cellLat: Lat.optional(),
+        cellLng: Lng.optional(),
+        /** Model forecast hour the values are valid for; null when the upstream gave none. */
+        validAt: IsoTime.nullable().optional(),
+        speedKt: z.number().nullable(),
+        dirDeg: z.number().nullable(),
+        level: z.literal('250hPa'),
+      }),
+    ),
   }),
   diversionAirports: z.array(DiversionAirport),
   /** Selection rule for diversionAirports (runway length, distance from path, spacing). */

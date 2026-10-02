@@ -5,6 +5,9 @@ import { AirportSearchResponse, ApiError } from '@/lib/schemas';
 import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { newMode, upstreamBody } from '@/features/flight-paths/__fixtures__/upstreams';
 import photonGlastonbury from '@/features/flight-paths/__fixtures__/photon-place-Glastonbury.json';
+import photonAeroZermatt from '@/features/flight-paths/__fixtures__/r6/photon-aerodrome-Zermatt.json';
+import photonPlaceZermatt from '@/features/flight-paths/__fixtures__/r6/photon-place-Zermatt.json';
+import { reRankAerodromes } from '@/features/flight-paths/server/airports';
 
 const mode = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof newMode> }));
 
@@ -84,9 +87,11 @@ describe('GET /api/airports/search', () => {
     expect(none.body!.results).toEqual([]);
     expect(none.body!.providers.photon?.ok).toBe(true);
     expect(mode.current.calls.some((c) => c.includes('nominatim'))).toBe(false);
-    // The recorded Photon answer for an aerodrome query is Heathrow → the local LHR record.
+    // The recorded Photon aerodrome answer is Heathrow; round 6: for text that Heathrow does not
+    // carry it is a fuzzy guess, never a result (the kept case is the reRankAerodromes test below).
     const viaPhoton = await find('?q=qqheathrowairfieldqq');
-    expect(viaPhoton.body!.results[0]).toMatchObject({ iata: 'LHR', matchedBy: 'photon' });
+    expect(viaPhoton.body!.results).toEqual([]);
+    expect(viaPhoton.body!.providers.photon?.ok).toBe(true);
     mode.current.down.add('photon.komoot.io');
     const down = await find('?q=zzqqyy&submit=1');
     expect(down.body!.providers.photon?.ok).toBe(false);
@@ -108,6 +113,33 @@ describe('GET /api/airports/search', () => {
     expect([...km].sort((x, y) => x - y)).toEqual(km);
     // Code/name matches carry no place.
     expect((await find('?q=LHR')).body!.place).toBeUndefined();
+  });
+
+  it('R6: a fuzzy Photon aerodrome hit without the typed name is dropped; the place fallback answers', async () => {
+    // Recorded: Photon's aerodrome search for "Zermatt" returns only In-Amenas Zarzaitine (Algeria).
+    mode.current.override.set(photonAeroZermatt._url, photonAeroZermatt.body);
+    mode.current.override.set(photonPlaceZermatt._url, photonPlaceZermatt.body);
+    const r = (await find('?q=Zermatt')).body!;
+    expect(r.results.some((m) => m.ident === 'DAUZ' || m.isoCountry === 'DZ')).toBe(false);
+    expect(r.place).toMatchObject({ name: 'Zermatt', source: 'photon' });
+    expect(r.results.length).toBeGreaterThan(0);
+    for (const m of r.results) {
+      expect(m.isoCountry === 'CH' || m.isoCountry === 'IT' || m.isoCountry === 'FR').toBe(true);
+      expect(m.distanceKm).toBeLessThanOrEqual(150);
+      expect(m.osmName).toBeUndefined();
+    }
+  });
+
+  it('R6: a Photon aerodrome hit that carries the typed name is kept and discloses its OSM name', async () => {
+    const heathrowAero = (await import('@/features/flight-paths/__fixtures__/photon-heathrow-aerodrome.json')).body as { features: { properties: { name: string } }[] };
+    const name = heathrowAero.features[0]!.properties.name;
+    const m = reRankAerodromes(
+      [{ name, label: 'London, England, United Kingdom', lat: 51.4680, lng: -0.4551, kind: 'aerodrome', countryCode: 'GB', bbox: null, source: 'photon' }],
+      'Heathrow',
+    );
+    expect(m[0]).toMatchObject({ iata: 'LHR', matchedBy: 'photon', osmName: name });
+    // The same hit for unrelated text is not an answer.
+    expect(reRankAerodromes([{ name: 'In-Amenas Zarzaitine Airport', label: 'In Amenas, Illizi, Algeria', lat: 28.0554, lng: 9.644, kind: 'aerodrome', countryCode: 'DZ', bbox: null, source: 'photon' }], 'Zermatt')).toEqual([]);
   });
 
   it('SSRF: user text only ever reaches the fixed geocoder hosts, as a query parameter', async () => {

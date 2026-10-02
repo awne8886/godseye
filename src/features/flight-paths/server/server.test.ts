@@ -75,6 +75,10 @@ describe('winds aloft', () => {
     ];
     const r = await windsAloft(three, { env: {}, now: 1 });
     expect(r.winds.map((w) => w.dirDeg)).toEqual([180, 277, 299]);
+    // R6: each sample names the model grid point that answered and the forecast hour (recorded GMT time).
+    expect(r.winds[0]).toMatchObject({ lat: 51.47, lng: -0.45, cellLat: Math.round(openmeteo.body[0]!.latitude * 100) / 100, cellLng: Math.round(openmeteo.body[0]!.longitude * 100) / 100, validAt: '2026-09-30T20:00:00.000Z' });
+    expect(r.winds[2]).toMatchObject({ validAt: '2026-09-30T20:00:00.000Z' });
+    expect(Math.abs(r.winds[2]!.cellLat! - 60)).toBeLessThan(0.2);
     resetWinds();
     http.body = openmeteo.body[0];
     const one = await windsAloft([three[0]!], { env: {}, now: 1 });

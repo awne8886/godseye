@@ -1,0 +1,41 @@
+{
+ "_captured": "2026-10-02T03:15Z from the live upstream with the GODSEYE UA (feature-flight-paths r6 probe; first 3 features kept)",
+ "_url": "https://photon.komoot.io/api/?q=Zermatt&limit=8&lang=en&osm_tag=aeroway%3Aaerodrome",
+ "body": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "properties": {
+     "osm_type": "W",
+     "osm_id": 201901566,
+     "osm_key": "aeroway",
+     "osm_value": "aerodrome",
+     "type": "house",
+     "name": "In-Amenas Zarzaitine Airport",
+     "street": "طريق فأس الرار - عين أمناس",
+     "district": "Zerzaitine",
+     "city": "In Amenas",
+     "county": "In Amenas District",
+     "state": "Illizi",
+     "country": "Algeria",
+     "postcode": "22300",
+     "countrycode": "DZ",
+     "extent": [
+      9.6236844,
+      28.0739689,
+      9.6663102,
+      28.0368277
+     ]
+    },
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      9.6440089,
+      28.0553918
+     ]
+    }
+   }
+  ]
+ }
+}
