@@ -207,7 +207,7 @@ export function ConflictZoneCard({ selection }: CardProps) {
       <Row label="Region">{z.region}</Row>
       <Row label="Live events (≤ 24 h)">{z.liveEventCount}</Row>
       <Note>{z.description}</Note>
-      <Note>The polygon is a curated reference area, not a frontline. Event counts are GDELT material/verbal-conflict reports and geoparsed rocket/event Live Alerts (general news headlines excluded) located inside it (country-level locations excluded).</Note>
+      <Note>The polygon is a curated reference area, not a frontline. Event counts are GDELT material/verbal-conflict reports and geoparsed Live Alerts whose text names a strike, attack, explosion or other kinetic act (keyword match; general news, earthquakes and fires excluded) located inside it (country-level locations excluded).</Note>
       {z.references.map((r) => (
         <div key={r}>
           <Link href={r}>{new URL(r).hostname}</Link>

@@ -73,10 +73,46 @@ export function toConflictEvent(e: GdeltEvent, zoneId: string | null, now = Date
 const DAY_MS = 24 * 60 * 60_000;
 
 /**
+ * Word-start keyword regex with the alert classifier's matching rules: every term starts at a word
+ * start ('raid' matches 'raided', not 'braid'); a term ending in `$` is whole-word; a space matches
+ * any run of whitespace.
+ */
+function keywords(list: readonly string[], flags = 'iu'): RegExp {
+  const parts = list.map((t) => {
+    const whole = t.endsWith('$');
+    const body = (whole ? t.slice(0, -1) : t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return whole ? `${body}(?![\\p{L}\\p{N}])` : body;
+  });
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${parts.join('|')})`, flags);
+}
+
+/** Weapon and combat language: a conflict event on its own. */
+const WEAPON = keywords(['rocket', 'missile', 'ballistic', 'intercept', 'air raid', 'airstrike', 'strike', 'attack', 'drone', 'shelling', 'shelled', 'artillery', 'clashes', 'clashed', 'raid', 'gunfire', 'gunmen', 'opened fire', 'opens fire', 'bombing', 'bombed']);
+/** Kinetic only when no hazard or accident explains it: a quake also kills, a gas leak also explodes. */
+const AMBIGUOUS = keywords(['explosion', 'exploded', 'blast', 'killed', 'shot$', 'shots$', 'sirens$', 'red alert']);
+/** Non-conflict causes: natural hazards, fires and accidents. */
+const INCIDENT = keywords(['earthquake', 'quake', 'aftershock', 'tremor', 'seismic', 'fire$', 'fires$', 'wildfire', 'blaze', 'flood', 'landslide', 'storm$', 'hurricane', 'typhoon', 'cyclone', 'tsunami', 'heatwave', 'heat wave', 'gas leak', 'gas explosion', 'accident', 'crash', 'collapse']);
+/** Idioms built from kinetic words that describe no attack; removed before matching. */
+const IDIOMS = keywords(['hunger strike', 'general strike', 'labour strike', 'labor strike', 'workers strike', 'strike action', 'on strike', 'strike group', 'strike a deal', 'strikes a deal', 'heart attack', 'panic attack', 'cyber attack', 'cyber-attack'], 'giu');
+
+/**
+ * Whether an alert's text (title + summary) describes a kinetic event: weapon or combat language, or
+ * explosion/casualty/siren language with no natural hazard, fire or accident named. A deterministic
+ * keyword test (never called "AI") that errs towards not counting: a post that mixes an earthquake
+ * with a shooting is left out. Pure; exported for tests.
+ */
+export function isKineticAlertText(text: string): boolean {
+  const t = text.replace(IDIOMS, ' ');
+  return WEAPON.test(t) || (AMBIGUOUS.test(t) && !INCIDENT.test(t));
+}
+
+/**
  * Live Alerts whose pin falls inside a zone, as conflict events at the pin's own coordinates.
  * Only rocket/event alerts count: a kind=news alert is a general headline (a box-office story, a
  * budget vote, a hospitalisation) and is not a conflict event, the same reason GDELT rows are limited
- * to QuadClass 3/4. Only settlement/region pins count (a country-level pin is a centroid, the same rule as GDELT
+ * to QuadClass 3/4. The alert classifier's 'event' class is an incident class (it also matches
+ * earthquakes and fires), so the post's own text must be kinetic too (isKineticAlertText).
+ * Only settlement/region pins count (a country-level pin is a centroid, the same rule as GDELT
  * ActionGeo_Type 1); items without a place, outside every zone, with an unparseable time or older
  * than 24 h are dropped. observedAt is the author's publication time, capped at now. Each event keeps
  * the claim's attribution (source handle, channel name, stance and bloc) so the card can label it. Pure.
@@ -85,6 +121,7 @@ export function alertsToConflictEvents(items: readonly AlertItem[], zones: reado
   const out: ConflictEvent[] = [];
   for (const it of items) {
     if (it.kind !== 'rocket' && it.kind !== 'event') continue;
+    if (!isKineticAlertText(`${it.title}\n${it.summary ?? ''}`)) continue;
     const p = it.place;
     if (!p || (p.precision !== 'settlement' && p.precision !== 'region')) continue;
     const published = Date.parse(it.publishedAt);
@@ -158,7 +195,7 @@ export const conflictsFeed = defineFeed<ConflictsData>({
     // Live Alert pins come from Telegram previews and wire RSS; credit them here too.
     ...NEWS_ATTRIBUTION,
   ],
-  note: 'Zones are REFERENCE. Events are GDELT QuadClass 3/4 rows and geoparsed Live Alerts, each at its own point (country-level geocodes excluded); counts cover a rolling window of up to 24 h.',
+  note: 'Zones are REFERENCE. Events are GDELT QuadClass 3/4 rows and geoparsed rocket/event Live Alerts whose text is kinetic (keyword match; earthquakes and fires excluded), each at its own point (country-level geocodes excluded); counts cover a rolling window of up to 24 h.',
   // Zones are always present; the feed is empty only if the bundled file is missing.
   count: (d) => d.zones.length,
   isEmpty: (d) => d.zones.length === 0,
@@ -198,26 +235,32 @@ export const conflictsFeed = defineFeed<ConflictsData>({
 const RANK: Record<Exclude<FreshnessState, 'reference'>, number> = { live: 0, recent: 1, stale: 2, offline: 3 };
 
 /**
- * Conflicts is built from GDELT, so at response time it is never fresher than GDELT itself (R3
- * round-4 MINOR-1: it stayed LIVE for up to an hour while GDELT was down). When the GDELT feed is not
- * LIVE, the state follows the age of the last good GDELT pull at GDELT's 15-minute cadence: RECENT
- * up to 6 × 15 min, STALE after (the zones are REFERENCE and still served, so never OFFLINE here).
- * `providers.gdelt` is restated from the GDELT feed as it is now. A conflicts snapshot with no live
- * part (REFERENCE, GDELT never answered) is left as it is. Pure; exported for tests.
+ * The freshest state conflicts may claim given GDELT's own state (null = no cap). Conflicts is built
+ * from GDELT, so it is never fresher than GDELT itself (R3 round-4 MINOR-1: it stayed LIVE for up to an
+ * hour while GDELT was down). When the GDELT feed is not LIVE, the cap follows the age of the last
+ * good GDELT pull at GDELT's 15-minute cadence: RECENT up to 6 × 15 min, STALE after. When GDELT has
+ * never answered (no last-good pull), the in-zone Live Alerts may still be fresh but half of the live
+ * input is missing, so the cap is RECENT (r8: this case was uncapped and read LIVE). The zones are
+ * REFERENCE and still served, so the cap is never OFFLINE. Pure; exported for tests.
  */
-/** The freshest state conflicts may claim given GDELT's own state (null = no cap). */
-export function gdeltCap(g: FeedResult<GdeltData>, now = Date.now()): FreshnessState | null {
+export function gdeltCap(g: FeedResult<GdeltData>, now = Date.now()): 'recent' | 'stale' | null {
+  if (g.meta.state === 'live') return null;
   const lastPull = Date.parse(g.meta.lastGoodAt ?? '');
-  if (g.meta.state === 'live' || !Number.isFinite(lastPull)) return null;
+  if (!Number.isFinite(lastPull)) return 'recent';
   return Math.max(0, now - lastPull) <= 6 * GDELT_CADENCE_MS ? 'recent' : 'stale';
 }
 
+/**
+ * Applies gdeltCap at response time and restates `providers.gdelt` from the GDELT feed as it is now
+ * (age_s is null when GDELT has never answered). A conflicts snapshot with no live part (REFERENCE:
+ * no in-zone event observed) or with no data is left as it is. Pure; exported for tests.
+ */
 export function boundByGdelt(c: FeedResult<ConflictsData>, g: FeedResult<GdeltData>, now = Date.now()): FeedResult<ConflictsData> {
   if (c.data === null || c.meta.state === 'reference' || c.meta.state === 'offline') return c;
+  const cap = gdeltCap(g, now);
+  if (cap === null) return c;
   const lastPull = Date.parse(g.meta.lastGoodAt ?? '');
-  if (g.meta.state === 'live' || !Number.isFinite(lastPull)) return c;
-  const ageMs = Math.max(0, now - lastPull);
-  const cap: FreshnessState = ageMs <= 6 * GDELT_CADENCE_MS ? 'recent' : 'stale';
+  const ageS = Number.isFinite(lastPull) ? Math.round(Math.max(0, now - lastPull) / 1000) : null;
   const state = RANK[cap] > RANK[c.meta.state] ? cap : c.meta.state;
   const ok = g.meta.state === 'recent';
   const prev = c.providers.gdelt;
@@ -230,7 +273,7 @@ export function boundByGdelt(c: FeedResult<ConflictsData>, g: FeedResult<GdeltDa
         ok,
         count: prev?.count ?? c.data.events.filter((e) => e.source === 'gdelt').length,
         ms: prev?.ms ?? 0,
-        age_s: Math.round(ageMs / 1000),
+        age_s: ageS,
         ...(ok ? {} : { error: g.providers.export?.error ?? g.providers.lastupdate?.error ?? g.meta.state }),
       },
     },

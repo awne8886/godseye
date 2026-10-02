@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { gotoMap, MAP, waitForCameraIdle, waitForMapIdle } from '../map-engine/helpers';
+import { gotoMap, MAP, waitForAdmissionDrained, waitForCameraIdle, waitForMapIdle } from '../map-engine/helpers';
 
 /**
  * layers-threats-network: Global Incidents (GDACS) and GDELT Events render ≥ 1 entity when their
@@ -73,16 +73,30 @@ test.describe('threats & network layers', () => {
 
   test('a nuclear-facility card (REFERENCE layer) is badged REFERENCE', async ({ page }, info) => {
     test.skip(info.project.name === 'mobile', 'desktop pointer test');
+    test.setTimeout(240_000);
     test.skip(!hasCardHost(), 'no entity-card host (cardFor) is mounted by the HUD in this build');
     const body = await live<{ items: { id: string; lat: number; lng: number }[] }>(page, '/api/infrastructure', 'curated');
+    test.skip(body === null, 'infrastructure offline right now: /api/infrastructure answered SOURCE OFFLINE (asserted)');
     // A site with no other facility within ~30 km, so the click is unambiguous.
     const lonely = body!.items.find((s) => body!.items.every((o) => o.id === s.id || Math.hypot(o.lat - s.lat, o.lng - s.lng) > 0.3))!;
     await Promise.all([page.waitForResponse((r) => r.url().includes('/api/infrastructure') && r.ok(), { timeout: 60_000 }), openAt(page, lonely.lat, lonely.lng, 8, 'infrastructure')]);
-    await page.waitForTimeout(3000);
+    // Phase 3 round 8 MINOR: one click after a fixed 3 s settle missed the site 3 of 3 times on
+    // desktop (the deck layer was not drawn yet). Wait for the map, the start-up admission and the
+    // camera to settle, then click until the pick opens the card (as the malware test does).
+    await waitForMapIdle(page);
+    await waitForAdmissionDrained(page);
+    await waitForCameraIdle(page);
     const vp = page.viewportSize()!;
-    await page.mouse.click(vp.width / 2, vp.height / 2);
     const card = page.getByTestId('card-nuclear');
-    await expect(card).toBeVisible({ timeout: 15_000 });
+    await expect
+      .poll(
+        async () => {
+          if (!(await card.isVisible())) await page.mouse.click(vp.width / 2, vp.height / 2);
+          return card.isVisible();
+        },
+        { timeout: 60_000, intervals: [1_000, 2_000, 3_000] },
+      )
+      .toBe(true);
     await expect(card.getByTestId('card-reference')).toHaveText('REFERENCE');
   });
 

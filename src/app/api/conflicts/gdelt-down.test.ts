@@ -1,10 +1,12 @@
 import type * as Http from '@/lib/http';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { FX, type Route } from '@/features/threats/server/__fixtures__';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { newsFeed } from '@/components/panels/intel/feeds';
+import { fixture, FX, type Route } from '@/features/threats/server/__fixtures__';
 import { freshCache, req, resetCache } from '@/features/threats/server/__fixtures__/routes';
-import { conflictsFeed, resetConflictBuffer } from '@/features/threats/server/conflicts';
+import { conflictsFeed, gdeltCap, resetConflictBuffer } from '@/features/threats/server/conflicts';
 import { gdeltFeed, resetGdeltBatches } from '@/features/threats/server/gdelt';
 import { ConflictsResponse } from '@/lib/schemas';
+import type { AlertItem } from '@/lib/types';
 import { GET } from './route';
 
 const state = vi.hoisted(() => ({ routes: [] as Route[] }));
@@ -82,4 +84,50 @@ it('goes STALE once the last good GDELT pull is older than 6 × 15 min', async (
   const b = await outageAt('2026-09-30T21:45:00Z', true);
   expect(b.providers.gdelt).toMatchObject({ ok: false, age_s: 5700 });
   expect(b.meta.state).toBe('stale');
+});
+
+// Phase 3 round 8 MINOR: GDELT 503 from boot (never answered) left no cap, and the fresh in-zone
+// Live Alerts lit the layer LIVE. The never-answered case is capped at RECENT, like a fresh outage.
+describe('GDELT has never answered', () => {
+  const recorded = JSON.parse(fixture(FX.news).toString('utf8')) as { _meta: { capturedAt: string }; items: AlertItem[] };
+  const NOW = Date.parse(recorded._meta.capturedAt);
+  const news = (): Awaited<ReturnType<typeof newsFeed.get>> => {
+    const at = new Date(NOW - 60_000).toISOString();
+    return {
+      data: { items: recorded.items, sources: [] },
+      meta: { feed: 'news', kind: 'live', state: 'live', fetchedAt: at, observedAt: recorded.items[0]!.publishedAt, lastGoodAt: at, stale: false, ttlSeconds: 120, attribution: [] },
+      providers: {},
+    };
+  };
+  afterEach(() => vi.restoreAllMocks());
+
+  it('caps conflicts at RECENT (never LIVE) while in-zone Live Alerts are fresh', async () => {
+    vi.setSystemTime(NOW);
+    vi.spyOn(newsFeed, 'get').mockResolvedValue(news());
+    state.routes = [['lastupdate.txt', 503]];
+    const b = await body();
+    const g = await gdeltFeed.get();
+    expect(g.meta).toMatchObject({ state: 'offline', lastGoodAt: null });
+    // The live part exists (alert pins observed inside zones), so this is not REFERENCE...
+    expect(b.events.filter((e: { source: string }) => e.source === 'alerts').length).toBeGreaterThan(0);
+    expect(b.meta.observedAt).not.toBeNull();
+    // ...but GDELT never answered: RECENT, and providers.gdelt says so with no last-good age.
+    expect(b.meta.state).toBe('recent');
+    expect(b.meta.stale).toBe(true);
+    expect(b.providers.gdelt).toMatchObject({ ok: false, count: 0, age_s: null });
+    expect(b.providers.gdelt.error).toBe('http_503');
+    expect(b.providers.alerts).toMatchObject({ ok: true });
+    // The same cap applies to snapshot readers (/api/health reads conflictsFeed.peek()).
+    expect(gdeltCap(g, NOW)).toBe('recent');
+    expect(conflictsFeed.peek().meta.state).toBe('recent');
+  });
+
+  it('leaves a REFERENCE-only snapshot (no in-zone event) as REFERENCE', async () => {
+    vi.setSystemTime(NOW);
+    vi.spyOn(newsFeed, 'get').mockResolvedValue({ ...news(), data: { items: [], sources: [] } });
+    state.routes = [['lastupdate.txt', 503]];
+    const b = await body();
+    expect(b.events).toEqual([]);
+    expect(b.meta.state).toBe('reference');
+  });
 });

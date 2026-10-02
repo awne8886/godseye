@@ -8,7 +8,8 @@ import { AlertItem, ConflictEvent } from '@/lib/schemas';
 import type { AlertItem as AlertItemT } from '@/lib/types';
 import { fixture, FX } from './__fixtures__';
 import { NEWS_ATTRIBUTION } from '@/components/panels/intel/feeds';
-import { alertsToConflictEvents, buildConflicts, conflictsFeed, loadZones, type toConflictEvent, zoneFor } from './conflicts';
+import { alertKind } from '@/components/panels/intel/server/classify';
+import { alertsToConflictEvents, buildConflicts, conflictsFeed, isKineticAlertText, loadZones, type toConflictEvent, zoneFor } from './conflicts';
 import { parseExport } from './gdelt';
 import { unzipFirst } from './zip';
 
@@ -66,10 +67,51 @@ describe('alertsToConflictEvents', () => {
     const newsInZone = items.filter((i) => i.kind === 'news' && i.place && i.place.precision !== 'country' && zoneFor(zones, i.place.lng, i.place.lat));
     expect(newsInZone.length).toBeGreaterThan(0);
     for (const n of newsInZone) expect(out.some((e) => e.id === `alert:${n.id}`)).toBe(false);
-    // ...and the same post reclassified as an event would count (only the kind differs).
+    // ...and the same post with kinetic text and a rocket/event kind would count (same pin and time).
     const n = newsInZone[0]!;
-    expect(alertsToConflictEvents([{ ...n, kind: 'event' }], zones, undefined, NOW).map((e) => e.id)).toEqual([`alert:${n.id}`]);
-    expect(alertsToConflictEvents([{ ...n, kind: 'rocket' }], zones, undefined, NOW)).toHaveLength(1);
+    const kinetic = { ...n, title: 'Drone strike reported on the outskirts', summary: null };
+    expect(alertsToConflictEvents([{ ...kinetic, kind: 'event' }], zones, undefined, NOW).map((e) => e.id)).toEqual([`alert:${n.id}`]);
+    expect(alertsToConflictEvents([{ ...kinetic, kind: 'rocket' }], zones, undefined, NOW)).toHaveLength(1);
+    expect(alertsToConflictEvents([{ ...kinetic, kind: 'news' }], zones, undefined, NOW)).toHaveLength(0);
+  });
+
+  // Phase 3 round 8 MINOR: the classifier's kind=event also matches 'earthquake' and 'fire', so a
+  // quake or market-fire post pinned to a settlement inside a zone was counted as a conflict event.
+  it('an earthquake or fire post inside a zone is not a conflict event, even though it is kind=event', () => {
+    // A recorded settlement-pinned post, moved to Aleppo (Syria zone) and Baghdad (Iraq zone).
+    const base = byId('tg:QudsNen/240725');
+    const aleppo = { name: 'Aleppo', lat: 36.2021, lng: 37.1343, precision: 'settlement' as const, method: 'gazetteer' };
+    const baghdad = { name: 'Baghdad', lat: 33.3152, lng: 44.3661, precision: 'settlement' as const, method: 'gazetteer' };
+    expect(zoneFor(zones, aleppo.lng, aleppo.lat)).toBe('syria');
+    expect(zoneFor(zones, baghdad.lng, baghdad.lat)).toBe('iraq');
+    const post = (id: string, title: string, place: typeof aleppo, summary: string | null = null): AlertItemT => ({ ...base, id, title, summary, place, kind: alertKind(`${title}\n${summary ?? ''}`) });
+    const hazards = [
+      post('quake', 'Earthquake felt in Aleppo', aleppo),
+      post('quake-dead', 'Earthquake in Aleppo: 3 killed as buildings shake', aleppo),
+      post('fire', 'Fire at Baghdad market', baghdad),
+      post('fire-dead', 'Fire at Baghdad market, 5 killed', baghdad),
+      post('hunger', 'Prisoners begin hunger strike in Baghdad', baghdad),
+    ];
+    // The alert classifier calls every one of these an event: the filter must not rely on the kind.
+    for (const h of hazards) expect(h.kind).toBe('event');
+    expect(alertsToConflictEvents(hazards, zones, undefined, NOW)).toEqual([]);
+    // Kinetic posts at the same pins still count, at their own coordinates.
+    const kinetic = [
+      post('strike', 'Airstrike hits the outskirts of Aleppo', aleppo, 'Several buildings were hit in a drone strike.'),
+      post('blast', 'Blast at Baghdad market, 5 killed', baghdad),
+      post('quake-raid', 'Rocket attack on Aleppo hours after the earthquake', aleppo),
+    ];
+    const out = alertsToConflictEvents(kinetic, zones, undefined, NOW);
+    expect(out.map((e) => [e.id, e.zoneId, e.lng, e.lat])).toEqual([
+      ['alert:strike', 'syria', aleppo.lng, aleppo.lat],
+      ['alert:blast', 'iraq', baghdad.lng, baghdad.lat],
+      ['alert:quake-raid', 'syria', aleppo.lng, aleppo.lat],
+    ]);
+  });
+
+  it('isKineticAlertText: weapon language counts, casualty/blast language only without a hazard, idioms never', () => {
+    for (const t of ['Israeli occupation aircraft launch a strike near Gaza City', 'Russian drones hit a bridge', 'Clashes in Khartoum', 'Gunmen opened fire on a checkpoint', 'Police raid in Mosul', 'Sirens in Sderot']) expect(isKineticAlertText(t), t).toBe(true);
+    for (const t of ['Earthquake felt in Aleppo', 'Fire at Baghdad market, 5 killed', 'Gas explosion in a Baghdad restaurant', 'Sirens sound after earthquake in Haifa', 'Teachers on strike in Sanaa', 'Minister suffers heart attack', 'Carrier strike group enters the Red Sea', 'Bashir hospitalized in Khartoum']) expect(isKineticAlertText(t), t).toBe(false);
   });
 
   it('keeps who made the claim: source handle, channel name, stance and bloc from the AlertItem', () => {
