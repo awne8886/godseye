@@ -21,10 +21,12 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
         PLOT); sensor chip on coarse-pointer tablets overlaps the header
   - [ ] feature-flight-paths: providers.flights.age_s in /api/route/plan; cap the plan's cache TTL while
         a known service is live
+  - [ ] lead + layers-space: a `computed` DataKind for propagated positions (ISS, satellites) so the
+        /api/iss envelope stops saying kind/state live; the SPACE panel already badges COMPUTED
   - [ ] pages-docs-privacy-ops: re-capture the mislabelled Style Studio shots and the README hero shots;
         replace the stale "re-capture on a GPU machine" note with the capture environment
 - [ ] Verification rounds: round 6 had 2 BLOCKING / 8 MAJOR (fixed); round 7 clean (0 BLOCKING, 0 MAJOR,
-      12 MINOR being fixed); need round 8 clean
+      12 MINOR fixed); need round 8 clean
 
 ## Repository owner actions (cannot be done from the codebase)
 - [ ] Provision a hardware-GPU Actions runner and set the repository variable `LIGHTHOUSE_GPU_RUNNER`

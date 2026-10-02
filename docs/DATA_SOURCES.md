@@ -284,6 +284,13 @@ chip tap-to-clear, one-row phone sheet chrome, glass blur, `--map-route-airways`
 client-only. The FAA ADDS ATS_Route data the new token colours is a build-time snapshot owned and
 probed by feature-flight-paths (`public/data/airways-us.min.json`); the HUD makes no request for it.
 
+### Round 7 (2026-10-02)
+
+No upstream added or changed. The round-7 fixes (desktop sensor chip below the header row, one
+terrain status in the map's imagery-chip stack, phone sheet tab reveal, SOURCES (N) disclosure in
+layer rows) are client-only and render the `meta.attribution` each feed already reports; the full
+credits stay listed in the Sources & Licences panel.
+
 ### feature-flight-paths
 
 Probed 2026-09-30 20:02 UTC from the build sandbox with
@@ -424,6 +431,15 @@ The flights snapshot behind KNOWN SERVICES is read in-process (no upstream call)
 `honestFlights(feed.peek())`, reports `flights: {ok:false, error:'stale_snapshot'}` unless the snapshot is LIVE
 or RECENT, and returns each callsign's own `seenAt` (`knownServices[].observedAt`); `live` is true only when
 `entityFreshness()` with `OBSERVATION_CADENCE_MS.flights` says LIVE. The plan carries `flightsState`.
+
+#### 2026-10-02 07:04 UTC (Phase 3 round 7 verification fixes)
+
+No new upstream is wired this round. Local check of the in-process flights snapshot behind KNOWN SERVICES:
+`GET /api/route/plan?from=LHR&to=JFK` (own build, port 3311) → `timestamp 2026-10-02T07:04:18.644Z`,
+`flightsState live`, `providers.flights {ok: true, count: 5203, ms: 0, age_s: 11}`. When the snapshot is
+stale/offline the PATHS note now prints the last snapshot time as `timestamp − providers.flights.age_s`
+("Live feed offline — last snapshot HH:MM UTC (LIVE badges unavailable).", with the date when it is from an
+earlier UTC day), or "no snapshot yet" when `age_s` is null — never a made-up time.
 
 ### layers-aviation
 
@@ -806,6 +822,22 @@ IconLayer per category over a 6-glyph mask atlas rasterised at runtime). The wor
 drawn rows by category and posts `categoryOffsets`; `radii` became `sizes` (glyph px: 8, ISS 14,
 selected 16). No upstream or payload change.
 
+### Re-probe 2026-10-02 07:19 UTC (Phase 3 round 7: ISS provenance)
+
+| URL | Status | Latency | CORS | Auth | Sample |
+|---|---|---|---|---|---|
+| `https://api.wheretheiss.at/v1/satellites/25544` | 200 | 0.48 s | `*` | none | lat −4.14, lng −167.63, alt 417.65 km, `timestamp` 1790925560 (computed-for instant). |
+| `https://api.wheretheiss.at/v1/satellites/25544/tles` | 200 | 0.59 s | `*` | none | `{requested_timestamp, tle_timestamp: 1790800039, id: "25544", header: "ISS (ZARYA)", line1, line2}`; line 1 epoch `26273.85230731` = 2026-09-30T20:27:19.352Z (`tle_timestamp` is the same epoch, rounded to the second). |
+
+wheretheiss.at's position is computed (SGP4) from that TLE, not observed. `/api/iss` now carries
+`position: {method: 'propagated', by: 'wheretheiss.at', elementsEpoch}` (epoch parsed from line 1,
+re-read hourly; null if `/tles` never answered, provider `wheretheiss-tles` in `providers`), and the
+SPACE panel badges the readout COMPUTED (ageing to `COMPUTED · 2m`, then STALE/OFFLINE), never
+LIVE. The upstream `timestamp` was up to 2 s after our receive time in round 7, so
+`meta.observedAt` is clamped to the receive time (never after `fetchedAt`). Fixture:
+`src/features/space/__fixtures__/wheretheiss-tles.json`. Rate cost: one extra request per hour
+against the 350 / 5 min limit.
+
 ### layers-surveillance
 
 Probed **2026-09-30 19:58–20:45 UTC** from the build sandbox with
@@ -1007,7 +1039,7 @@ within 6 operator intervals (≥ 60 s each, the viewer's own rule), otherwise `S
 | MLIT terms | `https://www.mlit.go.jp/link.html` 200 · 0.65 s | — | — | MLIT website content: 公共データ利用規約 (PDL1.0) unless noted, source credit required. river.go.jp publishes no terms page of its own (none linked from either app bundle; `/kawabou/kwb_apend/html/{policy,copyright}.html` 404); many cameras are prefecture-owned. Re-checked 2026-10-02: link.html says copyright 'belongs to MLIT unless otherwise noted' (著作権は、特記されていない限り国土交通省に帰属), so PDL 1.0 does not cover prefecture-owned frames (owners 東京都 / 埼玉県 for the sampled sys 3 / sys 1 cameras) | — | **Link-out only**: `proxy_allowed: false`, `link_out_only: true`, `rules: []`; attribution `出典：国土交通省「川の防災情報」`. |
 | MLIT camera page `https://www.river.go.jp/kawabou/pc/tm?itmkndCd=200&scamId=<id>` | 200 · 0.9–1.3 s (SPA shell; curl cannot tell ids apart) | — | none | — | Checked in Chromium 2026-10-02: ids 303329013 (四ノ橋), 303329006 (飯田橋), 102817028 (毛長川舎人観測局), 121320173 (多摩川右岸) each open their own camera on the map (name shown, map centred on it) | Each MLIT row's `externalUrl`. |
 | Edmonton per-camera page | `edmontontrafficcam.com/` 200 · 0.91 s; `Script/{Map,List,Video}Factory.min.js` read 2026-10-02 | — | — | — | The player reads no query string or hash (no `location.search`/`hash`/`URLSearchParams`), so there is no per-camera URL | Edmonton rows keep linking to the player home page (verifier finding 5 accepted as is). |
-| Windy Webcams API v3 `https://api.windy.com/webcams/api/v3/webcams?limit=1` | 403 · 0.46 s (no key) | — | `x-windy-api-key` | Windy terms | — | Not wired: listed in `NOT_WIRED_SOURCES` (needs `WINDY_WEBCAMS_KEY`). |
+| Windy Webcams API v3 `https://api.windy.com/webcams/api/v3/webcams?limit=1` | 403 · 0.22 s (no key, re-probed 2026-10-02: `Missing Header 'x-windy-api-key'`) | — | `x-windy-api-key` | Windy terms | — | Not wired: listed in `NOT_WIRED_SOURCES`; the keyed API is not implemented, so no env key enables it. |
 
 ### layers-threats-network
 
@@ -1192,7 +1224,20 @@ Changes in how the browser uses them (no new hosts, no keys):
 (gpsjam.org daily + live NACp via `/api/gps-interference`), `route-plan-LHR-JFK.json`
 (`/api/route/plan?from=LHR&to=JFK`). The page clock is pinned to 2026-10-02T02:45:15Z. Not
 baselined: ArcLayer (only Cloudflare Radar attack-origin arcs, keyed by `CLOUDFLARE_API_TOKEN`; no
-recorded keyed response exists) and TripsLayer (none in this base).
+recorded keyed response exists).
+
+TripsLayer baseline (round 7, watched-flight trail): a second pair recorded together from this
+app's own routes on 2026-10-02, unedited — `flights-2026-10-02T0726Z.json` (`/api/flights`, fetched
+07:26:37Z, `meta.observedAt` 07:26:30Z, 4,067 rows, adsb.lol tiles/mil/ladd/pia ok) and, 1 s later,
+`aircraft-77058f-2026-10-02T0726Z.json` (`/api/aircraft?icao24=77058f`: adsbdb identity SriLankan
+A333 4R-ALO + the current leg of the adsb.lol readsb trace, 356 samples 06:47:44–07:26:24Z out of
+Sydney; providers adsbdb 473 ms, adsblol_trace 882 ms). The aircraft is in the snapshot (seenAt
+07:26:24Z) and isolated (nothing within 40 km), so the spec opens its card with a click and presses
+WATCH like a user; the clock is pinned to 07:26:38Z (head dead-reckoned 14 s, under the 60 s cap).
+Upstreams re-probed with curl the same day (honest UA, `Origin: http://localhost:3000`):
+`https://adsb.lol/data/traces/8f/trace_recent_77058f.json` 200 in 0.67 s (4.8 kB, no ACAO header —
+server-side only), `https://api.adsbdb.com/v0/aircraft/77058f` 200 in 0.76 s (466 B, ACAO `*`).
+The aircraft card's adsbdb photo host (`airport-data.com`) is refused in the baseline run.
 Re-probed 2026-10-02 (round 6): `GET https://api.cloudflare.com/client/v4/radar/attacks/layer7/top/locations/origin?limit=5&dateRange=1d`
 without a token → 400 in 0.46 s, `{"success":false,"errors":[{"code":9106,"message":"Missing X-Auth-Key, X-Auth-Email or Authorization headers"}]}`;
 no `CLOUDFLARE_API_TOKEN` in this sandbox, so the Arc baseline stays `test.fixme` pending a keyed recording or a lead waiver.
