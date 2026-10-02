@@ -12,6 +12,7 @@ import { useLayerStatus, type LayerStatus } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import type { Attribution } from '@/lib/types';
 import { refreshLabel, zoomGateLabel } from './status-logic';
+import { hhmmUtc, isTimelineLayer, useTimeCursor, useTimelineCoverage } from './timeline';
 
 /** The knob slides with a CSS transition (base.css), so this module stays free of motion (perf m-d). */
 export function Toggle({ on }: { on: boolean }) {
@@ -31,6 +32,7 @@ const hhmm = (iso: string | null) => (iso ? `${new Date(iso).toISOString().slice
 
 /** `omitReference`: the row already shows a REFERENCE chip, so a healthy reference feed adds nothing (n4). */
 export function FreshnessLed({ layer, status, omitReference = false }: { layer: LayerDef; status: LayerStatus; omitReference?: boolean }) {
+  const cursor = useTimeCursor();
   const gate = zoomGateLabel(status);
   if (gate) return <span className="hud-micro text-[var(--text-secondary)]">{gate}</span>;
   if (status.state === 'idle') return null;
@@ -43,6 +45,14 @@ export function FreshnessLed({ layer, status, omitReference = false }: { layer: 
     );
   const state = layer.kind === 'reference' && status.state !== 'offline' ? 'reference' : status.state;
   if (state === 'reference' && omitReference) return null;
+  // Timeline replay: a replayed layer shows the cursor, never its live freshness (offline still says so).
+  if (cursor !== null && state !== 'offline' && isTimelineLayer(layer.id))
+    return (
+      <span className="hud-micro flex items-center gap-1 text-[var(--gold-light)]" data-testid={`replay-${layer.id}`}>
+        <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--gold-light)]" />
+        REPLAY {hhmmUtc(cursor)}Z
+      </span>
+    );
   const at = status.observedAt ?? status.fetchedAt;
   const color = `var(${FRESHNESS_COLOR_TOKEN[state]})`;
   return (
@@ -110,6 +120,10 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
   const needsKey = status.providers ? Object.entries(status.providers).filter(([, p]) => p.skipped === 'not-configured').map(([name]) => name) : [];
   const offline = status.state === 'offline';
   const descId = useId();
+  // Timeline replay: the count is what the map draws at the cursor.
+  const cursor = useTimeCursor();
+  const replay = useTimelineCoverage((s) => (cursor !== null && isTimelineLayer(id) ? s.coverage[id] : undefined));
+  const count = replay ? replay.shown : status.count;
   return (
     <li className={layer.parent ? 'pl-5' : ''} style={layer.parent && !parentOn ? { opacity: 0.6 } : undefined}>
       <button
@@ -123,9 +137,9 @@ export function LayerRow({ layer, parentOn = true }: { layer: LayerDef; parentOn
         <span className={`hud-text truncate text-[11px] ${on ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>{layer.label}</span>
         {layer.kind === 'reference' && <span className="instrument-chip text-[var(--text-secondary)]">REFERENCE</span>}
         <span className="flex-1" />
-        {on && typeof status.count === 'number' && (
-          <span className="hud-micro rounded-[var(--radius-chip)] bg-[rgba(var(--cyan-rgb),0.12)] px-1.5 py-0.5 text-[var(--cyan-primary)]">
-            {status.count.toLocaleString('en-US')}
+        {on && typeof count === 'number' && (
+          <span data-testid={`layer-count-${layer.id}`} title={replay ? `${count} of ${replay.total} held, at the timeline cursor` : undefined} className="hud-micro rounded-[var(--radius-chip)] bg-[rgba(var(--cyan-rgb),0.12)] px-1.5 py-0.5 text-[var(--cyan-primary)]">
+            {count.toLocaleString('en-US')}
           </span>
         )}
       </button>

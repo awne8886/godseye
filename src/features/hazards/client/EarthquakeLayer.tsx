@@ -3,7 +3,9 @@
  * USGS earthquakes: magnitude-scaled deck points plus magnitude rings drawn as geodesic outlines in a
  * native MapLibre line layer (draped on the globe without z-fighting; never a deck "big circle").
  * Significant quakes go to the Intel Feed. On the globe the markers draw without the depth test (the
- * surface clipped them into half-discs) and only on the camera-facing side (globe.tsx).
+ * surface clipped them into half-discs) and only on the camera-facing side (globe.tsx). With the
+ * timeline scrubber set, only quakes observed at or before the cursor are drawn (hud/timeline.ts);
+ * quakes new since the previous poll ring outward once (hud/arrival-rings.ts).
  * Owner: layers-hazards.
  */
 import { ScatterplotLayer } from '@deck.gl/layers';
@@ -19,24 +21,35 @@ import { nearestPoint, useHitTester } from './hit-test';
 import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from './globe';
 import { entitySelection } from './pick';
 import { useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
+import { useArrivalRings } from '@/components/hud/arrival-rings';
+import { TIMELINE_SPAN_MS, filterAtCursor, heldSpan, timeMs, useReportCoverage, useTimeCursor } from '@/components/hud/timeline';
 import { useHazardData } from './useHazardData';
 
 const Z = LAYERS.find((l) => l.id === 'earthquakes')!.z;
 const count = (b: EarthquakesResponse) => b.items.length;
+const quakeObservedMs = (q: Earthquake) => timeMs(q.observedAt);
+const quakePosition = (q: Earthquake): [number, number] => [q.lng, q.lat];
+const quakeId = (q: Earthquake) => q.id;
 
 const rgba = ([r, g, b, a]: Rgba) => `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
 const RING_LAYERS = [{ id: 'hazards-quake-rings', type: 'line' as const, paint: { 'line-color': ['get', 'color'] as unknown as string, 'line-width': 1.25 } }];
 
 export default function EarthquakeLayer() {
   const data = useHazardData<EarthquakesResponse>('earthquakes', '/api/earthquakes', count);
-  const items = data?.items;
+  const all = data?.items;
+  const cursor = useTimeCursor();
+  // Timeline replay: only quakes observed at or before the cursor (the same array when live).
+  const items = useMemo(() => (all ? filterAtCursor(all, cursor, quakeObservedMs) : undefined), [all, cursor]);
+  // USGS `2.5_day` is the past 24 h up to the fetch.
+  const span = heldSpan(data?.meta?.fetchedAt, TIMELINE_SPAN_MS, null);
+  useReportCoverage('earthquakes', span && all ? { ...span, shown: items?.length ?? 0, total: all.length } : null);
   const push = useFeedEventStore((s) => s.push);
   // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
   const styleVersion = useStyleVersion();
 
   useEffect(() => {
-    if (items) push(quakeEvents(items));
-  }, [items, push]);
+    if (all) push(quakeEvents(all));
+  }, [all, push]);
 
   // No body (loading, or SOURCE OFFLINE after a 503) → an empty collection, never null:
   // useGeoJsonLayers keeps the previous data on null, which left last-good rings drawn (and
@@ -60,6 +73,16 @@ export default function EarthquakeLayer() {
   const sorted = useMemo(() => (items ? [...items].sort((a, b) => b.magnitude - a.magnitude) : undefined), [items]);
   const camera = useFarSideCamera();
   const points = useFacing(sorted, camera);
+  const arrivals = useArrivalRings({
+    id: 'hazards-quake-arrivals',
+    items: all,
+    idOf: quakeId,
+    positionOf: quakePosition,
+    observedMs: quakeObservedMs,
+    radiusPx: (q) => quakeRadiusPx(q.magnitude),
+    color: readCssColor('--map-seismic', 0.9),
+    camera,
+  });
 
   const layers = useMemo(() => {
     if (!points) return null;
@@ -81,8 +104,9 @@ export default function EarthquakeLayer() {
         autoHighlight: true,
         updateTriggers: { getFillColor: styleVersion, getLineColor: styleVersion },
       }),
+      ...(arrivals ? [arrivals] : []),
     ];
-  }, [points, styleVersion]);
+  }, [points, styleVersion, arrivals]);
 
   useDeckLayers('hazards:earthquakes', layers, Z);
   useHitTester('earthquakes', (map, e) => {

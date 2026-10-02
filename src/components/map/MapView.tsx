@@ -731,7 +731,7 @@ export default function MapView() {
 
   return (
     <>
-      <div className="absolute inset-0" data-testid="map-root" data-projection={effective} data-basemap={basemap}>
+      <div className="godseye-starfield absolute inset-0" data-testid="map-root" data-projection={effective} data-basemap={basemap}>
         <Map
           key={attempt}
           ref={attachMapRef}

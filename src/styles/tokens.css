@@ -50,6 +50,9 @@
   /* OSIRIS used #5C5A54 (~3:1). GODSEYE raises it to pass WCAG AA at small sizes. */
   --text-muted: #848178;
   --text-heading: #f5f0e0;
+  /* Globe backdrop (behind the map canvas, whose sky is transparent): deep space and its stars. */
+  --sky-deep: #05070d;
+  --star: var(--text-heading);
 
   --font-hud: var(--font-jetbrains-mono), 'JetBrains Mono', 'Courier New', monospace;
   --font-body: var(--font-inter), 'Inter', -apple-system, system-ui, sans-serif;

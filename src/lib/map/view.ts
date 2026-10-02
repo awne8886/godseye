@@ -18,9 +18,14 @@ export function initialCamera(tzOffsetMinutes: number): InitialCamera {
   return { longitude: lng, latitude: 20, zoom: 1.8, pitch: 20, bearing: 0 };
 }
 
-/** Atmosphere per §5: sky #05070D, horizon #0E1A2B, atmosphere-blend 0:1 → 5:1 → 7:0. */
+/**
+ * Atmosphere per §5: sky #05070D, horizon #0E1A2B, atmosphere-blend 0:1 → 5:1 → 7:0. The sky colour
+ * is #05070D at zero alpha: the canvas leaves space transparent so the static starfield on the map
+ * root (`.godseye-starfield`, base.css, on a `--sky-deep` #05070D backdrop) shows behind the globe,
+ * under the horizon glow and atmosphere (§7 stars, r10).
+ */
 export const GLOBE_SKY: SkySpecification = {
-  'sky-color': '#05070D',
+  'sky-color': 'rgba(5, 7, 13, 0)',
   'horizon-color': '#0E1A2B',
   'sky-horizon-blend': 0.6,
   'horizon-fog-blend': 0.4,
