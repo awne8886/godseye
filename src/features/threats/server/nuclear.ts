@@ -167,7 +167,8 @@ export const CONFLICT_METHOD = 'GDELT material-conflict (QuadClass 4) events geo
 /** Attach seismic/conflict flags. Pure. */
 export function flagSites(sites: NuclearSite[], quakes: readonly Quake[], events: readonly (ConflictEvent & { quad?: number })[], now = Date.now()): NuclearSite[] {
   const recent = quakes.filter((q) => q.magnitude >= 4.5 && q.observedAt && now - Date.parse(q.observedAt) <= 24 * 3600_000);
-  const near = events.filter((e) => e.precision === 'settlement');
+  // The stated method is GDELT-only: in-zone Live Alerts (source 'alerts') are not counted here.
+  const near = events.filter((e) => e.source === 'gdelt' && e.precision === 'settlement');
   return sites.map((s) => {
     const flags: NuclearSite['flags'] = [];
     const qs = recent.filter((q) => distanceKm([s.lng, s.lat], [q.lng, q.lat]) <= 150);

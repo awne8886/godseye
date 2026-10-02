@@ -1,5 +1,6 @@
 /**
- * GET /api/conflicts — conflict zones (REFERENCE polygons) with live GDELT events inside them, at
+ * GET /api/conflicts — conflict zones (REFERENCE polygons) with live GDELT events and geoparsed Live
+ * Alerts (providers.alerts, read in-process from the news feed) inside them, at
  * their own coordinates (ConflictsResponse). The state is bounded by the GDELT feed as it is now
  * (boundByGdelt): never LIVE while GDELT is not. Reading GDELT here also keeps its poller alive.
  * Owner: layers-threats-network.

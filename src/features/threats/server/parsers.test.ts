@@ -222,5 +222,8 @@ describe('nuclear facilities', () => {
     expect(flagged.flags[0]!.label).toMatch(/^M5\.1 earthquake \d+ km away$/);
     expect(flagged.flags[1]).toMatchObject({ method: CONFLICT_METHOD, observedAt: '2026-09-30T19:00:00.000Z' });
     expect(NuclearSite.safeParse(flagged).success).toBe(true);
+    // The conflict method is GDELT-only: an in-zone Live Alert pin at the same spot never flags.
+    const alertOnly = flagSites([site], [], [{ id: 'alert:x', lat: 47.6, lng: 34.4, title: 't', source: 'alerts', zoneId: 'ukraine', observedAt: '2026-09-30T19:00:00.000Z', url: null, precision: 'settlement' }], now)[0]!;
+    expect(alertOnly.flags).toEqual([]);
   });
 });

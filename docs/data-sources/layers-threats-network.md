@@ -64,3 +64,11 @@ Re-probe 2026-10-01 18:23–18:46 UTC (Phase 3 round-5 fixes; UA `GODSEYE/0.1.0 
 | CISA KEV JSON, `If-None-Match` + `If-Modified-Since` | **304** · 0.29–0.31 s · 0 B | none | The KEV feed now sends both validators once it has a snapshot; the revalidation that follows each NVD batch (so `/api/health` restates `providers.nvd`) costs a 304, not 1.76 MB. |
 | CISA KEV JSON, `If-None-Match` only | 200 · 0.39–0.46 s · 1.76 MB | none | The CDN ignores the ETag alone → never send it without `If-Modified-Since` (http.ts sends both when both are known). |
 | CISA KEV JSON, `If-Modified-Since` only | 304 · 0.46 s | none | — |
+
+Probe 2026-10-02 00:35–00:40 UTC (Phase 3 round-6, alert pins counted in conflict zones; UA `GODSEYE-probe`, `Origin: https://example.org`):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| Live Alerts via `runNews()` (in-process; owner panels-alerts-markets-dossier-graph) | 120 items · 16/21 sources ok (BBC, Guardian, NYT, DW, CNA, Times of Israel failed from this sandbox) | n/a (server) | Conflicts reads `newsFeed.get()` in-process, never `/api/news`. Places: 27 settlement, 12 region, 43 country, 38 none; only settlement/region pins inside a zone count (6 of 120: Kyiv ×2, Odesa, Gaza City, Gaza Strip, Khartoum). Aden (45.02 E, 12.79 N) sits just outside the bundled Yemen outline and is not counted. Fixture `news-items.2026-10-02.json` (18 items, fields as served). Licence: links to publishers; headlines only. |
+| `t.me/s/KyivIndependent_official` | 200 · 0.73 s | none | Public channel preview; no `Access-Control-Allow-Origin` (server-side only). |
+| Al Jazeera `xml/rss/all.xml` | 200 · 0.48 s | none | Wire RSS; server-side only. |
