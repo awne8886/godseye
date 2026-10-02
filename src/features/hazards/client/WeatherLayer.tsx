@@ -39,11 +39,13 @@ export default function WeatherLayer() {
     push(weatherEvents(items));
   }, [items, push]);
 
-  const areas = useMemo<GeoJSON.FeatureCollection | null>(() => {
-    if (!items) return null;
+  // No body (loading, or SOURCE OFFLINE after a 503) → an empty collection, never null:
+  // useGeoJsonLayers keeps the previous data on null, which left last-good footprints drawn
+  // (and unclickable) while the deck markers and the rail had already cleared (round 7).
+  const areas = useMemo<GeoJSON.FeatureCollection>(() => {
     return {
       type: 'FeatureCollection',
-      features: items
+      features: (items ?? [])
         .filter((e) => e.geometry)
         .map((e) => ({ type: 'Feature', geometry: e.geometry!, properties: { id: e.id, severity: e.severity, provider: e.provider } })),
     };

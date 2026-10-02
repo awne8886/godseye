@@ -38,11 +38,13 @@ export default function EarthquakeLayer() {
     if (items) push(quakeEvents(items));
   }, [items, push]);
 
-  const rings = useMemo<GeoJSON.FeatureCollection | null>(() => {
-    if (!items) return null;
+  // No body (loading, or SOURCE OFFLINE after a 503) → an empty collection, never null:
+  // useGeoJsonLayers keeps the previous data on null, which left last-good rings drawn (and
+  // unclickable) while the deck points and the rail had already cleared (round 7).
+  const rings = useMemo<GeoJSON.FeatureCollection>(() => {
     return {
       type: 'FeatureCollection',
-      features: items
+      features: (items ?? [])
         .filter((q) => q.magnitude >= 4.5)
         .map((q) => ({
           type: 'Feature',

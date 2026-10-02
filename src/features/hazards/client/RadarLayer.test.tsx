@@ -33,6 +33,8 @@ function fakeMap() {
   const map = {
     corner,
     controls,
+    layers,
+    sources,
     getStyle: () => ({ layers: [] }),
     getLayer: (id: string) => (layers.has(id) ? { id } : undefined),
     getSource: (id: string) => (sources.has(id) ? { id } : undefined),
@@ -139,6 +141,21 @@ describe('radar frame-time chip placement (visual-qa r4 M2)', () => {
     render(<RadarLayer />);
     expect(m.addControl).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="radar-frame-chip"]')).toBeNull();
+  });
+});
+
+describe('radar on a live → 503 transition (verification round 7)', () => {
+  it('removes every raster frame and the frame chip together (no half-cleared layer)', () => {
+    const view = render(<RadarLayer />);
+    expect(map!.sources.size).toBe(body!.frames.length);
+    expect(map!.layers.size).toBe(body!.frames.length);
+    // 503: useHazardData returns null (the rail shows SOURCE OFFLINE with lastGoodAt).
+    body = null as unknown as RadarFramesResponse;
+    act(() => view.rerender(<RadarLayer />));
+    expect(map!.sources.size).toBe(0);
+    expect(map!.layers.size).toBe(0);
+    expect(document.querySelector('[data-testid="radar-frame-chip"]')).toBeNull();
+    expect(map!.removeControl).toHaveBeenCalledTimes(1);
   });
 });
 
