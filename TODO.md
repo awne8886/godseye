@@ -6,10 +6,8 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
 "Known limitations", not here.
 
 ## Phase 3 — verify → fix (need two consecutive clean rounds)
-- [ ] Round 5 integration: aviation/flight-paths `headingFor` shared rule, DeckOverlay passive-effect
-      assertion, far-side camera when tilted, satellite pick altitude, long-press while a draw tool is
-      armed, `BasemapState` alignment in tools/lighthouse, phone-variant sizing in remaining panels,
-      palette inflected verbs
+- [ ] Round 5 integration merged; still to check by e2e: the DeckOverlay stale-list guard (route endpoint
+      labels on SVO-LAX, FLIGHT tab) and armed-tool gesture gating (long-press, double right-click, hover)
 - [ ] Round 6 owner work
   - [ ] layers-aviation: flight-route `basis: 'observed'` from the earliest low run of the flown track
   - [ ] feature-flight-paths: AeroAPI adapter (capability `aeroapi`), FAA airways snapshot + layer,
