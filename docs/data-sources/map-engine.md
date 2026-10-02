@@ -104,7 +104,20 @@ Changes in how the browser uses them (no new hosts, no keys):
 (gpsjam.org daily + live NACp via `/api/gps-interference`), `route-plan-LHR-JFK.json`
 (`/api/route/plan?from=LHR&to=JFK`). The page clock is pinned to 2026-10-02T02:45:15Z. Not
 baselined: ArcLayer (only Cloudflare Radar attack-origin arcs, keyed by `CLOUDFLARE_API_TOKEN`; no
-recorded keyed response exists) and TripsLayer (none in this base).
+recorded keyed response exists).
+
+TripsLayer baseline (round 7, watched-flight trail): a second pair recorded together from this
+app's own routes on 2026-10-02, unedited — `flights-2026-10-02T0726Z.json` (`/api/flights`, fetched
+07:26:37Z, `meta.observedAt` 07:26:30Z, 4,067 rows, adsb.lol tiles/mil/ladd/pia ok) and, 1 s later,
+`aircraft-77058f-2026-10-02T0726Z.json` (`/api/aircraft?icao24=77058f`: adsbdb identity SriLankan
+A333 4R-ALO + the current leg of the adsb.lol readsb trace, 356 samples 06:47:44–07:26:24Z out of
+Sydney; providers adsbdb 473 ms, adsblol_trace 882 ms). The aircraft is in the snapshot (seenAt
+07:26:24Z) and isolated (nothing within 40 km), so the spec opens its card with a click and presses
+WATCH like a user; the clock is pinned to 07:26:38Z (head dead-reckoned 14 s, under the 60 s cap).
+Upstreams re-probed with curl the same day (honest UA, `Origin: http://localhost:3000`):
+`https://adsb.lol/data/traces/8f/trace_recent_77058f.json` 200 in 0.67 s (4.8 kB, no ACAO header —
+server-side only), `https://api.adsbdb.com/v0/aircraft/77058f` 200 in 0.76 s (466 B, ACAO `*`).
+The aircraft card's adsbdb photo host (`airport-data.com`) is refused in the baseline run.
 Re-probed 2026-10-02 (round 6): `GET https://api.cloudflare.com/client/v4/radar/attacks/layer7/top/locations/origin?limit=5&dateRange=1d`
 without a token → 400 in 0.46 s, `{"success":false,"errors":[{"code":9106,"message":"Missing X-Auth-Key, X-Auth-Email or Authorization headers"}]}`;
 no `CLOUDFLARE_API_TOKEN` in this sandbox, so the Arc baseline stays `test.fixme` pending a keyed recording or a lead waiver.
