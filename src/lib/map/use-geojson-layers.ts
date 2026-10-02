@@ -1,24 +1,40 @@
 'use client';
 /**
- * Native MapLibre GeoJSON source + layers for polygon footprints (NWS alert areas, NHC cones,
- * Sentinel scenes): inserted under the basemap labels, updated with setData, re-added after a
- * style reload, removed on unmount. Clicks and the hover cursor come from the map's single router
- * via hit-test.ts (queryRenderedFeatures on these layers). Owner: layers-hazards.
+ * Shared native MapLibre GeoJSON source + layers for feature modules (NWS alert areas, NHC cones,
+ * Sentinel scenes, quake rings, alert pins): inserted under the basemap labels, updated with
+ * setData, re-added after a style reload, repainted in place when the paint props change (theme
+ * recolour, no remount), removed on unmount. Clicks and the hover cursor come from the map's
+ * single router via hit-test.ts (queryRenderedFeatures on these layers). Owner: map-engine
+ * (moved from features/hazards/client/useGeoJsonLayers.ts; the paint effect is the threats
+ * `useNativeLayers` one).
  */
 import type { LayerSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { useMapInstance } from '@/lib/layer-host';
 
-type Spec = Exclude<LayerSpecification, { type: 'background' | 'raster' | 'hillshade' | 'color-relief' }>;
+export type GeoJsonLayerSpec = Omit<
+  Exclude<LayerSpecification, { type: 'background' | 'raster' | 'hillshade' | 'color-relief' }>,
+  'source'
+>;
 
 function firstSymbolId(map: MapLibreMap): string | undefined {
   return map.getStyle()?.layers?.find((l) => l.type === 'symbol')?.id;
 }
 
+/** Apply every paint property of `layers` to the live map in place (layers not yet added are skipped). */
+export function repaintLayers(map: MapLibreMap, layers: readonly GeoJsonLayerSpec[]): void {
+  for (const l of layers) {
+    if (!map.getLayer(l.id) || !('paint' in l) || !l.paint) continue;
+    for (const [k, v] of Object.entries(l.paint)) {
+      map.setPaintProperty(l.id, k as Parameters<MapLibreMap['setPaintProperty']>[1], v);
+    }
+  }
+}
+
 export function useGeoJsonLayers(
   sourceId: string,
   data: GeoJSON.FeatureCollection | null,
-  layers: Omit<Spec, 'source'>[],
+  layers: GeoJsonLayerSpec[],
 ): void {
   const map = useMapInstance();
   const dataRef = useRef(data);
@@ -32,12 +48,16 @@ export function useGeoJsonLayers(
   useEffect(() => {
     if (!map) return;
     const ensure = () => {
-      if (!map.getStyle()) return;
-      const fc = dataRef.current ?? { type: 'FeatureCollection', features: [] };
-      if (!map.getSource(sourceId)) map.addSource(sourceId, { type: 'geojson', data: fc, promoteId: 'id' });
-      const before = firstSymbolId(map);
-      for (const l of layersRef.current) {
-        if (!map.getLayer(l.id)) map.addLayer({ ...l, source: sourceId } as LayerSpecification, before);
+      try {
+        if (!map.getStyle()) return;
+        const fc = dataRef.current ?? { type: 'FeatureCollection', features: [] };
+        if (!map.getSource(sourceId)) map.addSource(sourceId, { type: 'geojson', data: fc, promoteId: 'id' });
+        const before = firstSymbolId(map);
+        for (const l of layersRef.current) {
+          if (!map.getLayer(l.id)) map.addLayer({ ...l, source: sourceId } as LayerSpecification, before);
+        }
+      } catch {
+        // The style is mid-(re)load: retried on the next styledata event.
       }
     };
     ensure();
@@ -64,10 +84,7 @@ export function useGeoJsonLayers(
   // Repaint in place when the paint props change (theme recolour).
   useEffect(() => {
     if (!map) return;
-    for (const l of layers) {
-      if (!map.getLayer(l.id) || !('paint' in l) || !l.paint) continue;
-      for (const [k, v] of Object.entries(l.paint)) map.setPaintProperty(l.id, k as Parameters<MapLibreMap['setPaintProperty']>[1], v);
-    }
+    repaintLayers(map, layers);
   }, [map, layers]);
 }
 

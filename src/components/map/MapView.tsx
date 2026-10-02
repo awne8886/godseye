@@ -32,7 +32,7 @@ import { type TileWatch, type TileWatchMap, type WatchedSource, watchTileSources
 import { createBasemapStyleLoader, loadBasemapWithRetry } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
 import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
-import { onceBasemapPainted, onceFirstFrame, onceStyleParsed, type PaintMap, styleParsed } from '@/lib/map/ready';
+import { onceBasemapPainted, onceFirstFrame, onceStyleParsed, type PaintMap, publishMapReady, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { useSticky } from '@/lib/map/defer';
 import { afterQuietSlot, canvasGl } from '@/lib/map/gpu-drain';
@@ -70,9 +70,10 @@ import ImageryLayers, { useGibsDate } from './ImageryLayers';
 import TerminatorLayer from './TerminatorLayer';
 import WebGLFallback from './WebGLFallback';
 
-// deck.gl/luma and every feature module are split out of the map chunk (§11 TBT budget) and load
-// once the style is parsed: the globe paints first. The data modules mount then too, so their
-// fetches overlap the GL start-up; their GPU work waits in the admission queue (perf m-l).
+// deck.gl/luma and every feature module are split out of the map chunk (§11 TBT budget). DeckOverlay
+// loads once its device is admitted; the data modules mount with the map host (perf L96), so their
+// default-on fetches overlap the style download and GL start-up; their GPU work waits in the
+// admission queue (perf m-l).
 const DeckOverlay = dynamic(() => import('./DeckOverlay'), { ssr: false });
 const FeatureLayers = dynamic(() => import('./FeatureLayers'), { ssr: false });
 // Module Backgrounds (route planner, DRAW/ROUTE overlays) are the user's own tools: they mount as
@@ -161,7 +162,7 @@ export default function MapView() {
   const active = useUiStore((s) => s.activeLayers);
   const flyTo = useUiStore((s) => s.flyTo);
   const setCamera = useUiStore((s) => s.setCamera);
-  const { setMap, setReady, setProjection } = useMapInstanceStore.getState();
+  const { setMap, setProjection } = useMapInstanceStore.getState();
 
   const dayNight = active.has('day_night');
   const buildings = active.has('terrain_3d');
@@ -274,13 +275,11 @@ export default function MapView() {
     if (!map || published.current === map) return; // once per map instance (a WebGL retry remounts it)
     published.current = map;
     setMap(map);
+    // `ready` follows in the admission effect below, right after the queue that holds the native
+    // layers' first draws is installed (the data modules are mounted already and add layers as
+    // soon as the map is ready).
     setLoaded(true);
-    // Ready as soon as the style is parsed: `isStyleLoaded()` stays false while any visible tile is
-    // loading, so one hung tile would keep every native layer out and the header counting undrawn
-    // entities.
-    setReady(true);
-    map.getContainer().dataset.mapReady = 'true';
-  }, [setMap, setReady]);
+  }, [setMap]);
   const onLoad = publishMap;
 
   // Runs as soon as react-map-gl has constructed the map (before any tile asks for sprite images).
@@ -530,6 +529,11 @@ export default function MapView() {
       admitOne: () => void native.admitNext(),
     });
     store.setScheduler(scheduler);
+    // Ready as soon as the style is parsed (`isStyleLoaded()` stays false while any visible tile is
+    // loading, so one hung tile would keep every native layer out and the header counting undrawn
+    // entities) AND the admission queue is in place: every native layer a module adds from now on
+    // goes through it.
+    publishMapReady(useMapInstanceStore.getState(), map, el);
     return () => {
       unregister();
       native.uninstall();
@@ -549,10 +553,11 @@ export default function MapView() {
     gpuOpen.current = basemapPainted;
     if (basemapPainted) useAdmissionStore.getState().scheduler?.kick();
   }, [basemapPainted]);
-  // Data modules mount once the queue that holds their GPU work exists (so every native layer they
-  // add goes through it), i.e. right after the style is parsed.
-  const scheduler = useAdmissionStore((s) => s.scheduler);
-  const featuresMounted = loaded && scheduler !== null;
+  // Data modules mount with the map host itself (perf L96, software GL): their default-on feed
+  // requests start while the style downloads and MapLibre is constructed, long before the basemap's
+  // first paint. They see no map until it is `ready` (style parsed + admission queue installed), so
+  // every native layer they add still goes through the queue, and their deck layers wait for the
+  // deck device's admission.
   // The globe's first frame (no tiles needed): the earliest point for the user's own focus work.
   const [firstFrame, setFirstFrame] = useState(false);
   useEffect(() => {
@@ -635,55 +640,65 @@ export default function MapView() {
   if (failure === 'webgl') return <WebGLFallback reason="webgl" />;
   if (failure === 'style' && !style) return <WebGLFallback reason="style" />;
   // The map container is up but the style is still on its way: say so from the first frame.
-  if (!style) return <BasemapPending phone={phone} />;
+  // The data modules (outside the map, so they keep their state across a WebGL retry) mount from the
+  // first render: see `FeatureLayers` below.
+  if (!style)
+    return (
+      <>
+        <BasemapPending phone={phone} />
+        <FeatureLayers />
+      </>
+    );
 
   return (
-    <div className="absolute inset-0" data-testid="map-root" data-projection={effective} data-basemap={basemap}>
-      <Map
-        key={attempt}
-        ref={attachMapRef}
-        mapLib={maplibregl}
-        mapStyle={style}
-        initialViewState={initialView}
-        projection={projectionSpec}
-        sky={GLOBE_SKY}
-        minZoom={minZoom}
-        maxZoom={18}
-        maxPitch={terrainOn && terrainEngaged ? TERRAIN_MAX_PITCH : DEFAULT_MAX_PITCH}
-        canvasContextAttributes={CONTEXT_ATTRIBUTE_LADDER[attempt]}
-        attributionControl={{ compact: false, customAttribution: BASEMAP_ATTRIBUTION }}
-        dragRotate
-        onLoad={onLoad}
-        onMove={onMove}
-        onMoveEnd={onMoveEnd}
-        onClick={onClick}
-        onMouseMove={onMouseMove}
-        onMouseOut={onMouseOut}
-        onContextMenu={onContextMenu}
-        onError={(e) => {
-          if (e.error instanceof maplibregl.GPUInitializationError || (!loaded && /webgl/i.test(e.error?.message ?? ''))) nextRung();
-          else if (process.env.NODE_ENV !== 'production') console.warn('[map]', e.error?.message);
-        }}
-        style={{ position: 'absolute', inset: 0 }}
-      >
-        <ImageryLayers beforeId={imageryAnchor} satellite={satellite} trueColor={trueColor} gibsDate={gibsDate} />
-        {/* Mounted from the start (hidden layers draw nothing and link no program) so they stay
-            under the deck layers inserted later at the same label anchor. */}
-        <BuildingsLayer beforeId={labelAnchor} visible={buildings} />
-        <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
-        {deckSlot && <DeckOverlay beforeId={labelAnchor} gpuOpen={basemapPainted} onMounted={setDeckMounted} />}
-        {loaded && <FeatureBackgrounds />}
-        {featuresMounted && <FeatureLayers />}
-        <ImageryChips chips={chips} />
-      </Map>
-      {/* Same chip, same place, from the style's arrival until the map's own stack takes over at
-          load (visual-qa round-5 m3: no chip-less gap while MapLibre is constructed). */}
-      {!loaded && <BasemapPending phone={phone} />}
-      {contextLost && (
-        <div role="status" className="hud-micro pointer-events-none absolute inset-x-0 top-1/2 text-center text-[var(--alert-orange)]">
-          GPU CONTEXT LOST · RESTORING
-        </div>
-      )}
-    </div>
+    <>
+      <div className="absolute inset-0" data-testid="map-root" data-projection={effective} data-basemap={basemap}>
+        <Map
+          key={attempt}
+          ref={attachMapRef}
+          mapLib={maplibregl}
+          mapStyle={style}
+          initialViewState={initialView}
+          projection={projectionSpec}
+          sky={GLOBE_SKY}
+          minZoom={minZoom}
+          maxZoom={18}
+          maxPitch={terrainOn && terrainEngaged ? TERRAIN_MAX_PITCH : DEFAULT_MAX_PITCH}
+          canvasContextAttributes={CONTEXT_ATTRIBUTE_LADDER[attempt]}
+          attributionControl={{ compact: false, customAttribution: BASEMAP_ATTRIBUTION }}
+          dragRotate
+          onLoad={onLoad}
+          onMove={onMove}
+          onMoveEnd={onMoveEnd}
+          onClick={onClick}
+          onMouseMove={onMouseMove}
+          onMouseOut={onMouseOut}
+          onContextMenu={onContextMenu}
+          onError={(e) => {
+            if (e.error instanceof maplibregl.GPUInitializationError || (!loaded && /webgl/i.test(e.error?.message ?? ''))) nextRung();
+            else if (process.env.NODE_ENV !== 'production') console.warn('[map]', e.error?.message);
+          }}
+          style={{ position: 'absolute', inset: 0 }}
+        >
+          <ImageryLayers beforeId={imageryAnchor} satellite={satellite} trueColor={trueColor} gibsDate={gibsDate} />
+          {/* Mounted from the start (hidden layers draw nothing and link no program) so they stay
+              under the deck layers inserted later at the same label anchor. */}
+          <BuildingsLayer beforeId={labelAnchor} visible={buildings} />
+          <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
+          {deckSlot && <DeckOverlay beforeId={labelAnchor} gpuOpen={basemapPainted} onMounted={setDeckMounted} />}
+          {loaded && <FeatureBackgrounds />}
+          <ImageryChips chips={chips} />
+        </Map>
+        {/* Same chip, same place, from the style's arrival until the map's own stack takes over at
+            load (visual-qa round-5 m3: no chip-less gap while MapLibre is constructed). */}
+        {!loaded && <BasemapPending phone={phone} />}
+        {contextLost && (
+          <div role="status" className="hud-micro pointer-events-none absolute inset-x-0 top-1/2 text-center text-[var(--alert-orange)]">
+            GPU CONTEXT LOST · RESTORING
+          </div>
+        )}
+      </div>
+      <FeatureLayers />
+    </>
   );
 }

@@ -13,6 +13,7 @@
  * through a budget (`createHoverPickGate`: none while a button is held or the camera moves, ≤ 10 Hz
  * and ≤ 25 % of the main thread while the pointer moves, one more where it comes to rest); their
  * result feeds autoHighlight and is reused by the host's hover cursor instead of a second pick.
+ * Hover picks render only the deck layers no CPU hit-tester covers (`gpuHoverLayerIds`, perf L96).
  *
  * Startup cost (perf B2): layers that were never visible are not instantiated and new layer
  * classes are admitted one per slot of the map's admission scheduler (`admitLayers` +
@@ -53,6 +54,7 @@ import { type ApplyMap, missingDeckGroups, withParsedStyle } from '@/lib/map/dec
 import {
   type DeckLike,
   detachDeckInput,
+  gpuHoverLayerIds,
   type FeatureDevice,
   hoverAllowed,
   initPendingLayers,
@@ -62,7 +64,7 @@ import {
 } from '@/lib/map/deck-events';
 import { deckClassMaxWait, deckClassPriority, deckClassReady, focusClassOrder, focusKeysOf, registerFocusKeys } from '@/lib/map/focus';
 import { createHoverPickGate } from '@/lib/map/hover-pick';
-import { type DeckPickInfo, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
+import { type DeckPickInfo, hitTesterIds, hoverCursor, type PickOverlay, setDeckHoverInfo, setPickOverlay } from '@/lib/map/picking';
 
 /** `beforeId` is a MapLibreOverlay-specific layer prop (not in deck's LayerProps typings). */
 type WithBeforeId = { beforeId?: string };
@@ -263,7 +265,18 @@ export default function DeckOverlay({ beforeId, gpuOpen, onMounted }: DeckOverla
     const map = mapRef?.getMap();
     if (!map) return;
     const gate = createHoverPickGate({
-      pick: (x, y) => runDeckHoverPick(deckOf(overlay), x, y),
+      // CPU hit-testers (aviation, space, hazards) resolve their own hover in the host's per-move
+      // `collectCandidates`; the GPU pick renders only the layers nobody hit-tests (perf L96), plus
+      // any `autoHighlight` layer (deck highlights only what its own hover pick found).
+      pick: (x, y) => {
+        const ids = gpuHoverLayerIds(useDeckLayerStore.getState().entries, hitTesterIds());
+        if (!ids.length) {
+          // Nothing left for the GPU: clear a highlight a previous scoped pick left, else no pick.
+          if (hoverHit.current) runDeckHoverLeave(deckOf(overlay));
+          return 0;
+        }
+        return runDeckHoverPick(deckOf(overlay), x, y, undefined, ids);
+      },
       leave: () => {
         if (!hoverHit.current) return; // nothing highlighted: no pick needed to clear it
         runDeckHoverLeave(deckOf(overlay));

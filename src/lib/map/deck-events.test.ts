@@ -3,6 +3,7 @@ import {
   DECK_GESTURE_EVENTS,
   type DeckLike,
   detachDeckInput,
+  gpuHoverLayerIds,
   hoverAllowed,
   isPrimaryClick,
   LINK_DRAW_FEATURES,
@@ -10,7 +11,7 @@ import {
   runDeckHoverLeave,
   runDeckHoverPick,
 } from './deck-events';
-import { collectCandidates, resetPicking, setDeckHoverInfo, setPickOverlay, type PickMap } from './picking';
+import { collectCandidates, hitTesterIds, registerHitTester, resetPicking, setDeckHoverInfo, setPickOverlay, type PickMap } from './picking';
 
 type Handler = (e: never) => void;
 
@@ -221,5 +222,103 @@ describe('device feature priming (CI globe first draw)', () => {
       },
     };
     expect(() => primeLinkDrawFeatures({ features: lost })).not.toThrow();
+  });
+});
+
+describe('press picking is detached (perf L96)', () => {
+  it('detachDeckInput replaces deck._onPointerDown with a no-op (a direct call picks nothing)', () => {
+    const { deck, picks } = fakeDeck();
+    const original = deck._onPointerDown;
+    detachDeckInput(deck);
+    expect(deck._onPointerDown).not.toBe(original);
+    (deck._onPointerDown as (e: object) => void)({ srcEvent: { button: 0 } });
+    expect(picks).toEqual([]);
+  });
+});
+
+describe('scoped GPU hover picks (perf L96: CPU hit-testers first)', () => {
+  /** A deck whose pick reads its options from `_getPointPickOptions`, like Deck._pickAndCallback. */
+  function scopedDeck() {
+    const seen: (string[] | undefined)[] = [];
+    let queued = false;
+    const proto = { _getPointPickOptions: (x: number, y: number) => ({ x, y, radius: 0 }) };
+    const deck: DeckLike = Object.assign(Object.create(proto) as DeckLike, {
+      isInitialized: true,
+      _onPointerMove: (() => void (queued = true)) as Handler,
+      _pickAndCallback: () => {
+        if (!queued) return;
+        queued = false;
+        const opts = (deck._getPointPickOptions as unknown as (x: number, y: number) => { layerIds?: string[] })(1, 1);
+        seen.push(opts.layerIds);
+      },
+    });
+    return { deck, seen, proto };
+  }
+
+  it('passes layerIds to deck’s pick options for that one pick, then restores the prototype method', () => {
+    const { deck, seen, proto } = scopedDeck();
+    detachDeckInput(deck);
+    runDeckHoverPick(deck, 1, 1, undefined, ['threats-gdacs', 'network-c2']);
+    expect(seen).toEqual([['threats-gdacs', 'network-c2']]);
+    expect(Object.prototype.hasOwnProperty.call(deck, '_getPointPickOptions')).toBe(false);
+    expect(deck._getPointPickOptions).toBe(proto._getPointPickOptions);
+    runDeckHoverPick(deck, 1, 1);
+    expect(seen).toEqual([['threats-gdacs', 'network-c2'], undefined]);
+  });
+
+  it('an empty scope runs no GPU pick at all', () => {
+    const { deck, seen } = scopedDeck();
+    detachDeckInput(deck);
+    expect(runDeckHoverPick(deck, 1, 1, undefined, [])).toBe(0);
+    expect(seen).toEqual([]);
+  });
+
+  it('restores the scope even when the pick throws', () => {
+    const { deck } = scopedDeck();
+    detachDeckInput(deck);
+    deck._pickAndCallback = () => {
+      throw new Error('context lost');
+    };
+    expect(() => runDeckHoverPick(deck, 1, 1, undefined, ['a'])).not.toThrow();
+    expect(Object.prototype.hasOwnProperty.call(deck, '_getPointPickOptions')).toBe(false);
+  });
+
+  it('gpuHoverLayerIds leaves out modules with a CPU hit-tester and non-pickable or hidden layers', () => {
+    const L = (id: string, props: Record<string, unknown>) => ({ id, props });
+    const entries = {
+      aviation: { layers: [L('aviation-icons', { pickable: true })] },
+      'hazards:fires': { layers: [L('hazards-fires', { pickable: true })] },
+      'threats:gdacs': { layers: [L('threats-gdacs', { pickable: true }), [L('threats-gdacs-ring', { pickable: false })], null] },
+      'network:c2': { layers: [L('network-c2-arcs', { pickable: true, visible: false }), L('network-c2-points', { pickable: true })] },
+      'flight-paths': { layers: [L('route-arc', { pickable: true })] },
+    };
+    expect(gpuHoverLayerIds(entries, new Set(['aviation', 'hazards', 'space']))).toEqual(['threats-gdacs', 'network-c2-points', 'route-arc']);
+    expect(gpuHoverLayerIds(entries, new Set(['aviation', 'hazards', 'threats', 'network', 'flight-paths']))).toEqual([]);
+  });
+
+  it('gpuHoverLayerIds keeps autoHighlight layers of CPU-covered modules in the GPU hover scope', () => {
+    const L = (id: string, props: Record<string, unknown>) => ({ id, props });
+    const entries = {
+      aviation: { layers: [L('aviation-icons', { pickable: true })] },
+      'hazards:fires': { layers: [L('hazards-fires', { pickable: true, autoHighlight: true })] },
+      'hazards:quakes': {
+        layers: [
+          L('hazards-quakes', { pickable: true, autoHighlight: true }),
+          L('hazards-quakes-hidden', { pickable: true, autoHighlight: true, visible: false }),
+          L('hazards-quakes-ring', { pickable: false, autoHighlight: true }),
+          L('hazards-quakes-label', { pickable: true, autoHighlight: false }),
+        ],
+      },
+      'threats:gdacs': { layers: [L('threats-gdacs', { pickable: true })] },
+    };
+    expect(gpuHoverLayerIds(entries, new Set(['aviation', 'hazards']))).toEqual(['hazards-fires', 'hazards-quakes', 'threats-gdacs']);
+    expect(gpuHoverLayerIds(entries, new Set(['aviation', 'hazards', 'threats']))).toEqual(['hazards-fires', 'hazards-quakes']);
+  });
+
+  it('hitTesterIds reports the registered CPU hit-testers', () => {
+    const off = registerHitTester('aviation', () => []);
+    expect([...hitTesterIds()]).toEqual(['aviation']);
+    off();
+    expect(hitTesterIds().size).toBe(0);
   });
 });

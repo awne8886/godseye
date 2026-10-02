@@ -7,7 +7,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
-import { useGeoJsonLayers } from '@/features/hazards/client/useGeoJsonLayers';
+import { useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
 import { registerNativePick } from '@/lib/map/picking';

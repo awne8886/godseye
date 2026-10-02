@@ -29,6 +29,8 @@ export interface DeckLike {
   _onEvent?: (e: never) => void;
   /** Runs the queued hover pick (deck calls it once per animation frame). */
   _pickAndCallback?: () => void;
+  /** Builds the options of that pick (`layerIds` there scopes it: deck's `layerManager.getLayers`). */
+  _getPointPickOptions?: (...args: never[]) => object;
 }
 
 /** deck's EVENT_HANDLERS (click/dblclick/pan*) — all dispatched through `_onEvent`. */
@@ -72,20 +74,86 @@ function hoverEvent(deck: DeckLike, event: object): boolean {
 }
 
 /**
- * One deck hover pick at (x, y), run now (deck's `onHover` and `autoHighlight` follow it). Returns
- * the time it took in ms (0 when deck is not ready).
+ * Scope deck's next point pick to `layerIds` (deck matches them as id prefixes, so sub-layers
+ * follow their parent): an own `_getPointPickOptions` that adds them, removed again by the returned
+ * function. Unscoped (null) or a deck without the hook: a no-op.
  */
-export function runDeckHoverPick(deck: DeckLike | null | undefined, x: number, y: number, srcEvent?: unknown): number {
-  if (!deck) return 0;
+function scopePick(deck: DeckLike, layerIds: readonly string[] | null | undefined): () => void {
+  const base = deck._getPointPickOptions;
+  if (!layerIds || typeof base !== 'function') return () => undefined;
+  const own = Object.prototype.hasOwnProperty.call(deck, '_getPointPickOptions');
+  const ids = [...layerIds];
+  deck._getPointPickOptions = function (this: unknown, ...args: never[]) {
+    return { ...base.apply(this, args), layerIds: ids };
+  };
+  return () => {
+    if (own) deck._getPointPickOptions = base;
+    else delete deck._getPointPickOptions;
+  };
+}
+
+/**
+ * One deck hover pick at (x, y), run now (deck's `onHover` and `autoHighlight` follow it). Returns
+ * the time it took in ms (0 when deck is not ready). `layerIds` limits the GPU pick to those deck
+ * layers (the ones no CPU hit-tester covers: `gpuHoverLayerIds`); an empty list runs no pick at all.
+ */
+export function runDeckHoverPick(
+  deck: DeckLike | null | undefined,
+  x: number,
+  y: number,
+  srcEvent?: unknown,
+  layerIds?: readonly string[] | null,
+): number {
+  if (!deck || (layerIds && layerIds.length === 0)) return 0;
   const t0 = nowMs();
+  const unscope = scopePick(deck, layerIds);
   try {
     if (!hoverEvent(deck, { type: 'pointermove', offsetCenter: { x, y }, srcEvent })) return 0;
     // Run it now (timed) instead of in deck's next frame, which then finds nothing queued.
     deck._pickAndCallback?.();
   } catch {
     // A lost context or a deck mid-teardown: no hover this time (the cost still counts).
+  } finally {
+    unscope();
   }
   return nowMs() - t0;
+}
+
+/** The part of a published deck entry `gpuHoverLayerIds` reads. */
+export interface HoverScopeEntry {
+  layers: unknown;
+}
+
+function collectPickable(list: unknown, out: string[], highlightOnly: boolean): void {
+  if (Array.isArray(list)) {
+    for (const x of list) collectPickable(x, out, highlightOnly);
+    return;
+  }
+  if (!list || typeof list !== 'object' || !('id' in list) || !('props' in list)) return;
+  const { id, props } = list as {
+    id: unknown;
+    props: { pickable?: unknown; visible?: unknown; autoHighlight?: unknown } | null;
+  };
+  if (typeof id !== 'string' || !props || !props.pickable || props.visible === false) return;
+  if (highlightOnly && props.autoHighlight !== true) return;
+  out.push(id);
+}
+
+/**
+ * Deck layers the GPU hover pick still has to cover (perf L96): the visible, pickable layers of
+ * every published entry whose module has no CPU hit-tester. An entry key is `<module>` or
+ * `<module>:<part>`; a hit-tester registered under `<module>` resolves that module's hover on the
+ * CPU (projected positions), so its layers are left out of the picking render — except layers
+ * with `autoHighlight: true`: deck highlights only an object its own hover pick found, so those
+ * stay in the GPU scope or their highlight would never show.
+ */
+export function gpuHoverLayerIds(entries: Readonly<Record<string, HoverScopeEntry>>, cpuCovered: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  for (const [key, entry] of Object.entries(entries)) {
+    const covered = cpuCovered.has(key) || cpuCovered.has(key.split(':')[0]!);
+    collectPickable(entry.layers, out, covered);
+  }
+  return out;
 }
 
 /** The pointer left the map: clear deck's hover (and highlight) state. */
