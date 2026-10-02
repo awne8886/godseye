@@ -143,8 +143,10 @@ export const FlightRouteResponse = z.object({
   destination: RouteAirport.nullable(),
   /**
    * `observed` = the leg is corroborated by a take-off in the flown track (the reverse of the
-   * listed leg when `reversed`; else the listed leg, flown away from its destination, so without
-   * progress); `corridor` = on the leg's great-circle corridor; `schedule` = standing data only.
+   * listed leg when `reversed`; else the listed leg, with progress when `onCorridor`, without it
+   * when the aircraft is not on course for the destination); `corridor` = on the leg's
+   * great-circle corridor, departure not observed (or the aircraft's snapshot record not matched);
+   * `schedule` = standing data only.
    */
   basis: z.enum(['observed', 'schedule', 'corridor']).nullable(),
   status: z.enum(['scheduled', 'airborne', 'landed', 'unknown']),
@@ -172,6 +174,12 @@ export const FlightRouteResponse = z.object({
   directionConflict: z.boolean().optional(),
   /** True when the leg shown is the REVERSE of the listed one, corroborated by an observed departure from its origin. */
   reversed: z.boolean().optional(),
+  /**
+   * With `basis: 'observed'` and not `reversed`: true when the flown track saw the take-off from
+   * the listed origin and the aircraft is on the leg's corridor (progress shown); false when it
+   * departed the origin but is not observed on course for the destination (no progress).
+   */
+  onCorridor: z.boolean().optional(),
   /** Plain-language corroboration result (why a leg is withheld, or why the reverse is shown). */
   routeCheck: z.string().nullable().optional(),
   /** Which position judged the leg: the exact snapshot record for `icao24`, or the query's (quantised) one. */

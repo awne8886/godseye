@@ -12,7 +12,10 @@
  * record lacks — track, speed — falls back to the query's). The observed departure beats the
  * schedule: for an airborne aircraft with an address the flown track is read and its take-off
  * decides (`corroborate.ts`, the FLIGHT view's rule): a take-off elsewhere, or at the destination
- * without a course back to the origin, withholds the leg with the reason. A leg is never one
+ * without a course back to the origin, withholds the leg with the reason; a take-off from the
+ * origin (the EARLIEST low run of the current leg, `observedDeparture`) on the corridor is
+ * `basis: 'observed'` with progress when the snapshot has this address under this callsign
+ * airborne, else `corridor`. A leg is never one
  * airport to itself: a round trip asked without a position is withheld ("leg unknown"), not
  * answered ATL→ATL; on the public API one asked without an observed track is withheld too (its two
  * legs share a corridor). Server-only.
@@ -281,11 +284,17 @@ export async function flightRoute(cs: string, pos: Position | null, deps: RouteD
       case 'reverse':
         return { ...base, found: true, origin: d, destination: o, ...routeProgress(d, o, p), ...listed, basis: 'observed', reversed: true, routeCheck: v.routeCheck };
       case 'listed':
-        return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed, basis: 'observed', status: moving ? 'airborne' : 'unknown', progress: null, routeCheck: v.routeCheck };
+        return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed, basis: 'observed', status: moving ? 'airborne' : 'unknown', progress: null, onCorridor: false, routeCheck: v.routeCheck };
       case 'withhold':
         return { ...withheld, directionConflict: true, routeCheck: v.routeCheck };
-      case 'departed':
-        return { ...base, found: true, origin: o, destination: d, ...routeProgress(o, d, p), ...listed, routeCheck: v.routeCheck };
+      case 'departed': {
+        // The forward leg corroborated by the flown track: `observed` only when the snapshot has
+        // this address airborne under this callsign now (the track read is this flight's).
+        const prog = routeProgress(o, d, p);
+        return exact && prog.basis === 'corridor'
+          ? { ...base, found: true, origin: o, destination: d, ...prog, ...listed, basis: 'observed', onCorridor: true, routeCheck: v.routeCheck }
+          : { ...base, found: true, origin: o, destination: d, ...prog, ...listed, routeCheck: v.routeCheck };
+      }
       case 'unobserved':
         break;
     }

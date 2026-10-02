@@ -8,9 +8,9 @@
  * It applies to every airborne aircraft whose flown track can be read (round 5 fix pass
  * BLOCKING-1: SWA864 took off from LAS and the card still showed ONT→PHX at 96 % while the FLIGHT
  * view withheld it; 6 of 60 shown legs had a take-off away from the origin). The take-off of the
- * CURRENT leg (`legTakeoff`) is the last one in the trace, after the last coverage gap across which
- * the course reversed (an unobserved landing and turnaround: TVF8023's LYS take-off before a
- * 299-min gap was the previous leg), and none when the trace ends on the ground or with a landing
+ * CURRENT leg (`legTakeoff`) is the earliest low run of that leg (`observedDeparture`), the leg
+ * starting after the last coverage gap across which the course reversed (an unobserved landing and
+ * turnaround: TVF8023's LYS take-off before a 299-min gap was the previous leg), and none when the trace ends on the ground or with a landing
  * away from where the aircraft now is. Then:
  *  - take-off at D, on course for O (`onCourseFor`) → the reverse leg, shown as flown;
  *  - take-off at D otherwise → withheld (it departed D for somewhere else);
@@ -28,7 +28,21 @@
  */
 import { distanceKm, initialBearing, type LngLatTuple } from '@/lib/geo';
 import { flyingRoute, positionOnPath } from '@/features/flight-paths/lib/geometry';
-import { angleDiff, CONFLICT_END_KM, LOW_AGL_FT, onRouteCorridor, trackAlong, type AirportPoint, type RoutePoint, type RoutePosition, type TrackSample } from './route-geometry';
+import {
+  angleDiff,
+  CONFLICT_END_KM,
+  isLowPoint as isLow,
+  observedDepartureAt,
+  onRouteCorridor,
+  trackAlong,
+  type LegEnd,
+  type RoutePoint,
+  type RoutePosition,
+  type TimedSample,
+  type TrackSample,
+} from './route-geometry';
+
+export { LEG_GAP_MS, sinceTurnaround, TURNAROUND_DEG, type LegEnd, type TimedSample } from './route-geometry';
 
 const D2R = Math.PI / 180;
 const R2D = 180 / Math.PI;
@@ -40,12 +54,6 @@ export const AWAY_COS = -0.3;
 export const TOWARD_MIN_DEG = 20;
 /** … or wider when close: the present course, extended, passes within this distance of X. */
 export const TOWARD_MISS_KM = 80;
-
-/** A leg end: an airport with an optional elevation (ft AMSL) and codes for the stated reason. */
-export interface LegEnd extends AirportPoint {
-  name?: string;
-  elevationFt?: number | null;
-}
 
 const code = (a: LegEnd) => a.iata ?? a.icao ?? a.name ?? `${a.lat.toFixed(2)},${a.lng.toFixed(2)}`;
 
@@ -94,15 +102,6 @@ export interface Takeoff {
   lng: number;
 }
 
-/** Low: on the ground, or < 3,000 ft above the elevation of the nearer leg end (AGL, not MSL). */
-function isLow(p: TrackSample, o: LegEnd, d: LegEnd): boolean {
-  if (p.onGround) return true;
-  if (p.altFt === null) return false;
-  const here: LngLatTuple = [p.lng, p.lat];
-  const ground = (distanceKm(here, ll(o)) <= distanceKm(here, ll(d)) ? o.elevationFt : d.elevationFt) ?? 0;
-  return p.altFt - ground < LOW_AGL_FT;
-}
-
 /**
  * The latest observed take-off in the flown track (oldest first): the last low point — on the
  * ground, or < 3,000 ft above the nearer end's elevation — that is followed by an airborne point
@@ -124,53 +123,20 @@ export function lastTakeoff(track: readonly TrackSample[], o: LegEnd, d: LegEnd)
   return null;
 }
 
-/** A track sample with its time and observed track, when the trace has them. */
-export interface TimedSample extends TrackSample {
-  t?: string;
-  trackDeg?: number | null;
-}
-
-/** A coverage gap at least this long … */
-export const LEG_GAP_MS = 10 * 60_000;
-/** … across which the observed track turned by more than this separates two legs (the FLIGHT view's `sinceTurnaroundGap`). */
-export const TURNAROUND_DEG = 120;
-
-function trackNear(track: readonly TimedSample[], i: number, step: 1 | -1): number | null {
-  for (let k = 0, j = i; k < 10 && j >= 0 && j < track.length; k++, j += step) {
-    const t = track[j]!.trackDeg;
-    if (t != null) return t;
-  }
-  return null;
-}
-
-/**
- * The track after its LAST coverage gap of >= 10 min across which the course reversed by more than
- * 120° (the aircraft landed and turned around below coverage: what came before is an earlier leg);
- * the whole track when there is none. Same thresholds as the FLIGHT view's `sinceTurnaroundGap`.
- */
-export function sinceTurnaround<T extends TimedSample>(track: readonly T[]): readonly T[] {
-  for (let i = track.length - 1; i > 0; i--) {
-    const a = track[i - 1]!.t;
-    const b = track[i]!.t;
-    if (!a || !b || !(Date.parse(b) - Date.parse(a) >= LEG_GAP_MS)) continue;
-    const before = trackNear(track, i - 1, -1);
-    const after = trackNear(track, i, 1);
-    if (before !== null && after !== null && angleDiff(before, after) > TURNAROUND_DEG) return track.slice(i);
-  }
-  return track;
-}
-
 /**
  * The observed take-off of the leg the aircraft at `pos` is flying now, or null when it was not
  * observed: the trace ends on the ground (the aircraft had not taken off yet when it was read) or
  * low more than 60 km from `pos` (it ends with a landing: an earlier leg, the FLIGHT view's
- * `traceEnded`); else `lastTakeoff` after the last turnaround gap (`sinceTurnaround`).
+ * `traceEnded`); else the EARLIEST low run of the current leg (`observedDepartureAt` in
+ * route-geometry.ts), never the latest: a low run late in the leg is the approach, and a
+ * go-around or step-down that climbs back above 3,000 ft AGL is not a take-off from the destination.
  */
 export function legTakeoff(track: readonly TimedSample[], o: LegEnd, d: LegEnd, pos: Pick<RoutePosition, 'lat' | 'lng'>): Takeoff | null {
   const end = track[track.length - 1];
   if (!end || end.onGround) return null;
   if (isLow(end, o, d) && distanceKm([end.lng, end.lat], [pos.lng, pos.lat]) > CONFLICT_END_KM) return null;
-  return lastTakeoff(sinceTurnaround(track), o, d);
+  const dep = observedDepartureAt(track, o, d);
+  return dep ? { end: dep.end === 'elsewhere' ? null : dep.end, lat: dep.lat, lng: dep.lng } : null;
 }
 
 export type Corroboration =

@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import fx from './__fixtures__/route-legs-2026-10-01.json';
 import { initialBearing } from '@/lib/geo';
-import { legScore, listsReverse, onRouteCorridor, pickLeg, routeProgress, sameAirport, trackAlong } from './route-geometry';
+import fp from './__fixtures__/route-fixpass-2026-10-01.json';
+import { lastTakeoff } from './corroborate';
+import {
+  departureLeg,
+  legScore,
+  listsReverse,
+  observedDeparture,
+  observedDepartureAt,
+  onRouteCorridor,
+  pickLeg,
+  routeProgress,
+  sameAirport,
+  trackAlong,
+  type LegEnd,
+  type TimedSample,
+} from './route-geometry';
 
 // Live cases from R2's round-4 scans (positions/tracks observed 2026-10-01 05:15–05:21 UTC; VRS
 // airports probed 05:52 UTC; 2-airport coordinates from OurAirports). See `_captured`.
@@ -130,5 +145,73 @@ describe('routeProgress needs the track along the leg or unknown (round 5 fix pa
     expect(onRouteCorridor(o, d, [c.lng, c.lat])).toBe(true);
     expect(routeProgress(o, d, { lat: c.lat, lng: c.lng, speedKt: c.gsKt, trackDeg: c.trackDeg }).progress).toBeNull();
     expect(routeProgress(o, d, { lat: c.lat, lng: c.lng, speedKt: c.gsKt }).progress).not.toBeNull();
+  });
+});
+
+// Round 6 (L103): the observed departure is the EARLIEST low run of the current leg, never the latest.
+describe('observedDeparture', () => {
+  const DEN: LegEnd = { icao: 'KDEN', iata: 'DEN', lat: 39.8617, lng: -104.673, elevationFt: 5434 };
+  const CID: LegEnd = { icao: 'KCID', iata: 'CID', lat: 41.8847, lng: -91.7108, elevationFt: 869 };
+  const p = (t: string, lat: number, lng: number, altFt: number | null, onGround = false, trackDeg: number | null = null): TimedSample => ({ t: `2026-10-01T${t}:00Z`, lat, lng, altFt, onGround, trackDeg });
+  const fromDen = [p('02:00', 39.86, -104.67, null, true), p('02:03', 39.9, -104.5, 7400, false, 80), p('02:20', 40.3, -101.0, 35000, false, 80)];
+
+  it('a take-off from the origin, from the destination (the reversed leg), and from elsewhere', () => {
+    expect(observedDeparture(fromDen, DEN, CID)).toBe('o');
+    // The same track judged against the listed CID→DEN: it departed the listed destination.
+    expect(observedDeparture(fromDen, CID, DEN)).toBe('d');
+    const fromOrd = [p('02:00', 41.98, -87.9, null, true), p('02:03', 42.0, -88.1, 2600), p('02:20', 41.9, -90.0, 30000)];
+    expect(observedDeparture(fromOrd, DEN, CID)).toBe('elsewhere');
+  });
+
+  it('the latest low run is the approach: a go-around at the destination is not a take-off from it', () => {
+    const goAround = [...fromDen, p('03:30', 41.8, -92.2, 2400, false, 90), p('03:33', 41.88, -91.75, 1300, false, 90), p('03:36', 41.9, -91.5, 4600, false, 90)];
+    expect(observedDeparture(goAround, DEN, CID)).toBe('o');
+    // The latest-take-off rule reads the go-around as a take-off from CID.
+    expect(lastTakeoff(goAround, DEN, CID)?.end).toBe('d');
+  });
+
+  it('a leg first seen high has no observed departure: its first low run is an approach or a low pass', () => {
+    const seenEnRoute = [p('03:00', 41.0, -96.0, 30000), p('03:30', 41.8, -92.2, 2400), p('03:36', 41.9, -91.5, 4600)];
+    expect(observedDeparture(seenEnRoute, DEN, CID)).toBeNull();
+    expect(observedDeparture([p('03:00', 41.0, -96.0, 30000), p('03:10', 41.2, -94.0, 25000)], DEN, CID)).toBeNull();
+  });
+
+  it('first seen low and still low is either end of a flight; seen on the ground and climbing out is a departure', () => {
+    expect(observedDeparture([p('02:03', 39.9, -104.5, 7400), p('02:04', 39.92, -104.45, 7900)], DEN, CID)).toBeNull();
+    expect(observedDeparture([p('02:00', 39.86, -104.67, null, true), p('02:02', 39.88, -104.6, 6900)], DEN, CID)).toBe('o');
+  });
+
+  it('a track that ends on the ground (not taken off yet) or is empty has none', () => {
+    expect(observedDeparture([...fromDen, p('04:00', 41.884, -91.711, null, true)], DEN, CID)).toBeNull();
+    expect(observedDeparture([], DEN, CID)).toBeNull();
+  });
+
+  it('the current leg starts at the last landing: on the ground, or low across a coverage gap', () => {
+    const viaOmaha = [...fromDen, p('03:00', 41.3, -95.9, 1800), p('03:02', 41.3, -95.89, null, true), p('03:50', 41.31, -95.85, 2000), p('04:05', 41.6, -93.5, 24000)];
+    expect(observedDeparture(viaOmaha, DEN, CID)).toBe('elsewhere');
+    const belowCoverage = [...fromDen, p('03:00', 41.3, -95.9, 1800), p('03:50', 41.31, -95.85, 2000), p('04:05', 41.6, -93.5, 24000)];
+    expect(departureLeg(belowCoverage, DEN, CID)).toHaveLength(2);
+    expect(observedDeparture(belowCoverage, DEN, CID)).toBe('elsewhere');
+    // A long gap en route (high on both sides) is lost coverage, not a landing.
+    const lostCoverage = [...fromDen, p('03:40', 41.3, -95.0, 34000, false, 80)];
+    expect(observedDeparture(lostCoverage, DEN, CID)).toBe('o');
+  });
+
+  it('low is AGL: below 3,000 ft above the nearer field (DEN 5,434 ft), not MSL', () => {
+    expect(observedDepartureAt([p('02:03', 39.9, -104.5, 8300), p('02:20', 40.3, -101.0, 35000)], DEN, CID)).toMatchObject({ end: 'o', lat: 39.9 });
+    expect(observedDeparture([p('02:03', 39.9, -104.5, 8500), p('02:20', 40.3, -101.0, 35000)], DEN, CID)).toBeNull();
+  });
+
+  it('reads the recorded traces (2026-10-01): UAL1363 from ORD, ASA418 from MCI (SEA→MCI listed: reversed), SWA864 from LAS', () => {
+    const c = (cs: string) => fp.cases.find((k) => k.cs === cs)!;
+    const legOf = (cs: string) => pickLeg(c(cs).airports as LegEnd[], [c(cs).observed.lng, c(cs).observed.lat], c(cs).observed.trackDeg);
+    const [ord, lax] = legOf('UAL1363');
+    expect(observedDeparture(c('UAL1363').track, ord, lax)).toBe('o');
+    const asa = c('ASA418');
+    const [sea, mci] = [asa.airports[0] as LegEnd, asa.airports[1] as LegEnd];
+    expect(observedDeparture(asa.track, sea, mci)).toBe('d');
+    expect(observedDeparture(asa.track, mci, sea)).toBe('o');
+    const [ont, phx] = legOf('SWA864');
+    expect(observedDeparture(c('SWA864').track, ont, phx)).toBe('elsewhere');
   });
 });

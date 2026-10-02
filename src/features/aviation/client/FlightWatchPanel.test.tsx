@@ -78,6 +78,8 @@ describe('Flight Watch route line (same answer as the aircraft card)', () => {
     const leg = { ...base, origin: LAS, destination: DCA, basis: 'corridor' as const, status: 'airborne' as const, progress: 0.5, distanceKm: 3354 };
     expect(watchRouteLine(leg, true, false, 0.93)).toBe('LAS → DCA · 93%');
     expect(watchRouteLine({ ...leg, basis: 'observed', progress: null }, true, false, null)).toBe('LAS → DCA · NOT ON COURSE');
+    expect(watchRouteLine({ ...leg, basis: 'observed', onCorridor: false, progress: null }, true, false, null)).toBe('LAS → DCA · NOT ON COURSE');
+    expect(watchRouteLine({ ...leg, basis: 'observed', onCorridor: true }, true, false, 0.5)).toBe('LAS → DCA · 50% · OBSERVED DEPARTURE');
     expect(watchRouteLine({ ...leg, origin: DCA, destination: LAS, basis: 'observed', reversed: true }, true, false, 0.1)).toBe('DCA → LAS · 10% · REVERSE OF LISTED (OBSERVED)');
   });
 

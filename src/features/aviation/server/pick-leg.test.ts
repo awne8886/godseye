@@ -221,6 +221,49 @@ describe('flightRoute: away from the destination needs a corroborating take-off 
   });
 });
 
+describe("flightRoute: basis 'observed' from the flown track (round 6, L103)", () => {
+  beforeEach(() => {
+    clearL1();
+    setStore(new MemoryStore());
+  });
+  const fromDen = [pt('2026-10-01T02:00:00Z', 39.86, -104.67, null, true), pt('2026-10-01T02:03:00Z', 39.9, -104.5, 7400), pt('2026-10-01T02:20:00Z', 40.3, -101.0, 35000)];
+  const snap = (p: Partial<FlightRecord>) => () => rec(p);
+
+  it('a take-off from the origin and the aircraft airborne in the snapshot: the forward leg, observed, with progress', async () => {
+    const r = await flightRoute('UAL1118', { lat: 41.0, lng: -98.0, speedKt: 450, trackDeg: 90 }, deps([KDEN, KCID], { live: snap({ lat: 41.0, lng: -98.0, trackDeg: 80, gsKt: 450 }), track: async () => fromDen }), { icao24: 'a12734' });
+    expect(FlightRouteResponse.safeParse(r).success).toBe(true);
+    expect(r).toMatchObject({ origin: { icao: 'KDEN' }, destination: { icao: 'KCID' }, basis: 'observed', onCorridor: true, status: 'airborne', positionSource: 'snapshot', routeCheck: 'observed departure matches the listed origin KDEN' });
+    expect(r!.progress).toBeGreaterThan(0.4);
+    expect(r!.reversed).toBeUndefined();
+  });
+
+  it('the same track without a matching snapshot record stays corridor (the track may be another flight’s)', async () => {
+    const r = await flightRoute('UAL1118', { lat: 41.0, lng: -98.0, speedKt: 450, trackDeg: 80 }, deps([KDEN, KCID], { track: async () => fromDen }), { icao24: 'a12734' });
+    expect(r).toMatchObject({ origin: { icao: 'KDEN' }, destination: { icao: 'KCID' }, basis: 'corridor', positionSource: 'query' });
+    expect(r!.onCorridor).toBeUndefined();
+    const other = await flightRoute('UAL1118', { lat: 41.0, lng: -98.0, speedKt: 450, trackDeg: 80 }, deps([KDEN, KCID], { live: snap({ callsign: 'UAL9', lat: 41.0, lng: -98.0 }), track: async () => fromDen }), { icao24: 'a12734' });
+    expect(other).toMatchObject({ basis: 'corridor' });
+  });
+
+  it('a go-around at the destination (the latest low run) is not a take-off from it: still the forward leg, not reversed or withheld', async () => {
+    const goAround = [...fromDen, pt('2026-10-01T03:30:00Z', 41.8, -92.2, 2400), pt('2026-10-01T03:33:00Z', 41.88, -91.75, 1300), pt('2026-10-01T03:36:00Z', 41.9, -91.5, 4600)];
+    const pos = { lat: 41.0, lng: -98.0, trackDeg: 80, gsKt: 450 };
+    const r = await flightRoute('UAL1118', { lat: 41.0, lng: -98.0, speedKt: 450, trackDeg: 90 }, deps([KDEN, KCID], { live: snap(pos), track: async () => goAround }), { icao24: 'a12734' });
+    expect(r).toMatchObject({ origin: { icao: 'KDEN' }, destination: { icao: 'KCID' }, basis: 'observed', onCorridor: true });
+    expect(r!.directionConflict).toBeUndefined();
+    expect(r!.reversed).toBeUndefined();
+  });
+
+  it('reversed leg: a take-off from the listed destination with a course toward the origin is shown as flown, observed', async () => {
+    const c = live('UAL1118');
+    const fromCid = [pt('2026-10-01T04:30:00Z', 41.884, -91.711, null, true), pt('2026-10-01T04:33:00Z', 41.95, -91.95, 2400), pt('2026-10-01T04:50:00Z', 42.5, -92.2, 34000)];
+    const r = await flightRoute('UAL1118', { lat: c.lat, lng: c.lng, speedKt: c.gsKt, trackDeg: c.trackDeg }, deps([KDEN, KCID], { live: snap({ lat: c.lat, lng: c.lng, trackDeg: c.trackDeg, gsKt: c.gsKt, altFt: 34000, vrFpm: 0 }), track: async () => fromCid }), { icao24: 'a12734' });
+    expect(FlightRouteResponse.safeParse(r).success).toBe(true);
+    expect(r).toMatchObject({ origin: { icao: 'KCID' }, destination: { icao: 'KDEN' }, basis: 'observed', reversed: true, status: 'airborne', positionSource: 'snapshot' });
+    expect(r!.routeCheck).toMatch(/^observed departure KCID and course toward KDEN: shown as flown KCID→KDEN/);
+  });
+});
+
 describe('flightRoute: a round trip asked without a position (R2 round 5 MINOR-3)', () => {
   beforeEach(() => {
     clearL1();
@@ -292,7 +335,7 @@ describe('flightRoute: the observed take-off decides for every airborne aircraft
     const c = fpCase('ASA418');
     const r = await flightRoute('ASA418', fpQuery(c), fpDeps(c), { icao24: c.hex });
     expect(FlightRouteResponse.safeParse(r).success).toBe(true);
-    expect(r).toMatchObject({ origin: { icao: 'KMCI' }, destination: { icao: 'KSEA' }, basis: 'corridor', status: 'airborne', routeCheck: 'observed departure matches the listed origin MCI' });
+    expect(r).toMatchObject({ origin: { icao: 'KMCI' }, destination: { icao: 'KSEA' }, basis: 'observed', onCorridor: true, status: 'airborne', routeCheck: 'observed departure matches the listed origin MCI' });
     expect(r!.progress).toBeGreaterThan(0.4);
     expect(r!.progress).toBeLessThan(0.6);
   });
@@ -308,12 +351,12 @@ describe('flightRoute: the observed take-off decides for every airborne aircraft
   it('UAL1363 departed ORD and is on course; ENY4242 departed FWA but flies 277 km off its leg (no progress)', async () => {
     const a = fpCase('UAL1363');
     const ua = await flightRoute('UAL1363', fpQuery(a), fpDeps(a), { icao24: a.hex });
-    expect(ua).toMatchObject({ origin: { icao: 'KORD' }, destination: { icao: 'KLAX' }, basis: 'corridor', status: 'airborne', routeCheck: 'observed departure matches the listed origin ORD' });
+    expect(ua).toMatchObject({ origin: { icao: 'KORD' }, destination: { icao: 'KLAX' }, basis: 'observed', onCorridor: true, status: 'airborne', routeCheck: 'observed departure matches the listed origin ORD' });
     expect(ua!.progress).toBeGreaterThan(0.6);
     const e = fpCase('ENY4242');
     const en = await flightRoute('ENY4242', fpQuery(e), fpDeps(e), { icao24: e.hex });
     expect(FlightRouteResponse.safeParse(en).success).toBe(true);
-    expect(en).toMatchObject({ origin: { icao: 'KFWA' }, destination: { icao: 'KDFW' }, basis: 'observed', status: 'airborne', progress: null });
+    expect(en).toMatchObject({ origin: { icao: 'KFWA' }, destination: { icao: 'KDFW' }, basis: 'observed', onCorridor: false, status: 'airborne', progress: null });
     expect(en!.routeCheck).toBe('departed FWA but not observed on course for DFW (277 km off the great circle) — progress not shown');
   });
 });
@@ -328,7 +371,7 @@ describe('flightRoute: a round trip without an observed track (round 5 fix pass 
 
   it('a trackless snapshot record keeps the track (and speed) the query sent: MCI→SEA, not SEA→MCI', async () => {
     const r = await flightRoute('ASA418', fpQuery(c), fpDeps(c, { live: () => trackless }), { icao24: c.hex, roundTripWithoutTrack: 'withhold' });
-    expect(r).toMatchObject({ origin: { icao: 'KMCI' }, destination: { icao: 'KSEA' }, basis: 'corridor', status: 'airborne', positionSource: 'snapshot' });
+    expect(r).toMatchObject({ origin: { icao: 'KMCI' }, destination: { icao: 'KSEA' }, basis: 'observed', onCorridor: true, status: 'airborne', positionSource: 'snapshot' });
     expect(r!.progress).not.toBeNull();
   });
 

@@ -33,7 +33,7 @@ export function watchRouteLine(route: FlightRoute | undefined, hasCallsign: bool
   if (!route) return loading ? 'RESOLVING ROUTE…' : 'NO SCHEDULED ROUTE';
   if (route.found && route.origin && route.destination) {
     const leg = `${route.origin.iata ?? route.origin.icao} → ${route.destination.iata ?? route.destination.icao}`;
-    const how = route.reversed ? ' · REVERSE OF LISTED (OBSERVED)' : route.basis === 'observed' ? ' · NOT ON COURSE' : '';
+    const how = route.reversed ? ' · REVERSE OF LISTED (OBSERVED)' : route.basis !== 'observed' ? '' : route.onCorridor ? ' · OBSERVED DEPARTURE' : ' · NOT ON COURSE';
     return `${leg}${progress !== null ? ` · ${Math.round(progress * 100)}%` : ''}${how}${route.stale ? ' · STALE ROUTE RECORD' : ''}`;
   }
   if (route.found) return route.directionConflict ? 'ROUTE UNCONFIRMED — OBSERVED TRACK DISAGREES' : 'LEG NOT DETERMINED';
