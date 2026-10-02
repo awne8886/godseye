@@ -122,6 +122,12 @@ describe('keyword classification and geoparsing', () => {
     expect(alertKind('Sirens sound as missile launched toward Haifa')).toBe('rocket');
     expect(alertKind('Explosion at a depot')).toBe('event');
     expect(alertKind('Parliament debates budget')).toBe('news');
+    // r10: a weapon named in procurement wording is not a rocket alert; used, it still is.
+    expect(alertKind('The U.S. Navy has awarded Raytheon a contract worth up to $24.4 billion for Standard Missile-6 production')).toBe('news');
+    expect(alertKind('Missile strike hits Kharkiv after contract talks collapse')).toBe('rocket');
+    expect(alertKind('Ballistic missile launched toward Hokkaido')).toBe('rocket');
+    expect(alertKind('Rocket fire reported near the border')).toBe('rocket');
+    expect(alertKind('Sirens sound in Tel Aviv')).toBe('rocket');
     const r = riskScore('Ballistic missile strike, 3 killed');
     expect(r.method).toBe('keyword-count');
     expect(r.keywords).toEqual(expect.arrayContaining(['ballistic', 'missile', 'killed']));

@@ -118,7 +118,7 @@ export const SOURCES: readonly SourceEntry[] = [
   { id: 'inform', name: 'INFORM Risk Index (EC JRC)', group: 'conflict', usedFor: 'Country risk', licence: 'CC BY 4.0', url: 'https://drmkc.jrc.ec.europa.eu/inform-index', mode: 'live' },
   { id: 'wgi', name: 'World Bank Worldwide Governance Indicators', group: 'conflict', usedFor: 'Country risk (political stability)', licence: 'CC BY 4.0', url: 'https://www.worldbank.org/en/publication/worldwide-governance-indicators', mode: 'live' },
   { id: 'wikidata-nuclear', name: 'Wikidata (nuclear facilities)', group: 'conflict', usedFor: 'Nuclear power plants', licence: 'CC0 (structured data)', url: 'https://www.wikidata.org/wiki/Wikidata:Licensing', mode: 'reference' },
-  { id: 'osiris-curated', name: 'OSIRIS curated lists', group: 'conflict', usedFor: 'Chokepoints, nuclear facilities, zones, major ports (REFERENCE)', licence: 'MIT', url: 'https://opensource.org/license/mit', mode: 'reference' },
+  { id: 'osiris-curated', name: 'GODSEYE curated reference lists', group: 'conflict', usedFor: 'Chokepoints, nuclear facilities, zones, major ports (REFERENCE)', licence: 'MIT; tables derived from an MIT-licensed project (OSIRIS, MIT)', url: 'https://opensource.org/license/mit', mode: 'reference' },
 
   // ── Network & cyber ──────────────────────────────────────────────────────────
   { id: 'abusech', name: 'abuse.ch (URLhaus, Feodo Tracker, ThreatFox)', group: 'network', usedFor: 'Malware / C2 INDICATOR points', licence: 'abuse.ch terms of use (not-for-profit); commercial use needs an agreement', url: 'https://abuse.ch/terms-of-use/', mode: 'live', gate: NC },
