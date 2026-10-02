@@ -17,11 +17,14 @@
  *    stalled), data-admission-pending (start-up GPU units queued, including those waiting for the
  *    painted basemap), data-admission-log (the last admitted units, `id@ms` since navigation start),
  *    data-deck-layers / data-deck-undrawn (deck layers handed over / groups not in the style),
- *    data-deck-classes (deck layer classes admitted so far, in order).
+ *    data-deck-classes (deck layer classes admitted so far, in order), data-hover-picks (the host's
+ *    budgeted hover picks so far: ≤ 10 Hz while the pointer moves, round 8).
+ * Phone layout: two or more imagery chips fold into one summary chip (`imagery-chip-summary`);
+ * `imageryChip(page, id)` unfolds them before a spec reads a single chip.
  * The wrapper `[data-testid=map-root]` carries data-projection (effective) and data-basemap.
  */
 import { inflateSync } from 'node:zlib';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export interface CameraArg {
   lat: number;
@@ -96,6 +99,19 @@ export async function waitForAdmissionDrained(page: Page, o: { timeout?: number;
       { timeout: o.timeout ?? 150_000, intervals: [500] },
     )
     .toBe(true);
+}
+
+/**
+ * One imagery chip (`imagery-chip-<id>`), unfolding the stack first if the phone layout has folded
+ * it into one summary chip (round 8). Waits until the chip or the fold is shown; once unfolded the
+ * stack stays unfolded for the page.
+ */
+export async function imageryChip(page: Page, id: string, timeout = 60_000): Promise<Locator> {
+  const chip = page.getByTestId(`imagery-chip-${id}`);
+  const fold = page.locator('.godseye-imagery-chips button[aria-expanded="false"]');
+  await expect(chip.or(fold).first()).toBeVisible({ timeout });
+  if (await fold.count()) await fold.first().click();
+  return chip;
 }
 
 /** Camera recorded at the last moveend, or null before the first move. */

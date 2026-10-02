@@ -8,8 +8,9 @@
  *
  * Also owned here: the WebGL context fallback ladder (constructor rejection and unrecovered
  * context loss), flyTo requests, the camera → store/URL feed (longitudes wrapped), the zero-render
- * cursor/view/far-side feeds, click/hover pick routing (deck + native via choosePick), the
- * Region Dossier gestures (double right-click, touch long-press), and the honest tile-state chips
+ * cursor/view/far-side feeds, click/hover pick routing (deck + native via choosePick; hover picks
+ * through the hover budget, host-hover.ts), the Region Dossier gestures (double right-click and
+ * touch long-press, from native canvas events), and the honest tile-state chips
  * (BASEMAP LOADING from the first frame, basemap and imagery holes/offline). Owner: map-engine.
  */
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -22,7 +23,8 @@ import { normalizeLng } from '@/lib/geo';
 import { useDeckLayerStore, useLayerStatusStore, useMapInstanceStore, useSelectionStore } from '@/lib/layer-host';
 import { publishCursor, publishView } from '@/lib/map/cursor';
 import { cameraFromMap, isFacing, setFarSideCamera } from '@/lib/map/far-side';
-import { createDoubleRightClick, createLongPress } from '@/lib/map/gestures';
+import { createDoubleRightGesture, createLongPress } from '@/lib/map/gestures';
+import { createHostHover, type HostHover } from '@/lib/map/host-hover';
 import { BLACK_MARBLE_LABEL, ESRI_LABEL, ESRI_SOURCE_ID, GIBS_TRUECOLOR_SOURCE_ID, gibsTrueColorLabel } from '@/lib/map/imagery';
 import { geometryClient } from '@/lib/map/geometry-client';
 import { installNightProtocol, NIGHT_SOURCE_ID, nightLightsSupported } from '@/lib/map/night-lights';
@@ -31,7 +33,7 @@ import { basemapChipText, type BasemapHealth, imageryChipText, tilesDegraded } f
 import { type TileWatch, type TileWatchMap, type WatchedSource, watchTileSources } from '@/lib/map/tile-watch';
 import { createBasemapStyleLoader, loadBasemapWithRetry } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
-import { hoverAllowed, isPrimaryClick, mapToolArmed } from '@/lib/map/deck-events';
+import { isPrimaryClick, mapToolArmed } from '@/lib/map/deck-events';
 import { onceBasemapPainted, onceFirstFrame, onceStyleParsed, type PaintMap, publishMapReady, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { useSticky } from '@/lib/map/defer';
@@ -402,79 +404,140 @@ export default function MapView() {
     [pickAt],
   );
 
-  const hoverFrame = useRef(0);
-  const onMouseMove = useCallback(
-    (e: MapLayerMouseEvent) => {
-      const { lng, lat } = e.lngLat;
-      const map = e.target;
-      const { x, y } = e.point;
-      const idle = hoverAllowed(e.originalEvent);
-      cancelAnimationFrame(hoverFrame.current);
-      hoverFrame.current = requestAnimationFrame(() => {
-        publishCursor({ lng: normalizeLng(lng), lat, zoom: map.getZoom() });
-        // No hover pick while a button is held (drag/rotate/right-press) or the camera moves.
-        if (!idle || map.isMoving() || mapToolArmed(map.getContainer())) return;
-        const hit = pickAt(map, x, y, true).length > 0;
-        setHoverPointer(hit);
-        // Only undo our own pointer: a tool's cursor (DRAW's crosshair) stays while nothing is hovered.
-        const canvas = map.getCanvas();
-        if (hit) canvas.style.cursor = 'pointer';
-        else if (canvas.style.cursor === 'pointer') canvas.style.cursor = '';
-      });
-    },
-    [pickAt],
-  );
-  const onMouseOut = useCallback(() => {
-    cancelAnimationFrame(hoverFrame.current);
-    setHoverPointer(false);
-    publishCursor(null);
-  }, []);
-
-  // ── Region Dossier gestures ───────────────────────────────────────────────────
-  const doubleRight = useMemo(() => createDoubleRightClick(), []);
-  const onContextMenu = useCallback(
-    (e: MapLayerMouseEvent) => {
-      e.preventDefault();
-      // A map tool (DRAW) owns the canvas: double right-click does not open the dossier.
-      if (mapToolArmed(e.target.getContainer())) return;
-      if (doubleRight(e.point.x, e.point.y, e.originalEvent.timeStamp)) {
-        useUiStore.getState().openDossier({ lat: e.lngLat.lat, lng: normalizeLng(e.lngLat.lng) });
-      }
-    },
-    [doubleRight],
-  );
-
+  // Pointer moves: the cursor readout every animation frame; the hover pick (deck's hover result,
+  // native features and every CPU hit-tester) through the hover budget — ≤ 10 Hz while the pointer
+  // moves, one trailing pick where it rests (host-hover.ts; round 8: the hit-testers cost 33 ms a
+  // frame on the default globe).
+  const hover = useRef<HostHover | null>(null);
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !loaded) return;
     const canvas = map.getCanvas();
-    const local = (e: PointerEvent): [number, number] => {
+    const el = map.getContainer();
+    /** Diagnostics for e2e (`data-hover-picks`): host hover picks run on this map. */
+    let picks = 0;
+    const h = createHostHover({
+      frames: { request: (cb) => requestAnimationFrame(cb), cancel: (id) => cancelAnimationFrame(id as number) },
+      timers: {
+        setTimeout: (cb, ms) => setTimeout(cb, ms),
+        clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
+        now: () => performance.now(),
+      },
+      cursor: publishCursor,
+      zoom: () => map.getZoom(),
+      pick: (x, y) => {
+        el.dataset.hoverPicks = String(++picks);
+        return pickAt(map, x, y, true).length > 0;
+      },
+      pointer: (hit) => {
+        setHoverPointer(hit);
+        // Only undo our own pointer: a tool's cursor (DRAW's crosshair) stays while nothing is hovered.
+        if (hit) canvas.style.cursor = 'pointer';
+        else if (canvas.style.cursor === 'pointer') canvas.style.cursor = '';
+      },
+      moving: () => map.isMoving(),
+      // A map tool (DRAW; panels-recon sets data-map-tool) owns the pointer: no hover pick.
+      suspended: () => mapToolArmed(el),
+    });
+    hover.current = h;
+    const press = () => h.press();
+    const moveStart = () => h.cameraMoveStart();
+    map.on('mousedown', press);
+    map.on('mouseup', press);
+    map.on('movestart', moveStart);
+    return () => {
+      map.off('mousedown', press);
+      map.off('mouseup', press);
+      map.off('movestart', moveStart);
+      h.dispose();
+      if (hover.current === h) hover.current = null;
+    };
+  }, [loaded, pickAt]);
+  const onMouseMove = useCallback((e: MapLayerMouseEvent) => {
+    hover.current?.move({ x: e.point.x, y: e.point.y, lng: e.lngLat.lng, lat: e.lngLat.lat, buttons: e.originalEvent?.buttons ?? 0 });
+  }, []);
+  const onMouseOut = useCallback(() => {
+    if (hover.current) hover.current.leave();
+    else {
+      setHoverPointer(false);
+      publishCursor(null);
+    }
+  }, []);
+
+  // ── Region Dossier gestures ───────────────────────────────────────────────────
+  // Native canvas events only: MapLibre's map `contextmenu` is held from the press to the release
+  // and dropped by any camera call in between (HandlerManager.reset), and is also fired for every
+  // touch long-press (round 8: 2 of 7 pairs lost after disarming DRAW with fires on).
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !loaded) return;
+    const canvas = map.getCanvas();
+    const local = (e: MouseEvent): [number, number] => {
       const r = canvas.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
     // A map tool (DRAW; panels-recon sets data-map-tool on the container) owns the canvas: no dossier.
     const toolArmed = () => mapToolArmed(map.getContainer());
-    const press = createLongPress((x, y) => {
+    const openAt = (x: number, y: number) => {
       if (toolArmed()) return;
       const ll = map.unproject([x, y]);
       useUiStore.getState().openDossier({ lat: ll.lat, lng: normalizeLng(ll.lng) });
-    });
-    const down = (e: PointerEvent) => e.pointerType === 'touch' && !toolArmed() && press.down(...local(e), e.pointerId);
+    };
+    const press = createLongPress(openAt);
+    const doubleRight = createDoubleRightGesture(openAt);
+    /** Touch pointers on the canvas: a native `contextmenu` they raise is the long-press's, not a right-click. */
+    const touches = new Set<number>();
+    const down = (e: PointerEvent) => {
+      // A mouse press means no finger is down (a lost touch release never disables right-clicks).
+      if (e.pointerType === 'mouse') touches.clear();
+      if (e.pointerType !== 'touch') return;
+      touches.add(e.pointerId);
+      if (!toolArmed()) press.down(...local(e), e.pointerId);
+    };
     const move = (e: PointerEvent) => e.pointerType === 'touch' && press.move(...local(e), e.pointerId);
-    const up = (e: PointerEvent) => e.pointerType === 'touch' && press.up();
-    const cancel = () => press.cancel();
+    const up = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      touches.delete(e.pointerId);
+      press.up();
+    };
+    const cancel = (e?: PointerEvent) => {
+      if (e?.pointerType === 'touch') touches.delete(e.pointerId);
+      press.cancel();
+    };
+    const moveStart = () => press.cancel();
+    const mouseDown = (e: MouseEvent) => doubleRight.down(...local(e), e.button);
+    const mouseMove = (e: MouseEvent) => doubleRight.move(...local(e));
+    const mouseUp = (e: MouseEvent) => doubleRight.up(e.button);
+    const contextMenu = (e: MouseEvent) => {
+      // The map has no browser context menu (right-drag rotates; a double right-click opens the dossier).
+      e.preventDefault();
+      if (touches.size > 0 || (e as PointerEvent).pointerType === 'touch') return;
+      // An armed tool: no dossier, and its right-clicks never pair with one after it is disarmed.
+      if (toolArmed()) return doubleRight.reset();
+      doubleRight.contextmenu(...local(e), e.timeStamp);
+    };
     canvas.addEventListener('pointerdown', down);
     canvas.addEventListener('pointermove', move);
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', cancel);
-    map.on('movestart', cancel);
+    canvas.addEventListener('mousedown', mouseDown);
+    canvas.addEventListener('contextmenu', contextMenu);
+    // A right-drag may leave the canvas: its moves and release are followed on the window.
+    window.addEventListener('mousemove', mouseMove, true);
+    window.addEventListener('mouseup', mouseUp, true);
+    map.on('movestart', moveStart);
     return () => {
       press.cancel();
+      doubleRight.reset();
       canvas.removeEventListener('pointerdown', down);
       canvas.removeEventListener('pointermove', move);
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointercancel', cancel);
-      map.off('movestart', cancel);
+      canvas.removeEventListener('mousedown', mouseDown);
+      canvas.removeEventListener('contextmenu', contextMenu);
+      window.removeEventListener('mousemove', mouseMove, true);
+      window.removeEventListener('mouseup', mouseUp, true);
+      map.off('movestart', moveStart);
     };
   }, [loaded]);
 
@@ -676,7 +739,6 @@ export default function MapView() {
           onClick={onClick}
           onMouseMove={onMouseMove}
           onMouseOut={onMouseOut}
-          onContextMenu={onContextMenu}
           onError={(e) => {
             if (e.error instanceof maplibregl.GPUInitializationError || (!loaded && /webgl/i.test(e.error?.message ?? ''))) nextRung();
             else if (process.env.NODE_ENV !== 'production') console.warn('[map]', e.error?.message);
@@ -690,7 +752,7 @@ export default function MapView() {
           <TerminatorLayer beforeId={labelAnchor} visible={dayNight} />
           {deckSlot && <DeckOverlay beforeId={labelAnchor} gpuOpen={basemapPainted} onMounted={setDeckMounted} />}
           {loaded && <FeatureBackgrounds />}
-          <ImageryChips chips={chips} />
+          <ImageryChips chips={chips} collapse={phone} />
         </Map>
         {/* Same chip, same place, from the style's arrival until the map's own stack takes over at
             load (visual-qa round-5 m3: no chip-less gap while MapLibre is constructed). */}

@@ -18,8 +18,11 @@
  *    up to 536 ms of main thread). A move then clears any highlight left over, and a resting pick
  *    queued before the tool was armed is dropped (verification round 6).
  *
- * Click picking is untouched (the host's click router picks on demand). The CPU hit-testers and
- * native feature queries the host runs per frame for the cursor need no GPU and are not gated.
+ * Click picking is untouched (the host's click router picks on demand). The host's own hover pick
+ * (CPU hit-testers + native feature queries + deck's last hover result, for the pointer cursor) needs
+ * no GPU but is NOT free: it runs through a second gate with the same budget (host-hover.ts; round 8:
+ * the hit-testers cost a median 33 ms per pointer-move frame with ~9k aircraft and ~9k satellites
+ * drawn). Only the cursor readout runs on every frame.
  * Owner: map-engine. Pure and unit-tested (fake timers).
  */
 
