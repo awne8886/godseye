@@ -39,7 +39,8 @@ export interface ProviderDef {
   fileRules?: (still: URL) => AllowRule[];
   /**
    * Image types the operator publishes real frames in. Anything else is its "no image" placeholder
-   * (MLIT answers unknown or offline cameras with a 30 685-byte PNG carrying a fresh Last-Modified),
+   * (e.g. MLIT's river cameras answer unknown or offline ids with a 30 685-byte PNG carrying a fresh
+   * Last-Modified, probed 2026-10-02),
    * refused by the stills proxy as `operator_placeholder` instead of being shown as a current frame.
    */
   frameTypes?: readonly string[];
@@ -328,17 +329,19 @@ export const PROVIDERS: readonly ProviderDef[] = [
   },
   {
     region: 'japan',
+    // MLIT's site terms (mlit.go.jp/link.html, PDL 1.0) cover content whose copyright is MLIT's
+    // "unless otherwise noted"; river.go.jp publishes no reuse terms of its own, and the per-camera
+    // masters name prefectures as owners (東京都 for sys 3, 埼玉県 for sys 1, probed 2026-10-02). The
+    // frames are therefore not proxied, embedded or put in the CSP: every camera links out to
+    // river.go.jp (no rules).
     row: {
       id: 'mlit', operator: 'Ministry of Land, Infrastructure, Transport and Tourism (MLIT), 川の防災情報 river cameras', region: 'Japan', country: 'JP',
-      list_endpoint: 'https://www.river.go.jp/kawabou/file/gjson/scam/{prefCd}.json', frame_url_template: 'https://cam.river.go.jp/cam/now/{id}.jpg',
-      stream_type: 'jpg',
-      licence: 'MLIT river disaster-prevention information (river.go.jp publishes no reuse terms; MLIT website content is under the Public Data License 1.0 unless noted; many cameras are owned by prefectures). Source credited, frames never stored',
+      list_endpoint: 'https://www.river.go.jp/kawabou/file/gjson/scam/{prefCd}.json', frame_url_template: null, stream_type: 'link',
+      licence: 'MLIT river disaster-prevention information: river.go.jp publishes no reuse terms and many cameras are prefecture-owned (MLIT PDL 1.0 covers only MLIT-owned content), so frames are not reused; cameras link out to river.go.jp',
       attribution_string: '出典：国土交通省「川の防災情報」 (MLIT river cameras, river.go.jp)', terms_url: 'https://www.mlit.go.jp/link.html',
-      key_required: false, max_poll_interval: 300, proxy_allowed: true, link_out_only: false,
+      key_required: false, max_poll_interval: 300, proxy_allowed: false, link_out_only: true,
     },
-    // Current frames only (`/cam/now/<id>.jpg`; cache-control max-age=300, probed 2026-10-02).
-    rules: [r('cam.river.go.jp', '/cam/now/')],
-    frameTypes: ['image/jpeg'],
+    rules: [],
   },
   {
     region: 'oceania',

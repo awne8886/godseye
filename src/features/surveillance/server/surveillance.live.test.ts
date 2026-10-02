@@ -34,7 +34,7 @@ const allowed = (id: string, url: string) => matchesAllowList(new URL(url), rule
 describe('live: every row served by /api/cctv is inside its allow-list', () => {
   it.runIf(served)('all regions', { timeout: 300_000 }, async () => {
     const misses: string[] = [];
-    for (const region of ['us-west', 'texas', 'us-midwest', 'canada', 'europe', 'nordics', 'asia', 'oceania']) {
+    for (const region of ['us-west', 'texas', 'us-midwest', 'canada', 'europe', 'nordics', 'asia', 'japan', 'oceania']) {
       const d = (await (await fetch(`${process.env.CCTV_BASE_URL}/api/cctv?region=${region}`)).json()) as { fields?: string[]; rows?: unknown[][] };
       if (!d.fields || !d.rows) continue;
       const I = Object.fromEntries(d.fields.map((f, i) => [f, i]));

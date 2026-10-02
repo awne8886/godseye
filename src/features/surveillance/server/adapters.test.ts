@@ -132,7 +132,7 @@ describe('camera adapters (fixtures captured 2026-09-30)', () => {
     expect(one({ Code: '../x' })).toEqual([]);
   });
 
-  it('MLIT (probed 2026-10-02): area codes from prefarea.json; sys_id 1 and 3 only, paused cameras dropped, /cam/now/<id>.jpg', () => {
+  it('MLIT (probed 2026-10-02): area codes from prefarea.json; sys_id 1 and 3 only, paused cameras dropped, link-out to each camera page', () => {
     const codes = A.parseMlitPrefCodes(json(FX.mlitPrefs));
     expect(codes).toHaveLength(51);
     expect(codes.slice(0, 3)).toEqual(['101', '102', '103']);
@@ -140,8 +140,8 @@ describe('camera adapters (fixtures captured 2026-09-30)', () => {
     const rows = A.parseMlit(json(FX.mlit));
     expect(valid(rows)).toBe(true);
     expect(rows).toHaveLength(4); // the two sys_id 2 cameras use per-camera file names not in the master
-    expect(rows.find((r) => r.id === 'mlit-303329013')).toMatchObject({ name: '四ノ橋', lat: 35.647244444, lng: 139.731902778, country: 'JP', streamType: 'jpg', stillUrl: 'https://cam.river.go.jp/cam/now/303329013.jpg', observedAt: null });
-    expect(rows.every((r) => r.stillUrl!.startsWith('https://cam.river.go.jp/cam/now/'))).toBe(true);
+    expect(rows.find((r) => r.id === 'mlit-303329013')).toMatchObject({ name: '四ノ橋', lat: 35.647244444, lng: 139.731902778, country: 'JP', streamType: 'link', stillUrl: null, streamUrl: null, externalUrl: 'https://www.river.go.jp/kawabou/pc/tm?itmkndCd=200&scamId=303329013', observedAt: null });
+    expect(rows.every((r) => r.streamType === 'link' && r.stillUrl === null && r.externalUrl!.startsWith('https://www.river.go.jp/kawabou/pc/tm?'))).toBe(true);
     expect(A.parseMlit(json(FX.mlitPaused))).toEqual([]);
     expect(A.parseMlit({ features: [{ geometry: { type: 'Point', coordinates: [2.35, 48.85] }, properties: { id: 100000001, sys_id: 1, pause: 0, name: 'x' } }] })).toEqual([]); // outside Japan
     expect(A.parseMlitPrefCodes({ prefs: [{ prefCd: '13' }, { prefCd: 1.5 }, { prefCd: -1 }] })).toEqual([]);

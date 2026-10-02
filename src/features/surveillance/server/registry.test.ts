@@ -154,15 +154,17 @@ describe('camera provider registry (§5)', () => {
     expect(regionDisabled('canada', () => false)).toBe(false);
   });
 
-  it('MLIT: exact /cam/now/ rule on cam.river.go.jp, JPEG frames only (the PNG is the operator placeholder)', () => {
+  it('MLIT: link out only (no reuse terms; prefecture-owned frames), nothing proxied, embedded or in the CSP', () => {
     const m = def('mlit');
     expect(m.region).toBe('japan');
     expect(m.capability).toBeUndefined();
-    expect(m.rules).toEqual([{ host: 'cam.river.go.jp', pathPrefix: '/cam/now/' }]);
-    expect(m.frameTypes).toEqual(['image/jpeg']);
-    expect(allowed('mlit', 'https://cam.river.go.jp/cam/now/303329013.jpg')).toBe(true);
-    for (const bad of ['https://cam.river.go.jp/cam/history/303329013.jpg', 'https://cam.river.go.jp/cam/normal/303329013.jpg', 'https://www.river.go.jp/cam/now/1.jpg', 'http://cam.river.go.jp/cam/now/1.jpg', 'https://cam.river.go.jp/cam/now/../../etc'])
-      expect(allowed('mlit', bad), bad).toBe(false);
+    expect(providerRow(m, {})).toMatchObject({ link_out_only: true, proxy_allowed: false, stream_type: 'link', frame_url_template: null, key_required: false });
+    expect(m.rules).toEqual([]);
+    expect(m.fileRules).toBeUndefined();
+    expect(hasFrameRules(m)).toBe(false);
+    expect(m.row.licence).toMatch(/prefecture-owned/);
+    for (const u of ['https://cam.river.go.jp/cam/now/303329013.jpg', 'https://www.river.go.jp/kawabou/pc/tm?itmkndCd=200&scamId=303329013'])
+      expect(allowed('mlit', u), u).toBe(false);
   });
 
   it('removal requests take cameras out of the catalogue', () => {

@@ -30,8 +30,11 @@ describe('licence-gated camera providers', () => {
     expect(edm.every((c) => c.streamType === 'link' && c.stillUrl === null && c.streamUrl === null)).toBe(true);
   });
 
-  it('japan: MLIT runs keyless from its recorded master', async () => {
+  it('japan: MLIT runs keyless from its recorded master, as link-out rows only', async () => {
     const r = await runRegion(providersIn('japan'), null, signal(), fixtureLoaders(), {});
     expect(r.providers.mlit!.status).toMatchObject({ ok: true, count: 4 });
+    const m = r.data.filter((c) => c.providerId === 'mlit');
+    expect(m).toHaveLength(4);
+    expect(m.every((c) => c.streamType === 'link' && c.stillUrl === null && c.streamUrl === null)).toBe(true);
   });
 });

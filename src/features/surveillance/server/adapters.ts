@@ -619,8 +619,9 @@ const JAPAN_BOUNDS = { south: 20, north: 46, west: 122, east: 154 } as const;
  * (simple crisis-management river cameras, 6 141) and 3 (prefecture CCTV relayed by MLIT, 701),
  * both checked against the per-camera master (`currProvUrl`). `sys_id` 2 (MLIT office CCTV) uses
  * per-camera file names that are not in the master, so it is not listed. Paused cameras
- * (`pause: 1`) are dropped. Frames carry Last-Modified; the operator's "no image" answer is a PNG
- * placeholder, refused by the stills proxy (registry `frameTypes`).
+ * (`pause: 1`) are dropped. Link-out only (registry: no reuse terms, prefecture-owned frames):
+ * no still is catalogued and each camera opens its own river.go.jp page (`/kawabou/pc/tm?
+ * itmkndCd=200&scamId=<id>`, checked in a browser 2026-10-02 for sys 1 and 3 ids).
  */
 export function parseMlit(raw: unknown): Row[] {
   const out: Row[] = [];
@@ -641,9 +642,8 @@ export function parseMlit(raw: unknown): Row[] {
         providerId: 'mlit',
         name: text(p.name).trim() || `MLIT river camera ${id}`,
         country: 'JP',
-        streamType: 'jpg',
-        stillUrl: `https://cam.river.go.jp/cam/now/${id}.jpg`,
-        externalUrl: 'https://www.river.go.jp/',
+        streamType: 'link',
+        externalUrl: `https://www.river.go.jp/kawabou/pc/tm?itmkndCd=200&scamId=${id}`,
       }),
     );
   }
