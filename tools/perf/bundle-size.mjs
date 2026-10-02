@@ -6,7 +6,10 @@
  * downloads and parses at start-up, hydration and the default-on layers included. Sizes are gzip -9
  * of each file as served. maplibre-gl, deck.gl and luma.gl modules are removed from each chunk
  * before measuring (tools/perf/bundle-attribution.mjs: content attribution, conservative, so the
- * reported figure can only be too high). The exit code is 1 over budget.
+ * reported figure can only be too high). The exit code is 1 over budget, and 2 when the run is
+ * invalid (`runProblems`: the map never reached data-map-ready, a script body could not be read, or
+ * no deck.gl module was seen): a page whose map never loaded must not pass as "within budget".
+ * HTTPS_PROXY is honoured as in playwright.config.ts (local/sandbox egress; CI has none).
  *
  *   node tools/perf/bundle-size.mjs [--base http://127.0.0.1:3100] [--route /] [--start] [--port 3100]
  *                                    [--budget-kb 350] [--quiet-ms 3000] [--max-ms 90000] [--json out.json]
@@ -19,7 +22,7 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { chromium } from '@playwright/test';
-import { budgetReport, libraryLiteralSets, measureChunk } from './bundle-attribution.mjs';
+import { budgetReport, libraryLiteralSets, measureChunk, runProblems } from './bundle-attribution.mjs';
 
 const args = process.argv.slice(2);
 const opt = (k, d) => {
@@ -61,8 +64,13 @@ const sets = libraryLiteralSets(path.join(process.cwd(), 'node_modules'));
 const browser = await chromium.launch({
   executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined,
   args: ['--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
+  // The basemap style and tiles come from third-party hosts: route them through the egress proxy
+  // when there is one (the app server itself is local).
+  ...(process.env.HTTPS_PROXY ? { proxy: { server: process.env.HTTPS_PROXY, bypass: '127.0.0.1,localhost' } } : {}),
 });
 const chunks = new Map();
+const failedBodies = [];
+let mapReady = false;
 let lastScriptAt = Date.now();
 try {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS_ERRORS === '1' });
@@ -78,11 +86,21 @@ try {
       res
         .body()
         .then((b) => chunks.set(u.pathname, measureChunk(u.pathname, b.toString('utf8'), sets)))
-        .catch(() => chunks.delete(u.pathname)),
+        .catch(() => {
+          chunks.delete(u.pathname);
+          failedBodies.push(u.pathname);
+        }),
     );
   });
   const t0 = Date.now();
   await page.goto(BASE + ROUTE, { waitUntil: 'load', timeout: MAX_MS });
+  mapReady = await page
+    .locator('[data-testid="map-root"] .maplibregl-map[data-map-ready="true"]')
+    .waitFor({ state: 'attached', timeout: Math.max(1000, MAX_MS - (Date.now() - t0)) })
+    .then(
+      () => true,
+      () => false,
+    );
   // Idle: network idle, then no new script for QUIET_MS (lazy chunks of default-on layers included).
   while (Date.now() - t0 < MAX_MS) {
     await page.waitForLoadState('networkidle', { timeout: Math.max(1000, MAX_MS - (Date.now() - t0)) }).catch(() => undefined);
@@ -110,5 +128,7 @@ for (const c of measured.slice(0, 15)) {
   console.log(`  ${kb(c.countedGzip).padStart(7)} KB gz counted ${kb(c.gzip).padStart(7)} KB gz served  ${c.url.split('/').pop()}${lib ? `  (${lib} removed)` : ''}`);
 }
 if (report.unsplitFiles.length) console.log(`  counted whole (not a module chunk): ${report.unsplitFiles.map((u) => u.split('/').pop()).join(', ')}`);
-if (OUT) writeFileSync(OUT, JSON.stringify(report, null, 2));
-process.exit(report.over ? 1 : 0);
+const problems = runProblems({ mapReady, failedBodies, report });
+for (const p of problems) console.error(`INVALID RUN: ${p}`);
+if (OUT) writeFileSync(OUT, JSON.stringify({ ...report, valid: problems.length === 0, problems }, null, 2));
+process.exit(problems.length ? 2 : report.over ? 1 : 0);

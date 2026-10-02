@@ -31,7 +31,7 @@ import { basemapChipText, type BasemapHealth, imageryChipText, tilesDegraded } f
 import { type TileWatch, type TileWatchMap, type WatchedSource, watchTileSources } from '@/lib/map/tile-watch';
 import { createBasemapStyleLoader, loadBasemapWithRetry } from '@/lib/map/basemap-fetch';
 import { dossierDeepLinkCamera, nextCameraRequest } from '@/lib/map/camera';
-import { hoverAllowed, isPrimaryClick } from '@/lib/map/deck-events';
+import { hoverAllowed, isPrimaryClick, mapToolArmed } from '@/lib/map/deck-events';
 import { onceBasemapPainted, onceFirstFrame, onceStyleParsed, type PaintMap, publishMapReady, styleParsed } from '@/lib/map/ready';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { useSticky } from '@/lib/map/defer';
@@ -395,7 +395,7 @@ export default function MapView() {
       // Primary button only: right/middle clicks never run a (GPU) pick.
       if (!isPrimaryClick(e.originalEvent)) return;
       // A map tool (DRAW) owns the canvas: no entity pick (panels-recon sets data-map-tool).
-      if (e.target.getContainer().dataset.mapTool) return;
+      if (mapToolArmed(e.target.getContainer())) return;
       const sel = routePick(pickAt(e.target, e.point.x, e.point.y));
       if (sel) useSelectionStore.getState().select(sel);
     },
@@ -413,7 +413,7 @@ export default function MapView() {
       hoverFrame.current = requestAnimationFrame(() => {
         publishCursor({ lng: normalizeLng(lng), lat, zoom: map.getZoom() });
         // No hover pick while a button is held (drag/rotate/right-press) or the camera moves.
-        if (!idle || map.isMoving() || map.getContainer().dataset.mapTool) return;
+        if (!idle || map.isMoving() || mapToolArmed(map.getContainer())) return;
         const hit = pickAt(map, x, y, true).length > 0;
         setHoverPointer(hit);
         // Only undo our own pointer: a tool's cursor (DRAW's crosshair) stays while nothing is hovered.
@@ -436,7 +436,7 @@ export default function MapView() {
     (e: MapLayerMouseEvent) => {
       e.preventDefault();
       // A map tool (DRAW) owns the canvas: double right-click does not open the dossier.
-      if (e.target.getContainer().dataset.mapTool) return;
+      if (mapToolArmed(e.target.getContainer())) return;
       if (doubleRight(e.point.x, e.point.y, e.originalEvent.timeStamp)) {
         useUiStore.getState().openDossier({ lat: e.lngLat.lat, lng: normalizeLng(e.lngLat.lng) });
       }
@@ -453,7 +453,7 @@ export default function MapView() {
       return [e.clientX - r.left, e.clientY - r.top];
     };
     // A map tool (DRAW; panels-recon sets data-map-tool on the container) owns the canvas: no dossier.
-    const toolArmed = () => !!map.getContainer().dataset.mapTool;
+    const toolArmed = () => mapToolArmed(map.getContainer());
     const press = createLongPress((x, y) => {
       if (toolArmed()) return;
       const ll = map.unproject([x, y]);

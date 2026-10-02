@@ -12,7 +12,11 @@
  *  - hover yields to clicks: for `pressQuietMs` after a press (the double-click window) a move only
  *    queues the resting pick, so a pick never lands between the two clicks of a double (right-)click;
  *  - once the pointer rests for `settleMs`, one pick at the final position (none if that is where
- *    the last pick ran), so the highlight and the cursor always end up right.
+ *    the last pick ran), so the highlight and the cursor always end up right;
+ *  - none at all while `suspended()` (a map tool such as DRAW is armed: a click adds a vertex, so
+ *    a highlight would promise a selection the click never makes, and each software-GPU pick costs
+ *    up to 536 ms of main thread). A move then clears any highlight left over, and a resting pick
+ *    queued before the tool was armed is dropped (verification round 6).
  *
  * Click picking is untouched (the host's click router picks on demand). The CPU hit-testers and
  * native feature queries the host runs per frame for the cursor need no GPU and are not gated.
@@ -42,6 +46,9 @@ export interface HoverPickOptions {
   settleMs?: number;
   maxDuty?: number;
   pressQuietMs?: number;
+  /** True while hover picking is off altogether (a map tool is armed). Checked on every move and
+   *  again when a resting pick comes due. */
+  suspended?(): boolean;
 }
 
 export interface HoverPickGate {
@@ -96,14 +103,30 @@ export function createHoverPickGate(o: HoverPickOptions): HoverPickGate {
     const wait = Math.max(settle, nextAllowed - o.timers.now());
     trailing = o.timers.setTimeout(() => {
       trailing = null;
-      if (disposed || Number.isNaN(last.x) || same(last, pickedAt)) return;
+      if (disposed || Number.isNaN(last.x) || same(last, pickedAt) || o.suspended?.()) return;
       run(last.x, last.y);
     }, wait);
+  };
+
+  const clear = () => {
+    cancelTrailing();
+    last = NOWHERE;
+    pickedAt = NOWHERE;
+    try {
+      o.leave();
+    } catch {
+      /* nothing to clear */
+    }
   };
 
   return {
     move(x, y, blocked) {
       if (disposed) return;
+      if (o.suspended?.()) {
+        // A map tool owns the pointer: no pick, and no highlight left from before it was armed.
+        clear();
+        return;
+      }
       last = { x, y };
       if (blocked) {
         // Held button or moving camera: no pick now, and the scene under the pointer changes.
@@ -126,14 +149,7 @@ export function createHoverPickGate(o: HoverPickOptions): HoverPickGate {
     },
     leave() {
       if (disposed) return;
-      cancelTrailing();
-      last = NOWHERE;
-      pickedAt = NOWHERE;
-      try {
-        o.leave();
-      } catch {
-        /* nothing to clear */
-      }
+      clear();
     },
     picks: () => count,
     dispose() {

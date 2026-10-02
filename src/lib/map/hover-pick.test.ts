@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { mapToolArmed } from './deck-events';
 import { createHoverPickGate, HOVER_PICK_MAX_DUTY, HOVER_PICK_MIN_INTERVAL_MS, HOVER_PICK_PRESS_QUIET_MS, HOVER_PICK_SETTLE_MS } from './hover-pick';
 
 /** Manual clock; a pick "takes" `cost` ms of it. */
-function harness(cost: number) {
+function harness(cost: number, suspended?: () => boolean) {
   let clock = 0;
   let seq = 0;
   const timers = new Map<number, { at: number; cb: () => void }>();
@@ -15,6 +16,7 @@ function harness(cost: number) {
       return cost;
     },
     leave: () => void leaves++,
+    suspended,
     timers: {
       setTimeout: (cb, ms) => {
         timers.set(++seq, { at: clock + ms, cb });
@@ -150,5 +152,41 @@ describe('hover pick budget (perf round-5 m-h)', () => {
     gate.move(2, 2, false);
     expect(gate.picks()).toBe(2);
     expect(() => gate.leave()).not.toThrow();
+  });
+});
+
+describe('hover picks while a map tool is armed (verification round 6)', () => {
+  it('runs no pick while data-map-tool is set, and clears the highlight on each move', () => {
+    const host = { dataset: {} as DOMStringMap };
+    const h = harness(536, () => mapToolArmed(host));
+    h.hover(500);
+    const unarmed = h.picks.length;
+    expect(unarmed).toBeGreaterThan(0);
+    host.dataset.mapTool = 'draw';
+    const leaves0 = h.leaves();
+    h.hover(5000);
+    h.until(h.now() + 5000);
+    expect(h.picks.length).toBe(unarmed); // the same sweep that picked unarmed picks nothing armed
+    expect(h.leaves()).toBeGreaterThan(leaves0); // a highlight left from before is cleared
+    delete host.dataset.mapTool;
+    h.hover(3000);
+    h.until(h.now() + 3000);
+    expect(h.picks.length).toBeGreaterThan(unarmed); // disarmed: hover picks again
+  });
+
+  it('drops a resting pick that was queued before the tool was armed', () => {
+    let armed = false;
+    const h = harness(536, () => armed);
+    h.hover(100); // first pick runs, the rest of the sweep queues a resting pick
+    const before = h.picks.length;
+    armed = true; // armed from the keyboard: no further pointer move
+    h.until(h.now() + 10_000);
+    expect(h.picks.length).toBe(before);
+  });
+
+  it('mapToolArmed reads the container flag', () => {
+    expect(mapToolArmed(null)).toBe(false);
+    expect(mapToolArmed({ dataset: {} as DOMStringMap })).toBe(false);
+    expect(mapToolArmed({ dataset: { mapTool: 'draw' } as DOMStringMap })).toBe(true);
   });
 });

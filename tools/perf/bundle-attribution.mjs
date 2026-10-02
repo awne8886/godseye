@@ -200,3 +200,19 @@ export function budgetReport(chunks, budgetBytes) {
     over: countedGzip > budgetBytes,
   };
 }
+
+/**
+ * Whether a measurement can be trusted at all (verification round 6). When the basemap style never
+ * loads, the map never initialises, so deck.gl/luma.gl and the default-on layers never load either
+ * and the "initial JS" looks small: a false green. The run is invalid (exit 2) unless the map
+ * reached `data-map-ready="true"`, every script body was read, and at least one deck.gl module was
+ * attributed (the interleaved overlay is part of every default view). Returns the reasons (empty =
+ * valid).
+ */
+export function runProblems({ mapReady, failedBodies, report }) {
+  const problems = [];
+  if (!mapReady) problems.push('the map never reached data-map-ready="true" (style unreachable?), so its lazy chunks were never fetched');
+  if (failedBodies.length) problems.push(`${failedBodies.length} script bodies could not be read: ${failedBodies.join(', ')}`);
+  if (!((report.excludedRawBytes ?? {})['deck.gl'] > 0)) problems.push('no deck.gl module was attributed: the deck overlay never loaded');
+  return problems;
+}

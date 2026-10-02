@@ -12,6 +12,9 @@ const port = Number(process.env.E2E_PORT ?? 3100);
 export default defineConfig({
   testDir: './e2e',
   timeout: 60_000,
+  // No platform suffix: the §11 deck baselines (e2e/visual) are rendered by SwiftShader from fixed
+  // fixtures with a pinned clock, and matched within 2 % on 3 consecutive runs (round 6).
+  snapshotPathTemplate: '{testDir}/{testFileDir}/{testFileName}-snapshots/{arg}-{projectName}{ext}',
   expect: { timeout: 15_000, toHaveScreenshot: { maxDiffPixelRatio: 0.02, animations: 'disabled' } },
   fullyParallel: false,
   workers: 1,

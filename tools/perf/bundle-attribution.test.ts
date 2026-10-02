@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 // @ts-expect-error plain ESM tool without types
-import { attributeModule, budgetReport, libraryLiteralSets, measureChunk, splitTurbopackChunk, stringLiterals } from './bundle-attribution.mjs';
+import { attributeModule, budgetReport, runProblems, libraryLiteralSets, measureChunk, splitTurbopackChunk, stringLiterals } from './bundle-attribution.mjs';
 
 /** Twelve distinctive literals of a pretend map library, as its published dist would hold them. */
 const LIB_LITERALS = Array.from({ length: 12 }, (_, i) => `maplibre-only-literal-${i}`);
@@ -73,5 +73,14 @@ describe('bundle attribution (initial-JS budget, map libraries excluded)', () =>
     expect(r.unsplitFiles).toEqual(['/_next/static/chunks/turbopack-x.js']);
     expect(r.over).toBe(true);
     expect(budgetReport([c], 350 * 1024).over).toBe(false);
+  });
+
+  it('a run whose map never loaded, or that lost a chunk body, is invalid (exit 2), never a green', () => {
+    const ok = { excludedRawBytes: { 'maplibre-gl': 10, 'deck.gl': 5 } };
+    expect(runProblems({ mapReady: true, failedBodies: [], report: ok })).toEqual([]);
+    expect(runProblems({ mapReady: false, failedBodies: [], report: ok })).toHaveLength(1);
+    expect(runProblems({ mapReady: true, failedBodies: ['/_next/static/chunks/a.js'], report: ok })[0]).toMatch(/a\.js/);
+    // The round-6 false green: 24 files, maplibre the only library removed, exit 0.
+    expect(runProblems({ mapReady: true, failedBodies: [], report: { excludedRawBytes: { 'maplibre-gl': 10 } } })[0]).toMatch(/deck\.gl/);
   });
 });
