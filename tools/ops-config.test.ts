@@ -1316,7 +1316,9 @@ describe('tools/lighthouse: the in-run globe-drawn audit of the software-GL gate
     for (const t of gatherer.FALLBACK_TITLES) expect(fallback).toContain(`'${t}'`);
     expect(fallback).toContain('role="alert"');
     const mapView = read('src/components/map/MapView.tsx');
-    for (const s of ["map.getContainer().dataset.mapReady = 'true'", 'el.dataset.basemapState = h.state', 'el.dataset.mapLoads = String(mapLoads)']) expect(mapView).toContain(s);
+    for (const s of ['el.dataset.basemapState = h.state', 'el.dataset.mapLoads = String(mapLoads)']) expect(mapView).toContain(s);
+    // data-map-ready is written where the map is published as ready (style parsed), see src/lib/map/ready.ts.
+    expect(read('src/lib/map/ready.ts')).toContain("el.dataset.mapReady = 'true'");
     expect(read('src/lib/map/basemap-health.ts')).toContain("export type BasemapState = 'ok' | 'offline' | 'incomplete' | 'stalled' | 'loading';");
     expect(gatherer.SCREENSHOT_SCALE).toBe(0.25);
   });

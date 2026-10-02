@@ -8,21 +8,16 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
 ## Phase 3 — verify → fix (need two consecutive clean rounds)
 - [ ] Round 5 integration merged; still to check by e2e: the DeckOverlay stale-list guard (route endpoint
       labels on SVO-LAX, FLIGHT tab) and armed-tool gesture gating (long-press, double right-click, hover)
-- [ ] Round 6 owner work
-  - [ ] layers-aviation: flight-route `basis: 'observed'` from the earliest low run of the flown track
-  - [ ] feature-flight-paths: AeroAPI adapter (capability `aeroapi`), FAA airways snapshot + layer,
-        globe arc height (getHeight 0.3 profile), dashed route lines (PathStyleExtension), clickable
-        endpoints/diversions/live aircraft, geocoded-place disclosure on the Photon fallback
-  - [ ] layers-space: probe log records all 12 CelesTrak groups verified; mission-glyph IconLayer
-  - [ ] layers-hazards: weather layer reports `unplacedCount` (NWS alerts awaiting zone outlines)
-  - [ ] layers-surveillance: Windy in the not-wired disclosure, MLIT evidence or provider, Edmonton
-        link-out behind `nc_sources`, sticky camera-card footer with 44 px phone targets
-  - [ ] layers-threats-network: geolocated alerts counted as conflict-zone events
-  - [ ] panels-alerts-markets-dossier-graph: token streaming for AI chat, Telegram per-channel 3 min
-        cache, HKEX calendar cites the HKSAR primary source, alert pins on the shared GeoJSON hook
-  - [ ] map-engine: shared `useGeoJsonLayers`, software-GL start-up work (press picking, CPU hover,
-        early feed fetches), initial-JS budget metric and client zod removal (350 KB gz)
-  - [ ] panels-recon: drawn shapes, routes and ArcGIS features clickable (`drawn_shape` card)
+- [ ] Round 6 owner work merged; open follow-ups
+  - [ ] map-engine + aviation + surveillance: initial JS on / is 688.9 KB gz until idle (budget 350 KB,
+        measured by tools/perf/bundle-size.mjs); remaining client zod imports are aviation/codec.ts and
+        surveillance/client/rows.ts. Add the CI step once the budget holds.
+  - [ ] layers-space: reuse transferred frame buffers (ping-pong) instead of allocating per re-filter;
+        re-run e2e/layers-space/far-side.spec.ts against the mission glyphs
+  - [ ] panels-alerts: AlertPinsLayer onto the shared `useGeoJsonLayers`; a chat UI that shows
+        `done.truncated`, or remove the reason until one exists
+  - [ ] panels-recon: e2e that draws a polygon and opens its card; alternate-route numbering
+  - [ ] design-system-hud: `--map-route-airways` token (airways use `--map-route-filed` at 0.4)
   - [ ] pages-docs-privacy-ops: re-capture the mislabelled Style Studio shots and the README hero shots;
         replace the stale "re-capture on a GPU machine" note with the capture environment
 - [ ] Verification round 6, then round 7 (both clean)

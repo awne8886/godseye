@@ -395,10 +395,10 @@ answers). Licence: adsb.lol ODbL 1.0; VRS standing data CC0; OurAirports public 
 
 | Upstream | Status | Latency | CORS | Auth / licence | Notes |
 |---|---|---|---|---|---|
-| `https://aeroapi.flightaware.com/aeroapi/flights/BAW117` (no key) | **401** `{"reason":"INVALID_API_KEY"}` | 0.64 s | none sent | `x-apikey` header; personal tier is non-commercial, 10 result sets/min, billed per result set | Keyless can only answer 401. The adapter (`server/aeroapi.ts`) is wired behind the `aeroapi` capability (`AEROAPI_KEY`, off when `COMMERCIAL_DEPLOYMENT=true`), 1 request / 10 s. Test fixture `aeroapi-v4-docs-shaped.json` is **shaped from the published OpenAPI document** (`https://www.flightaware.com/commercial/aeroapi/resources/aeroapi-openapi.yml`, 200, 891 kB, fetched the same minute), not a live capture: `flights[].segments[]` (`/airports/{id}/flights/to/{dest_id}`), `fixes[] {name, latitude, longitude, type}` + `route_distance` (`/flights/{id}/route`, decodes continental-US fixes only), `flights[] {ident_icao, ident_iata, fa_flight_id, origin.code_icao, destination.code_icao, scheduled_out, actual_off, actual_on, cancelled}` (`/flights/{ident}`). A live fixture needs the owner's key. |
+| `https://aeroapi.flightaware.com/aeroapi/flights/BAW117` (no key) | **401** `{"reason":"INVALID_API_KEY"}` | 0.64 s | none sent | `x-apikey` header; personal tier is non-commercial, 10 result sets/min, billed per result set | Keyless can only answer 401. The adapter (`server/aeroapi.ts`) is wired behind the `aeroapi` capability (`AEROAPI_KEY`, off when `COMMERCIAL_DEPLOYMENT=true`), 1 request / 10 s, burst 2 (≤ 8 result sets/min). Round 6 fix: non-blocking admission (`tryTake`; no free token → `skipped: budget` or last good value, never a queue), every request carries the cache's abort signal and a 12 s deadline, and `/api/route/plan` waits ≤ 2.5 s before reporting `aeroapi: {ok:false, error:'pending'}` while the refresh fills the 24 h cache in the background. Test fixture `aeroapi-v4-docs-shaped.json` is **shaped from the published OpenAPI document** (`https://www.flightaware.com/commercial/aeroapi/resources/aeroapi-openapi.yml`, 200, 891 kB, fetched the same minute), not a live capture: `flights[].segments[]` (`/airports/{id}/flights/to/{dest_id}`), `fixes[] {name, latitude, longitude, type}` + `route_distance` (`/flights/{id}/route`, decodes continental-US fixes only), `flights[] {ident_icao, ident_iata, fa_flight_id, origin.code_icao, destination.code_icao, scheduled_out, actual_off, actual_on, cancelled}` (`/flights/{ident}`). A live fixture needs the owner's key. |
 | `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0?f=json` (FAA ADDS) | 200 | 0.46 s | `*` | keyless; US Government work, public domain ("for public use") | `Last-Modified: Thu, 03 Sep 2026 11:59:04 GMT`; layer description still cites the 2021 cycle. |
 | `…/ATS_Route/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json` | 200 `{"count":18445}` | 0.70 s | `*` | — | 18,445 segments, extent lng −180…188.4. |
-| `…/query?where=1=1&outFields=IDENT,TYPE_CODE&outSR=4326&f=geojson&orderByFields=OBJECTID&resultOffset=…&resultRecordCount=2000` (10 pages, 2 s apart) | 200 ×10, no 429 this time | ≈ 2.4 s/page | `*` | — | Densified LineStrings (~15 vertices per segment). `tools/build-airways.ts` → `public/data/airways-us.min.json` (839 kB): 1,737 airways (CONV 778, RNAV 708, OCEAN 244, AKCAP 4, GRNAV 2, UCON 1), 38,167 vertices after 0.01° Douglas–Peucker; `sources [{url, lastModified}]`. A 429 inside a 200 body waits ≥ 61 s and retries (recorded `faa-adds-429-in-200.json`). Fixture `faa-adds-ats-route-J80.json` (27 segments, `where=IDENT='J80'`, 0.70 s). No runtime ArcGIS call: `/api/route/plan` reads the snapshot (`providers.faa_adds`, age = snapshot age). |
+| `…/query?where=1=1&outFields=IDENT,TYPE_CODE&outSR=4326&f=geojson&orderByFields=OBJECTID&resultOffset=…&resultRecordCount=2000` (10 pages, 2 s apart) | 200 ×10, no 429 this time | ≈ 2.4 s/page | `*` | — | Densified LineStrings (~15 vertices per segment). `tools/build-airways.ts` → `public/data/airways-us.min.json` (839 kB): 1,737 airways (CONV 778, RNAV 708, OCEAN 244, AKCAP 4, GRNAV 2, UCON 1), 38,167 vertices after 0.01° Douglas–Peucker; `sources [{url, lastModified}]`. A 429 inside a 200 body waits ≥ 61 s and retries (recorded `faa-adds-429-in-200.json`). Fixture `faa-adds-ats-route-J80.json` (27 segments, `where=IDENT='J80'`, 0.70 s). No runtime ArcGIS call: `/api/route/plan` reads the snapshot (`providers.faa_adds`, age = snapshot age). Round 6 fix: `age_s` is counted from the FAA `Last-Modified` (`sources[0].lastModified`), not the build time; the plan carries `airwaysSource {name, url, licence, lastModified, builtAt}` and the PATHS legend shows an `AIRWAYS (FAA, REFERENCE)` row dated by it. |
 | `https://photon.komoot.io/api/?q=Glastonbury&limit=8` | 200 | 0.75 s | `*` | ODbL (OSM), fair use | First feature (town, GB) kept as `photon-place-Glastonbury.json` for the R4 m7 "nearest airports to {place}" disclosure test. |
 
 ### layers-aviation
@@ -534,6 +534,21 @@ adsb.lol's `now` ran up to ~1 s ahead of this server's clock (R2: `meta.observed
 `fetchedAt`): positions are now dated from `min(now, receipt)` rounded down, so no observation is
 reported after the fetch that carried it.
 
+### Round 6 (2026-10-02): flight-route `basis: 'observed'` from the flown track
+
+| URL | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://adsb.lol/data/traces/c4/trace_full_4cafc4.json` | 200 (gzip, `application/json`) | 0.81 s | none (no `Access-Control-Allow-Origin`; server-side only) | keyless, ODbL; 125 KB; same row shape as above (`[Δs, lat, lon, alt_ft|'ground', gs, track, flags, …]`); first row `"ground"` at EIDW |
+| `https://globe.adsb.lol/data/traces/fc/trace_recent_4cafc4.json` | 302 → html | 0.69 s | none | the globe host redirects; only `adsb.lol/data/traces/` is used |
+
+No new upstream: `/api/flight-route` reads the trace through `/api/aircraft`'s cached lookup. The
+departure is now the EARLIEST low run (on the ground, or < 3,000 ft above the nearer field) of the
+current leg (after a turnaround gap, the last ground run, or a gap that is low on both sides),
+never the latest (a go-around or step-down that climbs back above 3,000 ft AGL near the
+destination read as a "take-off from the destination"). A take-off from the origin on the
+corridor, with the address airborne under that callsign in the flights snapshot, is
+`basis: 'observed'`, `onCorridor: true`, with progress.
+
 ### layers-hazards
 
 Probed **2026-09-30 18:06–18:25 UTC** from the build sandbox with
@@ -620,7 +635,7 @@ Recorded fixtures (trimmed) live in `src/features/space/__fixtures__/` with `cap
 | `https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=json` | 200 | 0.68 s | 9.3 kB | `*` | none | CelesTrak (Dr T.S. Kelso); cite CelesTrak | 22 OMM objects; `EPOCH` "2026-09-30T03:25:12.177120" (µs, **no Z**) |
 | `https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=json` | 200 | 2.42 s | **6 993 014 B** | `*` | none | as above | 16 612 objects; max `NORAD_CAT_ID` 100830; **644 ids > 99999** (6-digit since 2026-07-11). Served as SATELLITE_FIELDS rows ≈ 191 B/row → 3.18 MB (cap reached near 21.9k rows) |
 | `…gp.php?GROUP=gps-ops&FORMAT=json` | 200 | 0.79 s | 13 kB | `*` | none | as above | 32 objects |
-| `…gp.php?GROUP=glonass-operational&FORMAT=json` | **TLS reset** (`curl: (35) Recv failure: Connection reset by peer`) after 11.3 s | — | — | — | — | — | Second group request in 3 s was reset. Not retried. The feed therefore paces CelesTrak at 1 request / 2 s, never auto-retries, stops a run at the first failing group, counts every failure in a rolling 2 h window and stops calling CelesTrak at 12 (their firewall trips at 50 errors / 2 h). Remaining group names (`galileo, beidou, military, radar, weather, resource, science, geodetic, other-comm`) are CelesTrak's documented GP groups and could not be re-verified without risking the firewall. |
+| `…gp.php?GROUP=glonass-operational&FORMAT=json` | **TLS reset** (`curl: (35) Recv failure: Connection reset by peer`) after 11.3 s | — | — | — | — | — | Second group request in 3 s was reset. Not retried. The feed therefore paces CelesTrak at 1 request / 2 s, never auto-retries, stops a run at the first failing group, counts every failure in a rolling 2 h window and stops calling CelesTrak at 12 (their firewall trips at 50 errors / 2 h). **All 12 groups the feed uses were verified on 2026-10-01** (Phase 3 round 4 re-probe below): 200 + OMM JSON for `stations, science, geodetic, gps-ops, glo-ops, galileo, military, radar, resource`; `beidou` 200 with 54 objects at 16:19Z; `weather` and `other-comm` were reset from the sandbox but downloaded by the running server (72 and 30 tagged rows in `/api/satellites`). `glonass-operational` does not exist (200 text "GROUP not found"): the feed uses `glo-ops`. Re-probed 2026-10-02 (last section). |
 | `https://db.satnogs.org/api/tle/?format=json` | 200 | 1.39 s | 520 kB | none | none | SatNOGS DB (Libre Space Foundation), CC BY-SA 4.0 | Plain array (not paged) of 1 679 `{tle0, tle1, tle2, tle_source, sat_id, norad_cat_id, updated}`; ISS TLE is the same element set CelesTrak serves (epoch 26273.14250205). Used only as a labelled fallback (`catalogueSource: 'satnogs-fallback'`) when CelesTrak has never answered or its last-good catalogue is > 24 h old. |
 
 Breaking changes encoded (§6.2): `FORMAT=json` always (default is CSV since 2026-05-09); NORAD ids read
@@ -694,6 +709,7 @@ Same honest UA, `curl -sS -m 90 --compressed`, one request each, ≥ 15 s apart,
 | `…GROUP=glo-ops` | 200 | 1.15 s | 2.3 kB | `*` | 29 objects — the correct GLONASS group (now used). |
 | `…GROUP=galileo` | 200 | 0.67 s | 2.4 kB | `*` | |
 | `…GROUP=beidou` | reset (000, 11.12 s) | | | | |
+| `…GROUP=beidou` (16:19Z) | 200 | — | — | `*` | 54 objects (BeiDou-2/-3) — the group name is valid; the 06:2x reset was the random sandbox reset. |
 | `…GROUP=military` | 200 | 21.5 s | 1.9 kB | `*` | slow |
 | `…GROUP=radar` | 200 | 21.4 s | 1.1 kB | `*` | slow |
 | `…GROUP=weather` | reset ×2 (000, 11.2 s) | | | | |
@@ -719,6 +735,37 @@ to 300 s and the rail shows a `FALLBACK · SatNOGS DB TLEs, n objects` line.
 
 **Payload:** `epoch` now travels as integer ms (`epochUnit: 'ms'`): ≈ 161 B/row on the live catalogue
 (≈ 2.68 MB for 16 612 rows, 64 % of the 4 MB cap, was 71 %); 20k rows stay < 80 % and 24k < 100 % (route test).
+
+### Re-probe 2026-10-02 00:20–00:29 UTC (Phase 3 round 6: all 12 groups)
+
+Same honest UA, `curl -sS -m 40 --compressed`, `Origin: https://example.org`, one request per group
+20 s apart (resets retried once, 45–60 s later; 6 errors in total, far under the 50 / 2 h firewall
+limit). Object count = length of the OMM JSON array; newest `EPOCH` as served (zone-less UTC).
+
+| Group | Status | Latency | Size (gzip) | CORS | Objects | Newest EPOCH / note |
+|---|---|---|---|---|---|---|
+| `stations` | 200 | 2.78 s | 9 295 B | `*` | 22 | 2026-10-01T14:41:22 (first row ISS (ZARYA)); max NORAD id 100 712 (6-digit) |
+| `science` | 200 | 2.69 s | 19 037 B | `*` | 46 | 2026-10-02T03:42:59 — CXO's epoch is again ahead of the download (cf. `celestrak-future-epoch.json`) |
+| `geodetic` | 200 | 0.75 s | 4 113 B | `*` | 10 | 2026-10-01T14:53:53 |
+| `gps-ops` | reset (000, 12.29 s); retry reset (000, 11.33 s) | | | | | verified 200 on 2026-10-01 (3.02 s); the resets are this network's, not the group's |
+| `glo-ops` | 200 | 1.44 s | 11 933 B | `*` | 29 | 2026-10-01T18:53:09 |
+| `galileo` | 200 | 7.79 s | 13 257 B | `*` | 32 | 2026-10-01T12:16:36 |
+| `beidou` | 200 | 4.99 s | 22 277 B | `*` | 54 | 2026-10-01T15:48:53 (first row BEIDOU-2 IGSO-1 (C06)) |
+| `military` | 200 | 6.43 s | 10 169 B | `*` | 24 | 2026-10-01T15:38:21 |
+| `radar` | 200 | 1.25 s | 4 212 B | `*` | 10 | 2026-10-01T15:39:11 |
+| `weather` | reset (000, 11.27 s); retry reset (000, 12.43 s) | | | | | not reachable from the sandbox on either day; 72 rows tagged by the server run of 2026-10-01 |
+| `resource` | 200 | 1.07 s | 69 615 B | `*` | 167 | 2026-10-01T18:51:16 |
+| `other-comm` | reset (000, 12.31 s); retry reset (000, 12.32 s) | | | | | not reachable from the sandbox on either day; 30 rows tagged by the server run of 2026-10-01 |
+
+9 of 12 answered 200 with OMM JSON today. `gps-ops` answered on 2026-10-01 and `science`/`beidou`
+(reset on 2026-10-01) answer today; `weather` and `other-comm` were reset from the sandbox on both
+days, so for those two the evidence is the server's tagged rows, not a sandbox probe. The feed's tolerance (≤ 2 failures per run, missing groups
+retried 20 min later, per-group download times) covers exactly this.
+
+**Client change recorded here (round 6):** satellites are drawn as mission glyphs (one deck.gl
+IconLayer per category over a 6-glyph mask atlas rasterised at runtime). The worker now sorts the
+drawn rows by category and posts `categoryOffsets`; `radii` became `sizes` (glyph px: 8, ISS 14,
+selected 16). No upstream or payload change.
 
 ### layers-surveillance
 
@@ -909,6 +956,20 @@ within 6 operator intervals (≥ 60 s each, the viewer's own rule), otherwise `S
 (Toronto, reviewer sample `lastFrameAge_s` 77 879); frames without an operator time read
 `RELAYED · UNTIMED`.
 
+#### Phase 3 round 6 (2026-10-02 00:30–00:45 UTC, same honest UA)
+
+| Upstream | Status · latency · size | CORS | Auth | Licence / terms | Sample fields | Effect |
+|---|---|---|---|---|---|---|
+| Edmonton `POST https://edmontontrafficcam.com/Default.aspx/GetCameras` body `{}` | 200 · 0.82 s · 23 kB `application/json` | `Access-Control-Allow-Origin: https://cityed1-winkcdn1.winkcdn.com` (not us) | none | `www.edmonton.ca/conditionsofuse` (200 · 0.44 s): "You will only use the website for personal, educational or non-commercial purposes" | `d[].{Code, Latitude, Longitude (strings), PrimaryRoad, SecondaryRoad, Status "1", StatusComment "Online", MMSUrl, StreamCode}`; 58 cameras, all Status 1, all inside 53.2–53.8 N / 114.0–113.1 W | **Wired** `edmonton` (canada) behind `nc_sources`, `link_out_only` (opens edmontontrafficcam.com); off → `skipped: 'licence'`. HLS host (`cityed1-winkcdn1.winkcdn.com`) is never proxied, embedded or added to the CSP. Fixture `edmonton-getcameras.2026-10-02.json` (first 6). |
+| MLIT area list `https://www.river.go.jp/kawabou/file/files/map/pref/prefarea.json` | 200 · 0.39 s · 20 kB | none | none | see below | `prefs[].{prefCd, prefNm, lat, lon}`; 51 codes (Hokkaido split 101–105) | Area codes for the camera master (found in the river.go.jp map bundle `kawabou/js/app.6ca8c169.js`: `getTmScamGeoJsons` → `gjson/scam/<prefCd>.json`). |
+| MLIT camera master `https://www.river.go.jp/kawabou/file/gjson/scam/<prefCd>.json` ×51 | 49 × 200 (avg 1.0 s, 3.3 MB total) · codes 101 and 4701 → 404 | none | none | see below | GeoJSON `features[].{geometry Point, properties.{id, name, sys_id, sys_cam_id, pause, ofc_cd, own_cd, cam_kind}}`; 11 733 cameras: sys_id 1 = 6 141, 2 = 4 891, 3 = 701; 50 paused; `last-modified` 2026-09-28, `cache-control: max-age=1800` | **Wired** `mlit` (new region `japan`), **link-out only** (see terms row): sys_id 1 + 3, not paused → 6 816 cameras. |
+| MLIT per-camera master `…/kawabou/file/files/master/obs/scam/<id>.json` | 200 · 0.97 s · 1.2 kB | none | none | — | `obsInfo.{currProvUrl, normProvUrl, currentUrl, currDateProvUrl, ownName, sysId}`: sys 3 `303329013` → `https://cam.river.go.jp/cam/now/303329013.jpg` (owner 東京都); sys 1 `102817028` → `/cam/now/102817028.jpg` (owner 埼玉県); sys 2 `221320003` → `/cam/now/cctv_130001_31C03351.jpg` (owner 京浜河川事務所) | sys 2 frame names are not in the area master, so sys 2 is not listed (one request per camera would be needed). |
+| MLIT frames `https://cam.river.go.jp/cam/now/<id>.jpg` | 200 · 0.9–3.8 s · 20–343 kB `image/jpeg` (5 sampled sys 1/3 ids) | `*` | none | — | `last-modified` (frame time), `cache-control: max-age=300`; `/cam/now/<id>.json` gives `get_time`/`create_time` with +09:00 | **Not proxied** (round-6 fix: no rules, not in the CSP). An unknown id (and the sys 2 id) answers 200 `image/png` 30 685 B with a fresh Last-Modified — the operator placeholder (the generic `frameTypes` guard in the stills proxy stays for any operator that does this). |
+| MLIT terms | `https://www.mlit.go.jp/link.html` 200 · 0.65 s | — | — | MLIT website content: 公共データ利用規約 (PDL1.0) unless noted, source credit required. river.go.jp publishes no terms page of its own (none linked from either app bundle; `/kawabou/kwb_apend/html/{policy,copyright}.html` 404); many cameras are prefecture-owned. Re-checked 2026-10-02: link.html says copyright 'belongs to MLIT unless otherwise noted' (著作権は、特記されていない限り国土交通省に帰属), so PDL 1.0 does not cover prefecture-owned frames (owners 東京都 / 埼玉県 for the sampled sys 3 / sys 1 cameras) | — | **Link-out only**: `proxy_allowed: false`, `link_out_only: true`, `rules: []`; attribution `出典：国土交通省「川の防災情報」`. |
+| MLIT camera page `https://www.river.go.jp/kawabou/pc/tm?itmkndCd=200&scamId=<id>` | 200 · 0.9–1.3 s (SPA shell; curl cannot tell ids apart) | — | none | — | Checked in Chromium 2026-10-02: ids 303329013 (四ノ橋), 303329006 (飯田橋), 102817028 (毛長川舎人観測局), 121320173 (多摩川右岸) each open their own camera on the map (name shown, map centred on it) | Each MLIT row's `externalUrl`. |
+| Edmonton per-camera page | `edmontontrafficcam.com/` 200 · 0.91 s; `Script/{Map,List,Video}Factory.min.js` read 2026-10-02 | — | — | — | The player reads no query string or hash (no `location.search`/`hash`/`URLSearchParams`), so there is no per-camera URL | Edmonton rows keep linking to the player home page (verifier finding 5 accepted as is). |
+| Windy Webcams API v3 `https://api.windy.com/webcams/api/v3/webcams?limit=1` | 403 · 0.46 s (no key) | — | `x-windy-api-key` | Windy terms | — | Not wired: listed in `NOT_WIRED_SOURCES` (needs `WINDY_WEBCAMS_KEY`). |
+
 ### layers-threats-network
 
 Probed **2026-09-30 20:02–20:10 UTC** from the build sandbox with
@@ -975,6 +1036,14 @@ Re-probe 2026-10-01 18:23–18:46 UTC (Phase 3 round-5 fixes; UA `GODSEYE/0.1.0 
 | CISA KEV JSON, `If-None-Match` + `If-Modified-Since` | **304** · 0.29–0.31 s · 0 B | none | The KEV feed now sends both validators once it has a snapshot; the revalidation that follows each NVD batch (so `/api/health` restates `providers.nvd`) costs a 304, not 1.76 MB. |
 | CISA KEV JSON, `If-None-Match` only | 200 · 0.39–0.46 s · 1.76 MB | none | The CDN ignores the ETag alone → never send it without `If-Modified-Since` (http.ts sends both when both are known). |
 | CISA KEV JSON, `If-Modified-Since` only | 304 · 0.46 s | none | — |
+
+Probe 2026-10-02 00:35–00:40 UTC (Phase 3 round-6, alert pins counted in conflict zones; UA `GODSEYE-probe`, `Origin: https://example.org`):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| Live Alerts via `runNews()` (in-process; owner panels-alerts-markets-dossier-graph) | 120 items · 16/21 sources ok (BBC, Guardian, NYT, DW, CNA, Times of Israel failed from this sandbox) | n/a (server) | Conflicts reads `newsFeed.get()` in-process, never `/api/news`. Places: 27 settlement, 12 region, 43 country, 38 none; only settlement/region pins inside a zone count (6 of 120: Kyiv ×2, Odesa, Gaza City, Gaza Strip, Khartoum). Aden (45.02 E, 12.79 N) sits just outside the bundled Yemen outline and is not counted. Fixture `news-items.2026-10-02.json` (18 items, fields as served). Licence: links to publishers; headlines only. |
+| `t.me/s/KyivIndependent_official` | 200 · 0.73 s | none | Public channel preview; no `Access-Control-Allow-Origin` (server-side only). |
+| Al Jazeera `xml/rss/all.xml` | 200 · 0.48 s | none | Wire RSS; server-side only. |
 
 ## map-engine — probe log
 
@@ -1198,7 +1267,7 @@ each file name.
 ### Live Alerts — Telegram public previews (`/api/news`)
 
 Public channel previews (`https://t.me/s/<handle>`), server-rendered HTML with no API. Low volume
-(8 newest posts per channel — OSIRIS and contract §6; was 10 before 2026-09-30 round-1 fix — 2-minute feed TTL, `providerBucket('t.me', 2/s)`), shown to people with a
+(8 newest posts per channel — OSIRIS and contract §6; was 10 before 2026-09-30 round-1 fix — 3-minute per-channel cache `news:tg:<handle>` with last-good (wire RSS 2 min per feed), 60 s feed rebuild, `providerBucket('t.me', 2/s)`), shown to people with a
 link to the post; never used for training. Posts without their own `<time datetime>` are dropped.
 
 | Handle | Name / declared stance | Bloc | Status | Latency | Size | CORS |
@@ -1313,8 +1382,13 @@ Holiday calendars bundled in `src/components/panels/intel/server/sessions.ts` (r
 NYSE/Nasdaq from `https://www.nyse.com/markets/hours-calendars` (200, 0.35 s; 2026 column: Jan 1, Jan 19,
 Feb 16, Apr 3, May 25, Jun 19, Jul 3, Sep 7, Nov 26, Dec 25); SSE from the Shanghai Futures Exchange
 circular of 2025-12-17 "Trading Schedule during National Holidays for Year 2026" (mainland calendar:
-Jan 1–3, Feb 15–23, Apr 4–6, May 1–5, Jun 19–21, Sep 25–27, Oct 1–7); HKEX 2026 securities-market
-full-day closures (14 dates, as published by HKEX and reported by globalexchanges.com). Every other
+Jan 1–3, Feb 15–23, Apr 4–6, May 1–5, Jun 19–21, Sep 25–27, Oct 1–7); HKEX from the HKSAR general-holiday calendar
+`https://www.1823.gov.hk/common/ical/en.json` (1823 contact centre, HKSARG; retrieved 2026-10-01,
+re-probed 2026-10-02: 200, 1.2 s, no CORS header, no auth, Hong Kong government open data;
+`vcalendar[0].vevent[].dtstart[0]` YYYYMMDD + `summary`): the HKEX securities market closes on weekday
+general holidays, giving 14 full-day closures in 2026 (Apr 4, Sep 26, Dec 26 are Saturdays). Half days
+(Lunar New Year's Eve, Christmas Eve, New Year's Eve) and typhoon/black-rainstorm closures are not
+modelled. Every other
 exchange reports `holidaysModelled: false` and the panel marks it with `*`.
 
 Region Dossier live layers read other owners' feeds in-process (no HTTP): `cctv:<region>` (the regions
@@ -1343,6 +1417,16 @@ Honest UA `GODSEYE/0.1.0 (+https://github.com/awne8886/godseye; contact …/issu
 | `https://api.worldbank.org/v2/country/TW/indicator/SP.POP.TOTL?format=json&mrnev=1` | 200 | 0.23 s | `*` | none | `[{"page":0,…,"total":0}, null]`: economy not covered → no figure (provider ok, count 0); the dossier keeps Wikidata's figure with its own year |
 | `https://query.wikidata.org/sparql` (country query, best-rank `p:P1082/ps:P1082` + `pq:P585 ?popDate`) | 200 | 0.33 s | `*` | none | CC0. UA → `pop 41167335`, `popDate 2022-01-01T00:00:00Z`: the old figure is a 2022 value, now shown with that year when the World Bank has no figure |
 | `https://www.scmp.com/rss/91/feed/` | 200 | 0.48 s | none | none | 50 items; the slash-less URL → 301 to `http://` (0.55 s) |
+
+#### Round 6 (probed 2026-10-02)
+
+| URL | Status | Latency | CORS | Auth | Notes |
+|---|---|---|---|---|---|
+| `https://t.me/s/Osintdefender` | 200 | 0.99 s | none | none | Now read through a 3 min per-channel cache (`news:tg:<handle>`, last-good kept on failure, `providers['tg:<handle>'].age_s` = cache age); wire RSS 2 min per feed; the news feed rebuilds every 60 s |
+| `POST https://api.anthropic.com/v1/messages` (`stream:true`, no key) | 401 | 0.09 s | none | `x-api-key` | Keyed answers are SSE: `content_block_delta` → `delta.text` (`text_delta`); mid-stream `event: error` (e.g. `overloaded_error`). Format from platform.claude.com streaming docs (re-read 2026-10-02); fixture `stream-claude.documented.sse` is written to that format, not recorded (no key available). Re-probed 2026-10-02 with `x-api-key: invalid`: 401 in 0.08 s, `application/json` `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":…}` — recorded as `anthropic-messages-401.2026-10-02.json` |
+| `POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse` (no key) | 403 | 0.36 s | reflects Origin | `x-goog-api-key` | SSE `data:` = GenerateContentResponse, text at `candidates[0].content.parts[].text`, CRLF framing; fixture `stream-gemini.documented.sse` (documented format, not recorded). Re-probed 2026-10-02: 403 in 0.28 s, body `{"error":{"code":403,"status":"PERMISSION_DENIED",…}}` served as `text/event-stream` (not SSE-framed) — recorded as `gemini-stream-403.2026-10-02.json` |
+| `POST <OLLAMA_URL>/api/chat` (`stream:true`) | not probed | — | — | operator host | NDJSON, `message.content` per line, last line `done:true`; fixture `stream-ollama.documented.ndjson` (documented format; no Ollama host in the build sandbox) |
+| `https://www.1823.gov.hk/common/ical/en.json` | 200 | 1.21 s | none | none | HKSAR general holidays (HK government open data). 2026: 17 events, 14 on weekdays = the HKEX full-day closures in `sessions.ts`; recorded as `hk-1823-holidays-2026.2026-10-02.json` (2026 events only). Half days not modelled |
 
 ### panels-recon
 

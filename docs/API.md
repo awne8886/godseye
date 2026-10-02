@@ -539,7 +539,7 @@ Conflict zones (REFERENCE polygons) with live event counts from GDELT/alerts
 | Cache | Browsers revalidate every request; shared caches s-maxage 15 min, CDN stale-while-revalidate 30 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ConflictsResponse` |
-| Upstreams | `data.gdeltproject.org` |
+| Upstreams | `data.gdeltproject.org`, `t.me` |
 | Forwards user input upstream | No |
 | Example | `GET /api/conflicts` |
 

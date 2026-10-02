@@ -90,6 +90,8 @@ export const SOURCES: readonly SourceEntry[] = [
   { id: 'openflights', name: 'OpenFlights', group: 'aviation', usedFor: 'Historical airline routes (frozen June 2014, labelled historical)', licence: 'ODbL 1.0', url: 'https://openflights.org/data.php', mode: 'reference' },
   { id: 'aviationweather', name: 'aviationweather.gov (NOAA AWC)', group: 'aviation', usedFor: 'METAR / TAF at route endpoints', licence: 'US Government work, public domain', url: 'https://aviationweather.gov/data/api/', mode: 'on-demand' },
   { id: 'fpdb', name: 'Flight Plan Database', group: 'aviation', usedFor: 'Filed route waypoints (flight-simulation plans only)', licence: 'FPDB API terms; simulation use only, attribution required', url: 'https://flightplandatabase.com/dev/api', mode: 'on-demand', gate: { capability: 'fpdb', note: 'FPDB_API_KEY' } },
+  { id: 'aeroapi', name: 'FlightAware AeroAPI', group: 'aviation', usedFor: 'Filed IFR routes, flight schedules', licence: 'AeroAPI personal tier, non-commercial', url: 'https://www.flightaware.com/aeroapi/', mode: 'on-demand', gate: { capability: 'aeroapi', note: 'AEROAPI_KEY' } },
+  { id: 'faa_adds', name: 'FAA ADDS ATS_Route', group: 'aviation', usedFor: 'US airways near planned routes (bundled snapshot)', licence: 'US Government work, public domain', url: 'https://adds-faa.opendata.arcgis.com/', mode: 'reference' },
   { id: 'gpsjam', name: 'gpsjam.org', group: 'aviation', usedFor: 'GPS interference (daily H3 cells)', licence: 'Licence not stated; attributed, reuse terms unknown', url: 'https://gpsjam.org/faq', mode: 'live' },
 
   // ── Space ────────────────────────────────────────────────────────────────────
@@ -154,6 +156,8 @@ export const SOURCES: readonly SourceEntry[] = [
   { id: 'cam:thb', name: 'Directorate General of Highways, MOTC', group: 'cameras', usedFor: 'Taiwan highway cameras', licence: 'Open Government Data License v1.0 (Taiwan)', url: 'https://data.gov.tw/license', mode: 'live' },
   { id: 'cam:nzta', name: 'NZ Transport Agency Waka Kotahi', group: 'cameras', usedFor: 'New Zealand traffic cameras', licence: 'Operator terms; not separately licensed', url: 'https://trafficnz.info/', mode: 'live' },
   { id: 'cam:nsw', name: 'Transport for NSW (Live Traffic NSW)', group: 'cameras', usedFor: 'New South Wales traffic cameras', licence: 'Operator terms; not separately licensed', url: 'https://www.livetraffic.com/', mode: 'live' },
+  { id: 'cam:edmonton', name: 'City of Edmonton', group: 'cameras', usedFor: 'Edmonton traffic cameras (link out to the city player)', licence: 'Conditions of use: personal, educational or non-commercial only', url: 'https://www.edmonton.ca/conditionsofuse', mode: 'live', gate: { capability: 'nc_sources', note: 'off when COMMERCIAL_DEPLOYMENT=true' } },
+  { id: 'cam:mlit', name: 'MLIT 川の防災情報 river cameras', group: 'cameras', usedFor: 'Japan river cameras (link out to each river.go.jp camera page)', licence: 'No river.go.jp reuse terms; MLIT site PDL1.0 unless noted; many cameras prefecture-owned', url: 'https://www.mlit.go.jp/link.html', mode: 'live' },
   { id: 'youtube-live', name: 'YouTube (broadcaster live channels)', group: 'cameras', usedFor: 'Live news embeds where the broadcaster allows embedding; others link out', licence: 'YouTube Terms of Service; broadcaster copyright', url: 'https://www.youtube.com/t/terms', mode: 'on-demand' },
 
   // ── News & alerts ────────────────────────────────────────────────────────────
@@ -252,7 +256,7 @@ export const LAYER_SOURCE_IDS: Readonly<Record<string, readonly string[]>> = {
   global_incidents: ['gdacs'],
   alert_pins: ['telegram', ...SOURCES.filter((s) => s.id.startsWith('rss-')).map((s) => s.id)],
   gdelt_events: ['gdelt'],
-  conflict_zones: ['natural-earth', 'osiris-curated', 'gdelt'],
+  conflict_zones: ['natural-earth', 'osiris-curated', 'gdelt', 'telegram', ...SOURCES.filter((e) => e.id.startsWith('rss-')).map((e) => e.id)],
   frontlines: ['deepstate'],
   country_risk: ['inform', 'wgi'],
   malware: ['abusech', 'ip-api'],

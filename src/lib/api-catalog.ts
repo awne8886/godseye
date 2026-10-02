@@ -170,7 +170,7 @@ export const API_CATALOG = [
     params: [q('limit', 'number', false, 'max events (≤ 5000, default 1000; total/truncated say what was left out)', '1000'), q('quad', 'string', false, 'Comma list of QuadClass 1–4', '3,4')], ttlSeconds: 900, responseSchema: 'GdeltEventsResponse',
     upstreams: ['data.gdeltproject.org'], forwardsUserInput: false, example: '?limit=200&quad=4', osiris: true, owner: 'layers-threats-network',
   },
-  { method: 'GET', path: '/api/conflicts', group: 'threats', summary: 'Conflict zones (REFERENCE polygons) with live event counts from GDELT/alerts', params: [], ttlSeconds: 900, responseSchema: 'ConflictsResponse', upstreams: ['data.gdeltproject.org'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
+  { method: 'GET', path: '/api/conflicts', group: 'threats', summary: 'Conflict zones (REFERENCE polygons) with live event counts from GDELT/alerts', params: [], ttlSeconds: 900, responseSchema: 'ConflictsResponse', upstreams: ['data.gdeltproject.org', 't.me'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
   { method: 'GET', path: '/api/frontlines', group: 'threats', summary: 'DeepStateMap frontlines (non-commercial, attributed)', params: [], ttlSeconds: 3600, responseSchema: 'FrontlinesResponse', upstreams: ['deepstatemap.live'], forwardsUserInput: false, capability: 'deepstate', osiris: true, owner: 'layers-threats-network' },
   { method: 'GET', path: '/api/country-risk', group: 'threats', summary: 'Country risk (INFORM + World Bank WGI) with method', params: [], ttlSeconds: 86400, responseSchema: 'CountryRiskResponse', upstreams: ['drmkc.jrc.ec.europa.eu', 'api.worldbank.org'], forwardsUserInput: false, osiris: true, owner: 'layers-threats-network' },
 

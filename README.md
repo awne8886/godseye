@@ -458,6 +458,9 @@ These follow from upstream terms, quotas or the visitor's hardware, not from mis
 - **SkylineWebcams.** Its cameras are not listed because its terms of use forbid downloading or extracting
   any of its content, text included, and its pages publish no camera coordinates, so a catalogue could only
   be built by scraping and guessing positions.
+- **MLIT river cameras (Japan)** are link-outs to each camera's river.go.jp page, not proxied stills:
+  river.go.jp publishes no reuse terms and many of its cameras are prefecture-owned. MLIT office CCTV
+  is not listed because its image file names are not in the public camera lists.
 - **DeepStateMap frontlines** are off by default: DeepState allows non-commercial use with attribution and
   requires its prior approval for commercial API use, so an operator must opt in with `NONCOMMERCIAL=true`
   (always off when `COMMERCIAL_DEPLOYMENT=true`); until then the Frontlines layer is hidden and
