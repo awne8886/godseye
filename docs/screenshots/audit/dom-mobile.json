@@ -1,0 +1,101 @@
+{
+  "stacking": {
+    "bottomRightCorner": {
+      "bottom": "57px",
+      "zIndex": "5"
+    },
+    "topOfAttribution": "div.maplibregl-ctrl-attrib-inner",
+    "topOfImageryChip": "li.hud-micro.rounded-md.border",
+    "overlays": [
+      {
+        "cls": "vignette absolute inset-0",
+        "opacity": "1",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      },
+      {
+        "cls": "crt-scanlines absolute inset-0",
+        "opacity": "1",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      },
+      {
+        "cls": "fx-scanlines absolute inset-0",
+        "opacity": "0",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      },
+      {
+        "cls": "fx-vignette absolute inset-0",
+        "opacity": "0",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      }
+    ],
+    "cornerChain": [
+      "div.maplibregl-ctrl-bottom-right z=5"
+    ],
+    "chipColor": {
+      "color": "rgb(155, 151, 142)",
+      "bg": "rgba(8, 10, 20, 0.88)",
+      "fontSize": "10px"
+    }
+  },
+  "named": {
+    "attribution": {
+      "x": 12,
+      "y": 740,
+      "w": 378,
+      "h": 47,
+      "z": "auto"
+    },
+    "imageryChips": {
+      "x": 142,
+      "y": 704,
+      "w": 238,
+      "h": 26,
+      "z": "auto"
+    },
+    "statusBar": null,
+    "mobileNav": {
+      "x": 0,
+      "y": 787,
+      "w": 390,
+      "h": 57,
+      "z": "450"
+    },
+    "viewControls": {
+      "x": 12,
+      "y": 64,
+      "w": 308,
+      "h": 54,
+      "z": "200"
+    },
+    "scaleBar": null,
+    "readout": null,
+    "telemetry": {
+      "x": 271,
+      "y": 16,
+      "w": 103,
+      "h": 15,
+      "z": "200"
+    },
+    "tools": null,
+    "rail": null,
+    "hint": null
+  },
+  "overlaps": [],
+  "tiny": [],
+  "tracking": [],
+  "smallTargets": [
+    "70x13 OpenFreeMap",
+    "77x13 OpenMapTiles",
+    "83x13 OpenStreetMap"
+  ],
+  "attributionText": "Night lights: VIIRS Black Marble 2016 · Imagery: NASA GIBS, part of NASA ESDIS | OpenFreeMap © OpenMapTiles Data from OpenStreetMap",
+  "attributionClass": "maplibregl-ctrl maplibregl-ctrl-attrib"
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "worktree": {
+    "baseRef": "head",
+    "symlinkDirectories": ["node_modules"]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm lint)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test:coverage)",
+      "Bash(pnpm build)",
+      "Bash(pnpm e2e:*)",
+      "Bash(npx vitest run:*)",
+      "Bash(node tools/gen-types.mjs)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(curl -s:*)",
+      "Bash(curl -sS:*)",
+      "Bash(curl -sI:*)"
+    ]
+  }
+}

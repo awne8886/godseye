@@ -1,0 +1,123 @@
+{
+  "stacking": {
+    "bottomRightCorner": {
+      "bottom": "28px",
+      "zIndex": "5"
+    },
+    "topOfAttribution": "div.maplibregl-ctrl-attrib-inner",
+    "topOfImageryChip": "li.hud-micro.rounded-md.border",
+    "overlays": [
+      {
+        "cls": "vignette absolute inset-0",
+        "opacity": "1",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      },
+      {
+        "cls": "crt-scanlines absolute inset-0",
+        "opacity": "1",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      },
+      {
+        "cls": "fx-scanlines absolute inset-0",
+        "opacity": "0",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      },
+      {
+        "cls": "fx-vignette absolute inset-0",
+        "opacity": "0",
+        "chain": [
+          "div.pointer-events-none z=2 pos=fixed"
+        ]
+      }
+    ],
+    "cornerChain": [
+      "div.maplibregl-ctrl-bottom-right z=5"
+    ],
+    "chipColor": {
+      "color": "rgb(155, 151, 142)",
+      "bg": "rgba(8, 10, 20, 0.88)",
+      "fontSize": "10px"
+    }
+  },
+  "named": {
+    "attribution": {
+      "x": 743,
+      "y": 953,
+      "w": 851,
+      "h": 19,
+      "z": "auto"
+    },
+    "imageryChips": {
+      "x": 1346,
+      "y": 917,
+      "w": 238,
+      "h": 26,
+      "z": "auto"
+    },
+    "statusBar": {
+      "x": 0,
+      "y": 972,
+      "w": 1600,
+      "h": 28,
+      "z": "210"
+    },
+    "mobileNav": null,
+    "viewControls": {
+      "x": 120,
+      "y": 858,
+      "w": 340,
+      "h": 42,
+      "z": "200"
+    },
+    "scaleBar": {
+      "x": 288,
+      "y": 960,
+      "w": 2,
+      "h": 8,
+      "z": "auto"
+    },
+    "readout": null,
+    "telemetry": {
+      "x": 953,
+      "y": 16,
+      "w": 631,
+      "h": 15,
+      "z": "200"
+    },
+    "tools": {
+      "x": 1538,
+      "y": 277,
+      "w": 54,
+      "h": 447,
+      "z": "250"
+    },
+    "rail": {
+      "x": 0,
+      "y": 0,
+      "w": 48,
+      "h": 972,
+      "z": "50"
+    },
+    "hint": {
+      "x": 344,
+      "y": 953,
+      "w": 552,
+      "h": 15,
+      "z": "auto"
+    }
+  },
+  "overlaps": [
+    "attribution x hint (153x15px)"
+  ],
+  "tiny": [],
+  "tracking": [],
+  "smallTargets": [],
+  "attributionText": "Night lights: VIIRS Black Marble 2016 · Imagery: NASA GIBS, part of NASA ESDIS | OpenFreeMap © OpenMapTiles Data from OpenStreetMap",
+  "attributionClass": "maplibregl-ctrl maplibregl-ctrl-attrib"
+}

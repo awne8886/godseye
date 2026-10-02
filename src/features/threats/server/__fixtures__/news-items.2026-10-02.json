@@ -1,0 +1,614 @@
+{
+ "_meta": {
+  "source": "runNews() (src/components/panels/intel/server/news.ts) against the live Telegram t.me/s previews and wire RSS",
+  "capturedAt": "2026-10-02T00:35:45.935Z",
+  "note": "Trimmed to 18 of 120 items; fields unchanged."
+ },
+ "items": [
+  {
+   "id": "tg:presstv/209140",
+   "title": "Tehran ceremony: remembering martyrs, renewing allegiance",
+   "summary": "Moeen Amini reports from Tehran",
+   "link": "https://t.me/presstv/209140",
+   "publishedAt": "2026-10-02T00:30:26.000Z",
+   "source": "t.me/PressTV",
+   "sourceName": "Press TV",
+   "sourceKind": "telegram",
+   "lean": "Iranian state broadcaster",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "news",
+   "media": {
+    "type": "video",
+    "thumbnailUrl": "https://cdn4.telesco.pe/file/tsaKCdDSl5Xbzw1S0ZoEsRxLcDDnK-0D9hOhWb8JLkDNj59LpJXg6_702bwjWMOpBEIu8m9p5LoFN8trz-ZSlzXlFxBd0-QHA9Rdvx7S1lE9blG9SOjGU4LU43woszClKzEKySg6_50knkWi-8BMqbYsQusGaulc9MhHghArdk5cpfGLTwg0Ov78KEe_6BCCnuKSKUEB9gF5tz09-Cihjr4LYvJXVI9mtRjuda4txNpFfukQ0bSBIZSkZi9ONoh0kuagMbBlgN_g6pM1UlyheW2V991NsrEgEiUl3dQQQxRofJ9XPNkxZxOpgo1fIiCjBh_7ZCHdzr6KPaVGZ6LRvw",
+    "videoUrl": null,
+    "durationS": 139
+   },
+   "alsoReportedBy": [],
+   "views": 96,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Tehran",
+    "lat": 35.69,
+    "lng": 51.39,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  },
+  {
+   "id": "tg:presstv/209139",
+   "title": "Yemen's Armed Forces carry out attacks targeting the headquarters of the Saudi-led coalition in Aden.",
+   "summary": null,
+   "link": "https://t.me/presstv/209139",
+   "publishedAt": "2026-10-02T00:09:58.000Z",
+   "source": "t.me/PressTV",
+   "sourceName": "Press TV",
+   "sourceKind": "telegram",
+   "lean": "Iranian state broadcaster",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "event",
+   "media": {
+    "type": "video",
+    "thumbnailUrl": "https://cdn4.telesco.pe/file/M6c1x9UsyWkqUA96OTNLnLxiXVZr13LCW3nNBtGGKMFGlRqL7lFN6IGj-nZ52ewCGZ7SLf3GMprvhVRpvNPKtrj8e8pHT7X2DxZBVCjT3FX0DKGJwPkb-U_-pWFoRO44GbKgyc1Yo8FDoDMxWf87vzBYo2lkl5RcQb2gIkk0vx15NxZegKB-JTfg6y3S6-seMZIhqMKD7v8Qpqp4rBbG-BXWu1BtzLGPnUy1k1uUIY4a5947CiD5wEpc22LS-wPC2ARU3pCrnXznEO2_Sc9S_FAkC8bT5V-jBrno25b28KJ6p0ZkuJqOO2nbng8ihZ7c_2qO4UOudk98f4FVBrjAJQ",
+    "videoUrl": "https://cdn4.telesco.pe/file/3a007501f2.mp4?token=qqFTlkYvmnKnXKcJ2qsDLgKHVQSctnQJyexL7I8gam8GNVQ5pGS1uHca7wbEBCllXaJ_ZfNOodLpWSuXViy4Q44YvRj3blI63At5WyPOcnvLjvcgc6dxTmRvz2AGVvKXy5nHYVNqhGPPR9Kn0DCkVqD96xSCTiKoAPxzymUVku7gx9JeLB5f1TKNsRBhrYkuI2ebL-iCuKoTZk89HHpBjDGAHWS7N8fc_J9oWuVwlfJ2lUHWrzlVpY7wTM40K5f6qy9wiWpJ7EWmQXqExMFOngVQaOkpolkgwSab8U3Qb7OIGwerjHP6mQ6N9arl5kRgybcN-vAx9UvI2VZTaGEIbg",
+    "durationS": 13
+   },
+   "alsoReportedBy": [],
+   "views": 271,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Aden",
+    "lat": 12.79,
+    "lng": 45.02,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 2,
+    "method": "keyword-count",
+    "keywords": [
+     "attack"
+    ]
+   }
+  },
+  {
+   "id": "rss:scmp:XIZ7_b_0SIOvbc29",
+   "title": "Could Northern Metropolis draw educational leasing from Hong Kong’s Grade A office sector?",
+   "summary": "As education sector demand supports Hong Kong’s Grade A office leasing activity, analysts said infrastructure that will serve the Northern Metropolis could decide whether schools and universities move their administrative and other services to this potential new centre of the city. “Over the medium to long term, the Northern Metropolis could be a viable option for institutions seeking to expand their teaching, research and administrative facilities,” said Kelvin Lee, director at property agency...",
+   "link": "https://www.scmp.com/business/article/3369267/could-northern-metropolis-draw-educational-leasing-hong-kongs-grade-office-sector?utm_source=rss_feed",
+   "publishedAt": "2026-10-02T00:00:13.000Z",
+   "source": "scmp",
+   "sourceName": "South China Morning Post",
+   "sourceKind": "wire",
+   "lean": "Hong Kong newspaper",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "news",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Hong Kong",
+    "lat": 22.32,
+    "lng": 114.17,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  },
+  {
+   "id": "rss:aljazeera:Paou4OSo7dBbGfYN",
+   "title": "Iran war live: US moves 2,000 Marines to Middle East, tanker hit in Hormuz",
+   "summary": "US deploys Roosevelt strike group and 2,000 Marines to the Middle East as part of a wider buildup around Iran.",
+   "link": "https://www.aljazeera.com/news/liveblog/2026/10/2/iran-war-live-us-moves-2000-marines-to-middle-east-tanker-hit-in-hormuz?traffic_source=rss",
+   "publishedAt": "2026-10-02T00:00:00.000Z",
+   "source": "aljazeera",
+   "sourceName": "Al Jazeera",
+   "sourceKind": "wire",
+   "lean": "Qatari broadcaster",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "event",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Strait of Hormuz",
+    "lat": 26.57,
+    "lng": 56.25,
+    "precision": "region",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 2,
+    "method": "keyword-count",
+    "keywords": [
+     "strike"
+    ]
+   }
+  },
+  {
+   "id": "rss:aljazeera:L-moGsMf2_LwGTxK",
+   "title": "Israeli drone kills Palestinian in Gaza, settlers kill another in West Bank",
+   "summary": "1,439 Palestinians have been killed in Gaza and 5,052 injured since the 'ceasefire' began in October 2025.",
+   "link": "https://www.aljazeera.com/news/2026/10/1/israeli-drone-kills-palestinian-in-gaza-settlers-kill-another-in-west-bank?traffic_source=rss",
+   "publishedAt": "2026-10-01T23:44:39.000Z",
+   "source": "aljazeera",
+   "sourceName": "Al Jazeera",
+   "sourceKind": "wire",
+   "lean": "Qatari broadcaster",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "event",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Gaza Strip",
+    "lat": 31.42,
+    "lng": 34.37,
+    "precision": "region",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 4,
+    "method": "keyword-count",
+    "keywords": [
+     "killed",
+     "drone"
+    ]
+   }
+  },
+  {
+   "id": "rss:tass:a7ccgzHAYw8SWEO9",
+   "title": "Fire in 18th century mansion in St. Petersburg put out",
+   "summary": "Open fire was put out at 10:45 p.m. Thursday GMT",
+   "link": "https://tass.com/emergencies/2196399",
+   "publishedAt": "2026-10-01T23:09:53.000Z",
+   "source": "tass",
+   "sourceName": "TASS",
+   "sourceKind": "wire",
+   "lean": "Russian state agency",
+   "bloc": "russian",
+   "breaking": false,
+   "kind": "event",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "St Petersburg",
+    "lat": 59.94,
+    "lng": 30.31,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  },
+  {
+   "id": "tg:QudsNen/240725",
+   "title": "Israeli occupation aircraft launch a strike in the vicinity of Mushtaha Street in the Shuja'iyya neighborhood, east of Gaza City.",
+   "summary": null,
+   "link": "https://t.me/QudsNen/240725",
+   "publishedAt": "2026-10-01T22:36:41.000Z",
+   "source": "t.me/QudsNen",
+   "sourceName": "Quds News Network",
+   "sourceKind": "telegram",
+   "lean": "Palestinian / Gaza & West Bank",
+   "bloc": "regional",
+   "breaking": true,
+   "kind": "event",
+   "media": {
+    "type": "photo",
+    "thumbnailUrl": "https://cdn4.telesco.pe/file/vkEmHCzr9EYpi9Ruzgfq2LPZ10WB2JrGxu-cVHMHdRLEgoAPxmYx3PxfMC6-ZgjuCj-FmHYHJRf15Rz_uinrJRcUnhvGCv4j4Fg2H2nzG_zokXxu7pMrdyq0kY_J0i6qc1e7eLl3s5fk3oIuoRDLEXhcsfOH1-Y9N5ccu8PxnsSPCSnhl1GA4YpzgcT7rNbkmYlLfBU-4iXtuvY3-MuklNNZyELCN3BX-e-kn6vAxPAOEZq11Y1SXXCkRJ7qsSOyH7j3kensunlmCGNX99jG7bmu6vcdjQtD0L1O5x0fZZw0bL7fP-1e47gQiQGLWEp4GiBdsLP2XpX-9om7SxEVhg.jpg",
+    "videoUrl": null,
+    "durationS": null
+   },
+   "alsoReportedBy": [],
+   "views": 380,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Gaza City",
+    "lat": 31.5,
+    "lng": 34.47,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 3,
+    "method": "keyword-count",
+    "keywords": [
+     "strike",
+     "breaking"
+    ]
+   }
+  },
+  {
+   "id": "tg:QudsNen/240723",
+   "title": "After returning from the occupied West Bank, American former Olympic saber fencer Monica Aksamit shared what she saw and experienced of…",
+   "summary": "Aksamit described Palestinians as the most hospitable people she has ever encountered, highlighting how communities support one another when the Israeli occupation forces closes gates or settlers attack.\n\nShe praised Palestinians’ resilience, recounting stories of a journalist shot by settlers who continued reporting and a teacher who continued teaching after his student and brother were shot.\n\nShe also praised Palestinian food, the way people find moments of positivity despite hardship, and their deep love for their land and olive trees, even as settlers try to prevent them from tending their",
+   "link": "https://t.me/QudsNen/240723",
+   "publishedAt": "2026-10-01T22:21:08.000Z",
+   "source": "t.me/QudsNen",
+   "sourceName": "Quds News Network",
+   "sourceKind": "telegram",
+   "lean": "Palestinian / Gaza & West Bank",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "event",
+   "media": {
+    "type": "photo",
+    "thumbnailUrl": "https://cdn4.telesco.pe/file/EJeN1XBjDIYUI9NG-fosi7yipGq91ndQ12jAlfisAK4N3oYE-pgyjrI8lPC84lpVTJ8h6dM6_G0WjFPajTrPGH8lqA7y4HsvgNla2p_In9EgjB3D2Pkrhlehf76210DKEli1B-a2Aet72AmEaN2_Vao5GZR4CRSuEETNufhMwZP2h_JkDcr_jtjbFwq45nExeLuG_orMlsy8xggIKdsaamnpHiIz2gYvka5DnJQSYnybmAxuIMKIZ0odZi0MnPqgEgDK_H6iCEQKkl7d5rUf4toPx5BIjonC2NiZGyo0DFz2b1xK_lRzh3tnqg29G0pLr7A67Fj1ScgnCqAxuCa9Hw.jpg",
+    "videoUrl": null,
+    "durationS": null
+   },
+   "alsoReportedBy": [],
+   "views": 405,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "West Bank",
+    "lat": 31.95,
+    "lng": 35.25,
+    "precision": "region",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 2,
+    "method": "keyword-count",
+    "keywords": [
+     "attack"
+    ]
+   }
+  },
+  {
+   "id": "rss:tass:o7SYHDuDP-glqW3f",
+   "title": "Kiev troops shell DPR 14 times in past day, two civilians wounded",
+   "summary": "Two residential buildings were damaged",
+   "link": "https://tass.com/defense/2196393",
+   "publishedAt": "2026-10-01T21:58:49.000Z",
+   "source": "tass",
+   "sourceName": "TASS",
+   "sourceKind": "wire",
+   "lean": "Russian state agency",
+   "bloc": "russian",
+   "breaking": false,
+   "kind": "news",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Kyiv",
+    "lat": 50.45,
+    "lng": 30.52,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 2,
+    "method": "keyword-count",
+    "keywords": [
+     "wounded"
+    ]
+   }
+  },
+  {
+   "id": "rss:france24:nt7lXUeC52jF12qF",
+   "title": "'Fundamental demand': Saint-Denis students seek same opportunity as those in 'more privileged areas'",
+   "summary": "Erin Ogunkeye is pleased to welcome a high school teacher who agreed to speak with us anonymously as protests intensify at a high school in a northern Paris suburb. The protests are shining a cruel light on major problems that have existed for years. All the while, police are cracking down on students, using teargas and strongarm tactics as students blockade entrances. For this high school teacher, the protests reflect concerns about everyday conditions in which students are expected to learn. Their demands are not abstract political claims. They are asking for an environment that allows them ",
+   "link": "https://www.france24.com/en/fundamental-demand-saint-denis-students-seek-same-opportunity-as-those-in-more-privileged-areas",
+   "publishedAt": "2026-10-01T21:02:33.000Z",
+   "source": "france24",
+   "sourceName": "France 24",
+   "sourceKind": "wire",
+   "lean": "French public broadcaster",
+   "bloc": "western",
+   "breaking": false,
+   "kind": "news",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Paris",
+    "lat": 48.86,
+    "lng": 2.35,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  },
+  {
+   "id": "tg:KyivIndependent_official/55853",
+   "title": "Russian drones once more hit key bridge in central Kyiv, damage reported.",
+   "summary": "\"As a result of the drone strike, preliminary information indicates that the bridge support, barrier, road surface, and the protective concrete structure of the metro were damaged,\" Kyiv Mayor Vitali Klitschko said.",
+   "link": "https://t.me/KyivIndependent_official/55853",
+   "publishedAt": "2026-10-01T20:11:16.000Z",
+   "source": "t.me/KyivIndependent_official",
+   "sourceName": "Kyiv Independent",
+   "sourceKind": "telegram",
+   "lean": "Ukrainian newsroom",
+   "bloc": "western",
+   "breaking": false,
+   "kind": "event",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": 1360,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Kyiv",
+    "lat": 50.45,
+    "lng": 30.52,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 3,
+    "method": "keyword-count",
+    "keywords": [
+     "drone",
+     "strike"
+    ]
+   }
+  },
+  {
+   "id": "rss:africanews:QBejmXJnYGgMy5_U",
+   "title": "Former Sudanese president Bashir hospitalized in Khartoum",
+   "summary": "The 82-year-old has spent most of his life, since his ouster in 2019, between hospital and prison",
+   "link": "http://www.africanews.com/2026/10/01/former-sudanese-president-bashir-hospitalized-in-khartoum/",
+   "publishedAt": "2026-10-01T19:11:48.000Z",
+   "source": "africanews",
+   "sourceName": "Africanews",
+   "sourceKind": "wire",
+   "lean": "Pan-African broadcaster",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "news",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Khartoum",
+    "lat": 15.5,
+    "lng": 32.56,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  },
+  {
+   "id": "tg:rybar_in_english/34727",
+   "title": "Not a One-Way Street",
+   "summary": "Many people, upon seeing news about assassination attempts on Russian military personnel and media figures, wondered why such work wasn't being conducted on the territory of so-called Ukraine. But gradually, the situation is changing.\n\nRecently in Odesa, they eliminated a 50-year-old officer of the Ukrainian Navy with the rank of captain 1st class. The perpetrator provoked a conflict on the road and forced the target out of the car, then shot him in the chest and neck.\n\n📌 But the most interesting part is that the killer turned out to be an 82-year-old pensioner from Dnipropetrovsk. After his ",
+   "link": "https://t.me/rybar_in_english/34727",
+   "publishedAt": "2026-10-01T15:07:53.000Z",
+   "source": "t.me/rybar_in_english",
+   "sourceName": "Rybar",
+   "sourceKind": "telegram",
+   "lean": "Russian military OSINT",
+   "bloc": "russian",
+   "breaking": false,
+   "kind": "event",
+   "media": {
+    "type": "photo",
+    "thumbnailUrl": "https://cdn4.telesco.pe/file/JmliICsVxgWW8i0ESwQdAGqz6n6psBv_LJ8u66VxYfambEPpoQEcLO_kb3ebzMTY565d8MYZZUKBU2w2No_VxQlTur0rNvHCJskvBPWTlT3NSUpxURxXUEC2br_RZgALTK6DSyHVOsEL6NnqVUKJ9N9kdfgpU7aS8GDWUSuxj9810-t0Hbt4zFP5r-gQWgWvNkF0RgdJc2NSb9Wk8hpC1FG0rHAXe2u0HByjCxtlSoTleCvDI9JCa1cm2mcunlfnxSyK6iUzuSeamYMYf4ZOUwUbQjVABbsRlsp6T3FpJxS7o2-gK4c85ow95hUFgBQ9MRhQZKR3hxAbIohaeC1PNQ.jpg",
+    "videoUrl": null,
+    "durationS": null
+   },
+   "alsoReportedBy": [],
+   "views": 10100,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Odesa",
+    "lat": 46.48,
+    "lng": 30.72,
+    "precision": "settlement",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 5,
+    "method": "keyword-count",
+    "keywords": [
+     "attack",
+     "assassinat"
+    ]
+   }
+  },
+  {
+   "id": "rss:tass:zvvkxGTGKDs7NC0F",
+   "title": "Europeans tired of Ukrainian conflict, want peace there — WSJ",
+   "summary": "The report says that more and more European voters start to view financial and military assistance to Ukraine as a harmful and dangerous practice",
+   "link": "https://tass.com/world/2196397",
+   "publishedAt": "2026-10-01T22:45:46.000Z",
+   "source": "tass",
+   "sourceName": "TASS",
+   "sourceKind": "wire",
+   "lean": "Russian state agency",
+   "bloc": "russian",
+   "breaking": false,
+   "kind": "news",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Ukraine",
+    "lat": 49,
+    "lng": 31.4,
+    "precision": "country",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  },
+  {
+   "id": "tg:QudsNen/240724",
+   "title": "Israeli occupation artillery shells the area between the towns of Haris and Hadatha, southern Lebanon.",
+   "summary": null,
+   "link": "https://t.me/QudsNen/240724",
+   "publishedAt": "2026-10-01T22:30:02.000Z",
+   "source": "t.me/QudsNen",
+   "sourceName": "Quds News Network",
+   "sourceKind": "telegram",
+   "lean": "Palestinian / Gaza & West Bank",
+   "bloc": "regional",
+   "breaking": true,
+   "kind": "news",
+   "media": {
+    "type": "video",
+    "thumbnailUrl": "https://cdn4.telesco.pe/file/JZwA3gC4OhLL8ODFADjVkyZYOdWyf1JGrH30Niafq5qUEPNwE8PFaHNgmT22bLXolvdEargxCHeiaTo0yE_ikXLvpuzxnz0N3ZC222WoRi0x2TsRFKKCfxWSd9WM3_1F2P-r9xMYj6EhwvvKfXCa6koazXFDS0Zn3A1KRIype977DGTx19qMi9mioGasHOsjT85w_7C6OzkfuaoGGomDlJXvdXGQW1GMA8IxwojQI84WIqXh3wNJWjyG7iuhDcjfULYmMXpZvvi9tHy5FU9syZVaFGqX7Tq_8wltFV_j99aFZbnAr4sYba40MhygoYG_HcBWshHskeeA_qMRJ6ni5g",
+    "videoUrl": "https://cdn4.telesco.pe/file/f14b73649c.mp4?token=mjl8dwYtCRiehheiWFrOzoLKk8Lws7aADX0iwUQTEyhz1qByJEwOT4_3nXkWKZGBdQ2skgL11x5hcNF3uRLlFpdGskHD5kGwc3yBXWyvUKdfJ5pk3rDLmwinct8Lf3vxru7TsIa8uvAgwWbXB_X5717RsbOBVmA7KjexumjhBuTnnP2xXAoGAEVwUq4arKNPVWMg69-zXG5cdwSt8Mn3s-utlCgpOBL3nGFnzQepvbMN7O1rdhMlMa4OY7-21nGMWU0FpzYpLQ-nyk_rfN04GTHD0aPf9xfaIhz0f_GHfkY_Fhx9r-br6FcICUm-CQnRNm6X2kejAnGjo2o0OTYeZQ",
+    "durationS": 9
+   },
+   "alsoReportedBy": [],
+   "views": 390,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Lebanon",
+    "lat": 33.85,
+    "lng": 35.86,
+    "precision": "country",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 2,
+    "method": "keyword-count",
+    "keywords": [
+     "breaking"
+    ]
+   }
+  },
+  {
+   "id": "rss:anadolu:KYMSmR9WBZjI1NP-",
+   "title": "UN envoy calls on Houthis to halt military offensive in Yemen's Taiz",
+   "summary": "Intensified fighting poses 'grave risks' to civilians, says UN special envoy for Yemen, amid reports of casualties, infrastructure, road closures",
+   "link": "https://www.aa.com.tr/en/middle-east/un-envoy-calls-on-houthis-to-halt-military-offensive-in-yemens-taiz/4075479",
+   "publishedAt": "2026-10-01T19:03:21.000Z",
+   "source": "anadolu",
+   "sourceName": "Anadolu Agency",
+   "sourceKind": "wire",
+   "lean": "Turkish state agency",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "news",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": {
+    "name": "Yemen",
+    "lat": 15.55,
+    "lng": 48.52,
+    "precision": "country",
+    "method": "gazetteer"
+   },
+   "risk": {
+    "score": 3,
+    "method": "keyword-count",
+    "keywords": [
+     "casualties"
+    ]
+   }
+  },
+  {
+   "id": "tg:QudsNen/240728",
+   "title": "Palestinian elder Mahfouza Shtayyeh sorrowfully reacts to circulating footage of Israeli settlers harvesting olive trees on Palestinian…",
+   "summary": null,
+   "link": "https://t.me/QudsNen/240728",
+   "publishedAt": "2026-10-02T00:26:03.000Z",
+   "source": "t.me/QudsNen",
+   "sourceName": "Quds News Network",
+   "sourceKind": "telegram",
+   "lean": "Palestinian / Gaza & West Bank",
+   "bloc": "regional",
+   "breaking": false,
+   "kind": "news",
+   "media": {
+    "type": "video",
+    "thumbnailUrl": "https://cdn4.telesco.pe/file/eLftx4TBvb-4ccgO_KzUowDyuCJbGwflkkohO5NS_3ukREissIobTRqE9giQpTFqkzLqKLELvVUi90cpUOGlBlI7gD9OOFLgulzV6bwjHQFkjltaF7PRzhgAHRCb5Nqrgb-pzj0MS6h4obr0Q2OeSNIYc41-0IUxA4WS7w3mK43kPJKB921Rkwxtk2k4osAWnUxIi9np_cyxRr2J5sRGxug6agNx1wY2wqKlH75mHvmHYV0A4EEloRLeeH3o1WNnZbQWD95hzcsn3l1xXuPdVGJb4vrq6r41LtxdnuO8C715jtIyyqLgiIiKTC-WQmHI-4-apYStWNmyZNVlGW8Kqw",
+    "videoUrl": null,
+    "durationS": 129
+   },
+   "alsoReportedBy": [],
+   "views": 58,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": null,
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  },
+  {
+   "id": "rss:tass:6C6F3PeuxuB3Fhyo",
+   "title": "US may create military base in Europe",
+   "summary": "US President Donald Trump says he \"might have made\" this decision",
+   "link": "https://tass.com/world/2196403",
+   "publishedAt": "2026-10-02T00:17:27.000Z",
+   "source": "tass",
+   "sourceName": "TASS",
+   "sourceKind": "wire",
+   "lean": "Russian state agency",
+   "bloc": "russian",
+   "breaking": false,
+   "kind": "news",
+   "media": null,
+   "alsoReportedBy": [],
+   "views": null,
+   "forwardedFrom": null,
+   "replyTo": null,
+   "place": null,
+   "risk": {
+    "score": 1,
+    "method": "keyword-count",
+    "keywords": []
+   }
+  }
+ ]
+}

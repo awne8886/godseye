@@ -1,0 +1,12 @@
+{
+ "_captured": "2026-09-30T20:02Z from the live upstream with the GODSEYE UA (feature-flight-paths probe)",
+ "_url": "https://api.adsb.lol/v2/callsign/BAW117",
+ "body": {
+  "ac": [],
+  "msg": "No error",
+  "now": 1790798548500,
+  "total": 0,
+  "ctime": 1790798548500,
+  "ptime": 0
+ }
+}

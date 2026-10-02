@@ -1,0 +1,73 @@
+'use client';
+/**
+ * Sentinel-2 scene footprints around the map centre (CDSE STAC via /api/sentinel), as native
+ * MapLibre outlines. Queried only from zoom 6 (a scene is ~110 km wide), after the camera settles.
+ * Owner: layers-hazards.
+ */
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMapInstanceStore } from '@/lib/layer-host';
+import { useStyleVersion } from '@/lib/map/style-version';
+import { readCssColor } from '@/lib/tokens';
+import type { SentinelResponse, SentinelScene } from '@/lib/types';
+import { useHitTester } from './hit-test';
+import { entitySelection } from './pick';
+import { renderedFeatureId, useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
+import { useHazardData } from './useHazardData';
+
+const count = (b: SentinelResponse) => b.items.length;
+const MIN_ZOOM = 6;
+/** Machine reason published while below MIN_ZOOM; the HUD renders it as "ZOOM ≥ 6". */
+const SENTINEL_IDLE_REASON = `zoom_min_${MIN_ZOOM}`;
+
+export default function SentinelLayer() {
+  // Camera events only need the loaded map (not the first `idle`).
+  const map = useMapInstanceStore((s) => s.map);
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!map) return;
+    const onMove = () => {
+      if (map.getZoom() < MIN_ZOOM) return setUrl(null);
+      const c = map.getCenter();
+      setUrl(`/api/sentinel?lat=${c.lat.toFixed(2)}&lng=${c.wrap().lng.toFixed(2)}`);
+    };
+    onMove();
+    map.on('moveend', onMove);
+    return () => {
+      map.off('moveend', onMove);
+    };
+  }, [map]);
+
+  // Below MIN_ZOOM nothing is fetched: publish idle "zoom_min_6" (HUD: "ZOOM ≥ 6"), not ACQUIRING.
+  const data = useHazardData<SentinelResponse>('sentinel', url, count, map ? SENTINEL_IDLE_REASON : undefined);
+  const items = url ? data?.items : undefined;
+  const byId = useRef(new Map<string, SentinelScene>());
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
+  useEffect(() => {
+    byId.current = new Map((items ?? []).map((s) => [s.id, s]));
+  }, [items]);
+
+  const fc = useMemo<GeoJSON.FeatureCollection>(
+    () => ({ type: 'FeatureCollection', features: (items ?? []).map((s) => ({ type: 'Feature', geometry: s.footprint, properties: { id: s.id } })) }),
+    [items],
+  );
+  const layers = useMemo(() => {
+    const [r, g, b] = readCssColor('--map-directions');
+    return [
+      { id: 'hazards-sentinel-fill', type: 'fill' as const, paint: { 'fill-color': `rgb(${r},${g},${b})`, 'fill-opacity': 0.04 } },
+      { id: 'hazards-sentinel-line', type: 'line' as const, paint: { 'line-color': `rgb(${r},${g},${b})`, 'line-width': 1, 'line-opacity': 0.6, 'line-dasharray': [2, 2] } },
+    ];
+    // New paint objects on every style change: useGeoJsonLayers repaints them in place.
+  }, [styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useGeoJsonLayers('hazards-sentinel', fc, layers);
+  useHitTester('sentinel', (map, e) => {
+    const s = byId.current.get(renderedFeatureId(map, e.point, ['hazards-sentinel-fill']) ?? '');
+    if (!s) return null;
+    const ring = s.footprint.type === 'Polygon' ? s.footprint.coordinates[0] : s.footprint.coordinates[0]?.[0];
+    const lng = ring?.length ? ring.reduce((a, p) => a + (p[0] ?? 0), 0) / ring.length : 0;
+    const lat = ring?.length ? ring.reduce((a, p) => a + (p[1] ?? 0), 0) / ring.length : 0;
+    return { layer: 'sentinel', distancePx: 0, selection: entitySelection('sentinel_scene', 'sentinel', { id: s.id, lat, lng, source: 'cdse_stac', observedAt: s.datetime }, s as unknown as Record<string, unknown>) };
+  });
+  return null;
+}

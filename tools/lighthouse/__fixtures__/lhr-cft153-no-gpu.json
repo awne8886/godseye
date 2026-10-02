@@ -1,0 +1,350 @@
+{
+ "godseye:capture": "lhci collect --config=./lighthouserc.gpu.json on / (2026-10-01, build sandbox without a GPU): Chrome for Testing 153.0.8010.12 (Playwright 1.63), run 1 of 3; WebGL disabled_off, so / showed its fallback page; openfreemap requests failed in the sandbox (no proxy CA in this launch); trimmed to the fields tools/gpu-renderer-check.ts reads",
+ "lighthouseVersion": "12.6.1",
+ "fetchTime": "2026-10-01T07:46:28.811Z",
+ "requestedUrl": "http://127.0.0.1:3200/",
+ "finalDisplayedUrl": "http://127.0.0.1:3200/",
+ "environment": {
+  "hostUserAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36"
+ },
+ "configSettings": {
+  "formFactor": "desktop",
+  "screenEmulation": {
+   "mobile": false,
+   "width": 1350,
+   "height": 940,
+   "deviceScaleFactor": 1,
+   "disabled": false
+  },
+  "throttling": {
+   "rttMs": 40,
+   "throughputKbps": 10240,
+   "requestLatencyMs": 0,
+   "downloadThroughputKbps": 0,
+   "uploadThroughputKbps": 0,
+   "cpuSlowdownMultiplier": 1
+  },
+  "throttlingMethod": "simulate",
+  "emulatedUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+  "pauseAfterLoadMs": 9000
+ },
+ "categories": {
+  "performance": {
+   "score": 0.68
+  },
+  "accessibility": {
+   "score": 1
+  },
+  "best-practices": {
+   "score": 0.96
+  },
+  "seo": {
+   "score": 1
+  },
+  "godseye": {
+   "score": 0
+  }
+ },
+ "audits": {
+  "godseye-map-webgl-hardware": {
+   "score": 0,
+   "displayValue": "no map canvas",
+   "details": {
+    "type": "debugdata",
+    "canvas": false,
+    "context": false,
+    "renderer": null,
+    "vendor": null,
+    "version": null,
+    "hardwareContext": false,
+    "product": "Chrome/153.0.8010.12",
+    "gpu": {
+     "featureStatus": {
+      "2d_canvas": "disabled_software",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "disabled_software",
+      "multiple_raster_threads": "disabled_off",
+      "opengl": "disabled_off",
+      "rasterization": "disabled_software",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "disabled_software",
+      "video_encode": "disabled_software",
+      "vulkan": "disabled_off",
+      "webgl": "disabled_off",
+      "webgpu": "disabled_off",
+      "webgpu_on_vk_via_gl_interop": "disabled_off",
+      "webnn": "disabled_off"
+     },
+     "devices": [
+      {
+       "vendorId": 0,
+       "deviceId": 0,
+       "vendorString": "",
+       "deviceString": "",
+       "driverVendor": "",
+       "driverVersion": ""
+      }
+     ],
+     "error": null
+    }
+   }
+  },
+  "network-requests": {
+   "details": {
+    "type": "table",
+    "items": [
+     {
+      "url": "http://127.0.0.1:3200/",
+      "statusCode": 200,
+      "resourceType": "Document",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/media/inter_latin_wght_normal-s.p.0gsaq8ukbf34m.woff2",
+      "statusCode": 200,
+      "resourceType": "Font",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/media/jetbrains_mono_latin_wght_normal-s.p.2rmhnsrc80fag.woff2",
+      "statusCode": 200,
+      "resourceType": "Font",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/32rkro7r3gb25.css",
+      "statusCode": 200,
+      "resourceType": "Stylesheet",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/05cr92-yr1l9c.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/14m2ely06sm_e.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/14fjynhi7mufe.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3yt27zfqxf3bf.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-2-_d80lffqbws.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1q8wd0iei4cpm.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0dg6iolsb-4yq.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2j9ghnnb0mmmu.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0xzyrmgy6-r82.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0fm50jjg76etq.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/149dvzqlx0inv.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1ii60kanwmrwa.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2hqlzzet5n2jf.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/styles/dark",
+      "statusCode": -1,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet",
+      "statusCode": -1,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/manifest.webmanifest",
+      "statusCode": 200,
+      "resourceType": "Manifest",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter i…",
+      "statusCode": 200,
+      "resourceType": "Image",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/icon.svg?icon.1uxzxqnet9_uc.svg",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/icon.svg",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/health",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/space-weather",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/43yys77bpu6xz.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0eh3hg0a099nx.css",
+      "statusCode": 200,
+      "resourceType": "Stylesheet",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/27r-yg81-8zuc.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3ocp_jm-5tnqt.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2jx832e8vo2u2.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/ticker",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-worker-2ru9m5gbh1na6.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-1539cb4cf8icz.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3gpayc1iv_4x5.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet",
+      "statusCode": -1,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/styles/dark",
+      "statusCode": -1,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     }
+    ]
+   }
+  },
+  "errors-in-console": {
+   "details": {
+    "type": "table",
+    "items": [
+     {
+      "source": "network",
+      "description": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
+     },
+     {
+      "source": "network",
+      "description": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
+     },
+     {
+      "source": "network",
+      "description": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
+     },
+     {
+      "source": "network",
+      "description": "Failed to load resource: net::ERR_CERT_AUTHORITY_INVALID"
+     }
+    ]
+   }
+  },
+  "largest-contentful-paint": {
+   "numericValue": 843.4263000000001
+  },
+  "total-blocking-time": {
+   "numericValue": 526.3579
+  },
+  "cumulative-layout-shift": {
+   "numericValue": 0.001998721361235151
+  }
+ }
+}

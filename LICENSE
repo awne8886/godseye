@@ -1,0 +1,88 @@
+MIT License
+
+Copyright (c) 2026 GODSEYE contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------------
+NOTICE
+
+GODSEYE is an independent project. It replicates the features of OSIRIS
+(https://github.com/simplifaisoul/osiris), OSIRIS © 2026 simplifaisoul, released
+under the MIT License, and reuses some of its data tables and behaviours with
+attribution. Files substantially derived from OSIRIS are listed below and carry
+a header comment naming the OSIRIS source file:
+
+  Data tables
+  public/data/chokepoints.json              OSIRIS CHOKEPOINTS table
+  public/data/nuclear-curated.json          OSIRIS NUCLEAR_FACILITIES table
+  public/data/zones.json                    OSIRIS conflict-zone list (names only;
+                                            geometry is Natural Earth)
+  public/data/ports.json                    OSIRIS curated major ports (52 rows)
+  src/lib/presets.ts                        OSIRIS region presets (12)
+  src/lib/layer-registry.ts                 OSIRIS LAYER_GROUPS
+  src/lib/tool-registry.ts                  OSIRIS tool labels and tooltips
+  src/lib/schemas/space.ts                  OSIRIS MISSION_CLASSIFY palette
+  src/styles/tokens.css                     OSIRIS "HORUS" theme tokens
+  src/components/hud/style-engine.ts        OSIRIS style-studio presets (6)
+  src/components/panels/recon/server/scanner.ts
+                                            OSIRIS scanner type list (9)
+
+  Behaviour ported from OSIRIS modules
+  src/features/aviation/classify.ts         src/app/api/flights/route.ts
+                                            (classifyFlight)
+  src/components/panels/intel/server/digest.ts
+                                            alert-digest.ts (clustering)
+  src/components/panels/intel/server/classify.ts
+                                            alert-digest.ts (term matching)
+  src/lib/map/terrain.ts                    map-terrain.ts (state machine)
+  src/lib/map/terrain-layer-order.ts        map-terrain.ts (layer ordering)
+  src/lib/map/night-lights.ts               terrain-tiles.ts (fetch queue ideas)
+  src/lib/map/view.ts                       map-projection.ts, OsirisMap.tsx
+                                            (projection ease, context attempts)
+  src/features/aviation/adsb.ts             src/app/api/flights/route.ts (row rules)
+  src/features/aviation/route-geometry.ts   flight-route plausibility rules
+  src/features/aviation/server/route-lookup.ts
+                                            (applies those rules)
+  src/features/flight-paths/lib/geometry.ts corridor rules
+  src/features/surveillance/server/live-news.ts
+                                            embed_allowed split
+
+Other bundled data with a notice requirement:
+  public/data/airports*.json*               time zones from mwgg/Airports
+                                            (© mwgg, MIT License)
+  public/data/routes-openflights.json.gz    OpenFlights route data (June 2014),
+                                            Open Database License (ODbL) 1.0
+  public/data/cables.json                   TeleGeography Submarine Cable Map,
+                                            CC BY-NC-SA 3.0 (non-commercial
+                                            deployments only)
+  public/data/airways-us.min.json           FAA ADDS ATS_Route (FAA Aeronautical
+                                            Information Services; US Government
+                                            work, public domain)
+
+Bundled fonts (SIL Open Font License 1.1, https://openfontlicense.org; from the
+@fontsource npm packages, served from this server):
+  Inter                                     © The Inter Project Authors
+  JetBrains Mono                            © The JetBrains Mono Project Authors
+  Space Grotesk                             © The Space Grotesk Project Authors
+
+GODSEYE does not use the OSIRIS name, logo, links or promotions. World Monitor
+and Orodruin (AGPL) were studied for ideas only; no code was copied from them.
+Third-party data sources and their licences are listed in docs/DATA_SOURCES.md
+and in the in-app attribution panel.

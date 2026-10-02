@@ -1,0 +1,83 @@
+{
+ "_captured": "2026-09-30T20:02Z from the live upstream with the GODSEYE UA (feature-flight-paths probe)",
+ "_url": "https://api.open-meteo.com/v1/forecast?latitude=51.47,55.0,60.0&longitude=-0.45,-30.0,-60.0&hourly=wind_speed_250hPa,wind_direction_250hPa&forecast_hours=1&wind_speed_unit=kn",
+ "body": [
+  {
+   "latitude": 51.463696,
+   "longitude": -0.45089722,
+   "generationtime_ms": 0.07724761962890625,
+   "utc_offset_seconds": 0,
+   "timezone": "GMT",
+   "timezone_abbreviation": "GMT",
+   "elevation": 25.0,
+   "hourly_units": {
+    "time": "iso8601",
+    "wind_speed_250hPa": "kn",
+    "wind_direction_250hPa": "\u00b0"
+   },
+   "hourly": {
+    "time": [
+     "2026-09-30T20:00"
+    ],
+    "wind_speed_250hPa": [
+     91.4
+    ],
+    "wind_direction_250hPa": [
+     180
+    ]
+   }
+  },
+  {
+   "latitude": 55.007504,
+   "longitude": -29.997513,
+   "generationtime_ms": 0.07486343383789062,
+   "utc_offset_seconds": 0,
+   "timezone": "GMT",
+   "timezone_abbreviation": "GMT",
+   "elevation": 0.0,
+   "location_id": 1,
+   "hourly_units": {
+    "time": "iso8601",
+    "wind_speed_250hPa": "kn",
+    "wind_direction_250hPa": "\u00b0"
+   },
+   "hourly": {
+    "time": [
+     "2026-09-30T20:00"
+    ],
+    "wind_speed_250hPa": [
+     48.9
+    ],
+    "wind_direction_250hPa": [
+     277
+    ]
+   }
+  },
+  {
+   "latitude": 60.0,
+   "longitude": -59.93039,
+   "generationtime_ms": 0.04589557647705078,
+   "utc_offset_seconds": 0,
+   "timezone": "GMT",
+   "timezone_abbreviation": "GMT",
+   "elevation": 0.0,
+   "location_id": 2,
+   "hourly_units": {
+    "time": "iso8601",
+    "wind_speed_250hPa": "kn",
+    "wind_direction_250hPa": "\u00b0"
+   },
+   "hourly": {
+    "time": [
+     "2026-09-30T20:00"
+    ],
+    "wind_speed_250hPa": [
+     84.7
+    ],
+    "wind_direction_250hPa": [
+     299
+    ]
+   }
+  }
+ ]
+}

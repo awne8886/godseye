@@ -1,0 +1,622 @@
+/*
+ * Base layer + shared primitives (glass, HUD type, instrument chrome, focus rings, overlays,
+ * sensor modes, keyframes). Owner: design-system-hud.
+ * No global `* { transition }`: theme swaps add a short-lived `.theme-transition` class to <html>.
+ */
+
+/*
+ * `phone:` = the HUD's phone layout (round 5 M2): exactly PHONE_LAYOUT_QUERY (src/lib/map/view.ts)
+ * and useIsMobile() (hooks.ts), so a landscape phone (844×390) is fully phone — bottom nav, sheets,
+ * 44 px targets — never half phone (JS sheet) and half desktop (`md:` chrome). HUD classes are
+ * desktop-first: the base class is the desktop chrome and `phone:` overrides it, so there is no
+ * fractional-width gap between two queries. Pinned by src/components/hud/round5.test.tsx.
+ */
+@custom-variant phone {
+  @media (max-width: 767px), (max-height: 499px) and (orientation: landscape) {
+    @slot;
+  }
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    outline: 2px solid var(--gold-primary);
+    outline-offset: 2px;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
+}
+
+@layer components {
+  /* Three elevations (§7): glass-1 rails, glass-2 panels, glass-3 modals. Write only the unprefixed
+     backdrop-filter: Lightning CSS adds -webkit- itself, and a hand-written prefixed copy after the
+     unprefixed one made it drop the unprefixed declaration, so Chromium had no blur at all (r6). */
+  .glass-panel,
+  .glass-2 {
+    background: var(--glass-2);
+    backdrop-filter: blur(var(--blur)) saturate(1.3);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-panel);
+    box-shadow:
+      0 4px 30px rgba(0, 0, 0, 0.5),
+      0 1px 0 rgba(var(--gold-rgb), 0.06) inset,
+      0 -1px 0 rgba(0, 0, 0, 0.3) inset;
+    transition:
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+  .glass-panel:hover,
+  .glass-2:hover {
+    border-color: rgba(var(--gold-rgb), 0.22);
+  }
+  .glass-rail,
+  .glass-1 {
+    background: var(--glass-1);
+    backdrop-filter: blur(var(--blur)) saturate(1.2);
+  }
+  .glass-3 {
+    background: var(--glass-3);
+    backdrop-filter: blur(var(--blur)) saturate(1.3);
+    border: 1px solid var(--border-primary);
+    border-radius: var(--radius-panel);
+    box-shadow:
+      0 20px 60px rgba(0, 0, 0, 0.7),
+      0 1px 0 rgba(var(--gold-rgb), 0.08) inset;
+  }
+  .hud-text {
+    font-family: var(--font-hud);
+    text-transform: uppercase;
+    letter-spacing: var(--hud-tracking);
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-micro {
+    font-family: var(--font-hud);
+    text-transform: uppercase;
+    letter-spacing: var(--hud-tracking-micro);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .hud-title {
+    font-family: var(--font-hud);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    color: var(--text-heading);
+  }
+  .hud-control {
+    border-radius: var(--radius-control);
+  }
+  .hud-chip {
+    border-radius: var(--radius-chip);
+  }
+
+  /* ── Instrument chrome (every tool panel) ───────────────────────────────── */
+  /* The consumer owns positioning (these never set `position` on the host). */
+  .instrument-grid::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(var(--gold-rgb), 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--gold-rgb), 0.045) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 65%);
+    -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent 65%);
+    border-radius: inherit;
+  }
+  .instrument-corners::before,
+  .instrument-corners::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    pointer-events: none;
+    border-color: rgba(var(--gold-rgb), 0.45);
+  }
+  .instrument-corners::before {
+    top: 6px;
+    left: 6px;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+  .instrument-corners::after {
+    bottom: 6px;
+    right: 6px;
+    border-bottom: 1px solid;
+    border-right: 1px solid;
+  }
+  .instrument-accent {
+    width: 2px;
+    height: 16px;
+    background: var(--gold-primary);
+    box-shadow: 0 0 8px var(--gold-glow);
+    border-radius: 1px;
+  }
+  .instrument-rule {
+    height: 1px;
+    background: linear-gradient(90deg, rgba(var(--gold-rgb), 0.35) 0%, rgba(var(--gold-rgb), 0.1) 40%, transparent 100%);
+  }
+  /* Outlined state chip; full opacity (OSIRIS's .85 dropped small text under 4.5:1). */
+  .instrument-chip {
+    font-family: var(--font-hud);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: var(--radius-chip);
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+  .instrument-sample {
+    font-family: var(--font-hud);
+    font-size: 10px;
+    color: var(--text-secondary);
+    background: rgba(var(--gold-rgb), 0.06);
+    border: 1px solid rgba(var(--gold-rgb), 0.12);
+    border-radius: var(--radius-chip);
+    padding: 1px 5px;
+  }
+
+  /* 28×14 toggle (knob animated with motion's spring in components). */
+  .hud-toggle {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    width: 28px;
+    height: 14px;
+    border-radius: 9999px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 1px;
+  }
+  .hud-toggle[data-on='true'] {
+    border-color: var(--gold-primary);
+    background: rgba(var(--gold-rgb), 0.35);
+    justify-content: flex-end;
+  }
+
+  .hud-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(var(--gold-rgb), 0.25) transparent;
+  }
+
+  /* ── Screen overlays ───────────────────────────────────────────────────── */
+  .vignette {
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(4, 4, 10, 0.6) 80%, rgba(4, 4, 10, 0.95) 100%);
+  }
+  .crt-scanlines {
+    background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(255, 255, 255, 0.02) 3px, rgba(255, 255, 255, 0.02) 4px);
+  }
+  .fx-scanlines {
+    opacity: calc(var(--fx-scanlines) * 5);
+    background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.2) 0px, rgba(255, 255, 255, 0.2) 1px, transparent 1px, transparent 3px);
+  }
+  .fx-grain {
+    opacity: var(--fx-grain);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .fx-vignette {
+    opacity: var(--fx-vignette);
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0, 0, 0, 1) 100%);
+  }
+
+  /* Ticker: pauses on hover/focus so it can be read. */
+  .hud-ticker-track {
+    animation: hud-ticker calc(30s * max(var(--motion-scale), 0.25)) linear infinite;
+  }
+  .hud-ticker:hover .hud-ticker-track,
+  .hud-ticker:focus-within .hud-ticker-track {
+    animation-play-state: paused;
+  }
+  .hud-pulse {
+    animation: hud-pulse 2s ease-in-out infinite;
+  }
+  .hud-blink {
+    animation: hud-blink 1.6s steps(2, jump-none) infinite;
+  }
+  .hud-spin {
+    animation: hud-spin 1s linear infinite;
+  }
+  .hud-shimmer {
+    background: linear-gradient(90deg, rgba(var(--gold-rgb), 0.04) 0%, rgba(var(--gold-rgb), 0.12) 50%, rgba(var(--gold-rgb), 0.04) 100%);
+    background-size: 200% 100%;
+    animation: hud-shimmer 1.8s linear infinite;
+  }
+  .splash-letter {
+    display: inline-block;
+    animation: splash-letter-in 0.7s var(--ease-hud) both;
+  }
+  /* Boot splash (CSS only, so motion stays out of the first-load bundle — perf m-d). The exit
+     duration matches SPLASH_EXIT_MS in splash-logic.ts. */
+  .splash-screen {
+    transition:
+      opacity 0.7s cubic-bezier(0.4, 0, 0.2, 1),
+      transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .splash-screen[data-exiting] {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  .splash-ring {
+    animation: hud-spin 20s linear infinite;
+  }
+  .splash-ring[data-reverse] {
+    animation-direction: reverse;
+  }
+  .splash-bar {
+    transition: width 0.55s var(--ease-hud);
+  }
+  /* Layer toggle knob (28×14 track): slides 14 px on the contract spring (500/30) expressed as a
+     CSS linear() easing (--ease-toggle-spring), so no JS spring ships in the first load. Browsers
+     without linear() keep the HUD ease; reduced motion (system or Settings) zeroes the duration
+     through the rules at the end of this file. */
+  .hud-toggle-knob {
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.4);
+    transition:
+      transform var(--dur-flyout) var(--ease-hud),
+      background-color var(--dur-flyout) var(--ease-hud);
+  }
+  @supports (transition-timing-function: linear(0, 1)) {
+    .hud-toggle-knob {
+      transition:
+        transform var(--dur-toggle-spring) var(--ease-toggle-spring),
+        background-color var(--dur-flyout) var(--ease-hud);
+    }
+  }
+  .hud-toggle[data-on='true'] .hud-toggle-knob {
+    transform: translateX(14px);
+    background: var(--gold-light);
+  }
+}
+
+/* ── Sensor post-processing (keys 1–4). Filters the map canvas only (deck is interleaved). ── */
+:root[data-sensor='crt'] .maplibregl-canvas {
+  filter: contrast(1.15) saturate(1.25) brightness(1.05);
+}
+:root[data-sensor='nvg'] .maplibregl-canvas {
+  filter: grayscale(1) sepia(1) hue-rotate(58deg) saturate(3.2) brightness(1.15) contrast(1.2);
+}
+:root[data-sensor='flir'] .maplibregl-canvas {
+  filter: grayscale(1) contrast(1.45) brightness(1.1);
+}
+:root[data-sensor='noir'] .maplibregl-canvas {
+  filter: grayscale(1) contrast(1.3) brightness(0.9);
+}
+.sensor-crt {
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0px, rgba(0, 0, 0, 0.18) 1px, transparent 1px, transparent 3px),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+}
+.sensor-crt-sweep {
+  background: linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.05) 50%, transparent 100%);
+  height: 18%;
+  animation: hud-scan 4s linear infinite;
+}
+.sensor-nvg {
+  background: radial-gradient(circle at center, transparent 45%, rgba(0, 8, 0, 0.85) 78%);
+}
+.sensor-flir {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 30%);
+}
+.sensor-noir {
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.6) 100%);
+}
+
+/* Theme swap cross-fade (added for 600 ms by ThemeSync; never a permanent global transition). */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition:
+    background-color calc(0.6s * var(--motion-scale)) var(--ease-hud),
+    border-color calc(0.6s * var(--motion-scale)) var(--ease-hud),
+    color calc(0.6s * var(--motion-scale)) var(--ease-hud) !important;
+}
+
+@keyframes hud-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes hud-ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes hud-ring {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+@keyframes hud-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hud-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes hud-scan {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(600%);
+  }
+}
+@keyframes hud-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+/* Letters rise into place but stay painted from the first frame (the wordmark is the LCP). */
+@keyframes splash-letter-in {
+  from {
+    transform: translateY(8px);
+    color: var(--gold-dim);
+  }
+  to {
+    transform: translateY(0);
+    color: var(--gold-primary);
+  }
+}
+.hud-ring {
+  animation: hud-ring 2.4s var(--ease-hud) infinite;
+}
+
+/* MapLibre controls restyled, never hidden (attribution must stay visible). */
+.maplibregl-ctrl-attrib.maplibregl-attrib-empty {
+  display: none;
+}
+/*
+ * Attribution on dark glass (R2-M1). Scoped under .maplibregl-map so it beats maplibre-gl.css's
+ * white-50 % background whatever the chunk order. --glass-3 is the panel colour at .96 whatever the
+ * Style Studio panel-opacity knob says, so secondary text keeps ≥ 4.5:1 over bright imagery.
+ */
+.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  background: var(--glass-3);
+  color: var(--text-secondary);
+  font: 10px/14px var(--font-hud);
+  letter-spacing: 0.04em;
+  border: 1px solid var(--border-primary);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: 6px 0 0 0;
+  padding: 2px 6px;
+  margin: 0;
+}
+/* Desktop: long credits (GIBS night lights) wrap instead of running under the left HUD; the
+   readout/hint row measures this box and ends before it (R3-M1). */
+@media (min-width: 768px) {
+  .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+    max-width: max(420px, calc(100vw - 760px));
+    text-align: right;
+  }
+  .maplibregl-map .maplibregl-ctrl-attrib-inner {
+    white-space: normal;
+  }
+}
+.maplibregl-map .maplibregl-ctrl-attrib a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-decoration-color: var(--border-primary);
+  text-underline-offset: 2px;
+}
+.maplibregl-map .maplibregl-ctrl-attrib a:hover,
+.maplibregl-map .maplibregl-ctrl-attrib a:focus-visible {
+  color: var(--gold-light);
+}
+
+/*
+ * BASEMAP OFFLINE / terrain failure chips stand out from the grey REFERENCE imagery chips (m3):
+ * alert-orange text and outline. Unlayered so it wins over the chip's utility classes.
+ */
+.godseye-imagery-chips [data-testid='imagery-chip-basemap'],
+.godseye-imagery-chips [data-tone='offline'] {
+  color: var(--alert-orange);
+  border-color: var(--alert-orange);
+}
+/* HUD text drawn straight on the map (header): a void-coloured halo keeps basemap labels from
+   running through it. */
+.hud-legible {
+  text-shadow:
+    0 0 4px var(--bg-void),
+    0 0 8px var(--bg-void);
+}
+/* The header block sits on a void scrim (round 5 visual-qa m6: basemap labels such as GREECE and
+   UZBEKISTAN printed through the tagline). Theme-aware (--bg-void), soft-edged, behind the text
+   only (z -1 inside the header's own stacking context), never a pointer target. */
+.hud-header-scrim::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: -10px -48px -10px -10px;
+  pointer-events: none;
+  border-radius: var(--radius-panel);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--bg-void) 82%, transparent) 0%,
+    color-mix(in srgb, var(--bg-void) 72%, transparent) calc(100% - 64px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(180deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
+
+/* Horizontal scrollers (phone sheet tabs): the right-edge fade says "more this way". A fixed
+   24 px fade, matched by the strip's 24 px end padding (pr-6), so the last tab can always scroll
+   clear of it (r7 m: a 15% fade was wider than the padding and the selected last tab stayed faded). */
+.hud-fade-right {
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+
+/*
+ * Placement of MapLibre's corner stacks. maplibre-gl.css is emitted after globals.css and uses the
+ * same single-class selectors, so every override here is scoped under .maplibregl-map to win on
+ * specificity whatever the chunk order. Desktop: above the 28 px status bar and inside the corner
+ * brackets; phones: above the 56 px bottom nav + its 1 px border + the safe-area inset.
+ */
+.maplibregl-map .maplibregl-ctrl-bottom-right {
+  bottom: 28px;
+  right: 6px;
+}
+@media (max-width: 767px), (max-height: 499px) and (orientation: landscape) {
+  .maplibregl-map .maplibregl-ctrl-bottom-right,
+  .maplibregl-map .maplibregl-ctrl-bottom-left {
+    bottom: calc(57px + env(safe-area-inset-bottom));
+  }
+  /* An open phone sheet or entity card publishes the height it covers (useBottomReserve); the
+     credits ride above it instead of disappearing under it (m2). */
+  .maplibregl-map .maplibregl-ctrl-bottom-right {
+    --map-stack-bottom: max(calc(57px + env(safe-area-inset-bottom)), calc(var(--sheet-occupied, 0px) + 4px), calc(var(--card-occupied, 0px) + 4px));
+    right: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    bottom: var(--map-stack-bottom);
+  }
+  /* Phones: the credits wrap inside the viewport (never clipped, never collapsed behind a button). */
+  .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+    max-width: calc(100vw - 12px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+  .maplibregl-map .maplibregl-ctrl-attrib-inner {
+    white-space: normal;
+  }
+  /* 44 px touch targets for the credit links (round 5 visual-qa m1; they were 13 px tall): each link
+     is an inline-block whose 15 px block padding is cancelled by an equal negative margin, so the
+     hit box is 44 px but the credits line stays 14 px tall (a taller box obscured route framing and
+     pushed the honesty chips above it off-screen on landscape phones). */
+  .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+    padding-block: 0;
+  }
+  .maplibregl-map .maplibregl-ctrl-attrib a {
+    display: inline-block;
+    padding-block: 15px;
+    margin-block: -15px;
+    line-height: 14px;
+    position: relative;
+  }
+}
+/*
+ * Landscape phone (the short half of the phone query) with a sheet or entity card open (r8): the
+ * space above the sheet is the header row, so a full-width stack lifted above the sheet ran under
+ * the view bar (attribution hidden) and its chips under the STATUS telemetry. Here the stack keeps
+ * to the column right of the view bar (--view-controls-right, published by ViewControls) and below
+ * the telemetry row (--telemetry-bottom, published by Telemetry). The credits never shrink and wrap
+ * inside that column; the chip controls give way first, clipped from the top so the row nearest the
+ * credits stays (with it the phone summary chip's expand/hide toggle, which is last). Chip lists
+ * wrap as right-aligned rows here to show more of them in the little height there is.
+ */
+@media (max-height: 499px) and (orientation: landscape) {
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right {
+    left: calc(var(--view-controls-right, 50%) + 8px);
+    max-height: calc(100% - var(--map-stack-bottom) - var(--telemetry-bottom, 32px) - 6px);
+    justify-content: flex-end;
+  }
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl:not(.maplibregl-ctrl-attrib) {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    flex-shrink: 1;
+    min-height: 0;
+    max-width: calc(100% - 10px);
+    margin-bottom: 4px;
+    overflow: hidden;
+  }
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl:not(.maplibregl-ctrl-attrib) ul {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: flex-end;
+  }
+  :root:is([data-sheet-occupied], [data-card-occupied]) .maplibregl-map .maplibregl-ctrl-bottom-right > .maplibregl-ctrl-attrib {
+    flex-shrink: 0;
+  }
+  /* Narrow landscape phones (r8 minor, 568x320): the column right of the view bar is ~190 px, the
+     credits wrap to 5 lines there and a 55vh sheet left them too little height, so they ran up over
+     the STATUS telemetry. The sheet and the entity card stop low enough to leave the credits
+     (--map-attrib-height, published by ViewControls) their own row between them and the telemetry
+     (the 10 px are the stack's 4 px lift + the 6 px gap under the telemetry). Wider screens never
+     reach the cap (844x390: 259 px against a 214 px sheet), and a 30vh floor keeps the sheet usable. */
+  .godseye-mobile-sheet {
+    --sheet-cap: calc(100dvh - 56px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    max-height: min(55vh, max(30vh, var(--sheet-cap)));
+    min-height: min(40vh, max(30vh, var(--sheet-cap)));
+  }
+  .godseye-card-sheet {
+    --sheet-cap: calc(100dvh - 60px - env(safe-area-inset-bottom) - var(--telemetry-bottom, 32px) - 10px - var(--map-attrib-height, 0px));
+    max-height: min(50vh, max(30vh, var(--sheet-cap)));
+  }
+}
+/* Above the vignette/scanline/sensor overlays (z 2–4), below HUD chrome (z ≥ 40). The map wrapper
+   has no z-index, so these compete in the root stacking context. */
+.maplibregl-map .maplibregl-ctrl-bottom-left,
+.maplibregl-map .maplibregl-ctrl-bottom-right {
+  z-index: 5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:root[data-motion='reduced'] *,
+:root[data-motion='reduced'] *::before,
+:root[data-motion='reduced'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}

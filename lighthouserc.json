@@ -1,0 +1,29 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "pnpm start --port 3200",
+      "startServerReadyPattern": "Ready",
+      "startServerReadyTimeout": 90000,
+      "url": ["http://127.0.0.1:3200/docs", "http://127.0.0.1:3200/privacy"],
+      "numberOfRuns": 3,
+      "settings": {
+        "preset": "desktop",
+        "pauseAfterLoadMs": 9000,
+        "chromeFlags": "--headless=new --no-sandbox --enable-unsafe-swiftshader --use-angle=swiftshader --ignore-gpu-blocklist"
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.85, "aggregationMethod": "median-run" }],
+        "categories:accessibility": ["error", { "minScore": 1, "aggregationMethod": "median-run" }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2500, "aggregationMethod": "median-run" }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1, "aggregationMethod": "median-run" }],
+        "total-blocking-time": ["error", { "maxNumericValue": 300, "aggregationMethod": "median-run" }]
+      }
+    },
+    "upload": {
+      "target": "filesystem",
+      "outputDir": ".lighthouseci"
+    }
+  }
+}

@@ -1,0 +1,98 @@
+# GODSEYE self-hosted stack: the app (never published directly) behind Caddy, which terminates
+# TLS and OVERWRITES X-Forwarded-For / X-Real-IP. Optional Redis for shared caches and rate limits.
+#
+#   docker compose up -d                          # app + Caddy on https://localhost
+#   GODSEYE_DOMAIN=monitor.example.org docker compose up -d
+#   docker compose --profile redis up -d          # also start Redis; set REDIS_URL=redis://redis:6379 in .env
+#
+# Every key is optional (see .env.example); secrets go in .env, never in the image.
+name: godseye
+
+services:
+  app:
+    build: .
+    image: godseye:local
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      # Feed snapshots survive restarts (filesystem SnapshotStore); REDIS_URL takes precedence.
+      SNAPSHOT_DIR: /data
+      # Caddy is the single trusted hop and overwrites X-Forwarded-For.
+      TRUSTED_PROXY_HOPS: "1"
+    # Reachable only from the compose network: clients must go through Caddy.
+    expose:
+      - "3000"
+    volumes:
+      - snapshots:/data
+    # Hardening: read-only root filesystem (writes go to the /data volume and two tmpfs mounts),
+    # no capabilities, no privilege escalation, an init process that forwards signals, bounded PIDs.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/.next/cache:size=256m,uid=1001,gid=1001,mode=0700
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
+    pids_limit: 512
+
+  caddy:
+    # Pinned by digest (multi-arch index, resolved 2026-10-01 from registry-1.docker.io; see
+    # docs/data-sources/pages-docs-privacy-ops.md). To update: docker buildx imagetools inspect caddy:2-alpine.
+    image: caddy:2-alpine@sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b
+    restart: unless-stopped
+    # Runs as root inside the container only to bind :80/:443; every other capability is dropped.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 256
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      GODSEYE_DOMAIN: ${GODSEYE_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  redis:
+    # Pinned by digest (multi-arch index, resolved 2026-10-01 from registry-1.docker.io; see
+    # docs/data-sources/pages-docs-privacy-ops.md). To update: docker buildx imagetools inspect redis:8-alpine.
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
+    profiles: ["redis"]
+    restart: unless-stopped
+    # Start directly as the image's redis user (uid 999) so the entrypoint needs no chown/setuid
+    # capabilities; nothing is persisted, so /data is a tmpfs and the root filesystem is read-only.
+    user: "999:999"
+    read_only: true
+    tmpfs:
+      - /data:size=16m,uid=999,gid=999
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    # Cache only: no persistence; every key GODSEYE writes has a TTL, so evict among those.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "512mb", "--maxmemory-policy", "volatile-lru"]
+    expose:
+      - "6379"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  snapshots:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,285 @@
+/*
+ * Shared styles for the document pages' repeated structures (endpoint metadata lists and
+ * reference tables). Kept here instead of long utility strings so the ~1 000 table cells and
+ * ~500 metadata rows on /docs don't repeat the same classes in the HTML and the RSC payload.
+ * Tokens only (src/styles/tokens.css). Owner: pages-docs-privacy-ops.
+ */
+.meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px 16px;
+  margin-top: 8px;
+}
+@media (min-width: 640px) {
+  .meta {
+    grid-template-columns: 11rem minmax(0, 1fr);
+    gap: 8px 16px;
+  }
+}
+.meta dt {
+  padding-top: 3px;
+}
+.meta dt,
+.table thead th {
+  font-family: var(--font-hud);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.meta dd {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.625;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+.table th,
+.table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border-secondary);
+  vertical-align: top;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.table td {
+  color: var(--text-primary);
+}
+
+/** Secondary line under a cell value (parameter location, example). */
+.sub {
+  display: block;
+  color: var(--text-secondary);
+}
+
+/* Column widths (table-layout: fixed takes them from the header row; no per-table <colgroup>). */
+.params thead th:nth-child(1) {
+  width: 31%;
+}
+.params thead th:nth-child(2) {
+  width: 31%;
+}
+.caps thead th:nth-child(1) {
+  width: 24%;
+}
+.caps thead th:nth-child(2) {
+  width: 38%;
+}
+.excluded thead th:nth-child(1) {
+  width: 34%;
+}
+@media (min-width: 640px) {
+  .params thead th:nth-child(1) {
+    width: 27%;
+  }
+  .params thead th:nth-child(2) {
+    width: 28%;
+  }
+}
+
+/*
+ * Endpoint card: a solid panel (no backdrop blur: ~90 blurred cards over a flat page cost paint
+ * time for nothing); off-screen cards skip style/layout/paint until scrolled near.
+ */
+.endpoint {
+  padding: 16px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel);
+  scroll-margin-top: 16px;
+  outline: none;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
+}
+@media (min-width: 640px) {
+  .endpoint {
+    padding: 20px;
+  }
+}
+.endpoint:focus-visible {
+  outline: 2px solid var(--gold-primary);
+  outline-offset: 2px;
+}
+
+.details {
+  margin-top: 12px;
+}
+.details > summary {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  cursor: pointer;
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: var(--hud-tracking);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.details > summary:hover {
+  color: var(--gold-light);
+}
+
+.navLink {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--text-secondary);
+}
+.navLink:hover,
+.navLink[aria-current='location'] {
+  color: var(--gold-light);
+}
+.navLink[aria-current='location'] {
+  box-shadow: inset 2px 0 0 var(--gold-primary);
+  padding-left: 8px;
+}
+@media (min-width: 1024px) {
+  .navLink {
+    min-height: 32px;
+  }
+}
+
+.button,
+.tryButton,
+.paletteButton {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  padding: 0 12px;
+  font-family: var(--font-hud);
+  font-size: 11px;
+  letter-spacing: var(--hud-tracking);
+  text-transform: uppercase;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+.button:hover,
+.tryButton:hover,
+.paletteButton:hover {
+  border-color: var(--border-active);
+  color: var(--gold-light);
+}
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.buttonPrimary {
+  border-color: var(--border-cyan);
+  color: var(--cyan-primary);
+}
+.tryButton {
+  margin-top: 12px;
+  border-color: var(--border-cyan);
+  color: var(--cyan-primary);
+}
+.paletteButton {
+  width: 100%;
+  justify-content: space-between;
+}
+/* Server-rendered buttons do nothing until the client island has hydrated; hide them (no layout shift) until then. */
+:global(html:not([data-docs-interactive])) .tryButton,
+:global(html:not([data-docs-interactive])) .paletteButton {
+  visibility: hidden;
+}
+
+.dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100dvh - 64px);
+  margin: 32px auto auto;
+  padding: 0;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-panel);
+  background: var(--glass-3);
+  color: var(--text-primary);
+}
+.dialogWide {
+  width: min(880px, calc(100vw - 32px));
+}
+.dialog::backdrop {
+  background: rgba(var(--panel-rgb), 0.7);
+}
+.dialogBody {
+  padding: 20px;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 6px;
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-control);
+  padding: 0 12px;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-hud);
+  font-size: 13px;
+}
+.input:focus-visible {
+  outline: 2px solid var(--gold-primary);
+  outline-offset: 1px;
+}
+
+.paletteList {
+  margin-top: 12px;
+  max-height: min(60dvh, 480px);
+  overflow-y: auto;
+}
+.paletteOption {
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  padding: 8px 12px;
+}
+.paletteOption[aria-selected='true'] {
+  background: var(--bg-tertiary);
+  box-shadow: inset 2px 0 0 var(--gold-primary);
+}
+
+.pre {
+  margin-top: 8px;
+  max-height: 50dvh;
+  overflow: auto;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-control);
+  padding: 12px;
+  background: var(--bg-void);
+  font-family: var(--font-hud);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.progress {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  height: 3px;
+  pointer-events: none;
+}
+.progressFill {
+  height: 100%;
+  background: var(--gold-primary);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .progressFill {
+    transition: transform 80ms linear;
+  }
+}

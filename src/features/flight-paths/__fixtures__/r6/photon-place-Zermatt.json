@@ -1,0 +1,96 @@
+{
+ "_captured": "2026-10-02T03:15Z from the live upstream with the GODSEYE UA (feature-flight-paths r6 probe; first 3 features kept)",
+ "_url": "https://photon.komoot.io/api/?q=Zermatt&limit=8&lang=en",
+ "body": {
+  "type": "FeatureCollection",
+  "features": [
+   {
+    "type": "Feature",
+    "properties": {
+     "osm_type": "R",
+     "osm_id": 1685406,
+     "osm_key": "place",
+     "osm_value": "town",
+     "type": "city",
+     "name": "Zermatt",
+     "county": "Visp",
+     "state": "Valais/Wallis",
+     "country": "Switzerland",
+     "postcode": "3920",
+     "countrycode": "CH",
+     "extra": {
+      "admin_level": "8"
+     },
+     "extent": [
+      7.5749926,
+      46.0643293,
+      7.9086793,
+      45.9167499
+     ]
+    },
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.749254,
+      46.0212076
+     ]
+    }
+   },
+   {
+    "type": "Feature",
+    "properties": {
+     "osm_type": "N",
+     "osm_id": 240052938,
+     "osm_key": "railway",
+     "osm_value": "station",
+     "type": "house",
+     "name": "Zermatt",
+     "street": "Spissstrasse",
+     "city": "Zermatt",
+     "county": "Visp",
+     "state": "Valais/Wallis",
+     "country": "Switzerland",
+     "postcode": "3920",
+     "countrycode": "CH"
+    },
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      7.7481294,
+      46.0245732
+     ]
+    }
+   },
+   {
+    "type": "Feature",
+    "properties": {
+     "osm_type": "W",
+     "osm_id": 985398848,
+     "osm_key": "landuse",
+     "osm_value": "residential",
+     "type": "locality",
+     "name": "Zermatt",
+     "city": "Hua Hin",
+     "county": "Hua Hin District",
+     "state": "Prachuap Khiri Khan Province",
+     "country": "Thailand",
+     "postcode": "77110",
+     "countrycode": "TH",
+     "extent": [
+      99.9375794,
+      12.5283395,
+      99.9390707,
+      12.5265929
+     ]
+    },
+    "geometry": {
+     "type": "Point",
+     "coordinates": [
+      99.9383175,
+      12.5273415
+     ]
+    }
+   }
+  ]
+ }
+}

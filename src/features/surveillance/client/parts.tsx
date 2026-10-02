@@ -1,0 +1,86 @@
+'use client';
+/**
+ * Shared bits for surveillance cards and panels: definition rows, safe external links, the provider
+ * provenance block (operator · licence · attribution · terms) and the report/remove link.
+ * Upstream strings render as React text only. Owner: layers-surveillance.
+ */
+import { ExternalLink, Flag } from 'lucide-react';
+import type { ReactNode } from 'react';
+import type { Camera, CameraProvider } from '@/lib/types';
+import { removalUrl } from './rows';
+import { useRemovalContact } from './useProviders';
+
+export const safeHttp = (u: unknown): string | null => (typeof u === 'string' && /^https?:\/\//i.test(u) ? u : null);
+
+export const isoShort = (s: string | null) => (s ? `${s.slice(0, 10)} ${s.slice(11, 19)}Z` : null);
+
+/** Values longer than this read as prose (Inter, sentence case, left-aligned block) — §7. */
+export const PROSE_VALUE_CHARS = 32;
+
+export function Row({ label, children, testId }: { label: string; children: ReactNode; testId?: string }) {
+  if (typeof children === 'string' && children.length > PROSE_VALUE_CHARS) {
+    return (
+      <div className="flex flex-col gap-0.5 py-[3px]" data-testid={testId}>
+        <dt className="font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-muted)]">{label}</dt>
+        <dd className="font-sans text-[12px] normal-case leading-snug text-[var(--text-primary)] [overflow-wrap:anywhere]">{children}</dd>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-[3px]" data-testid={testId}>
+      <dt className="shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[var(--text-muted)]">{label}</dt>
+      <dd className="min-w-0 text-right font-mono text-[11px] uppercase tracking-[.08em] tabular-nums text-[var(--text-primary)] [overflow-wrap:anywhere]">{children}</dd>
+    </div>
+  );
+}
+
+export function OutLink({ href, children, testId }: { href: string | null; children: ReactNode; testId?: string }) {
+  const safe = safeHttp(href);
+  if (!safe) return null;
+  return (
+    <a
+      href={safe}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid={testId}
+      className="inline-flex min-h-7 phone:min-h-11 items-center gap-1 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--gold-primary)] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--gold-primary)]"
+    >
+      {children}
+      <ExternalLink size={12} aria-hidden />
+    </a>
+  );
+}
+
+/** Operator, licence, attribution and terms for the provider (shown in the card and viewer header). */
+export function ProviderBlock({ provider }: { provider: CameraProvider | null | undefined }) {
+  if (!provider) return <p className="font-sans text-[12px] text-[var(--text-secondary)]">Loading provider terms…</p>;
+  return (
+    <dl data-testid="camera-provider">
+      <Row label="Operator" testId="camera-operator">{provider.operator}</Row>
+      <Row label="Licence" testId="camera-licence">{provider.licence}</Row>
+      <p className="py-1 font-sans text-[12px] normal-case text-[var(--text-secondary)]" data-testid="camera-attribution">
+        {provider.attribution_string}
+      </p>
+      <div className="flex flex-wrap gap-x-3">
+        <OutLink href={provider.terms_url}>Terms</OutLink>
+      </div>
+    </dl>
+  );
+}
+
+export function ReportLink({ camera, provider }: { camera: Pick<Camera, 'id' | 'name' | 'providerId'>; provider: CameraProvider | null | undefined }) {
+  const contact = useRemovalContact();
+  return (
+    <a
+      href={removalUrl(contact, camera, provider?.operator ?? null, provider?.terms_url ?? null)}
+      title={contact.kind === 'tracker' ? 'Opens a prefilled issue on the GODSEYE project tracker' : 'The operator of this instance handles removals'}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="camera-report"
+      className="inline-flex min-h-7 phone:min-h-11 items-center gap-1 font-mono text-[11px] uppercase tracking-[.08em] text-[var(--alert-orange)] underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--gold-primary)]"
+    >
+      <Flag size={12} aria-hidden />
+      Report / remove this camera
+    </a>
+  );
+}

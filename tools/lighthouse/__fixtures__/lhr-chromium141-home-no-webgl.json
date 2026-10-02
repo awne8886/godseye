@@ -1,0 +1,459 @@
+{
+ "godseye:capture": "lhci collect --config=lighthouserc.home.json on / (2026-10-01, build sandbox without a GPU): Chromium 141.0.7390.37 (/opt/pw-browsers/chromium), chromeFlags of lighthouserc.home.json plus --ignore-certificate-errors (sandbox egress proxy) and --disable-webgl, so / showed its WEBGL2 REQUIRED fallback; run 2 of 3; trimmed to the fields tools/ops-config.test.ts reads",
+ "lighthouseVersion": "12.6.1",
+ "fetchTime": "2026-10-01T18:36:14.880Z",
+ "requestedUrl": "http://127.0.0.1:3200/",
+ "finalDisplayedUrl": "http://127.0.0.1:3200/",
+ "environment": {
+  "hostUserAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0.0.0 Safari/537.36"
+ },
+ "configSettings": {
+  "formFactor": "desktop",
+  "screenEmulation": {
+   "mobile": false,
+   "width": 1350,
+   "height": 940,
+   "deviceScaleFactor": 1,
+   "disabled": false
+  },
+  "throttling": {
+   "rttMs": 40,
+   "throughputKbps": 10240,
+   "requestLatencyMs": 0,
+   "downloadThroughputKbps": 0,
+   "uploadThroughputKbps": 0,
+   "cpuSlowdownMultiplier": 1
+  },
+  "throttlingMethod": "simulate",
+  "emulatedUserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
+  "pauseAfterLoadMs": 9000
+ },
+ "categories": {
+  "performance": {
+   "score": 0.86
+  },
+  "accessibility": {
+   "score": 1
+  },
+  "best-practices": {
+   "score": 0.96
+  },
+  "seo": {
+   "score": 1
+  },
+  "godseye": {
+   "score": 0
+  }
+ },
+ "audits": {
+  "godseye-map-globe-drawn": {
+   "id": "godseye-map-globe-drawn",
+   "title": "Globe NOT drawn in this run: the scores describe another page",
+   "description": "The MapLibre canvas held a WebGL2 context and painted (colour statistics of the canvas alone), the map was ready, no \"WEBGL2 REQUIRED\" or \"BASEMAP UNAVAILABLE\" fallback was shown, the basemap was not offline, and the MapLibre worker and at least one basemap vector tile loaded with HTTP 200. The renderer may be software (SwiftShader in CI): this audit says the scored page was the globe, not that it ran on a GPU.",
+   "score": 0,
+   "scoreDisplayMode": "binary",
+   "displayValue": "fallback page: WEBGL2 REQUIRED",
+   "details": {
+    "type": "debugdata",
+    "problems": [
+     "fallback page: WEBGL2 REQUIRED",
+     "no map canvas",
+     "map not ready (data-map-ready is not \"true\")",
+     "basemap state missing",
+     "no map canvas pixels (no laid-out map canvas)",
+     "MapLibre worker not loaded with HTTP 200",
+     "no basemap vector tile loaded with HTTP 200"
+    ],
+    "requests": {
+     "worker": false,
+     "vectorTiles": 0
+    },
+    "webgl": {
+     "canvas": false,
+     "context": false,
+     "renderer": null,
+     "vendor": null,
+     "version": null,
+     "hardwareContext": false,
+     "product": "Chrome/141.0.7390.37",
+     "gpu": {
+      "featureStatus": {
+       "2d_canvas": "enabled",
+       "direct_rendering_display_compositor": "disabled_off_ok",
+       "gpu_compositing": "enabled",
+       "multiple_raster_threads": "enabled_on",
+       "opengl": "enabled_on",
+       "rasterization": "enabled",
+       "raw_draw": "disabled_off_ok",
+       "skia_graphite": "disabled_off",
+       "trees_in_viz": "disabled_off",
+       "video_decode": "enabled",
+       "video_encode": "disabled_software",
+       "vulkan": "disabled_off",
+       "webgl": "disabled_off",
+       "webgl2": "disabled_off",
+       "webgpu": "disabled_off",
+       "webnn": "disabled_off"
+      },
+      "devices": [
+       {
+        "vendorId": 65535,
+        "deviceId": 65535,
+        "vendorString": "Google Inc. (Google)",
+        "deviceString": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver-5.0.0)",
+        "driverVendor": "SwANGLE",
+        "driverVersion": "5.0.0"
+       }
+      ],
+      "error": null
+     }
+    },
+    "paint": {
+     "fallback": "WEBGL2 REQUIRED",
+     "alerts": [
+      "WEBGL2 REQUIREDGODSEYE renders the globe with WebGL2. Enable hardware acceleration in your browser settings or try a current version of Chrome, Edge, Firefox or Safari."
+     ],
+     "container": false,
+     "mapReady": false,
+     "basemapState": null,
+     "mapLoads": null,
+     "rect": null,
+     "pixels": null,
+     "pixelsError": "no laid-out map canvas"
+    }
+   }
+  },
+  "network-requests": {
+   "details": {
+    "type": "table",
+    "items": [
+     {
+      "url": "http://127.0.0.1:3200/",
+      "statusCode": 200,
+      "resourceType": "Document",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/media/inter_latin_wght_normal-s.p.0gsaq8ukbf34m.woff2",
+      "statusCode": 200,
+      "resourceType": "Font",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/media/jetbrains_mono_latin_wght_normal-s.p.2rmhnsrc80fag.woff2",
+      "statusCode": 200,
+      "resourceType": "Font",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1o_ivwtu4rkp-.css",
+      "statusCode": 200,
+      "resourceType": "Stylesheet",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/05cr92-yr1l9c.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/14m2ely06sm_e.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/26-3f-vvat83b.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3p-zyavfh2xow.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-3pfx41ydsexp9.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2v3exkbn35rzq.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1wqc7efqcvoak.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/04q7htr10yvc5.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3gzv0p55hztf8.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/05_rqeyh6r1id.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3wgup-n-bsf54.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3ln3waunaxjfj.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/styles/dark",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "https://tiles.openfreemap.org/planet",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter i…",
+      "statusCode": 200,
+      "resourceType": "Image",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/manifest.webmanifest",
+      "statusCode": 200,
+      "resourceType": "Manifest",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/icon.svg?icon.1uxzxqnet9_uc.svg",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/icon.svg",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/health",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/space-weather",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0eh3hg0a099nx.css",
+      "statusCode": 200,
+      "resourceType": "Stylesheet",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1ywfe3_ayhj2e.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3fb_ezbjyo8-2.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1rhvfwc41yew7.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3ocp_jm-5tnqt.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1l0q2t_5z_lxl.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/228kajpghty9o.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3bgo17fh0o0y8.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/api/ticker",
+      "statusCode": 200,
+      "resourceType": "Fetch",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-worker-2ru9m5gbh1na6.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/turbopack-1539cb4cf8icz.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/43yys77bpu6xz.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3gpayc1iv_4x5.js",
+      "statusCode": 200,
+      "resourceType": "Other",
+      "sessionTargetType": "worker"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2sg9minm5k1cf.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3b0s11hlvkplp.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3wa-42lqdeb7e.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0h8xn7hi4li-2.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1r58v2dv91nj2.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/31h057cbnk55w.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/3xl4p5ciq8c8_.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1zy8l87ewyusy.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/2791qzl_v46pg.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/38252f0-3_r-n.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/0hco63731lach.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/1c2_zz1o3s0ht.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     },
+     {
+      "url": "http://127.0.0.1:3200/_next/static/chunks/22ld93hxddnt7.js",
+      "statusCode": 200,
+      "resourceType": "Script",
+      "sessionTargetType": "page"
+     }
+    ]
+   }
+  },
+  "first-contentful-paint": {
+   "score": 1,
+   "numericValue": 386.431625,
+   "displayValue": "0.4 s"
+  },
+  "speed-index": {
+   "score": 0.16,
+   "numericValue": 3521.948309489727,
+   "displayValue": "3.5 s"
+  },
+  "largest-contentful-paint": {
+   "score": 0.82,
+   "numericValue": 1456.4906,
+   "displayValue": "1.5 s"
+  },
+  "total-blocking-time": {
+   "score": 0.97,
+   "numericValue": 98,
+   "displayValue": "100 ms"
+  },
+  "cumulative-layout-shift": {
+   "score": 1,
+   "numericValue": 0.00047964976797128093,
+   "displayValue": "0"
+  }
+ }
+}

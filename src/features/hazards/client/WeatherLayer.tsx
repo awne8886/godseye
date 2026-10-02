@@ -1,0 +1,104 @@
+'use client';
+/**
+ * Severe weather: every event as a deck point (EONET, NWS, GDACS, NHC, GVP) plus native MapLibre
+ * fill/line footprints for NWS alert areas and NHC forecast cones. High-severity events go to the
+ * Intel Feed. On the globe the markers draw without the depth test (the surface clipped them) and
+ * only on the camera-facing side (globe.tsx). Owner: layers-hazards.
+ */
+import { ScatterplotLayer } from '@deck.gl/layers';
+import { useEffect, useMemo, useRef } from 'react';
+import { LAYERS } from '@/lib/layer-registry';
+import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
+import { useStyleVersion } from '@/lib/map/style-version';
+import { readCssColor, type Rgba } from '@/lib/tokens';
+import type { WeatherEvent, WeatherResponse } from '@/lib/types';
+import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken } from '../shared';
+import { nearestPoint, useHitTester } from './hit-test';
+import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from './globe';
+import { entitySelection } from './pick';
+import { renderedFeatureId, useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
+import { useHazardData } from './useHazardData';
+import { useWeatherUnplaced } from './weather-status';
+
+const Z = LAYERS.find((l) => l.id === 'weather')!.z;
+const count = (b: WeatherResponse) => b.items.length;
+const css = ([r, g, b, a]: Rgba) => `rgba(${r},${g},${b},${(a / 255).toFixed(3)})`;
+
+export default function WeatherLayer() {
+  const data = useHazardData<WeatherResponse>('weather', '/api/weather', count);
+  const items = data?.items;
+  useWeatherUnplaced(data);
+  const push = useFeedEventStore((s) => s.push);
+  const byId = useRef(new Map<string, WeatherEvent>());
+  // Style Studio / Ghost Protocol rewrite `--map-*` tokens without a data change.
+  const styleVersion = useStyleVersion();
+
+  useEffect(() => {
+    if (!items) return;
+    byId.current = new Map(items.map((e) => [e.id, e]));
+    push(weatherEvents(items));
+  }, [items, push]);
+
+  // No body (loading, or SOURCE OFFLINE after a 503) → an empty collection, never null:
+  // useGeoJsonLayers keeps the previous data on null, which left last-good footprints drawn
+  // (and unclickable) while the deck markers and the rail had already cleared (round 7).
+  const areas = useMemo<GeoJSON.FeatureCollection>(() => {
+    return {
+      type: 'FeatureCollection',
+      features: (items ?? [])
+        .filter((e) => e.geometry)
+        .map((e) => ({ type: 'Feature', geometry: e.geometry!, properties: { id: e.id, severity: e.severity, provider: e.provider } })),
+    };
+  }, [items]);
+
+  const nativeLayers = useMemo(() => {
+    const weather = css(readCssColor('--map-weather', 1));
+    const high = css(readCssColor('--map-seismic-high', 1));
+    const cyclone = css(readCssColor('--map-seismic-low', 1));
+    const color = ['case', ['==', ['get', 'provider'], 'NHC'], cyclone, ['==', ['get', 'severity'], 'high'], high, weather] as const;
+    return [
+      { id: 'hazards-weather-fill', type: 'fill' as const, paint: { 'fill-color': color as unknown as string, 'fill-opacity': 0.12 } },
+      { id: 'hazards-weather-line', type: 'line' as const, paint: { 'line-color': color as unknown as string, 'line-width': 1, 'line-opacity': 0.7 } },
+    ];
+    // New paint objects on every style change: useGeoJsonLayers repaints them in place.
+  }, [styleVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useGeoJsonLayers('hazards-weather-areas', areas, nativeLayers);
+
+  const camera = useFarSideCamera();
+  const points = useFacing(items, camera);
+
+  const layers = useMemo(() => {
+    if (!points) return null;
+    return [
+      new ScatterplotLayer<WeatherEvent>({
+        id: 'hazards-weather-points',
+        data: points,
+        getPosition: (e) => [e.lng, e.lat],
+        getRadius: (e) => SEVERITY_RADIUS_PX[e.severity],
+        radiusUnits: 'pixels',
+        getFillColor: (e) => readCssColor(weatherToken(e), e.severity === 'high' ? 0.85 : 0.6),
+        getLineColor: (e) => readCssColor(weatherToken(e), 1),
+        stroked: true,
+        lineWidthUnits: 'pixels',
+        getLineWidth: 1,
+        billboard: true,
+        parameters: GLOBE_POINT_PARAMETERS,
+        pickable: true,
+        autoHighlight: true,
+        updateTriggers: { getFillColor: styleVersion, getLineColor: styleVersion },
+      }),
+    ];
+  }, [points, styleVersion]);
+
+  useDeckLayers('hazards:weather', layers, Z);
+  useHitTester('weather', (map, e) => {
+    if (!items) return null;
+    const pt = nearestPoint(map, e, items, (w) => [w.lng, w.lat], (w) => SEVERITY_RADIUS_PX[w.severity]);
+    // A marker beats the footprint it sits in; an area hit counts as far as the slack radius.
+    const ev = pt?.item ?? byId.current.get(renderedFeatureId(map, e.point, ['hazards-weather-fill']) ?? '');
+    if (!ev) return null;
+    return { layer: 'weather', distancePx: pt?.distancePx ?? 12, selection: entitySelection('weather_event', 'weather', ev, ev as unknown as Record<string, unknown>) };
+  });
+  return <DrawnStatus layer="weather" drawn={points?.length ?? 0} total={items?.length ?? 0} camera={camera} />;
+}

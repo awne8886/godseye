@@ -1,0 +1,10 @@
+{
+  "name": "GODSEYE — Global Intelligence Monitor",
+  "short_name": "GODSEYE",
+  "description": "Real-time global monitoring: flights, maritime, satellites, CCTV, hazards, cyber.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#06060C",
+  "theme_color": "#06060C",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
