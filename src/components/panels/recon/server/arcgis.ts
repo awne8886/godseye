@@ -77,7 +77,10 @@ export const BUILTIN_ARCGIS_RULES: readonly AllowRule[] = [
   // any origin an ArcGIS Online account registers, so a wildcard would reopen the SSRF path.
   // services-eu1 / services-ap1 are the regional hosted-service hosts (both answered 2026-10-01).
   ...HOSTED_SERVICE_HOSTS.map((host) => ({ host, pathPrefix: '/', pathPattern: HOSTED_QUERY_PATH })),
-  { host: '*.arcgisonline.com', pathPrefix: '/arcgis/rest/services/', pathPattern: ESRI_QUERY_PATH },
+  // Prefix '/' with the path pinned by ESRI_QUERY_PATH (anchored `^/arcgis/…/query$`, /i) on every
+  // hop: matchesAllowList's pathPrefix is case-sensitive, and Esri's directory serves
+  // `/ArcGIS/rest/services/…` (r10), so a '/arcgis/rest/services/' prefix refused that casing.
+  { host: '*.arcgisonline.com', pathPrefix: '/', pathPattern: ESRI_QUERY_PATH },
 ];
 
 const HOST_ENTRY = /^([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+)(?::(\d{2,5}))?$/;

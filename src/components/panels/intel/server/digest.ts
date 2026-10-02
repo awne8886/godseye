@@ -51,7 +51,8 @@ export interface AlertThread {
   topics: string[];
   breaking: number;
   latest: string | null;
-  lead: { id: string; title: string; source: string; link: string; publishedAt: string } | null;
+  /** `alsoReportedBy`: the lead item's own corroborating channels, never the thread's. */
+  lead: { id: string; title: string; source: string; link: string; publishedAt: string; alsoReportedBy: string[] } | null;
 }
 
 export interface AlertBrief {
@@ -90,6 +91,23 @@ export function perspectivePhrase(t: Pick<AlertThread, 'perspective' | 'blocs'>)
   }
   return 'mixed sourcing';
 }
+
+/**
+ * Who carries one item: its own channel plus its own `alsoReportedBy` (r10). A thread's perspective
+ * describes the mix of every report in the theatre and says nothing about any single headline.
+ */
+export function itemCorroboration(r: { source: string; alsoReportedBy: readonly string[] }): string {
+  return r.alsoReportedBy.length ? `${r.source}; also reported by ${r.alsoReportedBy.join(', ')}` : `reported by ${r.source} only so far`;
+}
+
+/** The thread's mix, worded about the thread so it is never read as one headline's corroboration. */
+export function threadMixPhrase(t: Pick<AlertThread, 'perspective' | 'blocs'>): string {
+  if (t.perspective === 'cross') return 'lead of a thread carried by both sides';
+  if (t.perspective === 'single') return 'lead of a thread carried by one side only so far';
+  return 'lead of a thread with mixed sourcing';
+}
+
+const otherChannels = (r: AlertItem) => [...new Set(r.alsoReportedBy.map((a) => a.sourceName))].filter((n) => n !== r.sourceName);
 
 /** The theatre (among `ids`) whose keywords appear earliest in `text`. */
 export function primaryTheatre(text: string, ids: readonly string[]): string | null {
@@ -167,7 +185,7 @@ export function buildThreads(reports: readonly AlertItem[], limit = 6): AlertThr
         .sort((a, b) => Number(primary.get(b.id) === t.id) - Number(primary.get(a.id) === t.id) || sourceRank(a) - sourceRank(b) || b.alsoReportedBy.length - a.alsoReportedBy.length || Date.parse(b.publishedAt) - Date.parse(a.publishedAt))[0] ?? null;
     if (lead) {
       used.add(lead.id);
-      t.lead = { id: lead.id, title: lead.title, source: lead.sourceName, link: lead.link, publishedAt: lead.publishedAt };
+      t.lead = { id: lead.id, title: lead.title, source: lead.sourceName, link: lead.link, publishedAt: lead.publishedAt, alsoReportedBy: otherChannels(lead) };
     }
   }
   return ranked;
@@ -207,7 +225,7 @@ export function buildAlertBrief(input: { news?: readonly AlertItem[]; quakes?: r
     if (breaking) facts.push(`${breaking} flagged as breaking by the channel that posted ${breaking === 1 ? 'it' : 'them'}.`);
     if (corroborated) facts.push(`${plural(corroborated, 'story', 'stories')} carried by more than one channel.`);
     for (const t of threads) {
-      facts.push(`${t.label}: ${plural(t.count, 'report')} from ${plural(t.sources.length, 'channel')}${t.topics.length ? ` — ${t.topics.join(', ')}` : ''}; ${perspectivePhrase(t)}.${t.lead ? ` Lead: "${t.lead.title}" (${t.lead.source}).` : ''}`);
+      facts.push(`${t.label}: ${plural(t.count, 'report')} from ${plural(t.sources.length, 'channel')}${t.topics.length ? ` — ${t.topics.join(', ')}` : ''}; thread ${perspectivePhrase(t)}.${t.lead ? ` Lead: "${t.lead.title}" (${itemCorroboration(t.lead)}).` : ''}`);
     }
   }
   if (seismic?.strongest) {

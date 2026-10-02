@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import { parseFeed } from '@/lib/rss';
 import type { AlertItem } from '@/lib/types';
 import { FX, fixtureText } from '../__fixtures__';
-import { chatPrompt, overviewPrompt, type Snapshot } from './ai-context';
-import { BLOC_LABEL, perspectivePhrase, sourceWithStance } from './digest';
+import { briefingPrompt, chatPrompt, overviewPrompt, type Snapshot } from './ai-context';
+import { BLOC_LABEL, itemCorroboration, perspectivePhrase, sourceWithStance, threadMixPhrase } from './digest';
 import { ALL_SOURCES, TELEGRAM_CHANNELS, WIRE_FEEDS, fromTelegram, fromWire, latestChannelPosts } from './news';
 
 const src = (h: string) => [...WIRE_FEEDS, ...TELEGRAM_CHANNELS].find((s) => s.handle === h)!;
@@ -69,5 +69,58 @@ describe('source attribution in AI prompts and the ANALYST (r8)', () => {
     for (const s of ALL_SOURCES) expect(sourceWithStance({ sourceName: s.name, lean: s.lean })).toBe(`${s.name} (${s.lean})`);
     expect(perspectivePhrase({ perspective: 'single', blocs: { regional: 3 } })).toBe('only channels in the Regional group are carrying it');
     expect(perspectivePhrase({ perspective: 'cross', blocs: { western: 1, russian: 1 } })).toBe('carried by both Western and Russian-aligned channels');
+  });
+});
+
+/**
+ * r10 MAJOR: a briefing PIR printed a single-source TASS headline as "carried by both sides" because
+ * the label came from its thread's bloc mix. Corroboration is now the lead item's own
+ * `alsoReportedBy`; the thread's mix is worded as the thread's.
+ */
+describe('per-item corroboration in briefings (r10)', () => {
+  const base = kyiv[0]!;
+  const at = (min: number) => new Date(Date.parse('2026-10-02T09:00:00Z') + min * 60_000).toISOString();
+  const item = (over: Partial<AlertItem>): AlertItem => ({ ...base, summary: null, breaking: false, alsoReportedBy: [], ...over });
+  const tass = item({ id: 'wire:tass/1', sourceKind: 'wire', source: 'tass', sourceName: 'TASS', lean: 'Russian state news agency', bloc: 'russian', link: 'https://tass.com/defense/1', title: 'Latest ground-based complex with LMUR missiles deployed in Ukraine during Center-2026 drills', publishedAt: at(0) });
+  const rybar = item({ id: 'tg:rybar/1', source: 't.me/rybar', sourceName: 'Rybar', lean: 'Russian milblogger', bloc: 'russian', link: 'https://t.me/s/rybar/1', title: 'Ukraine front: Russian drones over Kharkiv overnight', publishedAt: at(1) });
+  const kyivPost = item({ id: 'tg:kyiv/1', source: 't.me/kyiv', sourceName: 'Kyiv Independent', lean: 'Ukrainian newsroom', bloc: 'western', link: 'https://t.me/s/kyiv/1', title: 'Ukraine: Russian strike on Kharkiv overnight', publishedAt: at(2) });
+  const snapOf = (items: AlertItem[]): Snapshot => ({ news: items, quakes: [], quotes: [], chain: null, kp: null });
+  const pirsOf = (text: string) => text.split('\n').filter((l) => l.startsWith('• Does independent reporting'));
+
+  it('a single-source lead in a cross-bloc thread never reads "carried by both sides"', () => {
+    const p = briefingPrompt('24h', snapOf([tass, rybar, kyivPost]), NOW);
+    const thread = p.brief!.threads.find((t) => t.id === 'russia-ukraine')!;
+    expect(thread.perspective).toBe('cross');
+    expect(thread.lead!.id).toBe(tass.id);
+    expect(thread.lead!.alsoReportedBy).toEqual([]);
+    const pir = pirsOf(p.analystText).find((l) => l.includes(thread.lead!.title))!;
+    expect(pir).toContain(`(reported by ${thread.lead!.source} only so far; lead of a thread carried by both sides)`);
+    expect(pir).not.toMatch(/\((?:carried by both|also reported)/);
+    // Facts (ANALYST and model prompt alike) attribute the thread mix to the thread.
+    const fact = p.brief!.facts.find((f) => f.startsWith(thread.label))!;
+    expect(fact).toContain('; thread carried by both');
+    expect(fact).toContain(`(reported by ${thread.lead!.source} only so far)`);
+    // Headline rows tell the model the item has no other channel.
+    const row = p.turns[0]!.content.split('\n').find((l) => l.startsWith(`- [news:${thread.lead!.id}]`))!;
+    expect(row).toContain('no other channel so far');
+    expect(p.system).toMatch(/never one headline/);
+  });
+
+  it('a corroborated lead names its corroborating sources', () => {
+    const corroborated = { ...tass, alsoReportedBy: [{ source: 'rt', sourceName: 'RT', lean: 'Russian state broadcaster', bloc: 'russian' as const, link: 'https://rt.com/1', publishedAt: at(3) }, { source: 'reuters', sourceName: 'Reuters', lean: 'International wire', bloc: 'western' as const, link: 'https://reuters.com/1', publishedAt: at(4) }] };
+    const p = briefingPrompt('24h', snapOf([corroborated, rybar, kyivPost]), NOW);
+    const thread = p.brief!.threads.find((t) => t.id === 'russia-ukraine')!;
+    expect(thread.lead!.id).toBe(corroborated.id);
+    expect(thread.lead!.alsoReportedBy).toEqual(['RT', 'Reuters']);
+    const pir = pirsOf(p.analystText).find((l) => l.includes(corroborated.title))!;
+    expect(pir).toContain('(TASS; also reported by RT, Reuters; lead of a thread carried by both sides)');
+    const row = p.turns[0]!.content.split('\n').find((l) => l.startsWith(`- [news:${corroborated.id}]`))!;
+    expect(row).toContain('also reported by RT, Reuters');
+  });
+
+  it('thread-mix wording is about the thread for every perspective', () => {
+    expect(threadMixPhrase({ perspective: 'single', blocs: { russian: 2 } })).toBe('lead of a thread carried by one side only so far');
+    expect(threadMixPhrase({ perspective: 'mixed', blocs: { regional: 1 } })).toBe('lead of a thread with mixed sourcing');
+    expect(itemCorroboration({ source: 'TASS', alsoReportedBy: [] })).toBe('reported by TASS only so far');
   });
 });
