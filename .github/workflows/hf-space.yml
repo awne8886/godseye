@@ -1,0 +1,66 @@
+# Mirror the default branch to a Hugging Face Docker Space (free CPU basic: 2 vCPU, 16 GB RAM).
+# The Space builds the repository's own Dockerfile; the only thing it needs that GitHub does not is
+# the YAML front matter Hugging Face reads from README.md (sdk: docker, app_port). It is added here,
+# in a commit that exists only on the Space, so the GitHub README stays untouched.
+#
+# One-time setup:
+#   1. Create a Space at https://huggingface.co/new-space (SDK: Docker, template: Blank, CPU basic).
+#   2. Create a write token at https://huggingface.co/settings/tokens and store it as the repository
+#      secret HF_TOKEN; store "<user-or-org>/<space-name>" as the repository variable HF_SPACE.
+#   3. In the Space's Settings -> Variables, set GODSEYE_CONTACT (and any optional keys from .env.example).
+# Every push to main (or a manual run) then force-pushes the Space's main branch and rebuilds it.
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-space
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    name: Push to Hugging Face Space
+    runs-on: ubuntu-24.04
+    if: vars.HF_SPACE != ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Prepend Space front matter to README.md
+        run: |
+          set -euo pipefail
+          { cat <<'FM'
+          ---
+          title: GODSEYE
+          emoji: 🌍
+          colorFrom: yellow
+          colorTo: gray
+          sdk: docker
+          app_port: 3000
+          pinned: false
+          license: mit
+          short_description: Keyless real-time global monitor on a WebGL globe
+          ---
+          FM
+            cat README.md; } > README.hf.md
+          mv README.hf.md README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Hugging Face Space front matter" --quiet
+
+      - name: Push to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          set -euo pipefail
+          # The token is passed through a credential helper so it never appears in the remote URL or logs.
+          git config credential.helper '!f() { echo "username=hf"; echo "password=${HF_TOKEN}"; }; f'
+          git push --force "https://huggingface.co/spaces/${HF_SPACE}" HEAD:main

@@ -162,6 +162,13 @@ both are off when `COMMERCIAL_DEPLOYMENT=true`, as are the keyed `aeroapi` and `
   default there, and the browser reconnects), egress IPs are shared, so per-IP quotas such as CelesTrak
   and Nominatim behave worse, and the Hobby plan is non-commercial. Use one region and a Redis
   (for example Upstash) `REDIS_URL`.
+- **Hugging Face Spaces (free Docker host, 2 vCPU / 16 GB):** the Space builds this repository's
+  Dockerfile unchanged. `.github/workflows/hf-space.yml` mirrors `main` to the Space whenever the
+  repository variable `HF_SPACE` (`user/space-name`) and the secret `HF_TOKEN` (write token) are set;
+  it prepends the YAML front matter Hugging Face needs (`sdk: docker`, `app_port: 3000`) in a commit
+  that only exists on the Space. Set `GODSEYE_CONTACT` in the Space's variables. Free Spaces sleep
+  after 48 h without visitors and have no persistent disk (snapshots live in memory, or set
+  `REDIS_URL`); Hugging Face's proxy terminates TLS and forwards the client IP in `X-Forwarded-For`.
 - **Security headers** (CSP, HSTS, `X-Frame-Options`, `nosniff`, `Permissions-Policy`) are set by the
   app itself; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#accepted-trade-offs) for the trade-offs.
 
