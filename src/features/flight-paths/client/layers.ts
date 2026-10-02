@@ -81,11 +81,8 @@ export const ARC_HEIGHT = 0.3;
 export const DASH_PLANNED: [number, number] = [2, 2];
 export const DASH_REMAINING: [number, number] = [2, 2];
 export const DASH_FILED: [number, number] = [1, 2];
-/**
- * Airways have no token of their own yet (`--map-route-airways` requested from design-system-hud):
- * the filed-plan colour, faint and thin, so they read as structure under the route.
- */
-const AIRWAY_TOKEN: MapToken = '--map-route-filed';
+/** Airways (FAA reference) in their own token, faint and thin, so they read as structure under the route. */
+const AIRWAY_TOKEN: MapToken = '--map-route-airways';
 const AIRWAY_ALPHA = 0.4;
 const DASH_EXT = [new PathStyleExtension({ dash: true })];
 type Pos = [number, number] | [number, number, number];

@@ -238,7 +238,7 @@ function Legend({ labels, airways }: { labels: Plan['pathLabels']; airways?: { c
       {airways && airways.count > 0 && (
         <li className="flex items-start gap-2" data-available data-testid="legend-airways">
           {/* Same token and alpha as the drawn airway lines (layers.ts AIRWAY_TOKEN / AIRWAY_ALPHA). */}
-          <span aria-hidden className="mt-1.5 inline-block h-px w-5 shrink-0 opacity-40" style={{ background: 'var(--map-route-filed)' }} />
+          <span aria-hidden className="mt-1.5 inline-block h-px w-5 shrink-0 opacity-40" style={{ background: 'var(--map-route-airways)' }} />
           <span className="flex flex-col">
             <span className="hud-text text-[11px] text-[var(--text-primary)]">AIRWAYS (FAA, REFERENCE)</span>
             <span className="font-sans text-[12px] text-[var(--text-secondary)]">{airwaysLegendText(airways.source, airways.count)}</span>

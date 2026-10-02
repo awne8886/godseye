@@ -61,18 +61,21 @@ describe('GET /api/conflicts with Live Alerts', () => {
     expect(ConflictsResponse.safeParse(body).success).toBe(true);
     expect(body.meta.feed).toBe('conflicts');
     const alerts = (body.events as ConflictEvent[]).filter((e) => e.source === 'alerts');
-    expect(alerts.length).toBe(6);
-    expect(body.providers.alerts).toMatchObject({ ok: true, count: 6 });
+    // The 6 in-zone settlement/region pins of the recording minus its 2 headlines of kind 'news':
+    // only rocket and event alerts count as conflict events.
+    expect(alerts.length).toBe(4);
+    expect(body.providers.alerts).toMatchObject({ ok: true, count: 4 });
     // GDELT is down here: its provider says so and counts none.
     expect(body.providers.gdelt).toMatchObject({ ok: false, count: 0 });
     const src = new Map(recorded.items.map((i) => [`alert:${i.id}`, i]));
     for (const e of alerts) {
+      expect(src.get(e.id)!.kind).not.toBe('news');
       expect([e.lng, e.lat]).toEqual([src.get(e.id)!.place!.lng, src.get(e.id)!.place!.lat]);
       expect(e.url).toBe(src.get(e.id)!.link);
     }
     const total = body.zones.reduce((n: number, z: { liveEventCount: number }) => n + z.liveEventCount, 0);
     expect(total).toBe(body.events.length);
-    expect(body.zones.find((z: { id: string }) => z.id === 'ukraine').liveEventCount).toBe(3);
+    expect(body.zones.find((z: { id: string }) => z.id === 'ukraine').liveEventCount).toBe(2);
     expect(body.zones.find((z: { id: string }) => z.id === 'gaza').liveEventCount).toBe(2);
   });
 

@@ -277,6 +277,13 @@ fields, first 3 results) in `src/components/hud/__fixtures__/airports-search.202
 | London | 200 | 11 ms | LHR London (metro) | LHR LGW STN LTN LCY SEN |
 | New York | 200 | 6 ms | JFK New York (metro) | JFK EWR LGA |
 
+### Round 6 (2026-10-02)
+
+No upstream added or changed. The round-6 HUD fixes (rail flyout placement and stacking, sensor
+chip tap-to-clear, one-row phone sheet chrome, glass blur, `--map-route-airways` token) are
+client-only. The FAA ADDS ATS_Route data the new token colours is a build-time snapshot owned and
+probed by feature-flight-paths (`public/data/airways-us.min.json`); the HUD makes no request for it.
+
 ### feature-flight-paths
 
 Probed 2026-09-30 20:02 UTC from the build sandbox with
@@ -404,6 +411,19 @@ answers). Licence: adsb.lol ODbL 1.0; VRS standing data CC0; OurAirports public 
 | `…/ATS_Route/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json` | 200 `{"count":18445}` | 0.70 s | `*` | — | 18,445 segments, extent lng −180…188.4. |
 | `…/query?where=1=1&outFields=IDENT,TYPE_CODE&outSR=4326&f=geojson&orderByFields=OBJECTID&resultOffset=…&resultRecordCount=2000` (10 pages, 2 s apart) | 200 ×10, no 429 this time | ≈ 2.4 s/page | `*` | — | Densified LineStrings (~15 vertices per segment). `tools/build-airways.ts` → `public/data/airways-us.min.json` (839 kB): 1,737 airways (CONV 778, RNAV 708, OCEAN 244, AKCAP 4, GRNAV 2, UCON 1), 38,167 vertices after 0.01° Douglas–Peucker; `sources [{url, lastModified}]`. A 429 inside a 200 body waits ≥ 61 s and retries (recorded `faa-adds-429-in-200.json`). Fixture `faa-adds-ats-route-J80.json` (27 segments, `where=IDENT='J80'`, 0.70 s). No runtime ArcGIS call: `/api/route/plan` reads the snapshot (`providers.faa_adds`, age = snapshot age). Round 6 fix: `age_s` is counted from the FAA `Last-Modified` (`sources[0].lastModified`), not the build time; the plan carries `airwaysSource {name, url, licence, lastModified, builtAt}` and the PATHS legend shows an `AIRWAYS (FAA, REFERENCE)` row dated by it. |
 | `https://photon.komoot.io/api/?q=Glastonbury&limit=8` | 200 | 0.75 s | `*` | ODbL (OSM), fair use | First feature (town, GB) kept as `photon-place-Glastonbury.json` for the R4 m7 "nearest airports to {place}" disclosure test. |
+
+#### Re-probe 2026-10-02 03:10 UTC (Phase 3 round 6 verification fixes)
+
+| Upstream | Status | Latency | CORS | Auth / licence | Notes |
+|---|---|---|---|---|---|
+| `https://photon.komoot.io/api/?q=Zermatt&limit=8&lang=en&osm_tag=aeroway%3Aaerodrome` | 200 | 0.64 s | `*` (with an `Origin`) | keyless fair use, ODbL | Only feature: `In-Amenas Zarzaitine Airport` (city In Amenas, DZ). Photon's aerodrome search is fuzzy; `reRankAerodromes` now keeps a hit only when its name, its city (first label part) or the matched OurAirports record carries the typed words, and discloses kept hits by `osmName` ("Matched by OSM aerodrome name: …"). Fixture `r6/photon-aerodrome-Zermatt.json`. |
+| `https://photon.komoot.io/api/?q=Zermatt&limit=8&lang=en` | 200 | 0.73 s | `*` | keyless fair use, ODbL | First feature: town Zermatt (CH, 46.0212 N 7.7493 E) → nearest scheduled airports MXP 87 km, LUG 90, TRN 92, BRN 101, NCY 128. Fixture `r6/photon-place-Zermatt.json` (first 3 features). |
+| `https://api.open-meteo.com/v1/forecast?latitude=52.00,56.00&longitude=-10.00,-30.00&hourly=wind_speed_250hPa,wind_direction_250hPa&forecast_hours=1&wind_speed_unit=kn&timezone=GMT` | 200 | 0.47 s | `*` | keyless free tier, non-commercial; CC BY 4.0 | Answers carry the model grid point (`latitude 51.99339, longitude -9.990875`) and `hourly.time ['2026-10-02T03:00']` (zone-less GMT). Winds samples now report `cellLat/cellLng` (that grid point, 0.01°) and `validAt` (`normalizeUtc(hourly.time[0])`); PATHS shows `GRID lat, lng` and "valid <date> <hh:mm>Z". |
+
+The flights snapshot behind KNOWN SERVICES is read in-process (no upstream call): `liveCallsigns()` now uses
+`honestFlights(feed.peek())`, reports `flights: {ok:false, error:'stale_snapshot'}` unless the snapshot is LIVE
+or RECENT, and returns each callsign's own `seenAt` (`knownServices[].observedAt`); `live` is true only when
+`entityFreshness()` with `OBSERVATION_CADENCE_MS.flights` says LIVE. The plan carries `flightsState`.
 
 ### layers-aviation
 
@@ -552,6 +572,21 @@ never the latest (a go-around or step-down that climbs back above 3,000 ft AGL n
 destination read as a "take-off from the destination"). A take-off from the origin on the
 corridor, with the address airborne under that callsign in the flights snapshot, is
 `basis: 'observed'`, `onCorridor: true`, with progress.
+
+### Round 6b (2026-10-02): watched-flight trails as a TripsLayer
+
+| URL | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://api.adsb.lol/v2/mil` | 200 | 0.93 s | server-side only | used to pick a live airborne address (ae5dcf) for the trace probe |
+| `https://adsb.lol/data/traces/cf/trace_full_ae5dcf.json` | 200 (gzip, `application/json`) | 0.57 s | none (server-side only) | 38 KB, 1,559 rows; Δs column non-decreasing (0 → 22,745 s after `timestamp` 1790887985.237) |
+| `https://adsb.lol/data/traces/cf/trace_recent_ae5dcf.json` | 200 (gzip, `application/json`) | 0.43 s | none | 3 KB, 92 rows, Δs 308 → 1,068 s; non-decreasing |
+
+No new upstream: the trail reads the same `/api/aircraft` track. Each vertex's TripsLayer timestamp
+is its observed sample time (`timestamp + Δs`), in seconds after the earliest drawn vertex (float32
+on the GPU cannot hold epoch seconds to better than 128 s). The head is the snapshot position moved
+along its own track and speed for at most 60 s after `seenAt`, stamped seenAt + the reckoned
+seconds (never "now" past the cap); `currentTime` is the newest head and `trailLength` 30 min.
+Out-of-order samples are skipped, never re-dated.
 
 ### layers-hazards
 
@@ -1049,6 +1084,8 @@ Probe 2026-10-02 00:35–00:40 UTC (Phase 3 round-6, alert pins counted in confl
 | `t.me/s/KyivIndependent_official` | 200 · 0.73 s | none | Public channel preview; no `Access-Control-Allow-Origin` (server-side only). |
 | Al Jazeera `xml/rss/all.xml` | 200 · 0.48 s | none | Wire RSS; server-side only. |
 
+Round-6 verification fix 2026-10-02 (no new upstream; the conflicts feed still reads `newsFeed.get()` in-process): only AlertItems with `kind` `rocket` or `event` become conflict events; `kind=news` headlines are dropped even inside a zone (in the recorded fixture this removes the Africanews Khartoum item and a TASS Kyiv item classed news). In-zone alert events now carry the AlertItem's `source` (as `sourceHandle`), `sourceName`, `lean`, `bloc` and `alertKind`; the card selection source is that handle (e.g. `t.me/rybar_in_english`) and the card shows a Channel · stance row.
+
 ## map-engine — probe log
 
 All map sources are fetched **by the browser, straight from the tile host** (hosts in
@@ -1142,6 +1179,27 @@ Changes in how the browser uses them (no new hosts, no keys):
   does not report 404s (it over-zooms the parent tile), so only real failures count.
 - BASEMAP LOADING shows from the moment the map area mounts (before the style arrives) until the
   first frame with basemap tiles has been painted.
+
+### Re-probe 2026-10-02 03:40Z (round 6, curl, honest UA)
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| OpenFreeMap `styles/dark` | 200 `application/json` | 0.32 s | `*` | unchanged; the only third-party document the §11 deck baselines (`e2e/visual/deck-baselines.spec.ts`) let through — vector tiles, Esri/GIBS imagery and Terrarium are refused there |
+
+§11 baseline fixtures (`e2e/visual/fixtures/`, recorded from this app's own routes on 2026-10-02
+02:44–02:45Z, no network at test time): `earthquakes.json` (USGS via `/api/earthquakes`, 36 items),
+`flights.json` (adsb.lol tiles/mil/ladd/pia via `/api/flights`, 5,767 rows), `gps_interference.json`
+(gpsjam.org daily + live NACp via `/api/gps-interference`), `route-plan-LHR-JFK.json`
+(`/api/route/plan?from=LHR&to=JFK`). The page clock is pinned to 2026-10-02T02:45:15Z. Not
+baselined: ArcLayer (only Cloudflare Radar attack-origin arcs, keyed by `CLOUDFLARE_API_TOKEN`; no
+recorded keyed response exists) and TripsLayer (none in this base).
+Re-probed 2026-10-02 (round 6): `GET https://api.cloudflare.com/client/v4/radar/attacks/layer7/top/locations/origin?limit=5&dateRange=1d`
+without a token → 400 in 0.46 s, `{"success":false,"errors":[{"code":9106,"message":"Missing X-Auth-Key, X-Auth-Email or Authorization headers"}]}`;
+no `CLOUDFLARE_API_TOKEN` in this sandbox, so the Arc baseline stays `test.fixme` pending a keyed recording or a lead waiver.
+
+`tools/perf/bundle-size.mjs` now launches Chromium through `HTTPS_PROXY` when set (bypass
+127.0.0.1/localhost), so the OpenFreeMap style is reachable from sandboxes; a run in which the map
+never becomes ready, a chunk body fails or no deck.gl module is seen exits 2 (invalid), never 0.
 
 ## pages-docs-privacy-ops — link and licence verification
 

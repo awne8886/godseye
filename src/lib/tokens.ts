@@ -81,6 +81,7 @@ export const MAP_TOKENS = {
   '--map-airport-watch': '#ffb300',
   '--map-route-planned': '#d4af37',
   '--map-route-filed': '#00e5ff',
+  '--map-route-airways': '#448aff',
 } as const;
 
 export type MapToken = keyof typeof MAP_TOKENS;
