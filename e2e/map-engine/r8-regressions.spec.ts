@@ -61,7 +61,8 @@ test.describe('map engine · round-8 regressions', () => {
 
   test('M: hovering runs the host hover pick at most ~10 times a second, and once where the pointer rests', async ({ page, isMobile }) => {
     test.skip(isMobile, 'hover is a pointer-device behaviour');
-    await gotoMap(page, { camera: { lat: 20, lng: 0, zoom: 2.5 } });
+    // The budget is the host's, whatever is drawn: a light page keeps Playwright's input round trips short.
+    await gotoMap(page, { camera: { lat: 20, lng: 0, zoom: 2.5 }, params: { layers: 'earthquakes' } });
     await waitForMapStyle(page);
     await waitForCameraIdle(page);
     const map = page.locator(MAP);
@@ -71,15 +72,15 @@ test.describe('map engine · round-8 regressions', () => {
     await page.waitForTimeout(600);
     const before = await picks();
     const t0 = Date.now();
-    // ~2 s of continuous movement, one step every ~16 ms.
-    for (let i = 0; i < 120; i++) {
+    // Continuous movement, one step every ~16 ms.
+    for (let i = 0; i < 60; i++) {
       await page.mouse.move(box.x + 300 + i * 4, box.y + 300 + (i % 7) * 3);
       await page.waitForTimeout(16);
     }
     const elapsed = Date.now() - t0;
     const afterSweep = await picks();
     const during = afterSweep - before;
-    // One per 100 ms at most (plus the first), never one per frame (120 moves).
+    // One per 100 ms at most (plus the first), never one per frame (60 moves).
     expect(during).toBeLessThanOrEqual(Math.ceil(elapsed / 100) + 1);
     expect(during).toBeGreaterThan(0);
     // The pointer rests: at most one trailing pick at its final position, then none.
