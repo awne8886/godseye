@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { holidaysModelled, isOpen, nextChange, sessionsAt, EXCHANGES } from '../intel/server/sessions';
+import { HOLIDAYS, holidaysModelled, isOpen, nextChange, sessionsAt, EXCHANGES } from '../intel/server/sessions';
+import { fixtureJson } from '../intel/__fixtures__';
 import { marketsChip } from './markets-chip';
 
 const q = (group: 'indices' | 'crypto', unofficial: boolean) => ({ symbol: 'X', name: 'X', group, price: 1, changePct: 0, currency: 'USD', spark: [], marketOpen: null, observedAt: null, source: 'yahoo', unofficial });
@@ -59,5 +60,12 @@ describe('exchange holidays (R3-m6)', () => {
     expect(holidaysModelled(ex('TSE'), at)).toBe(false);
     expect(holidaysModelled(ex('NYSE'), Date.parse('2027-01-05T12:00:00Z'))).toBe(false);
     expect(sessionsAt(at).filter((s) => s.holidaysModelled).map((s) => s.exchange)).toEqual(['NYSE', 'NASDAQ', 'LSE', 'SSE', 'HKEX']);
+  });
+  it('HKEX closures = the weekday general holidays of the HKSAR 1823 calendar (recorded 2026-10-02)', () => {
+    const cal = fixtureJson<{ vcalendar: { vevent: { dtstart: [string, unknown]; summary: string }[] }[] }>('hk-1823-holidays-2026.2026-10-02.json');
+    const all = cal.vcalendar[0]!.vevent.map((e) => `${e.dtstart[0].slice(0, 4)}-${e.dtstart[0].slice(4, 6)}-${e.dtstart[0].slice(6, 8)}`);
+    const weekday = all.filter((d) => ![0, 6].includes(new Date(`${d}T00:00:00Z`).getUTCDay()));
+    expect(all).toHaveLength(17);
+    expect(weekday.sort()).toEqual([...HOLIDAYS.HKEX!.dates].sort());
   });
 });

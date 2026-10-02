@@ -37,7 +37,12 @@ export const EXCHANGES: readonly ExchangeHours[] = [
  * NYSE/Nasdaq — nyse.com/markets/hours-calendars (2026 column); LSE — gov.uk/bank-holidays.json
  * (England and Wales; LSE closes on these); SSE — Shanghai Futures Exchange circular 2025-12-17
  * "Trading Schedule during National Holidays for Year 2026" (the mainland exchanges share the State
- * Council calendar); HKEX — HKEX 2026 holiday schedule (securities market full-day closures).
+ * Council calendar); HKEX — the HKSAR general-holiday calendar published by the 1823 contact centre,
+ * https://www.1823.gov.hk/common/ical/en.json (retrieved 2026-10-01, re-checked 2026-10-02): the HKEX
+ * securities market closes on every general holiday that falls on a weekday (the 14 below; Apr 4,
+ * Sep 26 and Dec 26 fall on Saturdays). Half-day sessions (Lunar New Year's Eve, Christmas Eve, New
+ * Year's Eve: morning session only) and weather closures (typhoon signal 8, black rainstorm) are NOT
+ * modelled; on those days the panel shows the full regular session.
  */
 const US_2026 = ['2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25', '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25'];
 export const HOLIDAYS: Readonly<Record<string, { years: readonly number[]; dates: ReadonlySet<string> }>> = {

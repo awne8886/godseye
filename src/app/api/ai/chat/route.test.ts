@@ -1,6 +1,6 @@
 import type * as Http from '@/lib/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CAPTURED_AT, HAPPY, type Route } from '@/components/panels/intel/__fixtures__';
+import { CAPTURED_AT, HAPPY, STREAM_FX, type Route } from '@/components/panels/intel/__fixtures__';
 import { freshCache, req, resetCache } from '@/components/panels/intel/__fixtures__/routes';
 import { chainFeed, cryptoFeed, marketsFeed, newsFeed } from '@/components/panels/intel/feeds';
 import { earthquakeFeed } from '@/features/hazards/server/usgs';
@@ -41,6 +41,22 @@ describe('POST /api/ai/chat (NDJSON stream)', () => {
     const done = lines.at(-1);
     expect(done.type).toBe('done');
     expect(done.citations.every((c: unknown) => AiCitation.safeParse(c).success)).toBe(true);
+  });
+
+  it('forwards Claude token deltas with meta first and drops citations the prompt never contained', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-server-key-for-tests');
+    vi.stubEnv('ANTHROPIC_MODEL', 'claude-opus-5-5');
+    state.routes = [...HAPPY, ['api.anthropic.com/v1/messages', STREAM_FX.claude]];
+    const res = await POST(req('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: 'Kyiv?' }] } }), undefined);
+    const lines = (await res.text()).trim().split('\n').map((l) => JSON.parse(l));
+    expect(lines[0]).toEqual({ type: 'meta', generatedBy: 'claude', model: 'claude-opus-5-5', fallbackReason: null, keySource: 'server' });
+    const deltas = lines.filter((l) => l.type === 'delta');
+    expect(deltas.length).toBeGreaterThan(2);
+    const text = deltas.map((l) => l.text).join('');
+    expect(text).toContain('drone strikes reported near Kyiv');
+    // The fixture cites ids that are not in this prompt's feed rows: all are removed, none rendered.
+    expect(text).not.toMatch(/\[(news|quake):/);
+    expect(lines.at(-1)).toMatchObject({ type: 'done', citations: [], truncated: null });
   });
 
   it('requires the last message to be the user’s', async () => {

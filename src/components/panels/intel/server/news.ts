@@ -12,10 +12,11 @@
  */
 import 'server-only';
 import { createHash } from 'node:crypto';
-import { runProvider, type FeedContext, type FeedData, type ProviderRun } from '@/lib/feeds';
+import { sourceCache, type SourceCache } from '@/lib/cache';
+import type { FeedContext, FeedData, ProviderRun } from '@/lib/feeds';
 import { httpText } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
-import { parseFeed, toPlainText } from '@/lib/rss';
+import { parseFeed, toPlainText, type FeedItem } from '@/lib/rss';
 import type { AlertItem, NewsSourceStatus } from '@/lib/types';
 import { alertKind, riskScore } from './classify';
 import { geoparse } from './gazetteer';
@@ -165,8 +166,73 @@ export function mergeCrossPosts(items: AlertItem[]): AlertItem[] {
 
 const tgLimiter = () => providerBucket('t.me', 2, 3);
 
-/** Feed run: every source is one provider (`tg:<handle>` / `rss:<handle>`) in `providers`. */
-export async function runNews(ctx: Pick<FeedContext<NewsData>, 'signal'>, now = Date.now()): Promise<FeedData<NewsData>> {
+/**
+ * Per-source caches (contract §6 News, OSIRIS `api/news/route.ts`): each Telegram channel page is
+ * fetched at most once per 3 min and each wire feed at most once per 2 min, whatever the feed's 60 s
+ * rebuild does; a failed refresh keeps the source's last-good posts (reported ok:false with the
+ * last-good age). Parsed posts are cached, not AlertItems: kind, risk and geoparse rerun every build.
+ */
+export const TG_CHANNEL_TTL_MS = 3 * 60_000;
+export const WIRE_TTL_MS = 2 * 60_000;
+/** Wire items kept per cached feed (before the 72 h filter and the per-wire cap). */
+const WIRE_CACHE_ITEMS = 40;
+
+type WireItem = Pick<FeedItem, 'title' | 'link' | 'guid' | 'publishedAt' | 'description' | 'categories' | 'enclosures'>;
+type SourcePosts = { kind: 'telegram'; posts: TelegramPost[] } | { kind: 'wire'; items: WireItem[] };
+
+const providerKey = (src: NewsSource) => `${src.kind === 'telegram' ? 'tg' : 'rss'}:${src.handle}`;
+
+const G = globalThis as unknown as { __godseyeNewsCaches?: Map<string, SourceCache<SourcePosts>> };
+const CACHES = (G.__godseyeNewsCaches ??= new Map());
+
+function sourceCacheFor(src: NewsSource): SourceCache<SourcePosts> {
+  const key = `news:${providerKey(src)}`;
+  let c = CACHES.get(key);
+  if (!c) {
+    c = sourceCache<SourcePosts>(
+      key,
+      async (_prev, signal) => {
+        const t0 = Date.now();
+        const r = await httpText(src.url, { timeoutMs: 10_000, retries: 1, maxBytes: 4 * 1024 * 1024, signal, ...(src.kind === 'telegram' ? { limiter: tgLimiter() } : {}) });
+        const data: SourcePosts =
+          src.kind === 'telegram'
+            ? { kind: 'telegram', posts: latestChannelPosts(r.text ?? '', src.handle) }
+            : { kind: 'wire', items: parseFeed(r.text ?? '').slice(0, WIRE_CACHE_ITEMS).map(({ title, link, guid, publishedAt, description, categories, enclosures }) => ({ title, link, guid, publishedAt, description, categories, enclosures })) };
+        return { data, meta: { ms: Date.now() - t0 } };
+      },
+      {
+        ttlMs: src.kind === 'telegram' ? TG_CHANNEL_TTL_MS : WIRE_TTL_MS,
+        retryAfterErrorMs: 60_000,
+        deadlineMs: 25_000,
+        isEmpty: (d) => (d.kind === 'telegram' ? d.posts.length === 0 : d.items.length === 0),
+      },
+    );
+    CACHES.set(key, c);
+  }
+  return c;
+}
+
+/** Every source's latest refresh failed: the run fails so the feed keeps its last-good time. */
+export class NewsSourcesDown extends Error {
+  constructor(readonly total: number) {
+    super(`all ${total} news sources failed`);
+    this.name = 'NewsSourcesDown';
+  }
+}
+
+/**
+ * Feed run (every 60 s): read every source through its cache, then merge, dedupe and geoparse.
+ * `providers['tg:<handle>' | 'rss:<handle>']` reports the source cache: `age_s` is the age of the
+ * cached page (from `okAt` = its fetch time), `ok:false` + `error` when the last refresh failed.
+ * When no source refreshed successfully the run throws `NewsSourcesDown` (after `onAttempt`), so
+ * last-good posts from the per-source caches are never re-stamped as a LIVE rebuild: the feed goes
+ * STALE → OFFLINE with its last-good time.
+ */
+export async function runNews(
+  _ctx?: Pick<FeedContext<NewsData>, 'signal'>,
+  now = Date.now(),
+  onAttempt?: (providers: Record<string, ProviderRun>) => void,
+): Promise<FeedData<NewsData>> {
   const providers: Record<string, ProviderRun> = {};
   const sources: NewsSourceStatus[] = [];
   const all: AlertItem[] = [];
@@ -174,20 +240,18 @@ export async function runNews(ctx: Pick<FeedContext<NewsData>, 'signal'>, now = 
 
   await Promise.all(
     ALL_SOURCES.map(async (src) => {
-      const key = `${src.kind === 'telegram' ? 'tg' : 'rss'}:${src.handle}`;
-      const { result, run } = await runProvider(
-        async () => {
-          const r = await httpText(src.url, { timeoutMs: 10_000, retries: 1, maxBytes: 4 * 1024 * 1024, signal: ctx.signal, ...(src.kind === 'telegram' ? { limiter: tgLimiter() } : {}) });
-          if (src.kind === 'telegram') return latestChannelPosts(r.text ?? '', src.handle).map((p) => fromTelegram(p, src)).filter(fresh);
-          return parseFeed(r.text ?? '')
-            .map((it) => fromWire(it, src))
-            .filter((x): x is AlertItem => x !== null && fresh(x))
-            .slice(0, ITEMS_PER_WIRE);
-        },
-        (items) => items.length,
-      );
-      providers[key] = run;
-      const items = result ?? [];
+      const t0 = Date.now();
+      const c = await sourceCacheFor(src).get({ waitForFresh: true });
+      const d = c.data && c.fetchedAt ? c.data : null;
+      let items: AlertItem[] = [];
+      if (d?.kind === 'telegram') items = d.posts.map((p) => fromTelegram(p, src)).filter(fresh);
+      else if (d?.kind === 'wire') items = d.items.map((it) => fromWire({ ...it, raw: '' }, src)).filter((x): x is AlertItem => x !== null && fresh(x)).slice(0, ITEMS_PER_WIRE);
+      const ok = d !== null && c.error === null;
+      const fetchMs = typeof c.meta.ms === 'number' ? c.meta.ms : Date.now() - t0;
+      providers[providerKey(src)] = {
+        status: { ok, count: items.length, ms: fetchMs, age_s: null, ...(c.error ? { error: c.error } : {}) },
+        okAt: d ? c.fetchedAt : null,
+      };
       all.push(...items);
       sources.push({
         handle: src.handle,
@@ -197,13 +261,20 @@ export async function runNews(ctx: Pick<FeedContext<NewsData>, 'signal'>, now = 
         kind: src.kind,
         count: items.length,
         latestAt: items.reduce<string | null>((m, it) => (m === null || it.publishedAt > m ? it.publishedAt : m), null),
-        ok: run.status.ok,
+        ok,
       });
     }),
   );
   const order = new Map(ALL_SOURCES.map((s, i) => [s.handle, i]));
   sources.sort((a, b) => order.get(a.handle)! - order.get(b.handle)!);
+  onAttempt?.(providers);
+  if (!Object.values(providers).some((p) => p.status.ok)) throw new NewsSourcesDown(ALL_SOURCES.length);
   const items = mergeCrossPosts(all);
   const newest = items.length ? Date.parse(items[0]!.publishedAt) : null;
   return { data: { items, sources }, providers, observedAt: newest };
+}
+
+/** Test hook: forget the per-source cache handles (the snapshots live in the store / L1). */
+export function resetNewsCaches(): void {
+  CACHES.clear();
 }
