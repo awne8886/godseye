@@ -43,12 +43,13 @@
 }
 
 @layer components {
-  /* Three elevations (§7): glass-1 rails, glass-2 panels, glass-3 modals. */
+  /* Three elevations (§7): glass-1 rails, glass-2 panels, glass-3 modals. Write only the unprefixed
+     backdrop-filter: Lightning CSS adds -webkit- itself, and a hand-written prefixed copy after the
+     unprefixed one made it drop the unprefixed declaration, so Chromium had no blur at all (r6). */
   .glass-panel,
   .glass-2 {
     background: var(--glass-2);
     backdrop-filter: blur(var(--blur)) saturate(1.3);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.3);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-panel);
     box-shadow:
@@ -67,12 +68,10 @@
   .glass-1 {
     background: var(--glass-1);
     backdrop-filter: blur(var(--blur)) saturate(1.2);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.2);
   }
   .glass-3 {
     background: var(--glass-3);
     backdrop-filter: blur(var(--blur)) saturate(1.3);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(1.3);
     border: 1px solid var(--border-primary);
     border-radius: var(--radius-panel);
     box-shadow:

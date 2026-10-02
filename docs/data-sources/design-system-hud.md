@@ -169,3 +169,10 @@ fields, first 3 results) in `src/components/hud/__fixtures__/airports-search.202
 | Phoenix | 200 | 12 ms | PHX Phoenix (fuzzy) | — |
 | London | 200 | 11 ms | LHR London (metro) | LHR LGW STN LTN LCY SEN |
 | New York | 200 | 6 ms | JFK New York (metro) | JFK EWR LGA |
+
+## Round 6 (2026-10-02)
+
+No upstream added or changed. The round-6 HUD fixes (rail flyout placement and stacking, sensor
+chip tap-to-clear, one-row phone sheet chrome, glass blur, `--map-route-airways` token) are
+client-only. The FAA ADDS ATS_Route data the new token colours is a build-time snapshot owned and
+probed by feature-flight-paths (`public/data/airways-us.min.json`); the HUD makes no request for it.
