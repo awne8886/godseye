@@ -58,6 +58,7 @@ import {
   type FeatureDevice,
   hoverAllowed,
   initPendingLayers,
+  mapToolArmed,
   primeLinkDrawFeatures,
   runDeckHoverLeave,
   runDeckHoverPick,
@@ -286,6 +287,9 @@ export default function DeckOverlay({ beforeId, gpuOpen, onMounted }: DeckOverla
         clearTimeout: (id) => clearTimeout(id as ReturnType<typeof setTimeout>),
         now: () => performance.now(),
       },
+      // An armed map tool (DRAW, measure…: `data-map-tool` on the container) owns the pointer, as
+      // in the host's CPU hover path: no GPU hover pick and no autoHighlight under the crosshair.
+      suspended: () => mapToolArmed(map.getContainer()),
     });
     const move = (e: { point: { x: number; y: number }; originalEvent?: MouseEvent }) =>
       gate.move(e.point.x, e.point.y, !hoverAllowed(e.originalEvent) || map.isMoving());

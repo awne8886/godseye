@@ -171,6 +171,14 @@ export function isPrimaryClick(e: { button?: number } | null | undefined): boole
   return !!e && (e.button ?? 0) === 0;
 }
 
+/**
+ * A map tool (DRAW, measure…) is armed: it marks the map container with `data-map-tool` while it
+ * owns the pointer (src/components/panels/draw/map-capture.ts). Hover picks and selections yield.
+ */
+export function mapToolArmed(container: { dataset: DOMStringMap } | null | undefined): boolean {
+  return !!container?.dataset.mapTool;
+}
+
 /** Hover picking is skipped while any button is held (drag, rotate, right-press). */
 export function hoverAllowed(e: { buttons?: number } | null | undefined): boolean {
   return !e || !e.buttons;

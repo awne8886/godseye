@@ -91,3 +91,21 @@ Changes in how the browser uses them (no new hosts, no keys):
   does not report 404s (it over-zooms the parent tile), so only real failures count.
 - BASEMAP LOADING shows from the moment the map area mounts (before the style arrives) until the
   first frame with basemap tiles has been painted.
+
+## Re-probe 2026-10-02 03:40Z (round 6, curl, honest UA)
+
+| Upstream | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| OpenFreeMap `styles/dark` | 200 `application/json` | 0.32 s | `*` | unchanged; the only third-party document the §11 deck baselines (`e2e/visual/deck-baselines.spec.ts`) let through — vector tiles, Esri/GIBS imagery and Terrarium are refused there |
+
+§11 baseline fixtures (`e2e/visual/fixtures/`, recorded from this app's own routes on 2026-10-02
+02:44–02:45Z, no network at test time): `earthquakes.json` (USGS via `/api/earthquakes`, 36 items),
+`flights.json` (adsb.lol tiles/mil/ladd/pia via `/api/flights`, 5,767 rows), `gps_interference.json`
+(gpsjam.org daily + live NACp via `/api/gps-interference`), `route-plan-LHR-JFK.json`
+(`/api/route/plan?from=LHR&to=JFK`). The page clock is pinned to 2026-10-02T02:45:15Z. Not
+baselined: ArcLayer (only Cloudflare Radar attack-origin arcs, keyed by `CLOUDFLARE_API_TOKEN`; no
+recorded keyed response exists) and TripsLayer (none in this base).
+
+`tools/perf/bundle-size.mjs` now launches Chromium through `HTTPS_PROXY` when set (bypass
+127.0.0.1/localhost), so the OpenFreeMap style is reachable from sandboxes; a run in which the map
+never becomes ready, a chunk body fails or no deck.gl module is seen exits 2 (invalid), never 0.
