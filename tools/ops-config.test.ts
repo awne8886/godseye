@@ -1317,7 +1317,7 @@ describe('tools/lighthouse: the in-run globe-drawn audit of the software-GL gate
     expect(fallback).toContain('role="alert"');
     const mapView = read('src/components/map/MapView.tsx');
     for (const s of ["map.getContainer().dataset.mapReady = 'true'", 'el.dataset.basemapState = h.state', 'el.dataset.mapLoads = String(mapLoads)']) expect(mapView).toContain(s);
-    expect(read('src/lib/map/basemap-health.ts')).toContain("export type BasemapState = 'ok' | 'offline' | 'incomplete' | 'stalled';");
+    expect(read('src/lib/map/basemap-health.ts')).toContain("export type BasemapState = 'ok' | 'offline' | 'incomplete' | 'stalled' | 'loading';");
     expect(gatherer.SCREENSHOT_SCALE).toBe(0.25);
   });
 
@@ -1419,6 +1419,8 @@ describe('tools/lighthouse: the in-run globe-drawn audit of the software-GL gate
     // A basemap still loading or with holes is the page doing its normal work, not a fallback.
     expect(judge((e) => (e.paint!.basemapState = 'stalled'))).toEqual([]);
     expect(judge((e) => (e.paint!.basemapState = 'incomplete'))).toEqual([]);
+    // No basemap frame painted yet: the canvas pixels and the vector tile count decide.
+    expect(judge((e) => (e.paint!.basemapState = 'loading'))).toEqual([]);
     expect(judge((e) => Object.assign(e.paint!, { pixels: null, pixelsError: 'Protocol error (Page.captureScreenshot): timed out' }))).toEqual([
       'no map canvas pixels (Protocol error (Page.captureScreenshot): timed out)',
     ]);

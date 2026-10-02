@@ -385,13 +385,15 @@ export default function MapView() {
   // ── Picking: the one click router (deck + native + CPU hit-testers, far-side filtered) ──────
   const pickAt = useCallback((map: maplibregl.Map, x: number, y: number, hover = false) => {
     const far = useMapInstanceStore.getState().projection === 'globe' ? cameraFromMap(map) : null;
-    return collectCandidates(map as unknown as PickMap, { x, y }, { hover, facing: far ? (p) => isFacing(p, far) : undefined });
+    return collectCandidates(map as unknown as PickMap, { x, y }, { hover, facing: far ? (p, altM) => isFacing(p, far, altM) : undefined });
   }, []);
 
   const onClick = useCallback(
     (e: MapLayerMouseEvent) => {
       // Primary button only: right/middle clicks never run a (GPU) pick.
       if (!isPrimaryClick(e.originalEvent)) return;
+      // A map tool (DRAW) owns the canvas: no entity pick (panels-recon sets data-map-tool).
+      if (e.target.getContainer().dataset.mapTool) return;
       const sel = routePick(pickAt(e.target, e.point.x, e.point.y));
       if (sel) useSelectionStore.getState().select(sel);
     },
@@ -409,7 +411,7 @@ export default function MapView() {
       hoverFrame.current = requestAnimationFrame(() => {
         publishCursor({ lng: normalizeLng(lng), lat, zoom: map.getZoom() });
         // No hover pick while a button is held (drag/rotate/right-press) or the camera moves.
-        if (!idle || map.isMoving()) return;
+        if (!idle || map.isMoving() || map.getContainer().dataset.mapTool) return;
         const hit = pickAt(map, x, y, true).length > 0;
         setHoverPointer(hit);
         // Only undo our own pointer: a tool's cursor (DRAW's crosshair) stays while nothing is hovered.
@@ -431,6 +433,8 @@ export default function MapView() {
   const onContextMenu = useCallback(
     (e: MapLayerMouseEvent) => {
       e.preventDefault();
+      // A map tool (DRAW) owns the canvas: double right-click does not open the dossier.
+      if (e.target.getContainer().dataset.mapTool) return;
       if (doubleRight(e.point.x, e.point.y, e.originalEvent.timeStamp)) {
         useUiStore.getState().openDossier({ lat: e.lngLat.lat, lng: normalizeLng(e.lngLat.lng) });
       }
@@ -446,11 +450,14 @@ export default function MapView() {
       const r = canvas.getBoundingClientRect();
       return [e.clientX - r.left, e.clientY - r.top];
     };
+    // A map tool (DRAW; panels-recon sets data-map-tool on the container) owns the canvas: no dossier.
+    const toolArmed = () => !!map.getContainer().dataset.mapTool;
     const press = createLongPress((x, y) => {
+      if (toolArmed()) return;
       const ll = map.unproject([x, y]);
       useUiStore.getState().openDossier({ lat: ll.lat, lng: normalizeLng(ll.lng) });
     });
-    const down = (e: PointerEvent) => e.pointerType === 'touch' && press.down(...local(e), e.pointerId);
+    const down = (e: PointerEvent) => e.pointerType === 'touch' && !toolArmed() && press.down(...local(e), e.pointerId);
     const move = (e: PointerEvent) => e.pointerType === 'touch' && press.move(...local(e), e.pointerId);
     const up = (e: PointerEvent) => e.pointerType === 'touch' && press.up();
     const cancel = () => press.cancel();

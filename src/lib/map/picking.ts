@@ -22,6 +22,8 @@ export interface PickCandidate {
   selection: Selection;
   /** Screen distance from the pointer in px (CPU hit-tests); breaks ties within one priority. */
   distancePx?: number;
+  /** Height (m) the marker is drawn at; the far-side test lifts the point by it (satellites). Default 0. */
+  altitudeM?: number;
 }
 
 /** CPU hit-test: every selectable entity of this module near the point (any order). */
@@ -155,8 +157,8 @@ export type PickMap = HitTestMap;
 export interface CollectOptions {
   /** Hover: ask deck for the top object only (cheap); click: up to 10 stacked objects. */
   hover?: boolean;
-  /** Far-side test (globe): candidates whose lngLat faces away from the camera are dropped. */
-  facing?: (lngLat: [number, number]) => boolean;
+  /** Far-side test (globe): candidates whose lngLat, lifted by their altitudeM, faces away from the camera are dropped. */
+  facing?: (lngLat: [number, number], altitudeM: number) => boolean;
   radiusPx?: number;
 }
 
@@ -191,7 +193,7 @@ export function collectCandidates(map: PickMap, point: { x: number; y: number },
   }
   const all = [...candidatesFromDeck(deck), ...candidatesFromNative(native), ...candidatesFromHitTesters(point, map)];
   const facing = opts.facing;
-  return facing ? all.filter((c) => !c.selection.lngLat || facing(c.selection.lngLat)) : all;
+  return facing ? all.filter((c) => !c.selection.lngLat || facing(c.selection.lngLat, c.altitudeM ?? 0)) : all;
 }
 
 /** The overlay's picking API, published by the deck host (DeckOverlay) for the click router. */

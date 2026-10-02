@@ -12,7 +12,7 @@
  * - the fallback alerts of src/components/map/WebGLFallback.tsx ("WEBGL2 REQUIRED", "BASEMAP
  *   UNAVAILABLE"), which replace the map;
  * - the diagnostics src/components/map/MapView.tsx writes on the map container: `data-map-ready`
- *   (style parsed, map usable), `data-basemap-state` (ok, incomplete, stalled or offline) and
+ *   (style parsed, map usable), `data-basemap-state` (ok, incomplete, stalled, loading or offline) and
  *   `data-map-loads` (map constructions in this page load);
  * - the pixels of the map canvas alone: for one screenshot (Page.captureScreenshot clipped to the
  *   canvas at a quarter of its size) every other element is hidden with `visibility: hidden`, then the

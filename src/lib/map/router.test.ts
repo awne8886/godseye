@@ -70,6 +70,16 @@ describe('the single click router', () => {
     expect(routePick(c)?.id).toBe('front');
   });
 
+  it('lifts elevated candidates (satellites) by their altitudeM in the far-side test', () => {
+    const cam = { lng: 0, lat: 0, altitude: EARTH_RADIUS_M }; // horizon 60°
+    // GEO (35,786 km) adds ~81°: drawn over the limb at 92°, so it stays pickable; a surface point there does not.
+    registerHitTester('space', () => [{ layer: 'satellites', selection: sel('satellites', 'geo', [92, 0], 'satellite'), distancePx: 2, altitudeM: 35_786_000 }]);
+    registerHitTester('hazards', () => [{ layer: 'earthquakes', selection: sel('earthquakes', 'behind', [92, 0], 'earthquake'), distancePx: 1 }]);
+    const c = collectCandidates(fakeMap(), { x: 0, y: 0 }, { facing: (p, altM) => isFacing(p, cam, altM) });
+    expect(c.map((x) => x.selection.id)).toEqual(['geo']);
+    expect(routePick(c)?.id).toBe('geo');
+  });
+
   it('yields one selection per click even when a module is also GPU-picked', () => {
     const select = vi.fn();
     setPickOverlay({
