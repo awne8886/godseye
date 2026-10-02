@@ -19,7 +19,19 @@ async function liveFlights(request: APIRequestContext): Promise<Flights | null> 
   return body;
 }
 
-/** An aircraft that will not move before we click it: on the ground, else the slowest one. */
+/** Great-circle distance in km (haversine). */
+function kmBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const r = Math.PI / 180;
+  const h = Math.sin(((bLat - aLat) * r) / 2) ** 2 + Math.cos(aLat * r) * Math.cos(bLat * r) * Math.sin(((bLng - aLng) * r) / 2) ** 2;
+  return 2 * 6371.0088 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/**
+ * An aircraft that will not move before we click it (on the ground, else the slowest one), seen in
+ * the last 30 s of the snapshot (still in the next poll) and with no other aircraft within 15 km, so
+ * at zoom 8 no other icon covers it (a parked aircraft at a busy airport sits under its neighbours'
+ * icons, whichever colour is drawn last). Falls back to the plain order when nothing is isolated.
+ */
 function pickTarget(f: Flights): { lat: number; lng: number; id: string; bucket: number } {
   const i = (k: string) => f.fields.indexOf(k);
   const rows = [...f.rows].sort((a, b) => {
@@ -27,8 +39,12 @@ function pickTarget(f: Flights): { lat: number; lng: number; id: string; bucket:
     const gb = (b[i('onGround')] === 1 ? -1 : 0) + ((b[i('gsKt')] as number | null) ?? 0) / 1e4;
     return ga - gb;
   });
-  const r = rows[0]!;
-  return { lat: r[i('lat')] as number, lng: r[i('lng')] as number, id: r[i('id')] as string, bucket: r[i('bucket')] as number };
+  const lat = (r: (typeof rows)[number]) => r[i('lat')] as number;
+  const lng = (r: (typeof rows)[number]) => r[i('lng')] as number;
+  const newest = Math.max(...rows.map((r) => (r[i('seenAt')] as number | null) ?? 0));
+  const isolated = (r: (typeof rows)[number]) => !rows.some((o) => o !== r && kmBetween(lat(r), lng(r), lat(o), lng(o)) < 15);
+  const r = rows.find((c) => ((c[i('seenAt')] as number | null) ?? 0) >= newest - 30 && isolated(c)) ?? rows[0]!;
+  return { lat: lat(r), lng: lng(r), id: r[i('id')] as string, bucket: r[i('bucket')] as number };
 }
 
 async function openAt(page: Page, t: { lat: number; lng: number }) {
@@ -167,12 +183,38 @@ const horizonDeg = (m: number) => (m > 0 ? (Math.acos(6_371_008.8 / (6_371_008.8
 
 test('globe: aircraft behind the limb are not drawn (camera horizon, not 88° from the centre)', async ({ page, request }, info) => {
   // R2 round 4 MAJOR-1: icons draw with depthCompare 'always', so the far-side filter is the only
-  // thing hiding them; at zoom 4 over the US the camera sees ~59°, and Europe (70–85° away) was drawn.
+  // thing hiding them; at zoom 4 the camera sees ~58°, and aircraft 60–88° away were drawn.
+  // The keyless sweep fills over minutes and traffic follows the clock (Europe is quiet at 00 UTC),
+  // so the view is centred where the live snapshot has > 100 aircraft between the horizon and 88°.
   test.skip(info.project.name === 'mobile', 'desktop draw check');
-  test.setTimeout(150_000);
+  test.setTimeout(330_000);
   const first = await liveFlights(request);
   test.skip(first === null, 'adsb.lol is SOURCE OFFLINE right now: nothing live to draw');
-  await page.goto('/?proj=globe&layers=flights,private,jets,military&c=39.00000,-98.00000,4');
+  const CENTRES: [number, number][] = [[-98, 39], [10, 50], [105, 32], [-55, -15], [135, -25], [40, 25], [-150, 45], [80, 15]];
+  const ZOOM4_HORIZON = 58.1; // camera horizon at zoom 4 (lat 39); the assertions use the real data-camera
+  const bandAt = (f: Flights, [cLng, cLat]: [number, number]) => {
+    const i = (k: string) => f.fields.indexOf(k);
+    let n = 0;
+    for (const r of f.rows) {
+      const d = centralDeg(cLng, cLat, r[i('lng')] as number, r[i('lat')] as number);
+      if (d > ZOOM4_HORIZON + 5 && d <= 88) n++; // +5: room for the aircraft's own horizon
+    }
+    return n;
+  };
+  let centre: [number, number] = CENTRES[0]!;
+  await expect
+    .poll(
+      async () => {
+        const f = await liveFlights(request);
+        if (!f) return 0;
+        centre = CENTRES.reduce((best, c) => (bandAt(f, c) > bandAt(f, best) ? c : best), CENTRES[0]!);
+        return bandAt(f, centre);
+      },
+      { timeout: 240_000, intervals: [10_000] },
+    )
+    .toBeGreaterThan(150);
+  const [cLng, cLat] = centre;
+  await page.goto(`/?proj=globe&layers=flights,private,jets,military&c=${cLat.toFixed(5)},${cLng.toFixed(5)},4`);
   await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 60_000 });
   await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-projection', 'globe', { timeout: 30_000 });
   const status = page.getByTestId('aviation-status');
@@ -189,7 +231,7 @@ test('globe: aircraft behind the limb are not drawn (camera horizon, not 88° fr
     const lat = r[i('lat')] as number;
     const altM = r[i('onGround')] === 1 ? 0 : (((r[i('altGeomFt')] ?? r[i('altFt')]) as number | null) ?? 0) * 0.3048;
     if (centralDeg(camLng, camLat, lng, lat) <= horizonDeg(camAlt) + horizonDeg(altM) + 0.5) facing++;
-    if (centralDeg(-98, 39, lng, lat) <= 88) within88++;
+    if (centralDeg(cLng, cLat, lng, lat) <= 88) within88++;
   }
   expect(horizonDeg(camAlt)).toBeLessThan(80);
   // The old 88° cut would draw `within88`; the horizon filter draws at most the facing aircraft
