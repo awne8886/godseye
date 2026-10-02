@@ -24,6 +24,9 @@ describe('capabilities', () => {
     expect(evaluateCapability('opensky', { OPENSKY_CLIENT_ID: 'a', OPENSKY_CLIENT_SECRET: 'b' }).enabled).toBe(false);
     expect(evaluateCapability('opensky', { OPENSKY_CLIENT_ID: 'a', OPENSKY_CLIENT_SECRET: 'b', OPENSKY_LICENSED: 'true' }).enabled).toBe(true);
     expect(evaluateCapability('adsbfi', { ADSBFI_PERSONAL_USE: 'yes' }).enabled).toBe(false);
+    // adsb.fi open data is personal, non-commercial use only: a commercial deployment turns it off.
+    expect(evaluateCapability('adsbfi', { ADSBFI_PERSONAL_USE: 'true' }).enabled).toBe(true);
+    expect(evaluateCapability('adsbfi', { ADSBFI_PERSONAL_USE: 'true', COMMERCIAL_DEPLOYMENT: 'true' })).toEqual({ enabled: false, reason: 'COMMERCIAL_DEPLOYMENT is "true"' });
   });
 
   it('turns off non-commercial sources on a commercial deployment', () => {

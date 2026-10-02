@@ -146,6 +146,10 @@ export function sseResponse(
           const c = await start(send, ac.signal, sendRaw);
           if (closed) c?.();
           else cleanup = c;
+          // A client that left before this stream existed (e.g. while the route awaited a cold feed)
+          // fired 'abort' already, so `onAbort` never runs and nobody reads or cancels this body:
+          // close now, which runs the producer's cleanup (the hub releases its slots).
+          if (req.signal.aborted) close();
         } catch (e) {
           send('error', { error: 'stream_failed', detail: (e as Error).message });
           close();
@@ -181,6 +185,8 @@ export class SseHub {
   }
 
   subscribe(req: Request, opts?: SseOptions, ip = getClientIp(req.headers)): Response {
+    // The client is already gone (it left while the route awaited its feed): count no slot for it.
+    if (req.signal.aborted) return new Response(null, { status: 499, headers: { 'Cache-Control': 'no-store' } });
     const key = ipBucketKey(ip);
     // IPv6 also counts against the whole /48 (8× the per-client cap), so one allocation cannot open
     // thousands of streams from fresh /64s.

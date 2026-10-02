@@ -9,7 +9,7 @@ export const CAPABILITIES = {
   // Aviation
   adsblol_reapi: { env: ['ADSBLOL_REAPI'], flag: 'ADSBLOL_REAPI', note: 'adsb.lol re-api (feeder IP only)' },
   opensky: { env: ['OPENSKY_CLIENT_ID', 'OPENSKY_CLIENT_SECRET'], flag: 'OPENSKY_LICENSED', note: 'OpenSky OAuth2 + written licence' },
-  adsbfi: { env: [], flag: 'ADSBFI_PERSONAL_USE', note: 'adsb.fi open data (personal use only)' },
+  adsbfi: { env: [], flag: 'ADSBFI_PERSONAL_USE', invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'adsb.fi open data (personal, non-commercial use only)' },
   fpdb: { env: ['FPDB_API_KEY'], note: 'FlightPlanDatabase (sim-only filed plans)' },
   aeroapi: { env: ['AEROAPI_KEY'], invertFlag: 'COMMERCIAL_DEPLOYMENT', note: 'FlightAware AeroAPI personal tier (filed routes, schedules; non-commercial)' },
   // Space

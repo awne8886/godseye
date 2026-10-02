@@ -10,8 +10,8 @@ export interface CspInput {
 
 /**
  * Builds the Content-Security-Policy header value. `worker-src 'self' blob:` covers the
- * self-hosted MapLibre module worker (and MapLibre's same-origin blob shim);
- * `'wasm-unsafe-eval'` is required by satellite.js 7 bulk propagation (WASM).
+ * self-hosted MapLibre module worker (and MapLibre's same-origin blob shim). No WASM ships
+ * (satellite.js runs its JS SGP4 path), so `'wasm-unsafe-eval'` is not granted.
  */
 export function buildCsp({
   dev,
@@ -20,7 +20,7 @@ export function buildCsp({
   images = IMAGE_HOSTS,
   media = MEDIA_HOSTS,
 }: CspInput): string {
-  const scriptSrc = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"];
+  const scriptSrc = ["'self'", "'unsafe-inline'"];
   if (dev) scriptSrc.push("'unsafe-eval'"); // React Refresh in `next dev` only
   const connect = ["'self'", ...tiles, ...media];
   if (dev) connect.push('ws:', 'wss:');

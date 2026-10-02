@@ -1752,7 +1752,7 @@ describe('README.md', () => {
       if (spec.flag) full[spec.flag] = 'true';
       return evaluateCapability(id, full).enabled && !evaluateCapability(id, { ...full, COMMERCIAL_DEPLOYMENT: 'true' }).enabled;
     });
-    expect(offWhenCommercial.sort()).toEqual(['aeroapi', 'cloudflare', 'deepstate', 'nc_sources', 'openmeteo']);
+    expect(offWhenCommercial.sort()).toEqual(['adsbfi', 'aeroapi', 'cloudflare', 'deepstate', 'nc_sources', 'openmeteo']);
     for (const id of offWhenCommercial) {
       expect(readmeRow, id).toContain(`\`${id}\``);
       expect(envComment, id).toContain(id);

@@ -58,6 +58,10 @@ describe('api catalogue', () => {
     const hosts = upstreamsReceivingUserInput();
     expect(hosts).toContain('nominatim.openstreetmap.org');
     expect(hosts).toContain('api.anthropic.com');
+    // Round 8: the dossier sends the clicked country to the World Bank, and RDAP lookups follow
+    // rdap.org's redirect to the registry, so both must be named on /privacy.
+    expect(hosts).toContain('api.worldbank.org');
+    expect(hosts.some((h) => h.includes('registry RDAP server'))).toBe(true);
   });
 
   it('maps templated paths to App Router files', () => {

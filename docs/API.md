@@ -775,7 +775,7 @@ Region Dossier: reverse geocode, Wikipedia, Wikidata facts, head of state, live 
 | Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RegionDossierResponse` |
-| Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org`, `en.wikipedia.org`, `query.wikidata.org`, `api.open-meteo.com` |
+| Upstreams | `photon.komoot.io`, `nominatim.openstreetmap.org`, `en.wikipedia.org`, `query.wikidata.org`, `api.open-meteo.com`, `api.worldbank.org` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/region-dossier?lat=50.45&lng=30.52` |
 
@@ -1005,7 +1005,7 @@ RDAP registration data
 | Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Upstreams | `rdap.org` |
+| Upstreams | `rdap.org`, `(the registry RDAP server rdap.org redirects to, e.g. rdap.verisign.com, rdap.nominet.uk)` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/osint/whois?domain=example.com` |
 
@@ -1440,7 +1440,7 @@ Optional upgrades and licence gates, evaluated on the server from environment va
 |---|---|---|
 | `adsblol_reapi` | On when ADSBLOL_REAPI=true | adsb.lol re-api (feeder IP only) |
 | `opensky` | On when OPENSKY_CLIENT_ID + OPENSKY_CLIENT_SECRET set, OPENSKY_LICENSED=true | OpenSky OAuth2 + written licence |
-| `adsbfi` | On when ADSBFI_PERSONAL_USE=true | adsb.fi open data (personal use only) |
+| `adsbfi` | On when ADSBFI_PERSONAL_USE=true, COMMERCIAL_DEPLOYMENT is not "true" | adsb.fi open data (personal, non-commercial use only) |
 | `fpdb` | On when FPDB_API_KEY set | FlightPlanDatabase (sim-only filed plans) |
 | `aeroapi` | On when AEROAPI_KEY set, COMMERCIAL_DEPLOYMENT is not "true" | FlightAware AeroAPI personal tier (filed routes, schedules; non-commercial) |
 | `ais` | On when AIS_API_KEY set | AISStream.io server relay |

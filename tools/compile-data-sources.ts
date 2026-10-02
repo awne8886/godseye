@@ -36,7 +36,7 @@ export const LICENCE_SUMMARY: readonly LicenceRow[] = [
   { source: 'AWS Terrain Tiles (Tilezen joerd)', usedFor: 'Terrain', terms: 'Attribution to the joerd data sources', gate: 'Browser tiles', url: 'https://github.com/tilezen/joerd/blob/master/docs/attribution.md' },
   { source: 'adsb.lol', usedFor: 'Live aircraft, traces', terms: 'ODbL; "Aircraft data © adsb.lol contributors, ODbL" (licence page is script-rendered; per the research pack)', gate: 'Always on (keyless default)', url: 'https://www.adsb.lol/privacy-license/' },
   { source: 'OpenSky Network', usedFor: 'Aircraft (optional)', terms: 'Terms of use require a written licence for live products', gate: 'OPENSKY_LICENSED=true + OAuth client', url: 'https://opensky-network.org/about/terms-of-use' },
-  { source: 'adsb.fi open data', usedFor: 'Aircraft (optional)', terms: 'Personal, non-commercial use only; 1 request/s', gate: 'ADSBFI_PERSONAL_USE=true', url: 'https://github.com/adsbfi/opendata' },
+  { source: 'adsb.fi open data', usedFor: 'Aircraft (optional)', terms: 'Personal, non-commercial use only; 1 request/s', gate: 'ADSBFI_PERSONAL_USE=true and not COMMERCIAL_DEPLOYMENT', url: 'https://github.com/adsbfi/opendata' },
   { source: 'VRS standing data (adsb.lol mirror)', usedFor: 'Callsign → route', terms: 'CC0', gate: 'Always on', url: 'https://github.com/vradarserver/standing-data' },
   { source: 'OurAirports', usedFor: 'Airport database', terms: 'Public domain', gate: 'Always on (build-time snapshot)', url: 'https://ourairports.com/data/' },
   { source: 'mwgg/Airports', usedFor: 'Airport IANA time zones', terms: 'MIT (© mwgg; keep the notice)', gate: 'Always on (build-time snapshot)', url: 'https://github.com/mwgg/Airports' },

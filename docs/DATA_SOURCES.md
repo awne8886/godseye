@@ -23,7 +23,7 @@ off; licence-gated sources stay off until the operator opts in (see `.env.exampl
 | AWS Terrain Tiles (Tilezen joerd) | Terrain | Attribution to the joerd data sources | Browser tiles | <https://github.com/tilezen/joerd/blob/master/docs/attribution.md> |
 | adsb.lol | Live aircraft, traces | ODbL; "Aircraft data © adsb.lol contributors, ODbL" (licence page is script-rendered; per the research pack) | Always on (keyless default) | <https://www.adsb.lol/privacy-license/> |
 | OpenSky Network | Aircraft (optional) | Terms of use require a written licence for live products | OPENSKY_LICENSED=true + OAuth client | <https://opensky-network.org/about/terms-of-use> |
-| adsb.fi open data | Aircraft (optional) | Personal, non-commercial use only; 1 request/s | ADSBFI_PERSONAL_USE=true | <https://github.com/adsbfi/opendata> |
+| adsb.fi open data | Aircraft (optional) | Personal, non-commercial use only; 1 request/s | ADSBFI_PERSONAL_USE=true and not COMMERCIAL_DEPLOYMENT | <https://github.com/adsbfi/opendata> |
 | VRS standing data (adsb.lol mirror) | Callsign → route | CC0 | Always on | <https://github.com/vradarserver/standing-data> |
 | OurAirports | Airport database | Public domain | Always on (build-time snapshot) | <https://ourairports.com/data/> |
 | mwgg/Airports | Airport IANA time zones | MIT (© mwgg; keep the notice) | Always on (build-time snapshot) | <https://github.com/mwgg/Airports> |

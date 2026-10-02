@@ -207,7 +207,7 @@ Preferences persist in `localStorage` under four keys, the same ones `/privacy` 
   `default-src 'self'` with explicit host lists.
 - **CSP `worker-src 'self' blob:`.** MapLibre 6.11 creates its module worker through a same-origin
   `blob:` shim; without `blob:` the map never loads tiles. Workers still come only from this origin.
-  `'wasm-unsafe-eval'` is allowed for satellite.js WASM bulk propagation.
+  No WASM ships (satellite.js runs its JS SGP4 path), so `'wasm-unsafe-eval'` is not granted.
 - **`x-real-ip` is opt-in.** Many PaaS edges pass a client-sent `X-Real-IP` through untouched, so trusting
   it by default would let clients choose their own rate-limit bucket. Operators whose proxy overwrites it
   set `TRUST_PROXY_HEADER=x-real-ip` (the bundled Caddyfile overwrites both headers).

@@ -40,6 +40,8 @@ describe('browser host allow-lists', () => {
     for (const h of FRAME_HOSTS) expect(csp['frame-src']).toContain(h);
     expect(csp['frame-ancestors']).toEqual(["'none'"]);
     expect(csp['script-src']).not.toContain("'unsafe-eval'");
+    // No WASM ships (satellite.js runs its JS SGP4 path): the policy must not grant WASM compilation.
+    expect(csp['script-src']).not.toContain("'wasm-unsafe-eval'");
     expect(buildCsp({ dev: true })).toContain("'unsafe-eval'");
   });
 });
