@@ -21,6 +21,7 @@ import { aircraftDetail, adsbdbBucket } from '@/features/aviation/server/aircraf
 import { fetchAdsbJson } from '@/features/aviation/server/providers';
 import { flightRoute, type FlightRoute } from '@/features/aviation/server/route-lookup';
 import { headingFor } from '@/features/aviation/corroborate';
+import { onRouteCorridor, trackAlong } from '@/features/aviation/route-geometry';
 import { honestFlights } from '@/features/aviation/server/view';
 import { classifyIdent, type IdentGuess } from '../lib/idents';
 import { angleDiff, etaMs, flyingRoute, headingAlong, onCorridor, pathIntoFrame, positionOnPath, progressOn, reverseLegReason, reverseLegReject } from '../lib/geometry';
@@ -282,11 +283,17 @@ export function sinceTurnaroundGap(track: readonly TrackPoint[]): { track: Track
   return { track: [...track], gapMin: null };
 }
 
+/**
+ * Every 4-character code an airport goes by: OurAirports may move the ICAO code on while VRS keeps
+ * the old one (PBI is KDJT/DJT there, ident KPBI; VRS lists DAL1311 as KATL-KPBI-KATL).
+ */
+const icaoCodes = (a: AirportRecord): Set<string> => new Set([icaoOf(a), a.icao, a.gps, a.ident.toUpperCase()].filter((c): c is string => typeof c === 'string' && /^[A-Z0-9]{4}$/.test(c)));
+
 /** Does the callsign's VRS chain fly `from` then `to` as consecutive stops (a listed leg)? */
-function listedLeg(callsign: string | null, from: AirportRecord, to: AirportRecord): boolean {
+export function listedLeg(callsign: string | null, from: AirportRecord, to: AirportRecord): boolean {
   const chain = callsign ? vrsIndex().chainOf.get(callsign) : undefined;
-  const [f, t] = [icaoOf(from), icaoOf(to)];
-  return !!chain && chain.some((c, i) => c === f && chain[i + 1] === t);
+  const [f, t] = [icaoCodes(from), icaoCodes(to)];
+  return !!chain && chain.some((c, i) => f.has(c) && t.has(chain[i + 1]!));
 }
 
 const toRun = (p: Providers[string]): ProviderRun => ({ status: p, okAt: p.ok && p.age_s !== null ? Date.now() - p.age_s * 1000 : null });
@@ -400,7 +407,13 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
       // corridor — the aircraft card's rule (corroborate.ts `headingFor`), so both views give one
       // answer (R2 round 5: UAL1789 left IAD on 237° with RDU at 152° and landed at San Antonio;
       // UAL374 left LAX on 100° with ORD at ~60° and landed at Phoenix).
-      const revShown = rev && headingFor(live, origin);
+      // Round 10: a leg the VRS chain lists (DAL1311 KATL-KPBI-KATL flying PBI→ATL) is standing
+      // data, so it takes the card's listed-leg test (`corroborateLeg` 'departed': inside the
+      // corridor, track along it or unknown, not flying back toward D); strict `headingFor` stays
+      // for an unlisted reverse leg only.
+      const listedBack = listedLeg(resolved.callsign, destination, origin);
+      const pos = { lat: live.lat, lng: live.lng, speedKt: live.gsKt, trackDeg: live.trackDeg, altFt: live.altFt, vrFpm: live.vrFpm };
+      const revShown = listedBack ? !fwd && onRouteCorridor(destination, origin, [live.lng, live.lat]) && trackAlong(pos, destination, origin) !== false : rev && headingFor(live, origin);
       // A trace that ends on the ground away from where the aircraft now flies is an earlier leg:
       // this leg's departure and track were not observed.
       const end = flownTrack[flownTrack.length - 1];
@@ -418,7 +431,6 @@ export async function flightDetail(ident: string, deps: FlightDeps = defaultDeps
       // Round 5 B1: a D→O leg that no source lists is shown only when the observation fits it end to
       // end (away from D, on course for O, inside the corridor now and along the trace); otherwise the
       // aircraft may be bound for a third airport (SWA2816 "MCO→MDW" landed at RDU).
-      const listedBack = listedLeg(resolved.callsign, destination, origin);
       const backReject = latest === 'D' && rev && !listedBack ? reverseLegReject(s, D, O, back.track.filter((q) => !q.onGround), { from: destination.elevationFt, to: origin.elevationFt }) : null;
       if (latest === 'O' && !fwd && rev) {
         // Round 4 B1: took off from O earlier but now flies back toward O — the landing at D and
