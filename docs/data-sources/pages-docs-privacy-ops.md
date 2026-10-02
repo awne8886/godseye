@@ -105,6 +105,15 @@ Same honest User-Agent; `curl -I -L` (HEAD), falling back to GET where HEAD is r
 | `https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html` | 200 | 0.38 s | "You may not in connection with the Services engage in commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" |
 | `https://libre.space/licenses/` | 200 (redirects to `www.libre.space/`) | 1.04 s | home page, no licence text; not linked |
 
+## Licence pages for the round-6 sources (probed 2026-10-02 ~04:00 UTC, for the licence summary)
+
+| URL | Status | Latency | CORS | Auth | Terms as read |
+|---|---|---|---|---|---|
+| `https://www.flightaware.com/commercial/aeroapi/` | 200 | 0.46 s | not needed (terms page) | none | Personal tier: "Storage and distribution of derivative works for personal or academic purposes only"; 10 result sets/minute; no minimum fee |
+| `https://www.edmonton.ca/conditionsofuse` | 200 | 1.60 s | not needed | none | "You will only use the website for personal, educational or non-commercial purposes." |
+| `https://www.mlit.go.jp/link.html` | 200 | 1.06 s | not needed | none | 著作権は、特記されていない限り国土交通省に帰属; content usable under 公共データ利用規約（第1.0版）(PDL1.0) |
+| `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0?f=json` | 200 | 0.62 s | `*` | none | `copyrightText`: "Federal Aviation Administration, Air Traffic Organization, Mission Support Services, Aeronautical Information Services."; `Last-Modified: Thu, 03 Sep 2026 11:59:04 GMT`; US Government work (public domain) |
+
 ## Container images pinned in the Dockerfile, CI and compose (resolved 2026-09-30 and 2026-10-01)
 
 | Image | Digest | How resolved |

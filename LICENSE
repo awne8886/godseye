@@ -65,10 +65,16 @@ a header comment naming the OSIRIS source file:
                                             embed_allowed split
 
 Other bundled data with a notice requirement:
-  public/data/airports*.json                time zones from mwgg/Airports
+  public/data/airports*.json*               time zones from mwgg/Airports
                                             (© mwgg, MIT License)
   public/data/routes-openflights.json.gz    OpenFlights route data (June 2014),
                                             Open Database License (ODbL) 1.0
+  public/data/cables.json                   TeleGeography Submarine Cable Map,
+                                            CC BY-NC-SA 3.0 (non-commercial
+                                            deployments only)
+  public/data/airways-us.min.json           FAA ADDS ATS_Route (FAA Aeronautical
+                                            Information Services; US Government
+                                            work, public domain)
 
 Bundled fonts (SIL Open Font License 1.1, https://openfontlicense.org; from the
 @fontsource npm packages, served from this server):

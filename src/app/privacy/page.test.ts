@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { upstreamsReceivingUserInput } from '@/lib/api-catalog';
@@ -55,5 +57,27 @@ describe('/privacy', () => {
 
   it('renders no reference-project branding', () => {
     expect(html).not.toMatch(/osiris/i);
+  });
+
+  it('lists every localStorage key the client writes, and docs/ARCHITECTURE.md names the same keys', () => {
+    // Storage keys are `godseye:*` literals on a line that persists something (a *_KEY constant, a
+    // zustand persist `name`, or a localStorage call); `godseye:*` event names (*_EVENT) are not storage.
+    const root = path.resolve(import.meta.dirname, '../../..');
+    const keys = new Set<string>();
+    for (const rel of readdirSync(path.join(root, 'src'), { recursive: true, encoding: 'utf8' })) {
+      if (!/\.tsx?$/.test(rel) || /\.test\.tsx?$/.test(rel)) continue;
+      for (const line of readFileSync(path.join(root, 'src', rel), 'utf8').split('\n')) {
+        if (/^\s*(\/\/|\*|\/\*)/.test(line) || /_EVENT\b/.test(line) || !/_KEY\s*=|name:\s*'godseye:|localStorage/.test(line)) continue;
+        for (const m of line.matchAll(/'(godseye:[a-z0-9-]+)'/g)) keys.add(m[1]!);
+      }
+    }
+    expect([...keys].sort()).toEqual(['godseye:panel-width', 'godseye:settings', 'godseye:style-studio', 'godseye:theme']);
+    const storage = decoded.slice(decoded.indexOf('id="storage"'), decoded.indexOf('id="retention"'));
+    const architecture = readFileSync(path.join(root, 'docs/ARCHITECTURE.md'), 'utf8');
+    const persisted = /Preferences persist in `localStorage`[^.]*\./.exec(architecture)?.[0] ?? '';
+    for (const k of keys) {
+      expect(storage, k).toContain(k);
+      expect(persisted, k).toContain(`\`${k}\``);
+    }
   });
 });

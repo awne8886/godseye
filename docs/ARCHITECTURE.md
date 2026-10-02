@@ -182,7 +182,8 @@ zustand holds UI state only (open panels, selection, persisted settings); per-fr
 refs, typed arrays and Web Workers that post `Float32Array` positions, never in React state. TanStack
 Query polls each layer at its registry interval and pauses in background tabs. The camera, layers, theme,
 open panel and planned route live in the URL (`nuqs`, `src/lib/url-state.ts`), so every view is shareable.
-Preferences persist in `localStorage` (`godseye:settings`, `godseye:theme`), read defensively.
+Preferences persist in `localStorage` under four keys, the same ones `/privacy` lists (`godseye:settings`, `godseye:theme`,
+`godseye:style-studio`, `godseye:panel-width`), read defensively.
 
 ## Security model
 

@@ -52,6 +52,10 @@ off; licence-gated sources stay off until the operator opts in (see `.env.exampl
 | GDACS (EC JRC / UN OCHA) | Disaster alerts, severe weather | JRC disclaimer and copyright notice: information "purely indicative and should not be used for any decision making without alternate sources"; attribution to GDACS | Always on, attributed | <https://www.gdacs.org/About/termofuse.aspx> |
 | INFORM Risk Index (EC JRC) | Country risk | CC BY 4.0 (per the layers-threats-network probe log) | Always on, attributed | <https://drmkc.jrc.ec.europa.eu/inform-index> |
 | World Bank Worldwide Governance Indicators | Country risk (political stability) | CC BY 4.0, the World Bank data catalogue default licence | Always on, attributed | <https://datacatalog.worldbank.org/public-licenses> |
+| FlightAware AeroAPI (personal tier) | Filed routes and schedules in the Flight Path Planner (optional key) | Personal tier: "storage and distribution of derivative works for personal or academic purposes only"; 10 result sets/min, billed per result set; commercial use needs a Standard or Premium agreement | aeroapi capability: AEROAPI_KEY and not COMMERCIAL_DEPLOYMENT; 1 request / 10 s, key sent only in the x-apikey header | <https://www.flightaware.com/commercial/aeroapi/> |
+| FAA ADDS ATS_Route (Aeronautical Information Services) | US airways on planned routes (public/data/airways-us.min.json) | US Government work, public domain; credit the FAA Aeronautical Information Services | Always on (build-time snapshot; no runtime requests to the shared ArcGIS quota) | <https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0> |
+| City of Edmonton traffic cameras | Camera list (Alberta) | Conditions of use: "You will only use the website for personal, educational or non-commercial purposes" | nc_sources: off when COMMERCIAL_DEPLOYMENT=true; link-out to the city player only, never proxied or embedded | <https://www.edmonton.ca/conditionsofuse> |
+| MLIT 川の防災情報 river cameras (river.go.jp) | Camera list (Japan) | MLIT site content under 公共データ利用規約 (PDL 1.0) with source credit unless noted; copyright is MLIT's "unless otherwise noted" and many cameras are prefecture-owned, so frames carry no reuse grant; river.go.jp publishes no terms of its own | Always on as link-outs only (no proxying, no embedding, not in the CSP); credit 出典：国土交通省「川の防災情報」 on every camera | <https://www.mlit.go.jp/link.html> |
 | Yahoo Finance chart endpoint | Market quotes and candles | Unofficial, undocumented endpoint with no data licence; Yahoo terms forbid "commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" | Low volume, cached; every quote flagged unofficial; may stop without notice | <https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html> |
 
 ## Probe logs
@@ -1245,6 +1249,15 @@ Same honest User-Agent; `curl -I -L` (HEAD), falling back to GET where HEAD is r
 | `https://www.worldbank.org/en/about/legal/terms-of-use-for-datasets` | 200 (redirects to `/ext/en/legal/terms-conditions`) | 0.45 s | general terms |
 | `https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html` | 200 | 0.38 s | "You may not in connection with the Services engage in commercial activity on non-commercial properties or apps or high volume activity without our prior written consent" |
 | `https://libre.space/licenses/` | 200 (redirects to `www.libre.space/`) | 1.04 s | home page, no licence text; not linked |
+
+### Licence pages for the round-6 sources (probed 2026-10-02 ~04:00 UTC, for the licence summary)
+
+| URL | Status | Latency | CORS | Auth | Terms as read |
+|---|---|---|---|---|---|
+| `https://www.flightaware.com/commercial/aeroapi/` | 200 | 0.46 s | not needed (terms page) | none | Personal tier: "Storage and distribution of derivative works for personal or academic purposes only"; 10 result sets/minute; no minimum fee |
+| `https://www.edmonton.ca/conditionsofuse` | 200 | 1.60 s | not needed | none | "You will only use the website for personal, educational or non-commercial purposes." |
+| `https://www.mlit.go.jp/link.html` | 200 | 1.06 s | not needed | none | 著作権は、特記されていない限り国土交通省に帰属; content usable under 公共データ利用規約（第1.0版）(PDL1.0) |
+| `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0?f=json` | 200 | 0.62 s | `*` | none | `copyrightText`: "Federal Aviation Administration, Air Traffic Organization, Mission Support Services, Aeronautical Information Services."; `Last-Modified: Thu, 03 Sep 2026 11:59:04 GMT`; US Government work (public domain) |
 
 ### Container images pinned in the Dockerfile, CI and compose (resolved 2026-09-30 and 2026-10-01)
 

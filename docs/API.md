@@ -589,7 +589,7 @@ URLhaus malware hosts (geolocated IPs, precision labelled)
 | Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `MalwareResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | `urlhaus.abuse.ch`, `ip-api.com` |
 | Forwards user input upstream | No |
 | Example | `GET /api/malware` |
@@ -606,7 +606,7 @@ SSE malware detections (snapshot, detections, status, heartbeat)
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Stream | Server-Sent Events (text/event-stream) |
 | Response | `MalwareResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | None: served from this server only |
 | Forwards user input upstream | No |
 
@@ -621,7 +621,7 @@ Feodo Tracker botnet C2 indicators
 | Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `C2Response` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | `feodotracker.abuse.ch`, `ip-api.com` |
 | Forwards user input upstream | No |
 | Example | `GET /api/cyber-attacks` |
@@ -637,7 +637,7 @@ ThreatFox recent IOCs (list; IP IOCs geolocated as INDICATOR points)
 | Cache | Browsers revalidate every request; shared caches s-maxage 10 min, CDN stale-while-revalidate 20 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `ThreatFoxResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | `threatfox.abuse.ch`, `ip-api.com` |
 | Forwards user input upstream | No |
 | Example | `GET /api/threatfox` |
@@ -704,7 +704,7 @@ Submarine cables + landing points (TeleGeography, CC BY-NC-SA, bundled)
 | Cache | Browsers revalidate every request; shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `CablesResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | None: served from this server only |
 | Forwards user input upstream | No |
 | Example | `GET /api/cables` |
@@ -1090,7 +1090,7 @@ Shodan InternetDB (ports, CPEs, vulns; non-commercial)
 | Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | `internetdb.shodan.io` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/osint/shodan?ip=1.1.1.1` |
@@ -1108,7 +1108,7 @@ Passive network sweep of a small public prefix via InternetDB (no packets sent t
 | Cache | Browsers revalidate every request; shared caches s-maxage 1 h, CDN stale-while-revalidate 2 h |
 | Rate limit | 5 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | `internetdb.shodan.io`, `ipwho.is` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/osint/sweep?ip=1.1.1.0` |
@@ -1178,7 +1178,7 @@ OFAC SDN search (OpenSanctions bulk, CC BY-NC)
 | Cache | Browsers revalidate every request; shared caches s-maxage 1 d, CDN stale-while-revalidate 2 d |
 | Rate limit | 20 requests per 1 min per client IP |
 | Response | `OsintResponse` |
-| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial). |
+| Capability | `nc_sources`: On by default; off when COMMERCIAL_DEPLOYMENT=true. Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only). |
 | Upstreams | `data.opensanctions.org` |
 | Forwards user input upstream | No |
 | Example | `GET /api/osint/sanctions?q=Rosneft` |
@@ -1460,7 +1460,7 @@ Optional upgrades and licence gates, evaluated on the server from environment va
 | `ai_user_keys` | On by default; off when DISABLE_USER_AI_KEYS=true | Visitors may send their own provider key in the x-ai-key header (used once, never stored) |
 | `redis` | On when REDIS_URL set | Shared cache + rate limits across instances |
 | `sdk` | On when SDK_INGEST_KEY set | GODSEYE SDK entity ingest (fail-closed without a key) |
-| `nc_sources` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial) |
+| `nc_sources` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Non-commercial sources: TeleGeography cables, OpenSanctions bulk (CC BY-NC), abuse.ch (not-for-profit), ip-api and Shodan InternetDB (non-commercial), City of Edmonton cameras (personal, educational or non-commercial use only) |
 | `openmeteo` | On by default; off when COMMERCIAL_DEPLOYMENT=true | Open-Meteo free tier (non-commercial; CC BY 4.0 data) |
 | `deepstate` | On when NONCOMMERCIAL=true, COMMERCIAL_DEPLOYMENT is not "true" | DeepStateMap frontlines (non-commercial, attribution; commercial API use needs DeepState's prior approval) |
 
