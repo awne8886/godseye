@@ -47,7 +47,9 @@ describe('camera card', () => {
     await screen.findByTestId('camera-operator');
     const footer = screen.getByTestId('camera-card-footer');
     const cls = footer.className.split(' ');
-    expect(cls).toEqual(expect.arrayContaining(['sticky', 'bottom-0', 'bg-[var(--bg-panel-solid)]', 'border-t', 'border-[var(--border-primary)]']));
+    expect(cls).toEqual(expect.arrayContaining(['sticky', '-bottom-3', '-mb-3', 'bg-[var(--bg-panel-solid)]', 'border-t', 'border-[var(--border-primary)]']));
+    // r9: sticky insets resolve against the tabpanel's content box; the footer extends over its 12 px py-3.
+    expect(cls).not.toContain('bottom-0');
     // r7: the translucent panel token let body rows show through the sticky footer on phones.
     expect(cls).not.toContain('bg-[var(--bg-panel)]');
     for (const id of ['camera-open-viewer', 'camera-report']) {
