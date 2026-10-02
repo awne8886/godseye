@@ -71,7 +71,7 @@ import TerminatorLayer from './TerminatorLayer';
 import WebGLFallback from './WebGLFallback';
 
 // deck.gl/luma and every feature module are split out of the map chunk (§11 TBT budget). DeckOverlay
-// loads once its device is admitted; the data modules mount with the map host (perf L96), so their
+// loads once its device is admitted; the data modules mount once the first style is parsed, so their
 // default-on fetches overlap the style download and GL start-up; their GPU work waits in the
 // admission queue (perf m-l).
 const DeckOverlay = dynamic(() => import('./DeckOverlay'), { ssr: false });
@@ -153,6 +153,8 @@ export default function MapView() {
   const [failure, setFailure] = useState<'webgl' | 'style' | null>(() => (hasWebGL2() ? null : 'webgl'));
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  /** The data modules are mounted: set with the first parsed style, never cleared (a retry keeps them). */
+  const [featuresOn, setFeaturesOn] = useState(false);
   const [contextLost, setContextLost] = useState(false);
   const [terrainEngaged, setTerrainEngaged] = useState(false);
   const [terrainStatus, setTerrainStatus] = useState<TerrainStatus>('idle');
@@ -279,6 +281,7 @@ export default function MapView() {
     // layers' first draws is installed (the data modules are mounted already and add layers as
     // soon as the map is ready).
     setLoaded(true);
+    setFeaturesOn(true);
   }, [setMap]);
   const onLoad = publishMap;
 
@@ -553,11 +556,12 @@ export default function MapView() {
     gpuOpen.current = basemapPainted;
     if (basemapPainted) useAdmissionStore.getState().scheduler?.kick();
   }, [basemapPainted]);
-  // Data modules mount with the map host itself (perf L96, software GL): their default-on feed
-  // requests start while the style downloads and MapLibre is constructed, long before the basemap's
-  // first paint. They see no map until it is `ready` (style parsed + admission queue installed), so
-  // every native layer they add still goes through the queue, and their deck layers wait for the
-  // deck device's admission.
+  // Data modules mount once the first style is parsed (and stay mounted across a WebGL retry). Mounting
+  // them with the map host's first render (perf L96) put their chunk loads and feed parsing on the
+  // main thread while the HUD and splash paint: the software-GL Lighthouse gate measured LCP 2.88 s
+  // on CI against the 2.5 s contract value. They see no map until it is `ready` (style parsed +
+  // admission queue installed), so every native layer still goes through the queue, and their deck
+  // layers wait for the deck device's admission.
   // The globe's first frame (no tiles needed): the earliest point for the user's own focus work.
   const [firstFrame, setFirstFrame] = useState(false);
   useEffect(() => {
@@ -640,13 +644,12 @@ export default function MapView() {
   if (failure === 'webgl') return <WebGLFallback reason="webgl" />;
   if (failure === 'style' && !style) return <WebGLFallback reason="style" />;
   // The map container is up but the style is still on its way: say so from the first frame.
-  // The data modules (outside the map, so they keep their state across a WebGL retry) mount from the
-  // first render: see `FeatureLayers` below.
+  // The data modules (outside the map, so they keep their state across a WebGL retry) mount once the
+  // first style is parsed: see `featuresOn`.
   if (!style)
     return (
       <>
         <BasemapPending phone={phone} />
-        <FeatureLayers />
       </>
     );
 
@@ -698,7 +701,7 @@ export default function MapView() {
           </div>
         )}
       </div>
-      <FeatureLayers />
+      {featuresOn && <FeatureLayers />}
     </>
   );
 }
