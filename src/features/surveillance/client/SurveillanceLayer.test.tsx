@@ -10,7 +10,7 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toColumnar, type Cell } from '@/lib/columnar';
-import { useDeckLayerStore, useMapInstanceStore } from '@/lib/layer-host';
+import { useDeckLayerStore, useLayerStatusStore, useMapInstanceStore } from '@/lib/layer-host';
 import { MAP_STYLE_EVENT } from '@/lib/map/style-version';
 import { CAMERA_FIELDS } from '@/lib/schemas/surveillance';
 import * as A from '../server/adapters';
@@ -21,8 +21,14 @@ const { rows } = toColumnar(A.parseHongKong(text(FX.hktd)), CAMERA_FIELDS);
 const items = CHANNELS.slice(0, 3).map((c) => toChannel(c, null));
 
 vi.mock('./useCctv', () => ({ useCctv: (on: boolean) => (on ? { fields: [...CAMERA_FIELDS], rows, regionsLoaded: 1 } : null) }));
+const news = vi.hoisted(() => ({ isError: false, failureCount: 0 }));
 vi.mock('./useLiveNewsQuery', () => ({
-  useLiveNewsQuery: () => ({ isPending: false, isError: false, data: { ok: true, body: { meta: { state: 'live', fetchedAt: null, observedAt: null, lastGoodAt: null, attribution: [] }, providers: {}, items } } }),
+  useLiveNewsQuery: () => ({
+    isPending: false,
+    isError: news.isError,
+    failureCount: news.failureCount,
+    data: { ok: true, body: { meta: { state: 'live', fetchedAt: '2026-10-02T08:00:00.000Z', observedAt: null, lastGoodAt: '2026-10-02T08:00:00.000Z', attribution: [] }, providers: {}, items } },
+  }),
 }));
 
 const { default: SurveillanceLayer } = await import('./SurveillanceLayer');
@@ -95,5 +101,31 @@ describe('surveillance colours follow Style Studio / Ghost Protocol (style versi
     restyle('--map-news', '#ff00aa');
     expect(map.paints).toContainEqual(['surveillance-live-news-dots', 'circle-color', 'rgba(255,0,170,0.902)']);
     expect(map.paints).toContainEqual(['surveillance-live-news-dots', 'circle-stroke-color', 'rgba(255,0,170,1.000)']);
+  });
+});
+
+/**
+ * Round 8 (BLOCKING, same pattern as useCctv): a live-news refetch that throws (network error)
+ * leaves the previous `{ok: true}` data in react-query; the status kept its meta.state LIVE.
+ */
+describe('live-news status after a failed refetch', () => {
+  afterEach(() => {
+    news.isError = false;
+    news.failureCount = 0;
+  });
+
+  it('LIVE while the last fetch succeeded', () => {
+    render(<SurveillanceLayer active={new Set(['live_news'])} />);
+    expect(useLayerStatusStore.getState().status.live_news).toMatchObject({ state: 'live', error: undefined });
+  });
+
+  it('retained data with a failed fetch (retrying or given up) is STALE with its last-good time', () => {
+    for (const q of [{ isError: false, failureCount: 1 }, { isError: true, failureCount: 0 }]) {
+      Object.assign(news, q);
+      useLayerStatusStore.setState({ status: {} });
+      render(<SurveillanceLayer active={new Set(['live_news'])} />);
+      expect(useLayerStatusStore.getState().status.live_news).toMatchObject({ state: 'stale', lastGoodAt: '2026-10-02T08:00:00.000Z', error: 'unreachable', count: items.length });
+      cleanup();
+    }
   });
 });

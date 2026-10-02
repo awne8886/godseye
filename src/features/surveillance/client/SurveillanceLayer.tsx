@@ -30,6 +30,7 @@ import { zoomBand } from '../shared';
 import CctvPreviews from './CctvPreviews';
 import { cameraPointsLayer, cameraSelection, CCTV_DECK_ID, colorKeyOf } from './camera-layer';
 import { facingRows, unitVectors } from './far-side';
+import { atMostStale, lastFetchFailed } from './refetch-state';
 import { IDX } from './rows';
 import { useCctv } from './useCctv';
 import { useLiveNewsQuery } from './useLiveNewsQuery';
@@ -186,9 +187,20 @@ function useLiveNews(active: boolean) {
     if (q.isPending) update('live_news', { state: 'loading' });
     else if (q.data?.ok) {
       const b = q.data.body;
-      update('live_news', { state: b.meta.state, count: b.items.length, fetchedAt: b.meta.fetchedAt, observedAt: b.meta.observedAt, lastGoodAt: b.meta.lastGoodAt, providers: b.providers, attribution: b.meta.attribution, error: undefined });
+      // Kept after a failed refetch (network error): last-good channels, never LIVE (round 8).
+      const failed = lastFetchFailed({ data: q.data, isError: q.isError, failureCount: q.failureCount });
+      update('live_news', {
+        state: failed ? atMostStale(b.meta.state) : b.meta.state,
+        count: b.items.length,
+        fetchedAt: b.meta.fetchedAt,
+        observedAt: b.meta.observedAt,
+        lastGoodAt: b.meta.lastGoodAt,
+        providers: b.providers,
+        attribution: b.meta.attribution,
+        error: failed ? 'unreachable' : undefined,
+      });
     } else if (q.data || q.isError) update('live_news', { state: 'offline', count: null, lastGoodAt: q.data?.body.meta?.lastGoodAt ?? null, error: 'source_offline', providers: q.data?.body.providers });
-  }, [active, q.data, q.isPending, q.isError, update]);
+  }, [active, q.data, q.isPending, q.isError, q.failureCount, update]);
 
   const fc = useMemo<GeoJSON.FeatureCollection | null>(
     () =>
