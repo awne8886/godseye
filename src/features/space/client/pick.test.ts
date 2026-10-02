@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { EARTH_RADIUS_M, horizonAngleDeg } from '@/lib/map/far-side';
 import { displayAltM } from '../lib/orbit-math';
-import { SAT_HIT_PX, elevatedPoint, frameRowFaces, hitTestSatellites, latestLngLat, latestPosition, nearestSatellite, type PickFrame, type PickView } from './pick';
+import {
+  SAT_HIT_PX,
+  SatelliteScreenCache,
+  elevatedPoint,
+  frameRowFaces,
+  hitTestSatellites,
+  latestLngLat,
+  latestPosition,
+  nearestInTable,
+  nearestSatellite,
+  projectFrame,
+  sameCamera,
+  type PickFrame,
+  type PickView,
+} from './pick';
 
 // Mercator-like test surface: 10 px per degree, centre (0,0) at screen (500,500).
 const MERCATOR: PickView = { globe: false, camera: null };
@@ -138,5 +152,132 @@ describe('satellite picking ignores satellites behind the globe', () => {
     expect(frameRowFaces(f, 0, GLOBE)).toBe(true);
     expect(frameRowFaces(f, 1, GLOBE)).toBe(false);
     expect(frameRowFaces(f, 1, MERCATOR)).toBe(true);
+  });
+});
+
+/**
+ * Verification round 8 (MAJOR, perf): the host runs every CPU hit-tester on each pointer-move
+ * frame, and the satellite hit-test made three MapLibre globe `project()` calls per drawn
+ * satellite on every one of them (33 ms of CPU per hover frame with 9k satellites). Now a frame is
+ * projected once per (frame, camera), one `project()` per satellite, and a hover between two
+ * ticks costs one `project()` (the camera probe) plus a scan of a Float32Array.
+ */
+describe('hover hit-test cost: one projection per (frame, camera)', () => {
+  const R_PX = 300;
+  const DEG = Math.PI / 180;
+  /** Orthographic globe like the far-side fixture above, with a movable centre and a call counter. */
+  function countingGlobe() {
+    const state = { centre: { lng: 0, lat: 0 }, zoom: 2.5, calls: 0 };
+    const m = {
+      project: ([lng, lat]: [number, number]) => {
+        state.calls++;
+        const dl = (lng - state.centre.lng) * DEG;
+        return { x: 500 + R_PX * Math.cos(lat * DEG) * Math.sin(dl), y: 500 - R_PX * Math.sin(lat * DEG) };
+      },
+      getCenter: () => ({ ...state.centre }),
+      getZoom: () => state.zoom,
+      getBearing: () => 0,
+      getPitch: () => 0,
+      getCanvas: () => ({ clientWidth: 1000, clientHeight: 1000 }),
+    };
+    return { m, state };
+  }
+  const camera = { lng: 0, lat: 0, altitude: EARTH_RADIUS_M / Math.cos((58.6 * Math.PI) / 180) - EARTH_RADIUS_M };
+  const GLOBE: PickView = { globe: true, camera };
+  /** n satellites on a lat/lng grid in front of the camera, LEO to GEO. */
+  function bigFrame(n: number, cam: PickView['camera'] = camera): PickFrame {
+    const rows: [number, number, number, number][] = [];
+    for (let i = 0; i < n; i++) rows.push([i, ((i * 7.3) % 100) - 50, ((i * 3.1) % 100) - 50, [420, 1_200, 20_200, 35_786][i % 4]!]);
+    return { ...frame(rows), camera: cam };
+  }
+
+  it('projectFrame makes one project() per satellite plus one for the globe centre (was three per satellite)', () => {
+    const { m, state } = countingGlobe();
+    const f = bigFrame(2_000);
+    projectFrame(f, m, GLOBE);
+    expect(state.calls).toBe(f.count + 1);
+  });
+
+  it('the screen table gives exactly the uncached answer (elevated and ground points, far side)', () => {
+    const { m } = countingGlobe();
+    const f = bigFrame(600, null); // filtered without a camera: the picker must re-test the far side
+    const cache = new SatelliteScreenCache();
+    for (let x = 200; x <= 800; x += 37) {
+      for (let y = 200; y <= 800; y += 41) {
+        const a = cache.nearest(f, { x, y }, m, GLOBE);
+        const b = nearestSatellite(f, { x, y }, m, GLOBE);
+        expect(a?.catIndex ?? null).toBe(b?.catIndex ?? null);
+        if (a && b) expect(a.distancePx).toBeCloseTo(b.distancePx, 3);
+      }
+    }
+    expect(cache.builds).toBe(1);
+  });
+
+  it('9,000 satellites: 60 hovers on one frame and camera project the frame once, then one probe each', () => {
+    const { m, state } = countingGlobe();
+    const f = bigFrame(9_000);
+    const cache = new SatelliteScreenCache();
+    for (let i = 0; i < 60; i++) hitTestSatellites(f, { x: 300 + i * 5, y: 420 }, m, GLOBE, () => null, cache);
+    expect(cache.builds).toBe(1);
+    // build: 9,000 satellites + the centre; every hover: one camera probe. Before: 3 × 9,000 × 60.
+    expect(state.calls).toBe(9_000 + 1 + 60);
+  });
+
+  it('a new frame, a camera move, a zoom or a far-side camera change rebuilds the table; nothing else does', () => {
+    const { m, state } = countingGlobe();
+    const cache = new SatelliteScreenCache();
+    const f1 = bigFrame(100);
+    const p = { x: 500, y: 500 };
+    cache.nearest(f1, p, m, GLOBE);
+    cache.nearest(f1, { x: 510, y: 490 }, m, GLOBE);
+    expect(cache.builds).toBe(1);
+    cache.nearest(bigFrame(100), p, m, GLOBE); // next 1 Hz tick (or a worker re-filter)
+    expect(cache.builds).toBe(2);
+    const f3 = bigFrame(100);
+    cache.nearest(f3, p, m, GLOBE);
+    expect(cache.builds).toBe(3);
+    state.centre = { lng: 10, lat: 0 };
+    cache.nearest(f3, p, m, GLOBE);
+    expect(cache.builds).toBe(4);
+    state.zoom = 3;
+    cache.nearest(f3, p, m, GLOBE);
+    expect(cache.builds).toBe(5);
+    cache.nearest(f3, p, m, { globe: true, camera: { ...camera, lng: 10 } });
+    expect(cache.builds).toBe(6);
+    cache.nearest(f3, p, m, { globe: false, camera: null });
+    expect(cache.builds).toBe(7);
+    cache.nearest(f3, p, m, { globe: false, camera: null });
+    expect(cache.builds).toBe(7);
+    cache.clear();
+    cache.nearest(f3, p, m, { globe: false, camera: null });
+    expect(cache.builds).toBe(8);
+  });
+
+  it('the cached answer follows the satellite into the next frame (never a stale screen position)', () => {
+    const { m } = countingGlobe();
+    const cache = new SatelliteScreenCache();
+    const older = { ...frame([[7, 10, 20, 420]]), camera };
+    const newer = { ...frame([[7, 13, 20, 420]]), camera };
+    const at13 = elevatedPoint(m, 13, 20, displayAltM(420), true);
+    expect(cache.nearest(older, at13, m, GLOBE)).toBeNull();
+    expect(cache.nearest(newer, at13, m, GLOBE)?.catIndex).toBe(7);
+  });
+
+  it('the far-side re-test is skipped only for a frame the worker filtered with this very camera', () => {
+    const { m } = countingGlobe();
+    // 85° east is behind the ≈ 79° LEO cap: the worker would never have drawn it for `camera`.
+    const rows: [number, number, number, number][] = [[1, 85, 0, 420]];
+    const hiddenPoint = m.project([85, 0]);
+    expect(sameCamera(camera, { ...camera })).toBe(true);
+    expect(sameCamera(camera, null)).toBe(false);
+    expect(sameCamera(null, undefined)).toBe(true);
+    // Filtered with another camera (or none): the picker re-tests and drops the hidden row.
+    expect(nearestSatellite({ ...frame(rows), camera: { ...camera, lng: 60 } }, hiddenPoint, m, GLOBE)).toBeNull();
+    expect(nearestSatellite({ ...frame(rows), camera: null }, hiddenPoint, m, GLOBE)).toBeNull();
+    const table = projectFrame({ ...frame(rows), camera: { ...camera, lng: 60 } }, m, GLOBE);
+    expect(Number.isNaN(table[0]!)).toBe(true);
+    // Same camera: the worker's filter already applied, so the row is projected without a re-test.
+    expect(Number.isNaN(projectFrame({ ...frame(rows), camera: { ...camera } }, m, GLOBE)[0]!)).toBe(false);
+    expect(nearestInTable(new Float32Array([Number.NaN, Number.NaN, Number.NaN, Number.NaN]), 1, { x: 0, y: 0 })).toBeNull();
   });
 });

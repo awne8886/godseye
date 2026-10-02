@@ -9,10 +9,13 @@
  * High-Definition Views from the International Space Station (Official NASA Stream)" — oEmbed
  * refuses non-embeddable videos, so embedding is allowed. The channel `/live` page could not be read
  * from the build sandbox (Google bot wall), so the panel always offers the YouTube link-out too.
+ * Round 8: the player shows only after the IFrame Player API answers (`usePlayerState`), and the
+ * panel header carries a state chip (`spaceChip`).
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Crosshair, ExternalLink, Radio } from 'lucide-react';
+import { usePanelChip, type ChipTone } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
 import { useSelectionStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
@@ -67,13 +70,101 @@ export function issBadge(state: FreshnessState, positionAt: number | null, now: 
 /** How long the embed may take before the panel says it did not load (the link-out stays). */
 export const PLAYER_TIMEOUT_MS = 15_000;
 
-/** The host frame (InstrumentFrame / phone sheet) owns the title and the close button. */
-export function SpacePanel(_props: PanelProps) {
-  const [player, setPlayer] = useState<'loading' | 'ready' | 'failed'>('loading');
+/** The embed's origin: the only origin whose player messages count. */
+export const YOUTUBE_EMBED_ORIGIN = 'https://www.youtube-nocookie.com';
+/** How often the panel repeats the IFrame Player API "listening" handshake until the player answers. */
+export const PLAYER_HANDSHAKE_MS = 250;
+/**
+ * Player API events that only a loaded player sends. Checked against the embed client on
+ * 2026-10-02: on a "listening" message it answers initialDelivery + onReady (alreadyInitialized
+ * to a repeated one), JSON strings with channel "widget", posted to the sender's origin.
+ */
+const PLAYER_READY_EVENTS: ReadonlySet<string> = new Set(['onReady', 'initialDelivery', 'infoDelivery', 'alreadyInitialized']);
+/** Larger player messages are not parsed (the ones we read are a few kB). */
+const MAX_PLAYER_MESSAGE = 64 * 1024;
+
+export type PlayerState = 'loading' | 'ready' | 'failed';
+
+/**
+ * True when `data` is a YouTube IFrame Player API message from a working player (onReady,
+ * initialDelivery or infoDelivery). Only the `event` name is read; nothing is rendered from it.
+ */
+export function isPlayerReadyMessage(data: unknown): boolean {
+  let msg: unknown = data;
+  if (typeof data === 'string') {
+    if (data.length > MAX_PLAYER_MESSAGE) return false;
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return false;
+    }
+  }
+  if (!msg || typeof msg !== 'object') return false;
+  const event = (msg as { event?: unknown }).event;
+  return typeof event === 'string' && PLAYER_READY_EVENTS.has(event);
+}
+
+/**
+ * The panel's header chip (§7): the ISS readout's state (COMPUTED, never LIVE: wheretheiss.at
+ * propagates a TLE), SOURCE OFFLINE when /api/iss fails (also while an older answer is still
+ * shown), CONNECTING until the first answer. The tooltip adds the NASA stream's state.
+ */
+export function spaceChip(
+  iss: { badge: { label: string } | null; state: FreshnessState; pending: boolean; failed: boolean; lastGoodAt: string | null },
+  player: PlayerState,
+): { text: string; tone: ChipTone; title: string } {
+  const stream = player === 'ready' ? 'NASA stream playing' : player === 'loading' ? 'NASA stream connecting' : 'NASA stream did not load here';
+  if (iss.failed) {
+    const last = iss.lastGoodAt ? `; last good ${iss.lastGoodAt.slice(11, 19)} UTC` : '';
+    return { text: 'SOURCE OFFLINE', tone: 'error', title: `ISS position: wheretheiss.at did not answer${last}. ${stream}.` };
+  }
+  if (iss.badge) {
+    const tone: ChipTone = iss.state === 'live' ? 'live' : iss.state === 'offline' ? 'error' : 'warn';
+    return { text: iss.badge.label.toUpperCase(), tone, title: `ISS position computed (SGP4) by wheretheiss.at from TLE elements, not observed. ${stream}.` };
+  }
+  if (iss.pending) return { text: 'CONNECTING', tone: 'busy', title: `Acquiring the ISS position. ${stream}.` };
+  return { text: 'SOURCE OFFLINE', tone: 'error', title: `ISS position: wheretheiss.at did not answer. ${stream}.` };
+}
+
+/**
+ * Whether the NASA embed really plays. An iframe `load` event proves nothing: Chrome fires it for
+ * its own network-error page too (a blocking network or filter). The panel therefore uses the
+ * YouTube IFrame Player API handshake (`enablejsapi=1` + `origin`): after each load it posts the
+ * API's "listening" message to the frame — addressed to the YouTube origin, so an error page never
+ * receives it — and the player counts as ready only when the YouTube origin, from this very frame,
+ * answers with onReady / initialDelivery / infoDelivery. No answer within PLAYER_TIMEOUT_MS = failed.
+ */
+function usePlayerState(frameRef: RefObject<HTMLIFrameElement | null>): { player: PlayerState; onLoad: () => void } {
+  const [player, setPlayer] = useState<PlayerState>('loading');
+  const [loads, setLoads] = useState(0);
   useEffect(() => {
     const t = setTimeout(() => setPlayer((p) => (p === 'loading' ? 'failed' : p)), PLAYER_TIMEOUT_MS);
     return () => clearTimeout(t);
   }, []);
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      const win = frameRef.current?.contentWindow;
+      if (e.origin !== YOUTUBE_EMBED_ORIGIN || !win || e.source !== win) return;
+      if (isPlayerReadyMessage(e.data)) setPlayer('ready');
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [frameRef]);
+  useEffect(() => {
+    if (!loads || player !== 'loading') return;
+    const listening = JSON.stringify({ event: 'listening', id: 1, channel: 'widget' });
+    const send = () => frameRef.current?.contentWindow?.postMessage(listening, YOUTUBE_EMBED_ORIGIN);
+    send();
+    const t = setInterval(send, PLAYER_HANDSHAKE_MS);
+    return () => clearInterval(t);
+  }, [loads, player, frameRef]);
+  return { player, onLoad: () => setLoads((n) => n + 1) };
+}
+
+/** The host frame (InstrumentFrame / phone sheet) owns the title and the close button. */
+export function SpacePanel(_props: PanelProps) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const { player, onLoad } = usePlayerState(frameRef);
   const autoplay = useUiStore((s) => s.settings.previewAutoplay);
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
   const setLayer = useUiStore((s) => s.setLayer);
@@ -89,8 +180,11 @@ export function SpacePanel(_props: PanelProps) {
   const state = d ? entityFreshness({ kind: 'live', at: positionAt, observationCadenceMs: 60_000, feedState: d.meta.state, now }) : 'offline';
   const badge = d ? issBadge(state, positionAt, now) : null;
   const issRecord = useMemo(() => recordFromResponse(sats.data, ISS_NORAD_ID), [sats.data]);
+  const chip = spaceChip({ badge, state, pending: iss.isPending, failed: iss.isError, lastGoodAt: offline?.meta?.lastGoodAt ?? d?.meta.lastGoodAt ?? null }, player);
+  usePanelChip(chip.text, chip.tone, chip.title);
 
-  const embed = `https://www.youtube-nocookie.com/embed/${NASA_ISS_VIDEO_ID}?${new URLSearchParams({ autoplay: autoplay ? '1' : '0', mute: '1', playsinline: '1', rel: '0' })}`;
+  // enablejsapi + origin: the player answers the panel's handshake (see usePlayerState).
+  const embed = `${YOUTUBE_EMBED_ORIGIN}/embed/${NASA_ISS_VIDEO_ID}?${new URLSearchParams({ autoplay: autoplay ? '1' : '0', mute: '1', playsinline: '1', rel: '0', enablejsapi: '1', origin: window.location.origin })}`;
 
   return (
     // The host's panel frame supplies the one header (SPACE + state chip + close); this body adds a
@@ -110,13 +204,14 @@ export function SpacePanel(_props: PanelProps) {
         data-state={player}
       >
         <iframe
+          ref={frameRef}
           src={embed}
           title="Live High-Definition Views from the International Space Station (Official NASA Stream)"
           allow="autoplay; encrypted-media; picture-in-picture"
           referrerPolicy="strict-origin-when-cross-origin"
           allowFullScreen
           tabIndex={player === 'ready' ? undefined : -1}
-          onLoad={() => setPlayer('ready')}
+          onLoad={onLoad}
           className="absolute inset-0 h-full w-full border-0"
         />
       </div>
@@ -171,8 +266,8 @@ export function SpacePanel(_props: PanelProps) {
           </>
         ) : (
           <p className="font-sans text-[12px] text-[var(--text-secondary)]">
-            {offline
-              ? `SOURCE OFFLINE — wheretheiss.at did not answer${offline.meta?.lastGoodAt ? `; last good ${offline.meta.lastGoodAt.slice(11, 19)} UTC` : ''}.`
+            {iss.isError
+              ? `SOURCE OFFLINE — wheretheiss.at did not answer${offline?.meta?.lastGoodAt ? `; last good ${offline.meta.lastGoodAt.slice(11, 19)} UTC` : ''}.`
               : 'Acquiring ISS position…'}
           </p>
         )}

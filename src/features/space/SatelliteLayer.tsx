@@ -21,7 +21,7 @@ import { CATEGORY_TOKEN, LAYER_CATEGORY, SAT_CATEGORIES } from './lib/catalog';
 import { ISS_NORAD_ID, displayAltM } from './lib/orbit-math';
 import type { WorkerIn, WorkerOut } from './lib/propagator';
 import type { BatchResult } from './lib/propagate-batch';
-import { hitTestSatellites, latestPosition } from './client/pick';
+import { SatelliteScreenCache, hitTestSatellites, latestPosition } from './client/pick';
 import { registerDeckPick, registerHitTester, type DeckPickInfo } from '@/lib/map/picking';
 import { cameraFromMap, getFarSideCamera, isFacing } from '@/lib/map/far-side';
 import { catalogue, fetchOrbit, indexOfId, orbitQueryKey, recordAt, selectionDataFor, setCatalogue, useSpaceStore, type SatelliteSelectionData } from './client/data';
@@ -333,17 +333,29 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
   }, [setFrame, updateStatus]);
 
   // CPU hit-test on the newest frame (reliable on a moving marker and where GPU picking is
-  // unavailable). Satellites behind the globe for the CURRENT camera are never hit.
-  useEffect(
-    () =>
-      registerHitTester('space', (point, m) =>
-        hitTestSatellites(latestFrame.current, point, m, { globe: globeRef.current, camera: globeRef.current ? (getFarSideCamera() ?? cameraFromMap(m)) : null }, (catIndex, lngLat) => {
+  // unavailable). Satellites behind the globe for the CURRENT camera are never hit. The host
+  // runs it on every pointer-move frame: the screen cache projects the frame once per (frame,
+  // camera) and every other hover is a scan (verification round 8: 33 ms → a scan per hover).
+  useEffect(() => {
+    const screen = new SatelliteScreenCache();
+    const off = registerHitTester('space', (point, m) =>
+      hitTestSatellites(
+        latestFrame.current,
+        point,
+        m,
+        { globe: globeRef.current, camera: globeRef.current ? (getFarSideCamera() ?? cameraFromMap(m)) : null },
+        (catIndex, lngLat) => {
           const s = selectionFor(catIndex, lngLat, latestFrame.current?.at ?? Date.now(), activeRef.current);
           return s ? { layer: s.layer ?? 'satellites', selection: s } : null;
-        }),
+        },
+        screen,
       ),
-    [],
-  );
+    );
+    return () => {
+      off();
+      screen.clear();
+    };
+  }, []);
 
   // GPU pick → selection (the map's click router calls it for each 'space-satellites-<category>'
   // layer). The picked `drawIndex` belongs to the frame that layer instance drew; the card opens at the satellite's position in
