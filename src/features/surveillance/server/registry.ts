@@ -406,7 +406,8 @@ export const NOT_WIRED_SOURCES: readonly { id: string; operator: string; region:
     operator: 'Windy.com Webcams',
     region: 'Global',
     country: '—',
-    reason: 'Windy Webcams API v3 requires a key (WINDY_WEBCAMS_KEY); not configured, and frames outside the keyed API are excluded.',
+    reason:
+      'Windy Webcams API v3 requires a key (x-windy-api-key header; 403 "Missing Header" without one). The keyed API is not implemented yet, so Windy is not wired and setting a key changes nothing. Frames outside the keyed API are excluded.',
     probedAt: '2026-10-02',
   },
 ];
