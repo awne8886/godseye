@@ -2,7 +2,7 @@
  * visual-qa round 5 MAJOR-1 (BLOCKING): a MapLibre 6.11 Map has no `transform`, so the shared
  * `cameraFromMap()` fell back to the map centre and an unpitched altitude; on a tilted globe the
  * hazards layers drew occluded points and hid visible ones. `hazardsCamera()` derives the pitched
- * camera from public API. Reference values: MapLibre's own `_camera.transform.getCameraLngLat()` /
+ * camera from public API (now via the shared helper, which carries the fix). Reference values: MapLibre's own `_camera.transform.getCameraLngLat()` /
  * `getCameraAltitude()` on the live app at `?proj=globe&c=-4.27,-50.76,3,60,0` after a nudge
  * (round-5 probe, 2026-10-01): centre (-51.286, -3.926), z3, pitch 60, bearing 0, canvas 1000 px
  * high → camera (-51.29, -46.71) at 12,268,631 m; the old fallback answered the centre at 14,618,817 m.
@@ -33,16 +33,13 @@ describe('hazardsCamera (no map.transform, as on MapLibre 6.11)', () => {
     expect(Math.abs(cam.lng - -51.29)).toBeLessThan(0.1);
     expect(Math.abs(cam.lat - -46.71)).toBeLessThan(0.1);
     expect(Math.abs(cam.altitude - 12_268_631) / 12_268_631).toBeLessThan(0.001);
-    // The shared helper (lead-owned) still answers the centre here: that was the bug.
-    const old = cameraFromMap(map);
-    expect(old.lat).toBeCloseTo(-3.926, 3);
-    expect(Math.abs(old.altitude - 14_618_817)).toBeLessThan(15_000);
   });
 
   it('pitch 60 changes which points face the camera (points behind the old horizon, and vice versa)', () => {
     const map = liveLikeMap(PROBE);
     const right = hazardsCamera(map);
-    const wrong = cameraFromMap(map);
+    // The old fallback: the map centre at the unpitched altitude.
+    const wrong = { lng: PROBE.lng, lat: PROBE.lat, altitude: altitudeForZoom(PROBE.lat, PROBE.zoom, PROBE.height) };
     const pts: [number, number][] = [];
     for (let lat = -88; lat <= 88; lat += 4) for (let lng = -178; lng < 180; lng += 4) pts.push([lng, lat]);
     const drawnWrongly = pts.filter((p) => isFacing(p, wrong) && !isFacing(p, right)).length;
