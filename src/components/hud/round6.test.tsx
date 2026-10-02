@@ -197,3 +197,15 @@ describe('FAA airways map token', () => {
     expect(v('--map-route-airways')).not.toBe(v('--map-route-filed'));
   });
 });
+
+describe('Style Studio exposes every route class', () => {
+  it('FLIGHT PATHS lists each --map-route-* token in MAP_TOKENS (airways included once mirrored)', async () => {
+    const { MAP_TOKENS } = await import('@/lib/tokens');
+    const { MAP_SECTIONS } = await import('./panels/StyleStudioPanel');
+    const flight = MAP_SECTIONS.find((s) => s.title === 'FLIGHT PATHS');
+    const routes = Object.keys(MAP_TOKENS).filter((k) => k.startsWith('--map-route-'));
+    expect(routes.length).toBeGreaterThanOrEqual(2);
+    expect(flight?.keys).toEqual(expect.arrayContaining(routes));
+    expect(flight?.keys).toContain('--map-airport-watch');
+  });
+});

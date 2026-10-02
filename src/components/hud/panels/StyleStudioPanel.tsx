@@ -20,13 +20,16 @@ import {
   type ColourKey, type KnobKey, type PresetId, type StudioSettings,
 } from '../style-engine';
 
-const MAP_SECTIONS: { title: string; keys: MapToken[] }[] = [
+/** Every `--map-route-*` class (planned, filed, airways, ...) — derived so a new route token can never be missing here. */
+const ROUTE_TOKENS = (Object.keys(MAP_TOKENS) as MapToken[]).filter((k) => k.startsWith('--map-route-'));
+
+export const MAP_SECTIONS: { title: string; keys: MapToken[] }[] = [
   { title: 'AIRCRAFT', keys: ['--map-flight-civil', '--map-flight-private', '--map-flight-gov', '--map-flight-military', '--map-flight-unknown'] },
   { title: 'SATELLITES', keys: ['--map-sat-comms', '--map-sat-military', '--map-sat-navigation', '--map-sat-earth', '--map-sat-science', '--map-sat-other'] },
   { title: 'CAMERAS · NEWS', keys: ['--map-cctv', '--map-news'] },
   { title: 'HAZARDS', keys: ['--map-seismic', '--map-fire', '--map-weather', '--map-volcano', '--map-air-quality'] },
   { title: 'MARITIME · NETWORK', keys: ['--map-port', '--map-ship-cargo', '--map-cable', '--map-malware', '--map-outage', '--map-gps-jam'] },
-  { title: 'FLIGHT PATHS', keys: ['--map-route-planned', '--map-route-filed', '--map-airport-watch'] },
+  { title: 'FLIGHT PATHS', keys: [...ROUTE_TOKENS, '--map-airport-watch'] },
 ];
 
 const mapLabel = (k: string) => k.replace('--map-', '').replace(/-/g, ' ').toUpperCase();
