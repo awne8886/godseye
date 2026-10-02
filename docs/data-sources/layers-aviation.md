@@ -130,3 +130,18 @@ without a position (DAL3069 KATL-KBNA-KATL) is withheld as "leg unknown", never 
 adsb.lol's `now` ran up to ~1 s ahead of this server's clock (R2: `meta.observedAt` 23–1067 ms after
 `fetchedAt`): positions are now dated from `min(now, receipt)` rounded down, so no observation is
 reported after the fetch that carried it.
+
+## Round 6 (2026-10-02): flight-route `basis: 'observed'` from the flown track
+
+| URL | Status | Latency | CORS | Notes |
+|---|---|---|---|---|
+| `https://adsb.lol/data/traces/c4/trace_full_4cafc4.json` | 200 (gzip, `application/json`) | 0.81 s | none (no `Access-Control-Allow-Origin`; server-side only) | keyless, ODbL; 125 KB; same row shape as above (`[Δs, lat, lon, alt_ft|'ground', gs, track, flags, …]`); first row `"ground"` at EIDW |
+| `https://globe.adsb.lol/data/traces/fc/trace_recent_4cafc4.json` | 302 → html | 0.69 s | none | the globe host redirects; only `adsb.lol/data/traces/` is used |
+
+No new upstream: `/api/flight-route` reads the trace through `/api/aircraft`'s cached lookup. The
+departure is now the EARLIEST low run (on the ground, or < 3,000 ft above the nearer field) of the
+current leg (after a turnaround gap, the last ground run, or a gap that is low on both sides),
+never the latest (a go-around or step-down that climbs back above 3,000 ft AGL near the
+destination read as a "take-off from the destination"). A take-off from the origin on the
+corridor, with the address airborne under that callsign in the flights snapshot, is
+`basis: 'observed'`, `onCorridor: true`, with progress.

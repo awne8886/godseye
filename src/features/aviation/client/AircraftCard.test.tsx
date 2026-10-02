@@ -122,6 +122,14 @@ describe('route section honesty (R2 round 4 BLOCKING-1, MINOR-6)', () => {
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
+  it('labels a forward leg corroborated by a take-off from its origin as observed, with the reason', async () => {
+    await renderWith(route({ origin: EIDW, destination: EGPH, basis: 'observed', onCorridor: true, status: 'airborne', progress: 0.3, distanceKm: 350, routeCheck: 'observed departure matches the listed origin DUB' }));
+    expect((await screen.findByTestId('route-leg', {}, { timeout: 5_000 })).textContent).toMatch(/DUB.*EDI/);
+    const card = screen.getByTestId('aircraft-card').textContent!;
+    expect(card).toContain('OBSERVED DEPARTURE · ON SCHEDULED CORRIDOR');
+    expect(card).toContain('observed departure matches the listed origin DUB');
+  });
+
   it('labels a corroborated reverse leg as observed', async () => {
     await renderWith(route({ origin: EGPH, destination: EIDW, basis: 'observed', status: 'airborne', progress: 0.5, distanceKm: 350, reversed: true, routeCheck: 'observed departure EDI and course toward DUB' }));
     expect((await screen.findByTestId('route-leg', {}, { timeout: 5_000 })).textContent).toMatch(/EDI.*DUB/);

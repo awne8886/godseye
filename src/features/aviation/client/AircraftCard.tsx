@@ -108,9 +108,9 @@ export function cardProgress(
 }
 
 /** The line under a named leg: how it was established. */
-export function routeBasisLabel(route: Pick<FlightRoute, 'basis' | 'reversed'>): string {
+export function routeBasisLabel(route: Pick<FlightRoute, 'basis' | 'reversed' | 'onCorridor'>): string {
   if (route.reversed) return 'OBSERVED DEPARTURE · REVERSE OF LISTED ROUTE';
-  if (route.basis === 'observed') return 'OBSERVED DEPARTURE · NOT ON COURSE · NO PROGRESS';
+  if (route.basis === 'observed') return route.onCorridor ? 'OBSERVED DEPARTURE · ON SCHEDULED CORRIDOR' : 'OBSERVED DEPARTURE · NOT ON COURSE · NO PROGRESS';
   return route.basis === 'corridor' ? 'ON SCHEDULED CORRIDOR' : 'SCHEDULE (NOT CONFIRMED)';
 }
 

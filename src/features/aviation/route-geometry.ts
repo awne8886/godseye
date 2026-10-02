@@ -162,3 +162,131 @@ export interface TrackSample {
   altFt: number | null;
   onGround: boolean;
 }
+
+/** A leg end: an airport with an optional elevation (ft AMSL) and codes for the stated reason. */
+export interface LegEnd extends AirportPoint {
+  name?: string;
+  elevationFt?: number | null;
+}
+
+/** Low: on the ground, or < 3,000 ft above the elevation of the nearer leg end (AGL, not MSL). */
+export function isLowPoint(p: TrackSample, o: LegEnd, d: LegEnd): boolean {
+  if (p.onGround) return true;
+  if (p.altFt === null) return false;
+  const here: LngLatTuple = [p.lng, p.lat];
+  const ground = (distanceKm(here, ll(o)) <= distanceKm(here, ll(d)) ? o.elevationFt : d.elevationFt) ?? 0;
+  return p.altFt - ground < LOW_AGL_FT;
+}
+
+/** A track sample with its time and observed track, when the trace has them. */
+export interface TimedSample extends TrackSample {
+  t?: string;
+  trackDeg?: number | null;
+}
+
+/** A coverage gap at least this long … */
+export const LEG_GAP_MS = 10 * 60_000;
+/** … across which the observed track turned by more than this separates two legs (the FLIGHT view's `sinceTurnaroundGap`). */
+export const TURNAROUND_DEG = 120;
+
+function trackNear(track: readonly TimedSample[], i: number, step: 1 | -1): number | null {
+  for (let k = 0, j = i; k < 10 && j >= 0 && j < track.length; k++, j += step) {
+    const t = track[j]!.trackDeg;
+    if (t != null) return t;
+  }
+  return null;
+}
+
+const gapMs = (a: TimedSample, b: TimedSample): number => (a.t && b.t ? Date.parse(b.t) - Date.parse(a.t) : NaN);
+
+/**
+ * The track after its LAST coverage gap of >= 10 min across which the course reversed by more than
+ * 120° (the aircraft landed and turned around below coverage: what came before is an earlier leg);
+ * the whole track when there is none. Same thresholds as the FLIGHT view's `sinceTurnaroundGap`.
+ */
+export function sinceTurnaround<T extends TimedSample>(track: readonly T[]): readonly T[] {
+  for (let i = track.length - 1; i > 0; i--) {
+    if (!(gapMs(track[i - 1]!, track[i]!) >= LEG_GAP_MS)) continue;
+    const before = trackNear(track, i - 1, -1);
+    const after = trackNear(track, i, 1);
+    if (before !== null && after !== null && angleDiff(before, after) > TURNAROUND_DEG) return track.slice(i);
+  }
+  return track;
+}
+
+/**
+ * The current leg of a flown track (oldest first) for `observedDeparture`: after the last
+ * turnaround gap (`sinceTurnaround`); from the start of the low run around the last ground sample
+ * (a landing and take-off seen on the ground); after the last coverage gap of >= 10 min that is low
+ * on both sides (a landing and take-off below coverage).
+ */
+export function departureLeg<T extends TimedSample>(track: readonly T[], o: LegEnd, d: LegEnd): readonly T[] {
+  const leg = sinceTurnaround(track);
+  const low = (p: T) => isLowPoint(p, o, d);
+  let start = 0;
+  for (let i = leg.length - 1; i >= 0; i--) {
+    if (!leg[i]!.onGround) continue;
+    start = i;
+    while (start > 0 && low(leg[start - 1]!)) start--;
+    break;
+  }
+  for (let i = leg.length - 1; i > start; i--) {
+    if (gapMs(leg[i - 1]!, leg[i]!) >= LEG_GAP_MS && low(leg[i - 1]!) && low(leg[i]!)) {
+      start = i;
+      break;
+    }
+  }
+  return start === 0 ? leg : leg.slice(start);
+}
+
+/** Where the observed departure of the current leg was: within 60 km of the leg's origin, its destination, or elsewhere. */
+export type DepartureEnd = 'o' | 'd' | 'elsewhere';
+
+export interface ObservedDeparture {
+  end: DepartureEnd;
+  lat: number;
+  lng: number;
+}
+
+function endOf(p: RoutePoint, o: LegEnd, d: LegEnd): DepartureEnd {
+  const here: LngLatTuple = [p.lng, p.lat];
+  const kmO = distanceKm(here, ll(o));
+  const kmD = distanceKm(here, ll(d));
+  if (kmO <= CONFLICT_END_KM && kmO <= kmD) return 'o';
+  if (kmD <= CONFLICT_END_KM) return 'd';
+  return kmO <= CONFLICT_END_KM ? 'o' : 'elsewhere';
+}
+
+/**
+ * The observed departure of the current leg (`departureLeg`) and where it was, or null when none
+ * was observed. It is the EARLIEST low run of the leg (on the ground, or < 3,000 ft above the
+ * nearer field's elevation), never the latest: the latest low run is the approach (a step-down or
+ * go-around that climbs back above 3,000 ft AGL is not a take-off from the destination).
+ *  - The run must open the leg: a leg whose first sample is already high began out of coverage, so
+ *    its first low run is an approach or a low pass, not the take-off.
+ *  - A run that never climbs out counts only when it holds a ground sample (seen on the ground,
+ *    now climbing out); first seen low and still low could be either end of a flight.
+ *  - Null when the track ends on the ground (not taken off yet).
+ * The place is the run's last ground sample (the take-off roll), else its lowest airborne sample.
+ * Pure; the FLIGHT view's rule (src/features/flight-paths/server/flight.ts `legOfTrack`: a first
+ * point low near O is the departure from O, low elsewhere is a departure elsewhere).
+ */
+export function observedDepartureAt(track: readonly TimedSample[], o: LegEnd, d: LegEnd): ObservedDeparture | null {
+  const leg = departureLeg(track, o, d);
+  const first = leg[0];
+  if (!first || leg[leg.length - 1]!.onGround || !isLowPoint(first, o, d)) return null;
+  let e = 0;
+  while (e + 1 < leg.length && isLowPoint(leg[e + 1]!, o, d)) e++;
+  const run = leg.slice(0, e + 1);
+  let at: TimedSample | null = null;
+  for (const p of run) if (p.onGround) at = p;
+  if (!at && e === leg.length - 1) return null;
+  if (!at) for (const p of run) if (p.altFt !== null && (at === null || p.altFt < (at.altFt ?? Infinity))) at = p;
+  const place = at ?? first;
+  return { end: endOf(place, o, d), lat: place.lat, lng: place.lng };
+}
+
+/** `observedDepartureAt` reduced to where: 'o' | 'd' | 'elsewhere', or null when no departure was observed. */
+export function observedDeparture(track: readonly TimedSample[], o: LegEnd, d: LegEnd): DepartureEnd | null {
+  return observedDepartureAt(track, o, d)?.end ?? null;
+}
