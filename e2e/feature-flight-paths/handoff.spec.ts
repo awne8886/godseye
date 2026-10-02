@@ -18,7 +18,8 @@ async function palette(page: Page, text: string, option: RegExp): Promise<void> 
   await page.keyboard.press('Control+k');
   const dialog = page.getByRole('dialog', { name: 'Command palette' });
   await expect(dialog).toBeVisible();
-  await page.keyboard.type(text);
+  // Type into the palette's own input (a panel still loading must not take the keystrokes).
+  await dialog.getByPlaceholder(/Tools, layers, regions/).fill(text);
   await expect(dialog.getByRole('option', { name: option })).toBeVisible();
   await page.keyboard.press('Enter');
   await expect(dialog).toBeHidden();
@@ -50,6 +51,7 @@ test('FROM/TO follow a route planned after mount; PLOT keeps the new pair (SYD S
   const p = panel(page);
   await expect(p).toBeVisible({ timeout: 30_000 });
   await expect(p.getByLabel('FROM', { exact: true })).toHaveValue('LHR');
+  await expect(p.getByText('LHR → JFK', { exact: true })).toBeVisible({ timeout: 60_000 });
   await palette(page, 'SYD SCL', /Plan route SYD → SCL/);
   await expect(status(page)).toHaveAttribute('data-route', 'SYD-SCL');
   await expect(p.getByLabel('FROM', { exact: true })).toHaveValue('SYD');
