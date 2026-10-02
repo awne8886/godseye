@@ -512,7 +512,7 @@
   /* The compact timeline scrubber sits on the bottom nav (r10); the stacks ride above it. An open
      sheet or entity card covers the bottom, so the scrubber steps aside under it. */
   :root[data-timeline-strip]:not([data-sheet-occupied]):not([data-card-occupied]) {
-    --timeline-strip: 56px;
+    --timeline-strip: 58px; /* the 54 px bar + its 4 px gap (r11 m: 56 px let the credits overlap its top border) */
   }
   :root:is([data-sheet-occupied], [data-card-occupied]) .hud-timeline {
     display: none;
@@ -674,6 +674,11 @@
 }
 
 /* Timeline scrubber lanes: the part of the 24 h a feed does NOT hold is hatched (never drawn as data). */
+/* Lane counts in fixed columns (desktop strip): the column count depends on the strip width only, so
+   the strip keeps one height live and in replay (r11 m: '7/36' counts wrapped the header row). */
+.hud-timeline-counts {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
 .hud-timeline-lane {
   background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--text-muted) 45%, transparent) 0 2px, transparent 2px 5px);
 }

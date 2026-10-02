@@ -244,6 +244,15 @@ export default function DocsPage() {
                 Timestamps are ISO-8601 UTC.
               </li>
             </ul>
+            <p className="mt-4 max-w-3xl text-[13px] leading-relaxed text-fg-secondary" data-testid="docs-timeline">
+              The map&apos;s 24 h timeline (bottom strip) replays earthquakes, fires, alert pins and GDELT events at a past cursor,
+              using only each item&apos;s observed time from these feeds: nothing is interpolated, untimed items are left out, and time a
+              feed does not hold is greyed out. While replaying the HUD reads REPLAY hh:mm UTC, never LIVE, and the day/night
+              terminator follows the cursor. Keys with the slider focused: <kbd className="font-mono">←/→</kbd> 15 min,{' '}
+              <kbd className="font-mono">Shift+←/→</kbd> or <kbd className="font-mono">PgUp/PgDn</kbd> 1 h,{' '}
+              <kbd className="font-mono">Home</kbd> 24 h ago, <kbd className="font-mono">End</kbd> or <kbd className="font-mono">Esc</kbd>{' '}
+              live. The cursor is not kept in the URL, so a shared link always opens live.
+            </p>
           </section>
 
           {groups.map(([g, list]) => (

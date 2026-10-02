@@ -1,11 +1,13 @@
 'use client';
 /**
  * Day/night (registry `day_night`, REFERENCE): civil/nautical/astronomical/night twilight bands
- * computed in the geometry worker every 60 s, plus NASA GIBS Black Marble 2016 night lights
+ * computed in the geometry worker every 60 s (or at the 24 h timeline cursor while replaying, rounded to
+ * the minute so a drag does not run the worker per pixel; §9 item 2 terminator replay), plus NASA GIBS Black Marble 2016 night lights
  * clipped per pixel to the night side through the `godseye-night://` protocol (refreshed every
- * 5 min). Colours come from `--map-night` and follow theme changes in place. Owner: map-engine.
+ * 5 min, always at the current time). Colours come from `--map-night` and follow theme changes in place. Owner: map-engine.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useTimeCursor } from '@/components/hud/timeline';
 import { Layer, Source } from 'react-map-gl/maplibre';
 import { geometryClient } from '@/lib/map/geometry-client';
 import { TERMINATOR_REFRESH_MS, type TerminatorBands } from '@/lib/map/geometry-protocol';
@@ -17,6 +19,11 @@ import { useUiStore } from '@/lib/store';
 import { readCssColor } from '@/lib/tokens';
 
 const EMPTY: TerminatorBands = { type: 'FeatureCollection', features: [] };
+
+/** The instant the bands are drawn for: the replay cursor rounded to the refresh period, else now. */
+export function terminatorTime(cursor: number | null, now: number): number {
+  return cursor === null ? now : Math.round(cursor / TERMINATOR_REFRESH_MS) * TERMINATOR_REFRESH_MS;
+}
 
 function useTicker(periodMs: number): number {
   const [now, setNow] = useState(() => Date.now());
@@ -30,6 +37,7 @@ function useTicker(periodMs: number): number {
 export default function TerminatorLayer({ beforeId, visible }: { beforeId?: string; visible: boolean }) {
   const [bands, setBands] = useState<TerminatorBands>(EMPTY);
   const minute = useTicker(TERMINATOR_REFRESH_MS);
+  const at = terminatorTime(useTimeCursor(), minute);
   const theme = useUiStore((s) => s.theme);
   const ghost = useUiStore((s) => s.ghost);
   const styleVersion = useStyleVersion();
@@ -38,13 +46,13 @@ export default function TerminatorLayer({ beforeId, visible }: { beforeId?: stri
     if (!visible) return;
     let live = true;
     geometryClient()
-      .terminator(minute, 2)
+      .terminator(at, 2)
       .then((b) => live && setBands(b))
       .catch(() => undefined); // the previous (≤ 60 s old) bands stay on screen
     return () => {
       live = false;
     };
-  }, [minute, visible]);
+  }, [at, visible]);
 
   const night = useMemo(() => {
     const [r, g, b] = readCssColor('--map-night');

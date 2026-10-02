@@ -31,6 +31,14 @@ from the API, and weak security and licensing. The rules are enforced in code an
 - **One catalogue, no drift.** `src/lib/api-catalog.ts` generates `/docs`, `docs/API.md`, the Privacy
   page's list of third parties and the per-route rate limits; tests fail when they disagree.
 
+## 24 h timeline (REPLAY)
+
+With earthquakes, fires, alert pins or GDELT events on, a strip at the bottom of the map scrubs back up
+to 24 h. It replays only observed times from those feeds (nothing interpolated; untimed items are left out;
+time a feed does not hold is greyed out), the HUD reads **REPLAY hh:mm UTC** instead of LIVE, and the
+day/night terminator follows the cursor. With the slider focused: ←/→ 15 min, Shift+←/→ or PgUp/PgDn 1 h,
+Home = 24 h ago, End or Esc = live. The cursor is not kept in the URL, so shared links open live.
+
 ## Screenshots
 
 Captured from a production build with live keyless feeds (software WebGL; see
