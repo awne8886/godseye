@@ -6,6 +6,8 @@ import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { MAX_RESPONSE_BYTES } from '@/lib/respond';
 import { newMode, upstreamBody } from '@/features/flight-paths/__fixtures__/upstreams';
 import { resetWinds } from '@/features/flight-paths/server/winds';
+// Shaped from FlightAware's published AeroAPI v4 OpenAPI document (keyless probes answer 401).
+import aeroDocs from '@/features/flight-paths/__fixtures__/aeroapi-v4-docs-shaped.json';
 
 const mode = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof newMode> }));
 
@@ -79,6 +81,11 @@ describe('GET /api/route/plan', () => {
     expect(body.providers.awc_metar?.ok).toBe(true);
     expect(body.providers.openmeteo?.ok).toBe(true);
     expect(body.providers.fpdb?.skipped).toBe('not-configured');
+    expect(body.providers.aeroapi?.skipped).toBe('not-configured');
+    // Bundled FAA ADDS snapshot: airways near the US end of the route (no runtime ArcGIS call).
+    expect(body.providers.faa_adds?.ok).toBe(true);
+    expect(body.airways?.length).toBeGreaterThan(0);
+    expect(mode.current.calls.some((c) => c.includes('arcgis.com') || c.includes('flightaware.com'))).toBe(false);
     expect(body.providers.flights?.ok).toBe(false);
     // One multi-coordinate Open-Meteo request, then served from the 1 h grid cache.
     expect(mode.current.calls.filter((c) => c.includes('open-meteo'))).toHaveLength(1);
@@ -99,6 +106,21 @@ describe('GET /api/route/plan', () => {
       for (let i = 1; i < pts.length; i++) expect(Math.abs(pts[i]![0] - pts[i - 1]![0])).toBeLessThan(10);
       expect(body.greatCircle.antimeridianCrossings).toBe(1);
       expect(body.greatCircle.multiLineString.coordinates.length).toBe(2);
+    }
+  });
+
+  it('AeroAPI (keyed): a real filed route is listed first as FILED, the key never in a URL', async () => {
+    process.env.AEROAPI_KEY = 'test-key-not-real';
+    try {
+      mode.current.override.set('https://aeroapi.flightaware.com/aeroapi/airports/KDEN/flights/to/KORD?max_pages=1', aeroDocs.flights_to);
+      mode.current.override.set('https://aeroapi.flightaware.com/aeroapi/flights/*', aeroDocs.flight_route);
+      const body = RoutePlanResponse.parse(await (await call('?from=DEN&to=ORD')).json());
+      expect(body.providers.aeroapi?.ok).toBe(true);
+      expect(body.filedPlans?.[0]?.source).toBe('FlightAware AeroAPI');
+      expect(body.pathLabels).toContain('FILED');
+      expect(mode.current.calls.filter((c) => c.includes('flightaware.com')).every((c) => !c.includes('test-key-not-real'))).toBe(true);
+    } finally {
+      delete process.env.AEROAPI_KEY;
     }
   });
 

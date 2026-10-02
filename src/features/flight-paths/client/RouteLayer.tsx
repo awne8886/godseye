@@ -23,12 +23,15 @@
  * is the centre on screen. Client-only.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { Map as MapLibreMap } from 'maplibre-gl';
 import { useDeckLayers, useDeckLayerStore, useMapInstance, useMapInstanceStore } from '@/lib/layer-host';
 import { getFarSideCamera, isFacing } from '@/lib/map/far-side';
 import { styleParsed } from '@/lib/map/ready';
 import { useUiStore } from '@/lib/store';
 import type { LngLatTuple } from '@/lib/geo';
+import { aircraftSelection } from '@/features/aviation/client/select';
+import { useFlights } from '@/features/aviation/client/useFlights';
 import { useFlight, useLive, usePlan } from './api';
 import { fitState, getFitNotice, setFitNotice, useFitNotice } from './fit';
 import { frameArea, type FrameFit, intersects, labelOffsetCandidates, markBoxes, MARK_CLEAR_PX, pickLabelOffset, type Rect, solveFrame } from './framing';
@@ -211,6 +214,19 @@ export default function RouteLayer() {
   const plan = usePlan(route);
   const live = useLive(route, openPanel === 'paths' || !!route);
   const flight = useFlight(route ? null : ident);
+  // Route clicks on a live aircraft open aviation's AircraftCard with its feed record: the shared
+  // flights query (already running while the aviation layers are on) only while one is drawn.
+  const hasAircraft = (live.data?.aircraft ?? []).some((a) => a.basis === 'matched') || !!flight.data?.position;
+  useFlights(hasAircraft);
+  const queryClient = useQueryClient();
+  // Read at click time from the shared query cache (the layers are not rebuilt on every flights poll).
+  const aircraftSelect = useMemo(
+    () => (hex: string) => {
+      const r = queryClient.getQueryData<ReturnType<typeof useFlights>['data']>(['flights'])?.byId.get(hex);
+      return r ? aircraftSelection(r, [r.lng, r.lat]) : null;
+    },
+    [queryClient],
+  );
 
   // Each new route/flight (deep link included) opens PATHS. Latched per value, not per mount, so a
   // value restored from the URL after the first render still opens it (R4-B2); closing the panel
@@ -481,8 +497,8 @@ export default function RouteLayer() {
     const globe = projection === 'globe';
     // The real screen at this camera (`view` changes at each camera stop): chips keep clear of the chrome.
     const screen: ScreenSpace | undefined = map && typeof window !== 'undefined' ? { project: viewportProjector(map as MapLibreMap, globe), obstacles: chrome, width: window.innerWidth, height: window.innerHeight } : undefined;
-    return buildRouteLayers({ plan: p, live: l, flight: f, globe, center: view.center, zoom: view.zoom, theme: themeTick, screen }, drawnFrame);
-  }, [drawnFrame, p, l, f, projection, view, themeTick, map, chrome]);
+    return buildRouteLayers({ plan: p, live: l, flight: f, globe, center: view.center, zoom: view.zoom, theme: themeTick, screen, aircraftSelect }, drawnFrame);
+  }, [drawnFrame, p, l, f, projection, view, themeTick, map, chrome, aircraftSelect]);
 
   // Pulse + comet: a slow clock while something is drawn, paused in hidden tabs and under reduced
   // motion. The phase never enters React state: each tick builds the two small layers and hands

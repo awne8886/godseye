@@ -155,11 +155,17 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
       )}
       {open && results.length > 0 && (
         <ul id={`${id}-list`} role="listbox" className="glass-panel absolute right-0 left-0 z-10 mt-1 max-h-56 overflow-y-auto p-1">
+          {search.data?.place && (
+            <li role="presentation" data-testid="geocoded-place" className="hud-micro px-2 py-1 text-[var(--text-secondary)]">
+              {placeHeading(search.data.place)}
+            </li>
+          )}
           {results.slice(0, 8).map((r) => (
             <li key={r.ident} role="option" aria-selected={false}>
               <button type="button" onClick={() => pick(codeOf(r))} className="flex w-full items-baseline gap-2 px-2 py-1 text-left hover:bg-[var(--glass-2)]">
                 <span className="hud-text w-10 text-[11px] text-[var(--gold-light)]">{codeOf(r)}</span>
                 <span className="flex-1 truncate font-sans text-[12px] text-[var(--text-primary)]">{r.name}</span>
+                {typeof r.distanceKm === 'number' && <span className="hud-micro tabular-nums text-[var(--text-secondary)]">{Math.round(r.distanceKm)} KM</span>}
                 <span className="hud-micro text-[var(--text-muted)]">{r.isoCountry}</span>
               </button>
             </li>
@@ -168,6 +174,11 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
       )}
     </div>
   );
+}
+
+/** "Nearest airports to Atlantis, Bahamas (photon)" — the geocoded place a free-text search fell back to (R4 m7). */
+export function placeHeading(p: { name: string; country: string | null; source: string }): string {
+  return `Nearest airports to ${[p.name, p.country].filter(Boolean).join(', ')} (${p.source})`;
 }
 
 function Legend({ labels }: { labels: Plan['pathLabels'] }) {

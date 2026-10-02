@@ -38,6 +38,17 @@ export const AirportMatch = Airport.extend({
    * how the search tells a city's main airport from a smaller one serving the same place.
    */
   services: z.number().int().nonnegative().optional(),
+  /** Geocoded fallback (matchedBy photon/nominatim from a place name): distance (km) from the geocoded place. */
+  distanceKm: z.number().nonnegative().optional(),
+});
+
+/** The place a free-text query was geocoded to when no airport matched it (R4 m7: disclosed, never silent). */
+export const GeocodedPlace = z.object({
+  name: z.string(),
+  country: z.string().nullable(),
+  lat: Lat,
+  lng: Lng,
+  source: z.enum(['photon', 'nominatim']),
 });
 
 /** GET /api/airports/search?q=&all=0|1 */
@@ -46,6 +57,8 @@ export const AirportSearchResponse = z.object({
   results: z.array(AirportMatch),
   /** Metro group when the query names a multi-airport city (London → LHR/LGW/STN/LTN/LCY/SEN). */
   metro: z.object({ name: z.string(), codes: z.array(z.string()) }).nullable(),
+  /** Set when the results are the nearest scheduled airports to a geocoded place (Photon/Nominatim fallback). */
+  place: GeocodedPlace.nullable().optional(),
   providers: Providers,
   timestamp: IsoTime,
 });

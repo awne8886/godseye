@@ -32,6 +32,8 @@ export interface PlaceSuggestion {
   named?: boolean;
   /** One of several airports the typed name may mean ("Jackson", "goa"): offered side by side. */
   ambiguous?: boolean;
+  /** R4 m7: the airport is the nearest to a geocoded place, not a name match — disclosed with the place and distance. */
+  near?: { place: string; source: 'photon' | 'nominatim'; distanceKm: number };
 }
 
 /** A suggestion attached to one end of a draft. */
@@ -87,7 +89,12 @@ export function pendingSides(d: Pick<PathsDraft, 'from' | 'to' | 'unresolved' | 
   return out;
 }
 
-const option = (s: PlaceSuggestion) => `${s.code} (${s.label})`;
+const option = (s: PlaceSuggestion) => `${s.code} (${s.label}${s.near ? `, ${Math.round(s.near.distanceKm)} km` : ''})`;
+
+/** "Nearest airport to Atlantis, Bahamas (photon)" — how a geocoded suggestion was found. */
+export function nearText(n: NonNullable<PlaceSuggestion['near']>): string {
+  return `Nearest airport to ${n.place} (${n.source}):`;
+}
 
 /** "Did you mean ACY (Atlantic City)?"; several: "Did you mean JAN (…), JAC (…) or ATL (…)?" */
 export function suggestionText(s: PlaceSuggestion | readonly PlaceSuggestion[]): string {
@@ -108,7 +115,7 @@ export function draftMessage(d: Pick<PathsDraft, 'unresolved' | 'failed' | 'same
     if (!list?.length) continue;
     const first = list[0]!;
     if (first.ambiguous) parts.push(`"${name}" names more than one airport. ${suggestionText(list)}`);
-    else parts.push(`${first.named ? `No main airport found for "${name}".` : `No airport named "${name}".`} ${suggestionText(first)}`);
+    else parts.push(`${first.named ? `No main airport found for "${name}".` : `No airport named "${name}".`} ${first.near ? `${nearText(first.near)} ` : ''}${suggestionText(first)}`);
   }
   const bare = d.unresolved.filter((n) => !suggested.has(n));
   if (bare.length) parts.push(`No airport found for ${q(bare)} — type a city, airport name or code and pick from the list.`);
@@ -138,6 +145,7 @@ interface SearchHit {
   country?: string | null;
   region?: string | null;
   services?: number;
+  distanceKm?: number;
 }
 
 /** Case-, accent- and punctuation-folded text ("St. Petersburg" ≡ "st petersburg", "Zürich" ≡ "zurich"). */
@@ -212,7 +220,7 @@ export async function resolvePlace(name: string, fetchImpl: typeof fetch = fetch
   try {
     const r = await fetchImpl(`/api/airports/search?q=${encodeURIComponent(name)}&submit=1`);
     if (!r.ok) return r.status === 404 ? { kind: 'none' } : { kind: 'failed' };
-    const body = (await r.json()) as { results?: SearchHit[]; metro?: { codes: string[] } | null };
+    const body = (await r.json()) as { results?: SearchHit[]; metro?: { codes: string[] } | null; place?: { name: string; country: string | null; source: 'photon' | 'nominatim' } | null };
     const metro = body.metro?.codes?.[0];
     if (metro) return { kind: 'found', code: metro };
     const results = body.results ?? [];
@@ -244,7 +252,14 @@ export async function resolvePlace(name: string, fetchImpl: typeof fetch = fetch
     }
     if (main) return { kind: 'none', suggestion: suggestionOf(main, name, true) };
     const best = results[0];
-    return best ? { kind: 'none', suggestion: suggestionOf(best, name, false) } : { kind: 'none' };
+    if (!best) return { kind: 'none' };
+    const suggestion = suggestionOf(best, name, false);
+    // Geocoded fallback: name the place and the distance (R4 m7).
+    const geo = body.place;
+    if (geo && typeof best.distanceKm === 'number' && (best.matchedBy === 'photon' || best.matchedBy === 'nominatim')) {
+      suggestion.near = { place: [geo.name, geo.country].filter(Boolean).join(', '), source: geo.source, distanceKm: best.distanceKm };
+    }
+    return { kind: 'none', suggestion };
   } catch {
     return { kind: 'failed' };
   }

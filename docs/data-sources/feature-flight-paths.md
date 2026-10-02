@@ -24,11 +24,11 @@ fixtures (VRS/adsbdb/hexdb BAW117) are reused. Bundled files are produced by
 | `https://api.adsbdb.com/v0/aircraft/{registration}` | — (not probed separately; same endpoint as `/aircraft/{hex}`, documented to accept registrations) | — | `*` | as above | `response.aircraft.mode_s` | registration → hex when the aircraft is not in the snapshot |
 | `https://hexdb.io/api/v1/route/icao/BAW117` | 200 | 0.43 s | `*` | keyless | `{flight, route 'EGLL-KJFK', updatetime 1333306563}` = **2012-04-01** → labelled stale | route fallback 3 |
 | `https://api.flightplandatabase.com/search/plans?fromICAO=EGLL&toICAO=KJFK&limit=2` | **502** | 0.40 s | none | anonymous 100 req/day/IP; waypoints need a key (HTTP Basic, key as username); **flight simulation only**, attribution required | body `error code: 502` | `filedPlans` only with capability `fpdb` (`FPDB_API_KEY`); cached 24 h per pair; failures reported |
-| `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0/query?…` (FAA ADDS airways) | 200 with **`{"error":{"code":429,…"API calls quota exceeded (8661 request units)…"}}`** | 0.53 s | `*` | keyless, US public domain | quota is shared across the ArcGIS org; unusable from shared egress | **not used**: `airways` omitted (optional field) |
+| `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0/query?…` (FAA ADDS airways) | 200 with **`{"error":{"code":429,…"API calls quota exceeded (8661 request units)…"}}`** | 0.53 s | `*` | keyless, US public domain | quota is shared across the ArcGIS org; unusable from shared egress | superseded in round 6: bundled build-time snapshot (see below) |
 | `https://photon.komoot.io/api/?q=heathrow&osm_tag=aeroway:aerodrome&limit=2` | 200 | 4.09 s | none | keyless fair use, ODbL data | GeoJSON features `{properties:{osm_key 'aeroway', osm_value 'aerodrome', name, city, countrycode, extent}, geometry}` | `/api/airports/search` fallback via `src/lib/geocode.ts` (re-ranked against the local index) |
 
 Nominatim is reached only through `src/lib/geocode.ts` (1 req/s queue, 30-day cache) and only on an
-explicit submit (`submit=1`), never for type-ahead. FlightAware AeroAPI (`aeroapi`) is not wired yet.
+explicit submit (`submit=1`), never for type-ahead. FlightAware AeroAPI (`aeroapi`) is wired behind `AEROAPI_KEY` since round 6 (see below).
 
 ### Re-probe 2026-09-30 22:4x UTC (Phase 3 round-1 fixes)
 
@@ -115,3 +115,13 @@ Fixtures (reviewer R4's live capture, 2026-10-01 14:04–14:31Z, phase3/round5) 
 (every MATCHED aircraft of `/api/route/live?reverse=1` on 20 busy pairs plus LIT-LAS, with the
 flights-snapshot row), and `search-{St_Petersburg,Bali,Bangalore,Kiev}.json` (`/api/airports/search?submit=1`
 answers). Licence: adsb.lol ODbL 1.0; VRS standing data CC0; OurAirports public domain.
+
+### Re-probe 2026-10-02 00:10 UTC (Phase 3 round 6: AeroAPI, FAA airways, R4 m7)
+
+| Upstream | Status | Latency | CORS | Auth / licence | Notes |
+|---|---|---|---|---|---|
+| `https://aeroapi.flightaware.com/aeroapi/flights/BAW117` (no key) | **401** `{"reason":"INVALID_API_KEY"}` | 0.64 s | none sent | `x-apikey` header; personal tier is non-commercial, 10 result sets/min, billed per result set | Keyless can only answer 401. The adapter (`server/aeroapi.ts`) is wired behind the `aeroapi` capability (`AEROAPI_KEY`, off when `COMMERCIAL_DEPLOYMENT=true`), 1 request / 10 s. Test fixture `aeroapi-v4-docs-shaped.json` is **shaped from the published OpenAPI document** (`https://www.flightaware.com/commercial/aeroapi/resources/aeroapi-openapi.yml`, 200, 891 kB, fetched the same minute), not a live capture: `flights[].segments[]` (`/airports/{id}/flights/to/{dest_id}`), `fixes[] {name, latitude, longitude, type}` + `route_distance` (`/flights/{id}/route`, decodes continental-US fixes only), `flights[] {ident_icao, ident_iata, fa_flight_id, origin.code_icao, destination.code_icao, scheduled_out, actual_off, actual_on, cancelled}` (`/flights/{ident}`). A live fixture needs the owner's key. |
+| `https://services6.arcgis.com/ssFJjBXIUyZDrSYZ/arcgis/rest/services/ATS_Route/FeatureServer/0?f=json` (FAA ADDS) | 200 | 0.46 s | `*` | keyless; US Government work, public domain ("for public use") | `Last-Modified: Thu, 03 Sep 2026 11:59:04 GMT`; layer description still cites the 2021 cycle. |
+| `…/ATS_Route/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json` | 200 `{"count":18445}` | 0.70 s | `*` | — | 18,445 segments, extent lng −180…188.4. |
+| `…/query?where=1=1&outFields=IDENT,TYPE_CODE&outSR=4326&f=geojson&orderByFields=OBJECTID&resultOffset=…&resultRecordCount=2000` (10 pages, 2 s apart) | 200 ×10, no 429 this time | ≈ 2.4 s/page | `*` | — | Densified LineStrings (~15 vertices per segment). `tools/build-airways.ts` → `public/data/airways-us.min.json` (839 kB): 1,737 airways (CONV 778, RNAV 708, OCEAN 244, AKCAP 4, GRNAV 2, UCON 1), 38,167 vertices after 0.01° Douglas–Peucker; `sources [{url, lastModified}]`. A 429 inside a 200 body waits ≥ 61 s and retries (recorded `faa-adds-429-in-200.json`). Fixture `faa-adds-ats-route-J80.json` (27 segments, `where=IDENT='J80'`, 0.70 s). No runtime ArcGIS call: `/api/route/plan` reads the snapshot (`providers.faa_adds`, age = snapshot age). |
+| `https://photon.komoot.io/api/?q=Glastonbury&limit=8` | 200 | 0.75 s | `*` | ODbL (OSM), fair use | First feature (town, GB) kept as `photon-place-Glastonbury.json` for the R4 m7 "nearest airports to {place}" disclosure test. |

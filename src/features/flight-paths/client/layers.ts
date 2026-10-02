@@ -4,8 +4,19 @@
  * idents at z ≥ 5), flown track coloured by altitude (short data-driven segments on the FR24-style
  * ramp), dashed remaining leg, endpoints with labels, live aircraft (MATCHED: solid ring + a
  * decluttered progress chip; INFERRED: dotted ◌ ring, no chip) and
- * diversion airports; plus the animated layers (≤ 3 pulse rings on the endpoints and a comet head
- * along the planned arc), which are omitted under reduced motion.
+ * diversion airports, US airways near the route (FAA ADDS snapshot; idents at z ≥ 5); plus the
+ * animated layers (≤ 3 pulse rings on the endpoints and a comet head along the planned arc), which
+ * are omitted under reduced motion.
+ *
+ * Dashes come from deck's PathStyleExtension (planned arc and remaining leg [2,2], filed plans dotted
+ * [1,2] on every leg), imported only here, inside the lazily loaded route chunk. On the globe the
+ * planned arc (glow, dashed arc, return-leg line) and the comet head rise on ArcLayer's paraboloid
+ * for getHeight 0.3 — z(t) = 0.3·D·√(t(1−t)) above the surface lift — while the flown track, the
+ * remaining leg, the endpoints and the aircraft stay at the surface lift.
+ *
+ * Clicks (the map host's router, src/lib/map/picking.ts; far side excluded there and by the facing
+ * filter here): endpoints and diversions select the airport (AirportCard), matched live aircraft
+ * select the aircraft through `aircraftSelect` (aviation's AircraftCard).
  *
  * Antimeridian (R4-B1): everything drawn for one route or flight is put into ONE longitude frame —
  * the planned arc's, which the server unwraps from the origin (it may run past ±180°). The flown
@@ -15,11 +26,13 @@
  * Client-only.
  */
 import { LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { PathStyleExtension } from '@deck.gl/extensions';
 import type { LayersList } from '@deck.gl/core';
-import type { LngLatTuple } from '@/lib/geo';
+import { distanceKm, type LngLatTuple } from '@/lib/geo';
+import type { Selection } from '@/lib/layer-host';
 import { getFarSideCamera, isFacing } from '@/lib/map/far-side';
 import { hexToRgba, hudFontFamily, parseCssColor, readCssColor, UI_TOKENS, type MapToken, type Rgba } from '@/lib/tokens';
-import { dashPieces, intoFrame, nearLng, pathBounds, pathIntoFrame, pointAlong, unwrapPath } from '../lib/geometry';
+import { intoFrame, nearLng, pathBounds, pathIntoFrame, pointAlong, unwrapPath } from '../lib/geometry';
 import type { Flight, Live, Plan } from './api';
 import { endpointLabelOffset, framePoints, intersects, LABEL_FONT_PX, LABEL_GAP_Y_PX, LABEL_PADDING_PX, MARK_CLEAR_PX, type Projector, type Rect } from './framing';
 
@@ -49,6 +62,8 @@ export interface RouteLayerInput {
   theme: number;
   /** The real screen (RouteLayer): progress chips then also keep clear of the HUD chrome and stay on screen. */
   screen?: ScreenSpace;
+  /** Selection for a clicked live aircraft (hex → aviation's record), null when it cannot be opened. */
+  aircraftSelect?: (hex: string) => Selection | null;
 }
 
 const NO_CULL = { cullMode: 'none' } as const;
@@ -58,6 +73,21 @@ export const GLOBE_LIFT_M = 8000;
 export const FILED_LABEL_MIN_ZOOM = 5;
 /** At most this many expanding rings per endpoint (§7 motion budget). */
 export const PULSE_RINGS = 3;
+/** Airway idents appear at the same zoom as filed-plan idents. */
+export const AIRWAY_LABEL_MIN_ZOOM = 5;
+/** deck ArcLayer's `getHeight` the planned arc follows on the globe (§8). */
+export const ARC_HEIGHT = 0.3;
+/** Dash patterns, in multiples of the line width (PathStyleExtension). */
+export const DASH_PLANNED: [number, number] = [2, 2];
+export const DASH_REMAINING: [number, number] = [2, 2];
+export const DASH_FILED: [number, number] = [1, 2];
+/**
+ * Airways have no token of their own yet (`--map-route-airways` requested from design-system-hud):
+ * the filed-plan colour, faint and thin, so they read as structure under the route.
+ */
+const AIRWAY_TOKEN: MapToken = '--map-route-filed';
+const AIRWAY_ALPHA = 0.4;
+const DASH_EXT = [new PathStyleExtension({ dash: true })];
 type Pos = [number, number] | [number, number, number];
 const color = (t: MapToken, a = 1): Rgba => readCssColor(t, a);
 
@@ -112,6 +142,9 @@ interface Point {
   id: string;
   position: LngLatTuple;
   label: string;
+  /** Airports (endpoints, diversions): the code shown and the name, for the airport card. */
+  code?: string;
+  name?: string;
   /** Endpoints only: screen offset (px) of the label, on the side away from the arc. */
   labelOffset?: [number, number];
 }
@@ -137,6 +170,17 @@ export interface RouteFrame {
   endpoints: Point[];
   diversions: Point[];
   aircraft: Aircraft[];
+  /** US airways near the route (plan only), in the arc's frame. */
+  airways: AirwayLine[];
+}
+
+export interface AirwayLine {
+  id: string;
+  label: string;
+  type: string;
+  lines: LngLatTuple[][];
+  /** Label anchor: the middle vertex of the airway's longest line near the route. */
+  anchor: LngLatTuple;
 }
 
 /** Observation gaps at least this long are left blank instead of being joined by a straight line. */
@@ -191,12 +235,12 @@ export function routeFrame(plan: Plan | null, live: Live | null, flight: Flight 
     // The arc vertex a few steps in from this end gives the direction the route leaves it.
     const k = Math.min(arc.length - 1, 4);
     const toward = arc.length > 1 ? (i === 0 ? arc[k]! : arc[arc.length - 1 - k]!) : null;
-    return { id: e.ident, position, label: codeOf(e), labelOffset: endpointLabelOffset(position, toward) };
+    return { id: e.ident, position, label: codeOf(e), code: codeOf(e), name: e.name, labelOffset: endpointLabelOffset(position, toward) };
   });
 
   const diversions: Point[] = (plan?.diversionAirports ?? [])
     .filter((d): d is typeof d & { lat: number; lng: number } => typeof d.lat === 'number' && typeof d.lng === 'number')
-    .map((d) => ({ id: d.code, position: place([d.lng, d.lat]), label: d.code }));
+    .map((d) => ({ id: d.code, position: place([d.lng, d.lat]), label: d.code, code: d.code, name: d.name }));
 
   const filed = (plan?.filedPlans ?? [])
     .map((f) => {
@@ -205,8 +249,63 @@ export function routeFrame(plan: Plan | null, live: Live | null, flight: Flight 
     })
     .filter((f) => f.path.length > 1);
 
-  return { arc, reverse: (live?.aircraft ?? []).some((a) => a.direction === 'reverse'), filed, flown, remaining, endpoints, diversions, aircraft };
+  const airways: AirwayLine[] = (plan?.airways ?? []).flatMap((a, k) => {
+    const g = a.geometry as GeoJSON.LineString | GeoJSON.MultiLineString;
+    const parts: GeoJSON.Position[][] = g.type === 'LineString' ? [g.coordinates] : g.coordinates;
+    const lines = parts
+      .map((l) => l.map((c) => [c[0]!, c[1]!] as LngLatTuple))
+      .filter((l) => l.length > 1)
+      .map((l) => (ref.length ? pathIntoFrame(l, ref) : unwrapPath(l)));
+    if (!lines.length) return [];
+    const longest = lines.reduce((m, l) => (l.length > m.length ? l : m), lines[0]!);
+    return [{ id: `${a.ident}:${a.type}:${k}`, label: a.ident, type: a.type, lines, anchor: longest[Math.floor(longest.length / 2)]! }];
+  });
+
+  return { arc, reverse: (live?.aircraft ?? []).some((a) => a.direction === 'reverse'), filed, flown, remaining, endpoints, diversions, aircraft, airways };
 }
+
+// ── Arc height (globe) ────────────────────────────────────────────────────────────
+/**
+ * Heights (m) of the arc vertices on deck ArcLayer's paraboloid for `getHeight` h:
+ * z(t) = h·D·√(t(1−t)), D the route length (m), t the cumulative fraction along the arc.
+ */
+export function arcHeights(arc: readonly LngLatTuple[], h = ARC_HEIGHT): number[] {
+  const cum = [0];
+  for (let i = 1; i < arc.length; i++) cum.push(cum[i - 1]! + distanceKm(arc[i - 1]!, arc[i]!));
+  const km = cum[cum.length - 1]!;
+  if (!(km > 0)) return arc.map(() => 0);
+  return cum.map((c) => arcHeightAt(c / km, km, h));
+}
+
+/** Height (m) at fraction t along an arc of `km` kilometres (the comet head rides this profile). */
+export function arcHeightAt(t: number, km: number, h = ARC_HEIGHT): number {
+  const u = Math.max(0, Math.min(1, t));
+  return h * km * 1000 * Math.sqrt(u * (1 - u));
+}
+
+function pathKm(path: readonly LngLatTuple[]): number {
+  let km = 0;
+  for (let i = 1; i < path.length; i++) km += distanceKm(path[i - 1]!, path[i]!);
+  return km;
+}
+
+// ── Click selections ──────────────────────────────────────────────────────────────
+const wrapLng = (x: number) => ((((x + 180) % 360) + 360) % 360) - 180;
+
+/** An airport mark (route endpoint or diversion) → the airport card's selection (bundled REFERENCE data, no observation time). */
+export function airportSelection(p: Pick<Point, 'id' | 'position' | 'label' | 'code' | 'name'>, role: 'endpoint' | 'diversion'): Selection {
+  return {
+    kind: 'airport',
+    id: p.id,
+    layer: null,
+    source: 'ourairports',
+    observedAt: null,
+    data: { code: p.code ?? p.label, name: p.name ?? null, role },
+    lngLat: [wrapLng(p.position[0]), p.position[1]],
+  };
+}
+
+const picked = <T,>(info: { object?: unknown }): T | null => (info.object ?? null) as T | null;
 
 const facing = (globe: boolean) => (p: LngLatTuple) => !globe || isFacing(p, getFarSideCamera());
 
@@ -216,32 +315,60 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
   const planned = color('--map-route-planned');
   const vis = facing(o.globe);
   const trigger = { getColor: [o.theme], getFillColor: [o.theme], getLineColor: [o.theme], getPath: [o.globe] };
-  const lift = (path: readonly LngLatTuple[]): Pos[] => (o.globe ? path.map(([x, y]) => [x, y, GLOBE_LIFT_M] as Pos) : (path as Pos[]));
-  const pathLayer = (id: string, paths: readonly (readonly LngLatTuple[])[], rgba: Rgba, width: number) =>
+  const lift = (path: readonly LngLatTuple[], z?: readonly number[]): Pos[] =>
+    o.globe ? path.map(([x, y], i) => [x, y, GLOBE_LIFT_M + (z?.[i] ?? 0)] as Pos) : (path as Pos[]);
+  const pathLayer = (id: string, paths: readonly (readonly LngLatTuple[])[], rgba: Rgba, width: number, opts: { dash?: [number, number]; z?: readonly number[] } = {}) =>
     new PathLayer<{ path: Pos[] }>({
       id,
-      data: paths.map((p) => ({ path: lift(p) })),
+      data: paths.map((p) => ({ path: lift(p, opts.z) })),
       getPath: (d) => d.path,
       getColor: rgba,
       getWidth: width,
       widthUnits: 'pixels',
-      capRounded: true,
+      capRounded: !opts.dash || opts.dash[0] <= 1,
       jointRounded: true,
       antialiasing: true,
       parameters: NO_CULL,
       updateTriggers: trigger,
+      ...(opts.dash ? { extensions: DASH_EXT, getDashArray: opts.dash, dashJustified: true, dashGapPickable: false } : {}),
     } as ConstructorParameters<typeof PathLayer<{ path: Pos[] }>>[0]);
 
+  // US airways under everything else (structure, not the route).
+  if (frame.airways.length) {
+    out.push(pathLayer('route-airways', frame.airways.flatMap((a) => a.lines), color(AIRWAY_TOKEN, AIRWAY_ALPHA), 1));
+    if ((o.zoom ?? 0) >= AIRWAY_LABEL_MIN_ZOOM) {
+      const labels = frame.airways.filter((a) => vis(a.anchor));
+      if (labels.length) {
+        out.push(
+          new TextLayer<AirwayLine>({
+            id: 'route-airway-labels',
+            data: labels,
+            getPosition: (d) => (o.globe ? [d.anchor[0], d.anchor[1], GLOBE_LIFT_M] : d.anchor),
+            getText: (d) => d.label,
+            getColor: color(AIRWAY_TOKEN, 0.8),
+            getSize: 10,
+            fontFamily: hudFontFamily(),
+            billboard: true,
+            parameters: { ...NO_CULL, depthCompare: 'always' },
+            updateTriggers: { ...trigger, getPosition: [o.globe] },
+          }),
+        );
+      }
+    }
+  }
+
   if (frame.arc.length > 1) {
-    out.push(pathLayer('route-planned-glow', [frame.arc], color('--map-route-planned', 0.15), 6));
-    if (frame.reverse) out.push(pathLayer('route-reverse-arc', [frame.arc], color('--map-route-planned', 0.25), 1));
-    // Dashed: runs of arc vertices with gaps (no dash extension needed; every vertex is the server's).
-    out.push(pathLayer('route-planned-arc', dashPieces(frame.arc, 4, 3), [planned[0], planned[1], planned[2], 153], 2));
+    // Globe: the planned arc rises on ArcLayer's getHeight-0.3 paraboloid (same server vertices).
+    const z = o.globe ? arcHeights(frame.arc) : undefined;
+    out.push(pathLayer('route-planned-glow', [frame.arc], color('--map-route-planned', 0.15), 6, { z }));
+    if (frame.reverse) out.push(pathLayer('route-reverse-arc', [frame.arc], color('--map-route-planned', 0.25), 1, { z }));
+    out.push(pathLayer('route-planned-arc', [frame.arc], [planned[0], planned[1], planned[2], 153], 2, { dash: DASH_PLANNED, z }));
   }
 
   if (frame.filed.length) {
     const filedColor = color('--map-route-filed', 0.85);
-    out.push(pathLayer('route-filed', frame.filed.flatMap((f) => dashPieces(f.path, 1, 1)), filedColor, 1.5));
+    // Dotted along EVERY leg of every plan.
+    out.push(pathLayer('route-filed', frame.filed.map((f) => f.path), filedColor, 1.5, { dash: DASH_FILED }));
     const wpts = frame.filed.flatMap((f) => f.waypoints).filter((w) => vis(w.position));
     out.push(
       new TextLayer<Point>({
@@ -294,7 +421,7 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
     );
   }
 
-  if (frame.remaining.length > 1) out.push(pathLayer('route-remaining', dashPieces(frame.remaining, 2, 2), color('--map-route-planned', 0.45), 1.5));
+  if (frame.remaining.length > 1) out.push(pathLayer('route-remaining', [frame.remaining], color('--map-route-planned', 0.45), 1.5, { dash: DASH_REMAINING }));
 
   // Diversion dots under the endpoint dots and their pills (round 5: a diversion near SVO cut into its pill).
   const diversions = frame.diversions.filter((p) => vis(p.position));
@@ -310,7 +437,12 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: trigger,
-      }),
+        pickable: true,
+        toSelection: (info: { object?: unknown }) => {
+          const p = picked<Point>(info);
+          return p ? airportSelection(p, 'diversion') : null;
+        },
+      } as ConstructorParameters<typeof ScatterplotLayer<Point>>[0]),
     );
   }
 
@@ -332,7 +464,12 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: trigger,
-      }),
+        pickable: true,
+        toSelection: (info: { object?: unknown }) => {
+          const p = picked<Point>(info);
+          return p ? airportSelection(p, 'endpoint') : null;
+        },
+      } as ConstructorParameters<typeof ScatterplotLayer<Point>>[0]),
       // R3-m4: the code sits on the side away from the arc, on an opaque glass pill, so a basemap
       // country/place label under it cannot blend in (gold on the pill keeps ≥ 4.5:1).
       new TextLayer<Point>({
@@ -396,7 +533,12 @@ export function buildRouteLayers(o: RouteLayerInput, frame: RouteFrame | null = 
         billboard: true,
         parameters: { ...NO_CULL, depthCompare: 'always' },
         updateTriggers: trigger,
-      }),
+        pickable: !!o.aircraftSelect,
+        toSelection: (info: { object?: unknown }) => {
+          const a = picked<Aircraft>(info);
+          return a && o.aircraftSelect ? o.aircraftSelect(a.id) : null;
+        },
+      } as ConstructorParameters<typeof ScatterplotLayer<Aircraft>>[0]),
     );
     // R2-M3: chips only for matched aircraft, decluttered in screen space (none on top of an
     // endpoint label, no two overlapping, at most CHIP_MAX); round 5 visual-qa: on the real screen
@@ -545,7 +687,9 @@ export function buildRouteAnimLayers(o: RouteAnimInput): LayersList {
   const head = o.phase;
   const comet = Array.from({ length: COMET_TAIL + 1 }, (_, k) => ({ position: pointAlong(arc, head - k * 0.006)!, k })).filter((c) => head - c.k * 0.006 >= 0 && vis(c.position));
   const planned = color('--map-route-planned');
-  const liftZ = o.globe ? GLOBE_LIFT_M : 0;
+  const km = o.globe ? pathKm(arc) : 0;
+  // Globe: the head rides the planned arc's paraboloid (same profile as the drawn arc).
+  const z = (k: number) => (o.globe ? GLOBE_LIFT_M + arcHeightAt(head - k * 0.006, km) : 0);
   return [
     new ScatterplotLayer<{ position: LngLatTuple; t: number }>({
       id: 'route-endpoint-pulse',
@@ -565,7 +709,7 @@ export function buildRouteAnimLayers(o: RouteAnimInput): LayersList {
     new ScatterplotLayer<{ position: LngLatTuple; k: number }>({
       id: 'route-comet',
       data: comet,
-      getPosition: (d) => [d.position[0], d.position[1], liftZ],
+      getPosition: (d) => [d.position[0], d.position[1], z(d.k)],
       getRadius: (d) => (d.k === 0 ? 4 : 3 - d.k * 0.35),
       radiusUnits: 'pixels',
       getFillColor: (d) => [planned[0], planned[1], planned[2], Math.round(255 * (1 - d.k / (COMET_TAIL + 1)))],

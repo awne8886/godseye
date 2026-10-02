@@ -1387,7 +1387,7 @@ Planned route between two airports: great circle, estimates, services, weather, 
 | Cache | Browsers revalidate every request; shared caches s-maxage 5 min, CDN stale-while-revalidate 10 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `RoutePlanResponse` |
-| Upstreams | `aviationweather.gov`, `api.open-meteo.com`, `api.flightplandatabase.com` |
+| Upstreams | `aviationweather.gov`, `api.open-meteo.com`, `api.flightplandatabase.com`, `aeroapi.flightaware.com` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/route/plan?from=EGLL&to=KJFK` |
 
@@ -1424,7 +1424,7 @@ A specific flight by callsign, IATA flight number, registration or hex
 | Cache | Browsers revalidate every request; shared caches s-maxage 1 min, CDN stale-while-revalidate 2 min |
 | Rate limit | 120 requests per 1 min per client IP; default |
 | Response | `FlightDetailResponse` |
-| Upstreams | `vrs-standing-data.adsb.lol`, `api.adsbdb.com`, `hexdb.io`, `api.adsb.lol`, `adsb.lol`, `aviationweather.gov` |
+| Upstreams | `vrs-standing-data.adsb.lol`, `api.adsbdb.com`, `hexdb.io`, `api.adsb.lol`, `adsb.lol`, `aviationweather.gov`, `aeroapi.flightaware.com` |
 | Forwards user input upstream | Yes (listed on /privacy) |
 | Example | `GET /api/flight/BA117` |
 
@@ -1442,6 +1442,7 @@ Optional upgrades and licence gates, evaluated on the server from environment va
 | `opensky` | On when OPENSKY_CLIENT_ID + OPENSKY_CLIENT_SECRET set, OPENSKY_LICENSED=true | OpenSky OAuth2 + written licence |
 | `adsbfi` | On when ADSBFI_PERSONAL_USE=true | adsb.fi open data (personal use only) |
 | `fpdb` | On when FPDB_API_KEY set | FlightPlanDatabase (sim-only filed plans) |
+| `aeroapi` | On when AEROAPI_KEY set, COMMERCIAL_DEPLOYMENT is not "true" | FlightAware AeroAPI personal tier (filed routes, schedules; non-commercial) |
 | `ais` | On when AIS_API_KEY set | AISStream.io server relay |
 | `tfl` | On when TFL_APP_KEY set | TfL Unified API app_key ("Powered by TfL Open Data") |
 | `trafikverket` | On when TRAFIKVERKET_KEY set | Trafikverket API (stills are keyless) |

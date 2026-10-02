@@ -119,6 +119,7 @@ variables.
 | `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET`, `OPENSKY_LICENSED=true` | `opensky` | OpenSky (requires a written licence for live products) |
 | `ADSBFI_PERSONAL_USE=true` | `adsbfi` | adsb.fi open data (personal, non-commercial use only) |
 | `FPDB_API_KEY` | `fpdb` | FlightPlanDatabase plans (flight simulation only) |
+| `AEROAPI_KEY` | `aeroapi` | FlightAware AeroAPI personal tier: filed IFR routes on a pair and flight schedules (non-commercial; off when `COMMERCIAL_DEPLOYMENT=true`) |
 | `AIS_API_KEY` | `ais` | Live AIS vessels via a server-side AISStream relay |
 | `TFL_APP_KEY` | `tfl` | TfL Unified API ("Powered by TfL Open Data") |
 | `CCTV_LINK_OUT_ONLY` | — | Region keys or country codes whose cameras are shown as operator links only (no previews) |
