@@ -127,6 +127,11 @@ export function FireCard({ selection }: CardProps) {
   );
 }
 
+/** NWS UGC zone codes, the first 12 listed and the rest counted (never silently cut). */
+export function zoneList(zones: readonly string[], max = 12): string {
+  return zones.length > max ? `${zones.slice(0, max).join(', ')} +${zones.length - max} more` : zones.join(', ');
+}
+
 export function WeatherEventCard({ selection }: CardProps) {
   const e = selection.data as unknown as WeatherEvent;
   const placed = e.positionBasis === 'zone-centroid' ? 'Marker at the centre of an affected NWS zone; shaded area = the alert zones.' : undefined;
@@ -140,6 +145,7 @@ export function WeatherEventCard({ selection }: CardProps) {
         {e.alertLevel && <Row label="GDACS alert">{e.alertLevel}</Row>}
         <Row label="Provider">{e.provider}</Row>
         {e.expiresAt && <Row label="Expires">{`${e.expiresAt.slice(0, 16).replace('T', ' ')} UTC`}</Row>}
+        {!!e.zones?.length && <Row label="Zones">{zoneList(e.zones)}</Row>}
       </dl>
       {e.area && <p className="mt-1 font-sans text-[12px] text-[var(--text-secondary)]">{e.area}</p>}
       {e.detail && <p className="mt-1 font-sans text-[12px] text-[var(--text-secondary)]">{e.detail}</p>}

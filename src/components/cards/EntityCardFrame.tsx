@@ -2,19 +2,20 @@
 /**
  * Entity-card frame (§0.3, §7): kind + display-name header, freshness badge (entityFreshness over the layer's
  * observation cadence, never better than the feed), source line with attribution, observed-at time
- * kept separate from fetched-at, SOURCE OFFLINE with last-good time, and tabs Overview / Sources.
- * The body comes from the feature module registered for the entity kind. The badge is computed
+ * kept separate from fetched-at, SOURCE OFFLINE with last-good time, and tabs Overview / Track /
+ * Sources (§7; TRACK only for kinds whose module registers a track body, ARIA tablist with arrow-key
+ * roving focus). The body and the track come from the feature module registered for the entity kind. The badge is computed
  * here only, once; a body that has the feed's own state or a newer observation reports it through
  * useCardFreshness (card-freshness.tsx) and renders this same badge (r8: header and body
  * disagreed). Owner: design-system-hud.
  */
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { FRESHNESS_COLOR_TOKEN } from '@/lib/freshness';
 import { getLayer } from '@/lib/layer-registry';
 import type { LayerStatus, Selection } from '@/lib/layer-host';
 import { statusAttribution } from '@/components/hud/LayerRows';
-import { cardBadge, type CardBadge } from '@/components/hud/status-logic';
+import { cardBadge, providerStateLabel, type CardBadge } from '@/components/hud/status-logic';
 import { CardFreshnessContext, applyReport, sameReport, type CardFreshnessReport } from './card-freshness';
 import { entityDisplayName } from './display-name';
 import { sourceDisplayName } from './source-name';
@@ -42,18 +43,38 @@ export function FreshnessBadge({ selection, feed, now, badge }: { selection: Sel
   );
 }
 
+type CardTab = 'overview' | 'track' | 'sources';
+
 export default function EntityCardFrame({
   selection,
   feed,
   onClose,
   children,
+  track,
 }: {
   selection: Selection;
   feed: LayerStatus | undefined;
   onClose: () => void;
   children: ReactNode;
+  /** TRACK tab body (FeatureModule.tracks); omitted for kinds without a track, which get no tab. */
+  track?: ReactNode;
 }) {
-  const [tab, setTab] = useState<'overview' | 'sources'>('overview');
+  const [tab, setTab] = useState<CardTab>('overview');
+  const tabs: readonly CardTab[] = track ? ['overview', 'track', 'sources'] : ['overview', 'sources'];
+  const tabRefs = useRef<Partial<Record<CardTab, HTMLButtonElement | null>>>({});
+  const baseId = useId();
+  const tabId = (t: CardTab) => `${baseId}-tab-${t}`;
+  const panelId = (t: CardTab) => `${baseId}-panel-${t}`;
+  // WAI-ARIA tabs: arrows move between tabs (wrapping), Home/End jump; selection follows focus.
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    const i = tabs.indexOf(tab);
+    const next =
+      e.key === 'ArrowRight' ? tabs[(i + 1) % tabs.length] : e.key === 'ArrowLeft' ? tabs[(i - 1 + tabs.length) % tabs.length] : e.key === 'Home' ? tabs[0] : e.key === 'End' ? tabs[tabs.length - 1] : undefined;
+    if (!next) return;
+    e.preventDefault();
+    setTab(next);
+    tabRefs.current[next]?.focus();
+  };
   // 1 s: the badge (header and body) and the "Ns ago" age read the same clock as the body's own.
   const now = useNow(1000);
   const titleId = useId();
@@ -109,13 +130,19 @@ export default function EntityCardFrame({
           </>
         )}
       </dl>
-      <div role="tablist" aria-label="Card sections" className="relative mt-2 flex gap-1 px-4">
-        {(['overview', 'sources'] as const).map((t) => (
+      <div role="tablist" aria-label="Card sections" onKeyDown={onTabKey} className="relative mt-2 flex gap-1 px-4">
+        {tabs.map((t) => (
           <button
             key={t}
+            ref={(el) => {
+              tabRefs.current[t] = el;
+            }}
+            id={tabId(t)}
             role="tab"
             type="button"
             aria-selected={tab === t}
+            aria-controls={panelId(t)}
+            tabIndex={tab === t ? 0 : -1}
             onClick={() => setTab(t)}
             className={`hud-micro hud-control min-h-[28px] border px-2 phone:min-h-[44px] ${tab === t ?'border-[var(--border-active)] text-[var(--gold-light)]' : 'border-transparent text-[var(--text-secondary)]'}`}
           >
@@ -123,13 +150,18 @@ export default function EntityCardFrame({
           </button>
         ))}
       </div>
-      {/* The body stays mounted (hidden) on the Sources tab, so its queries and its freshness
+      {/* The body stays mounted (hidden) on the other tabs, so its queries and its freshness
           report keep running and the header badge does not change with the tab. */}
-      <div role="tabpanel" hidden={tab !== 'overview'} className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div role="tabpanel" id={panelId('overview')} aria-labelledby={tabId('overview')} hidden={tab !== 'overview'} className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <CardFreshnessContext value={freshness}>{children}</CardFreshnessContext>
       </div>
+      {track && tab === 'track' && (
+        <div role="tabpanel" id={panelId('track')} aria-labelledby={tabId('track')} data-testid="card-track" className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
+          {track}
+        </div>
+      )}
       {tab === 'sources' && (
-        <div role="tabpanel" className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
+        <div role="tabpanel" id={panelId('sources')} aria-labelledby={tabId('sources')} className="hud-scroll relative min-h-0 flex-1 overflow-y-auto px-4 py-3">
           <div className="space-y-2 text-[12px] text-[var(--text-secondary)]">
             <p className="break-all">
               <span className="hud-micro text-[var(--text-muted)]">ID </span>
@@ -153,8 +185,8 @@ export default function EntityCardFrame({
             )}
             {feed?.providers &&
               Object.entries(feed.providers).map(([name, p]) => (
-                <p key={name} className="font-mono text-[11px]">
-                  {sourceDisplayName(name)}: {p.ok ? 'OK' : 'FAILED'} · {p.count} · {p.ms} ms
+                <p key={name} className="font-mono text-[11px]" data-provider={name}>
+                  {sourceDisplayName(name)}: {p.skipped ? providerStateLabel(p) : `${providerStateLabel(p)} · ${p.count} · ${p.ms} ms`}
                 </p>
               ))}
             {attribution.map((a) =>

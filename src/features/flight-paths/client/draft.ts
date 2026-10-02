@@ -14,6 +14,8 @@
  * person's name in an airport name: "Sofia" is SOF, not Tenerife Sur's "Reina Sofía"); a name that
  * points at several places ("Jackson": Jackson MS/WY/TN or Hartsfield–Jackson Atlanta; "goa": the
  * code GOA or Goa's GOI) is asked, with one option per airport, never guessed (`lib/place-rank.ts`).
+ * Round 10 (§8 chooser): a name that resolves through a metro group ("London", "New York") carries
+ * the group's airports, so PATHS lists them as chips under FROM/TO with the planned one selected.
  * A tiny external store (UI hand-off only, no data). Client-only.
  */
 import { useSyncExternalStore } from 'react';
@@ -43,6 +45,12 @@ export interface DraftSuggestion extends PlaceSuggestion {
   text: string;
 }
 
+/** The airports of the metro group a typed name resolved through ("London": LHR LGW STN LTN LCY SEN). */
+export interface MetroChoice {
+  name: string;
+  codes: string[];
+}
+
 export interface PathsDraft {
   from: string;
   to: string;
@@ -54,6 +62,8 @@ export interface PathsDraft {
   same?: string | null;
   /** Best candidates for unresolved names (several for an ambiguous name), offered with a one-click accept (never planned silently). */
   suggestions?: DraftSuggestion[];
+  /** Metro groups the typed names resolved through, listed as one-click chips per end (round 10). */
+  metro?: { from?: MetroChoice; to?: MetroChoice };
   /** Increments per hand-off so the same text twice still re-applies. */
   seq: number;
 }
@@ -124,7 +134,8 @@ export function draftMessage(d: Pick<PathsDraft, 'unresolved' | 'failed' | 'same
 }
 
 export type PlaceResolution =
-  | { kind: 'found'; code: string }
+  /** `metro`: the group the name resolved through, when it has more than one airport. */
+  | { kind: 'found'; code: string; metro?: MetroChoice }
   | { kind: 'none'; suggestion?: PlaceSuggestion | null }
   /** The name may mean several airports ("Jackson"): the visitor picks one. */
   | { kind: 'ambiguous'; options: PlaceSuggestion[] }
@@ -220,12 +231,13 @@ export async function resolvePlace(name: string, fetchImpl: typeof fetch = fetch
   try {
     const r = await fetchImpl(`/api/airports/search?q=${encodeURIComponent(name)}&submit=1`);
     if (!r.ok) return r.status === 404 ? { kind: 'none' } : { kind: 'failed' };
-    const body = (await r.json()) as { results?: SearchHit[]; metro?: { codes: string[] } | null; place?: { name: string; country: string | null; source: 'photon' | 'nominatim' } | null };
-    const metro = body.metro?.codes?.[0];
-    if (metro) return { kind: 'found', code: metro };
+    const body = (await r.json()) as { results?: SearchHit[]; metro?: { name?: string; codes: string[] } | null; place?: { name: string; country: string | null; source: 'photon' | 'nominatim' } | null };
     const results = body.results ?? [];
-    const metroHit = results.find((a) => a.matchedBy === 'metro');
-    if (metroHit) return { kind: 'found', code: codeOfHit(metroHit) };
+    const metroCodes = body.metro?.codes?.length ? body.metro.codes : results.filter((a) => a.matchedBy === 'metro').map(codeOfHit);
+    if (metroCodes[0]) {
+      const group = metroCodes.length > 1 ? { metro: { name: body.metro?.name ?? name, codes: metroCodes } } : {};
+      return { kind: 'found', code: metroCodes[0], ...group };
+    }
     // Hits that carry the typed name as whole words (geocoded Photon/Nominatim hits never do).
     const named = results.filter((a) => meansTyped(a, name) && nameMatch(a, name) !== null);
     // An exact code — but an ordinary word is not an unscheduled airport's ICAO code ("Lima" ≠ LIMA).
@@ -268,15 +280,18 @@ export async function resolvePlace(name: string, fetchImpl: typeof fetch = fetch
 /**
  * From two typed names and their resolutions: the route to plan, or the draft to hand to PATHS
  * (pre-filled text + why it could not be planned + any suggestion). Exactly one of the two is
- * non-null.
+ * non-null. `metro` names the metro groups either name resolved through (also on the draft), so
+ * PATHS can offer the group's other airports (round 10).
  */
 export function routeOrDraft(
   from: string,
   to: string,
   a: PlaceResolution,
   b: PlaceResolution,
-): { route: { from: string; to: string } | null; draft: Omit<PathsDraft, 'seq'> | null } {
-  if (a.kind === 'found' && b.kind === 'found' && a.code !== b.code) return { route: { from: a.code, to: b.code }, draft: null };
+): { route: { from: string; to: string } | null; draft: Omit<PathsDraft, 'seq'> | null; metro?: NonNullable<PathsDraft['metro']> } {
+  const groups = { ...(a.kind === 'found' && a.metro ? { from: a.metro } : {}), ...(b.kind === 'found' && b.metro ? { to: b.metro } : {}) };
+  const metro = groups.from || groups.to ? groups : undefined;
+  if (a.kind === 'found' && b.kind === 'found' && a.code !== b.code) return { route: { from: a.code, to: b.code }, draft: null, metro };
   const pick = (r: PlaceResolution, text: string) => (r.kind === 'found' ? r.code : text);
   const suggest = (r: PlaceResolution, side: DraftSuggestion['side'], text: string): DraftSuggestion[] => {
     switch (r.kind) {
@@ -299,6 +314,8 @@ export function routeOrDraft(
       failed: [a.kind === 'failed' && from, b.kind === 'failed' && to].filter((n): n is string => !!n),
       same: a.kind === 'found' && b.kind === 'found' ? a.code : null,
       suggestions: [...suggest(a, 'from', from), ...suggest(b, 'to', to)],
+      ...(metro ? { metro } : {}),
     },
+    metro,
   };
 }

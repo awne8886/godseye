@@ -107,6 +107,8 @@ describe('idents', () => {
     // ACA123 is both a callsign and valid hex: callsign first.
     expect(classifyIdent('ACA123').map((g) => g.kind)).toEqual(['callsign', 'hex']);
     expect(classifyIdent('!!')).toEqual([]);
+    // Round 10: an airline code alone is not a callsign (adsbdb rejects 2-character callsigns).
+    expect(classifyIdent('BA')).toEqual([]);
     expect(normalizeIdent(' baw 117 ')).toBe('BAW117');
   });
 });

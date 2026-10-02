@@ -6,6 +6,7 @@
  */
 import 'server-only';
 import { sourceCache, type SourceCache } from '@/lib/cache';
+import type { CapabilityId } from '@/lib/capabilities';
 import type { FeedData, FeedResult, ProviderRun } from '@/lib/feeds';
 import { freshnessState, toIso } from '@/lib/freshness';
 import type { Attribution, FeedMeta, Providers } from '@/lib/types';
@@ -19,6 +20,8 @@ export interface LookupDef<T> {
   /** Treat as a failed lookup (default: never; use for "every provider failed"). */
   isEmpty?: (d: T) => boolean;
   deadlineMs?: number;
+  /** Capabilities of the gated providers in run(): a snapshot fetched under another gate state is never served. */
+  gates?: readonly CapabilityId[];
   run: (signal: AbortSignal) => Promise<FeedData<T>>;
 }
 
@@ -33,7 +36,7 @@ export async function lookup<T>(key: string, def: LookupDef<T>): Promise<FeedRes
         const out = await def.run(signal);
         return { data: out.data, meta: { providers: out.providers, observedAt: out.observedAt ?? null } };
       },
-      { ttlMs: def.ttlMs, isEmpty: def.isEmpty ?? (() => false), deadlineMs: def.deadlineMs, pin: false },
+      { ttlMs: def.ttlMs, isEmpty: def.isEmpty ?? (() => false), deadlineMs: def.deadlineMs, pin: false, gates: def.gates },
     );
     CACHES.set(key, cache as SourceCache<unknown>);
     // Keep the handle map bounded like the L1 it fronts.

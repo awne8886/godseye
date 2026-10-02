@@ -118,6 +118,7 @@ export async function airQuality(bbox: [number, number, number, number] | null) 
     attribution: AQ_ATTRIBUTION,
     note: 'Modelled (CAMS) values at sampling points, not station measurements',
     isEmpty: (d) => !d.answered,
+    gates: ['openmeteo'],
     run: async (signal) => {
       const providers: Record<string, ProviderRun> = {};
       const points: readonly (readonly [string | null, number, number])[] = q ? gridPoints(q) : AQ_CITIES;

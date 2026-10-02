@@ -12,7 +12,7 @@ import { useDeckLayers, useFeedEventStore } from '@/lib/layer-host';
 import { useStyleVersion } from '@/lib/map/style-version';
 import { readCssColor, type Rgba } from '@/lib/tokens';
 import type { WeatherEvent, WeatherResponse } from '@/lib/types';
-import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken } from '../shared';
+import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken, withFootprints } from '../shared';
 import { nearestPoint, useHitTester } from './hit-test';
 import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from './globe';
 import { entitySelection } from './pick';
@@ -26,7 +26,8 @@ const css = ([r, g, b, a]: Rgba) => `rgba(${r},${g},${b},${(a / 255).toFixed(3)}
 
 export default function WeatherLayer() {
   const data = useHazardData<WeatherResponse>('weather', '/api/weather', count);
-  const items = data?.items;
+  // NWS zone alerts reference shared outlines (`zones` + `zoneRefs`); resolve each footprint once per body.
+  const items = useMemo(() => (data ? withFootprints(data.items, data.zones) : undefined), [data]);
   useWeatherUnplaced(data);
   const push = useFeedEventStore((s) => s.push);
   const byId = useRef(new Map<string, WeatherEvent>());

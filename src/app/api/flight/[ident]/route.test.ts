@@ -55,6 +55,15 @@ describe('GET /api/flight/{ident}', () => {
     mode.current = newMode();
   });
 
+  it('round 10: a 2-character ident (an airline code) is a 400 with a clear message, never SOURCE OFFLINE, and calls no upstream', async () => {
+    mode.current.down.add('api.adsbdb.com');
+    const res = await call('BA');
+    expect(res.status).toBe(400);
+    const body = ApiError.parse(await res.json());
+    expect(JSON.stringify(body)).toMatch(/at least 3 characters/);
+    expect(mode.current.calls).toEqual([]);
+  });
+
   it('BA117 and BAW117 resolve to the same flight (VRS route, METAR both ends, links)', async () => {
     const a = await parse('BA117');
     const b = await parse('BAW117');
