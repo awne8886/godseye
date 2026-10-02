@@ -105,6 +105,9 @@ Changes in how the browser uses them (no new hosts, no keys):
 (`/api/route/plan?from=LHR&to=JFK`). The page clock is pinned to 2026-10-02T02:45:15Z. Not
 baselined: ArcLayer (only Cloudflare Radar attack-origin arcs, keyed by `CLOUDFLARE_API_TOKEN`; no
 recorded keyed response exists) and TripsLayer (none in this base).
+Re-probed 2026-10-02 (round 6): `GET https://api.cloudflare.com/client/v4/radar/attacks/layer7/top/locations/origin?limit=5&dateRange=1d`
+without a token → 400 in 0.46 s, `{"success":false,"errors":[{"code":9106,"message":"Missing X-Auth-Key, X-Auth-Email or Authorization headers"}]}`;
+no `CLOUDFLARE_API_TOKEN` in this sandbox, so the Arc baseline stays `test.fixme` pending a keyed recording or a lead waiver.
 
 `tools/perf/bundle-size.mjs` now launches Chromium through `HTTPS_PROXY` when set (bypass
 127.0.0.1/localhost), so the OpenFreeMap style is reachable from sandboxes; a run in which the map
