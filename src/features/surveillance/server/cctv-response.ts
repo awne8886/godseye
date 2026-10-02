@@ -8,6 +8,9 @@
  * in `disabledRegions` and its providers report `skipped: 'not-configured'` (or `'licence'` for a
  * licence gate; 200, no rows). 503
  * SOURCE OFFLINE only when configured providers were asked and none of them answered.
+ * Every region result is read through gateRegion() with this request's environment, so rows,
+ * `providers` and `meta.attribution` of a provider that is off on this instance never reach the
+ * response, whatever the SnapshotStore kept from an earlier configuration (round 8).
  * Owner: layers-surveillance. Server-only.
  */
 import 'server-only';
@@ -17,7 +20,7 @@ import { compressedJson, json } from '@/lib/respond';
 import { CAMERA_FIELDS } from '@/lib/schemas/surveillance';
 import type { Attribution, Camera, FeedMeta, FreshnessState, Providers } from '@/lib/types';
 import type { CctvRegion } from '../shared';
-import { INVENTORY_TTL_MS, regionFeed } from './catalog';
+import { gateRegion, gateSignature, INVENTORY_TTL_MS, regionFeed } from './catalog';
 import { publicCamera } from './frames';
 import { providerDef, providerRow, providersIn, regionDisabled, skipReasonOf } from './registry';
 
@@ -32,7 +35,11 @@ function withBudget<T>(p: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([p, new Promise<null>((r) => setTimeout(() => r(null), ms).unref?.())]);
 }
 
-export async function collectRegions(regions: readonly CctvRegion[], budgets = { cold: COLD_BUDGET_MS, warm: WARM_GRACE_MS }) {
+export async function collectRegions(
+  regions: readonly CctvRegion[],
+  budgets = { cold: COLD_BUDGET_MS, warm: WARM_GRACE_MS },
+  env: Record<string, string | undefined> = process.env,
+) {
   const feeds = regions.map((r) => ({ region: r, feed: regionFeed(r) }));
   const anyWarm = feeds.some(({ feed }) => feed.peek().data !== null);
   const budget = anyWarm ? budgets.warm : budgets.cold;
@@ -41,7 +48,7 @@ export async function collectRegions(regions: readonly CctvRegion[], budgets = {
       const peek = feed.peek();
       // Warm regions answer from cache (a stale one refreshes in the background inside get()).
       const res = peek.data !== null ? await feed.get() : await withBudget(feed.get(), budget);
-      return { region, res: res ?? feed.peek(), pending: res === null };
+      return { region, res: gateRegion(res ?? feed.peek(), providersIn(region), env), pending: res === null };
     }),
   );
   return results;
@@ -100,16 +107,18 @@ export const AGE_BUCKET_MS = 60_000;
 /**
  * Cache version of a /api/cctv payload. The payload is serialised and compressed once per version,
  * so the version carries a minute bucket: without it `providers.*.age_s` stayed at the value of the
- * first request (0–3 s) for the whole 30-min inventory TTL (R2 MINOR-2, rounds 3–4).
+ * first request (0–3 s) for the whole 30-min inventory TTL (R2 MINOR-2, rounds 3–4). `config` is
+ * the instance configuration that shapes the rows (link-out regions, capability gates, removed
+ * ids): a payload built under another configuration is never served from the compressed cache.
  */
 export function cctvVersion(
   served: readonly { region: string; fetchedAt: string | null; state: string }[],
   pendingRegions: readonly string[],
   disabledRegions: readonly string[],
-  linkOut: string,
+  config: string,
   now: number = Date.now(),
 ): string {
-  return [...served.map((r) => `${r.region}@${r.fetchedAt}:${r.state}`), `pending=${pendingRegions.join('+')}`, `off=${disabledRegions.join('+')}`, `lo=${linkOut}`, `age=${Math.floor(now / AGE_BUCKET_MS)}`].join('|');
+  return [...served.map((r) => `${r.region}@${r.fetchedAt}:${r.state}`), `pending=${pendingRegions.join('+')}`, `off=${disabledRegions.join('+')}`, `cfg=${config}`, `age=${Math.floor(now / AGE_BUCKET_MS)}`].join('|');
 }
 
 /** Providers of not-configured regions, reported as skipped (never silently absent). */
@@ -138,7 +147,7 @@ export async function cctvResponse(req: Request, regions: readonly CctvRegion[],
     };
     return json({ fields: CAMERA_FIELDS, rows: [], regions: [], pendingRegions: [], disabledRegions, counts: {}, meta, providers: skipped }, { ttl: CCTV_EDGE_TTL_S });
   }
-  const results = await collectRegions(active);
+  const results = await collectRegions(active, undefined, env);
   const merged = mergeMeta(results);
   const meta = merged.meta;
   const providers: Providers = { ...skipped, ...merged.providers };
@@ -151,8 +160,8 @@ export async function cctvResponse(req: Request, regions: readonly CctvRegion[],
     );
   }
   const counts = Object.fromEntries(served.map((r) => [r.region, r.res.data!.length]));
-  const linkOut = process.env.CCTV_LINK_OUT_ONLY ?? '';
-  const version = cctvVersion(served.map((r) => ({ region: r.region, fetchedAt: r.res.meta.fetchedAt, state: r.res.meta.state })), pendingRegions, disabledRegions, linkOut);
+  const config = `lo=${env.CCTV_LINK_OUT_ONLY ?? ''}|${gateSignature(active, env)}`;
+  const version = cctvVersion(served.map((r) => ({ region: r.region, fetchedAt: r.res.meta.fetchedAt, state: r.res.meta.state })), pendingRegions, disabledRegions, config);
   const key = `cctv:${regions.join(',')}`;
   return compressedJson(
     req,
@@ -160,7 +169,7 @@ export async function cctvResponse(req: Request, regions: readonly CctvRegion[],
     version,
     () => ({
       fields: CAMERA_FIELDS,
-      rows: toRows(served.flatMap((r) => r.res.data!)),
+      rows: toRows(served.flatMap((r) => r.res.data!), env),
       regions: served.map((r) => r.region),
       pendingRegions,
       disabledRegions,

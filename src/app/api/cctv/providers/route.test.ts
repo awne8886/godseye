@@ -15,7 +15,9 @@ describe('GET /api/cctv/providers', () => {
     const b = await res.json();
     expect(CameraProvidersResponse.safeParse(b).success).toBe(true);
     expect(b.meta).toMatchObject({ feed: 'cctv-providers', kind: 'reference', state: 'reference' });
-    expect(b.providers).toEqual({});
+    // No region loaded yet: only the providers this instance withholds are reported, as skipped.
+    expect(Object.keys(b.providers).sort()).toEqual(['tfl', 'trafikverket']);
+    expect(b.providers.tfl).toEqual({ ok: false, count: 0, ms: 0, age_s: null, skipped: 'not-configured' });
     expect(b.items.find((p: { id: string }) => p.id === 'tfl').attribution_string).toMatch(/Powered by TfL Open Data/);
     expect(b.meta.attribution.length).toBe(b.items.length);
     // MAJOR-D: OSIRIS sources not wired are listed with a reason, never silently missing or advertised.
