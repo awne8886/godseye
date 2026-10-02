@@ -12,7 +12,7 @@ import { boost, exactMatches, fuzzyMatches, nearestScheduled } from './airports'
 const http = vi.hoisted(() => ({ body: null as unknown, status: 200, calls: [] as string[] }));
 vi.mock('@/lib/ratelimit', async (orig) => {
   const actual = await orig<typeof RateLimitModule>();
-  return { ...actual, providerBucket: () => ({ take: async () => undefined }) };
+  return { ...actual, providerBucket: () => ({ take: async () => undefined, tryTake: () => true }) };
 });
 vi.mock('@/lib/http', async (orig) => {
   const actual = await orig<typeof HttpModule>();

@@ -173,6 +173,10 @@ export const RoutePlanResponse = z.object({
     z.object({ airline: z.string(), codeshare: z.boolean(), stops: z.number().int().nonnegative(), equipment: z.array(z.string()) }),
   ),
   airways: z.array(z.object({ ident: z.string(), type: z.string(), geometry: z.custom<GeoJSON.LineString | GeoJSON.MultiLineString>() })).optional(),
+  /** Provenance of `airways` (bundled FAA ADDS snapshot, REFERENCE): the source's Last-Modified, not the build time. */
+  airwaysSource: z
+    .object({ name: z.string(), url: z.string(), licence: z.string(), lastModified: IsoTime.nullable(), builtAt: IsoTime })
+    .optional(),
   filedPlans: z
     .array(
       z.object({

@@ -13,7 +13,7 @@ const mode = vi.hoisted(() => ({ current: null as unknown as ReturnType<typeof n
 
 vi.mock('@/lib/ratelimit', async (orig) => {
   const actual = await orig<typeof RateLimitModule>();
-  return { ...actual, providerBucket: () => ({ take: async () => undefined }) };
+  return { ...actual, providerBucket: () => ({ take: async () => undefined, tryTake: () => true }) };
 });
 
 vi.mock('@/lib/http', async (orig) => {

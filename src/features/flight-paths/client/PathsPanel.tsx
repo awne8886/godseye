@@ -21,6 +21,7 @@ import { draftMessage, pendingSides, setPathsDraft, usePathsDraft, type DraftSug
 import { obscuredFitText, partialFitText, useFitNotice } from './fit';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
+import { PROVIDER_PENDING } from '../lib/pending';
 import { FLT_TOKEN, PATH_TYPES, TWILIGHT_TOKEN, codeOf, fmtKm, fmtLocal, fmtMinutes, fmtNm, fmtOffsetHours, fmtUtc } from './format';
 
 type Mode = 'route' | 'live' | 'flight';
@@ -181,7 +182,13 @@ export function placeHeading(p: { name: string; country: string | null; source: 
   return `Nearest airports to ${[p.name, p.country].filter(Boolean).join(', ')} (${p.source})`;
 }
 
-function Legend({ labels }: { labels: Plan['pathLabels'] }) {
+/** "FAA ADDS ATS_Route · data as of 2026-09-03 · not this flight's route" (the snapshot's Last-Modified, never the build time). */
+export function airwaysLegendText(src: NonNullable<Plan['airwaysSource']>, count: number): string {
+  const asOf = src.lastModified ? `data as of ${src.lastModified.slice(0, 10)}` : 'source date unknown';
+  return `${count} US published airway${count === 1 ? '' : 's'} near the route (${src.name}, ${asOf}). Reference structure, not this flight's filed route.`;
+}
+
+function Legend({ labels, airways }: { labels: Plan['pathLabels']; airways?: { count: number; source: NonNullable<Plan['airwaysSource']> } | null }) {
   return (
     <ul className="flex flex-col gap-1" aria-label="Path types">
       {PATH_TYPES.map((t) => {
@@ -204,6 +211,16 @@ function Legend({ labels }: { labels: Plan['pathLabels'] }) {
           </li>
         );
       })}
+      {airways && airways.count > 0 && (
+        <li className="flex items-start gap-2" data-available data-testid="legend-airways">
+          {/* Same token and alpha as the drawn airway lines (layers.ts AIRWAY_TOKEN / AIRWAY_ALPHA). */}
+          <span aria-hidden className="mt-1.5 inline-block h-px w-5 shrink-0 opacity-40" style={{ background: 'var(--map-route-filed)' }} />
+          <span className="flex flex-col">
+            <span className="hud-text text-[11px] text-[var(--text-primary)]">AIRWAYS (FAA, REFERENCE)</span>
+            <span className="font-sans text-[12px] text-[var(--text-secondary)]">{airwaysLegendText(airways.source, airways.count)}</span>
+          </span>
+        </li>
+      )}
     </ul>
   );
 }
@@ -218,7 +235,7 @@ function Sources({ providers }: { providers: Plan['providers'] }) {
           style={{ borderColor: p.ok ? 'var(--border-secondary)' : 'var(--alert-orange)', color: p.ok ? 'var(--text-secondary)' : 'var(--alert-orange)' }}
           title={p.skipped ? `skipped: ${p.skipped}` : p.error ? `error: ${p.error}` : `${p.count} records`}
         >
-          {k.replace(/_/g, ' ')} {p.ok ? '' : p.skipped ? `· ${p.skipped}` : '· offline'}
+          {k.replace(/_/g, ' ')} {p.ok ? '' : p.skipped ? `· ${p.skipped}` : p.error === PROVIDER_PENDING ? '· loading' : '· offline'}
         </li>
       ))}
     </ul>
@@ -263,7 +280,7 @@ export function PlanView({ plan }: { plan: Plan }) {
           {plan.greatCircle.antimeridianCrossings ? 'CROSSES THE ANTIMERIDIAN' : ''}
         </p>
       )}
-      <Legend labels={plan.pathLabels} />
+      <Legend labels={plan.pathLabels} airways={plan.airwaysSource ? { count: plan.airways?.length ?? 0, source: plan.airwaysSource } : null} />
       <div className="flex flex-col gap-1">
         <span className="hud-micro text-[var(--text-muted)]">DAYLIGHT ALONG THE PATH (DEPARTING NOW)</span>
         <div className="flex h-3 overflow-hidden rounded-sm border border-[var(--border-secondary)]" role="img" aria-label={`Daylight: ${plan.daylight.map((s) => s.twilight).join(', ')}`}>

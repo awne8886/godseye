@@ -5,9 +5,11 @@ import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { evaluateCapability } from '@/lib/capabilities';
 // Shaped from FlightAware's published AeroAPI v4 OpenAPI document (not a live capture: keyless = 401).
 import docs from '../__fixtures__/aeroapi-v4-docs-shaped.json';
-import { AEROAPI_DISCLAIMER, aeroFiledPlans, aeroSchedule, fetchAeroFiledPlan, mapAeroRoute, pickFlight, type AeroFlight } from './aeroapi';
+import type { AeroDeps } from './aeroapi';
+import { AEROAPI_DISCLAIMER, AEROAPI_PENDING, aeroFiledPlans, aeroSchedule, fetchAeroFiledPlan, mapAeroRoute, pickFlight, type AeroFlight } from './aeroapi';
 
-const http = vi.hoisted(() => ({ calls: [] as { url: string; headers: Record<string, string>; limiter: boolean }[], status: 200 }));
+const http = vi.hoisted(() => ({ calls: [] as { url: string; headers: Record<string, string>; limiter: boolean; signal: boolean; deadlineMs?: number }[], status: 200 }));
+const admit = vi.hoisted(() => ({ free: Infinity }));
 const buckets = vi.hoisted(() => [] as [string, number, number | undefined][]);
 
 vi.mock('@/lib/ratelimit', async (orig) => {
@@ -16,7 +18,7 @@ vi.mock('@/lib/ratelimit', async (orig) => {
     ...actual,
     providerBucket: (name: string, rate: number, burst?: number) => {
       buckets.push([name, rate, burst]);
-      return { take: async () => undefined };
+      return { take: async () => undefined, tryTake: () => (admit.free > 0 ? (admit.free--, true) : false) };
     },
   };
 });
@@ -25,8 +27,8 @@ vi.mock('@/lib/http', async (orig) => {
   const actual = await orig<typeof HttpModule>();
   return {
     ...actual,
-    httpJson: vi.fn(async (u: string, opts: { headers?: Record<string, string>; limiter?: unknown }) => {
-      http.calls.push({ url: u, headers: opts.headers ?? {}, limiter: !!opts.limiter });
+    httpJson: vi.fn(async (u: string, opts: { headers?: Record<string, string>; limiter?: unknown; signal?: AbortSignal; deadlineMs?: number }) => {
+      http.calls.push({ url: u, headers: opts.headers ?? {}, limiter: !!opts.limiter, signal: opts.signal instanceof AbortSignal, deadlineMs: opts.deadlineMs });
       if (http.status >= 400) throw new actual.HttpError(`HTTP ${http.status}`, 'http', u, http.status);
       const path = new URL(u).pathname;
       const data = path.endsWith('/route') ? docs.flight_route : path.includes('/flights/to/') ? docs.flights_to : docs.flights_ident;
@@ -91,6 +93,7 @@ describe('AeroAPI requests', () => {
     http.calls = [];
     http.status = 200;
     buckets.length = 0;
+    admit.free = Infinity;
   });
 
   it('makes no request without the key', async () => {
@@ -100,7 +103,7 @@ describe('AeroAPI requests', () => {
     expect(http.calls).toHaveLength(0);
   });
 
-  it('sends the key only in x-apikey, through the 1-per-10-s bucket, and caches the pair', async () => {
+  it('sends the key only in x-apikey, admits the first call, bounds both by signal + deadline, and caches the pair', async () => {
     const r = await aeroFiledPlans('KDEN', 'KORD', { AEROAPI_KEY: KEY });
     expect(r.run.status.ok).toBe(true);
     expect(r.plans).toHaveLength(1);
@@ -109,11 +112,51 @@ describe('AeroAPI requests', () => {
       expect(c.url.startsWith('https://aeroapi.flightaware.com/aeroapi/')).toBe(true);
       expect(c.url).not.toContain(KEY);
       expect(c.headers['x-apikey']).toBe(KEY);
-      expect(c.limiter).toBe(true);
+      expect(c.signal).toBe(true);
+      expect(c.deadlineMs).toBeGreaterThan(0);
     }
-    expect(buckets.every(([name, rate, burst]) => name === 'aeroapi.flightaware.com' && rate === 0.1 && burst === 1)).toBe(true);
+    // The first request used the token taken at admission; the second waits on the bucket (bounded by the signal).
+    expect(http.calls.map((c) => c.limiter)).toEqual([false, true]);
+    expect(buckets.every(([name, rate, burst]) => name === 'aeroapi.flightaware.com' && rate === 0.1 && burst === 2)).toBe(true);
     await aeroFiledPlans('KDEN', 'KORD', { AEROAPI_KEY: KEY });
     expect(http.calls).toHaveLength(2);
+  });
+
+  it('never queues: no free token → skipped "budget" and no request', async () => {
+    admit.free = 0;
+    const r = await aeroFiledPlans('KDEN', 'KORD', { AEROAPI_KEY: KEY });
+    expect(r.plans).toEqual([]);
+    expect(r.run.status).toMatchObject({ ok: false, count: 0, skipped: 'budget' });
+    expect((await aeroSchedule('UAL1002', { AEROAPI_KEY: KEY })).run.status.skipped).toBe('budget');
+    expect(http.calls).toHaveLength(0);
+  });
+
+  it('does not hold the plan: a slow refresh answers "pending", finishes in the background and fills the cache', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let admissions = 0;
+    const signals: AbortSignal[] = [];
+    const deps: AeroDeps = {
+      tryAdmit: () => (admissions++, true),
+      get: async <T,>(p: string, o: { signal: AbortSignal }) => {
+        signals.push(o.signal);
+        await gate;
+        return (p.endsWith('/route') ? docs.flight_route : docs.flights_to) as T;
+      },
+    };
+    const env = { AEROAPI_KEY: KEY };
+    const t0 = Date.now();
+    const first = await aeroFiledPlans('KSFO', 'KORD', env, deps, 30);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(first.plans).toEqual([]);
+    expect(first.run.status).toMatchObject({ ok: false, error: AEROAPI_PENDING });
+    // A second caller joins the running refresh: no second admission.
+    expect((await aeroFiledPlans('KSFO', 'KORD', env, deps, 10)).run.status.error).toBe(AEROAPI_PENDING);
+    expect(admissions).toBe(1);
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
+    release();
+    await vi.waitFor(async () => expect((await aeroFiledPlans('KSFO', 'KORD', env, deps, 10)).plans).toHaveLength(1));
+    expect(admissions).toBe(1);
   });
 
   it('a 401 is a failed provider, not an empty answer', async () => {

@@ -152,6 +152,7 @@ export async function buildPlan(o: AirportRecord, d: AirportRecord, now = Date.n
     knownServices: services,
     historicalRoutes: historical,
     ...(airways.run.status.ok ? { airways: airways.airways } : {}),
+    ...(airways.run.status.ok && airways.source && airways.airways.length ? { airwaysSource: airways.source } : {}),
     ...(filed.length ? { filedPlans: filed } : {}),
     weather: { origin: oWx, destination: dWx, windsAloft: winds.winds },
     diversionAirports: diversions,
