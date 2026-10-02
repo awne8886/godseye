@@ -17,7 +17,7 @@ import { magnitudeRingKm, quakeEvents, quakeRadiusPx, quakeToken } from '../shar
 import { nearestPoint, useHitTester } from './hit-test';
 import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from './globe';
 import { entitySelection } from './pick';
-import { useGeoJsonLayers } from './useGeoJsonLayers';
+import { useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
 import { useHazardData } from './useHazardData';
 
 const Z = LAYERS.find((l) => l.id === 'earthquakes')!.z;

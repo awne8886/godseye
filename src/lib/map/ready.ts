@@ -7,7 +7,7 @@
  * `useMapInstance()`, `data-map-ready` and `data-style-ready` mean; tiles may still be loading
  * (the basemap health chip reports that). `onceBasemapPainted` is the separate, capped "first
  * frame with basemap tiles" signal that gates the data layers' GPU start-up (their fetches start
- * at style parse, perf m-l); `onceFirstFrame` ("a globe frame
+ * with the map host, perf L96); `onceFirstFrame` ("a globe frame
  * has been drawn") gates the user's own focus layers (`focus.ts`). Owner: map-engine. Unit-tested
  * with a fake map.
  */
@@ -50,6 +50,26 @@ export function onceStyleParsed(map: StyleEventsMap, onReady: () => void): () =>
 export function styleParsed(map: unknown): boolean {
   const style = (map as { style?: { _loaded?: boolean } } | null)?.style;
   return !!style?._loaded;
+}
+
+/** The part of the map-instance store `publishMapReady` touches. */
+export interface ReadyHost {
+  map: unknown;
+  setReady: (ready: boolean) => void;
+}
+
+/**
+ * Publish the parsed map as ready for feature modules (`useMapInstance()`, `data-map-ready`), once
+ * the admission queue that holds their native layers' first draws is installed (perf L96: the
+ * modules are mounted before the map exists, so their feeds load during start-up, and add native
+ * layers the moment the map is ready). Only for the map the store holds: a WebGL retry's stale
+ * effect publishes nothing. Returns whether it published.
+ */
+export function publishMapReady(host: ReadyHost, map: unknown, el: HTMLElement | null | undefined): boolean {
+  if (!map || host.map !== map) return false;
+  host.setReady(true);
+  if (el) el.dataset.mapReady = 'true';
+  return true;
 }
 
 type PaintEvent = { sourceId?: string; tile?: unknown };

@@ -10,7 +10,7 @@ import { readCssColor } from '@/lib/tokens';
 import type { SentinelResponse, SentinelScene } from '@/lib/types';
 import { useHitTester } from './hit-test';
 import { entitySelection } from './pick';
-import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
+import { renderedFeatureId, useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
 import { useHazardData } from './useHazardData';
 
 const count = (b: SentinelResponse) => b.items.length;

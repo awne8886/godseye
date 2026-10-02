@@ -15,7 +15,7 @@ import { SEVERITY_RADIUS_PX, weatherEvents, weatherToken } from '../shared';
 import { nearestPoint, useHitTester } from './hit-test';
 import { DrawnStatus, GLOBE_POINT_PARAMETERS, useFacing, useFarSideCamera } from './globe';
 import { entitySelection } from './pick';
-import { renderedFeatureId, useGeoJsonLayers } from './useGeoJsonLayers';
+import { renderedFeatureId, useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
 import { useHazardData } from './useHazardData';
 
 const Z = LAYERS.find((l) => l.id === 'weather')!.z;

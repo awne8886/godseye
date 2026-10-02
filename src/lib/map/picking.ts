@@ -70,6 +70,11 @@ export function registerHitTester(id: string, tester: HitTester): () => void {
   };
 }
 
+/** Ids of the registered CPU hit-testers (module ids): their deck layers need no GPU hover pick. */
+export function hitTesterIds(): Set<string> {
+  return new Set(hitTesters.keys());
+}
+
 /** Candidates from every registered hit-tester; a tester that throws (mid-update) simply misses. */
 export function candidatesFromHitTesters(point: { x: number; y: number }, map: HitTestMap): PickCandidate[] {
   const out: PickCandidate[] = [];

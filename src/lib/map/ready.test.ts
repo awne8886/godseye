@@ -3,7 +3,10 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { STYLE_EVENT } from '@/components/hud/style-engine';
 import { afterIdle, useAfterIdle, useSticky, yieldToMain } from './defer';
-import { onceStyleParsed, styleParsed } from './ready';
+import type { Map as MapLibreMap } from 'maplibre-gl';
+import { useEffect } from 'react';
+import { useMapInstance, useMapInstanceStore } from '@/lib/layer-host';
+import { onceStyleParsed, publishMapReady, styleParsed } from './ready';
 import { getStyleVersion, MAP_STYLE_EVENT, useStyleVersion } from './style-version';
 
 function fakeMap(parsed: boolean) {
@@ -123,5 +126,37 @@ describe('deferral helpers', () => {
 
   it('yieldToMain resolves', async () => {
     await expect(yieldToMain()).resolves.toBeUndefined();
+  });
+});
+
+describe('publishMapReady (perf L96: modules mounted before the map see it only once admission is installed)', () => {
+  afterEach(() => useMapInstanceStore.setState({ map: null, ready: false }));
+
+  it('a module mounted early fetches at once, but sees no map between setMap and publishMapReady', () => {
+    const fetches: string[] = [];
+    const { result } = renderHook(() => {
+      useEffect(() => void fetches.push('/api/earthquakes'), []);
+      return useMapInstance();
+    });
+    expect(fetches).toEqual(['/api/earthquakes']);
+    expect(result.current).toBeNull();
+    const map = { id: 'm1' } as unknown as MapLibreMap;
+    act(() => useMapInstanceStore.getState().setMap(map)); // style parsed, queue not installed yet
+    expect(result.current).toBeNull();
+    const el = document.createElement('div');
+    act(() => void publishMapReady(useMapInstanceStore.getState(), map, el));
+    expect(result.current).toBe(map);
+    expect(el.dataset.mapReady).toBe('true');
+    expect(fetches).toHaveLength(1);
+  });
+
+  it('a stale map (WebGL retry) or no map publishes nothing', () => {
+    const current = { id: 'new' } as unknown as MapLibreMap;
+    useMapInstanceStore.getState().setMap(current);
+    const el = document.createElement('div');
+    expect(publishMapReady(useMapInstanceStore.getState(), { id: 'old' }, el)).toBe(false);
+    expect(publishMapReady(useMapInstanceStore.getState(), null, el)).toBe(false);
+    expect(useMapInstanceStore.getState().ready).toBe(false);
+    expect(el.dataset.mapReady).toBeUndefined();
   });
 });
