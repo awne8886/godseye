@@ -433,6 +433,43 @@ pnpm exec playwright install --no-shell chromium && pnpm build && \
   CHROME_PATH="$(node -p "require('@playwright/test').chromium.executablePath()")" pnpm lhci:gpu
 ```
 
+## Known limitations
+
+These follow from upstream terms, quotas or the visitor's hardware, not from missing work.
+
+- **No hardware GPU.** On computers without a usable hardware GPU, the browser draws the WebGL globe in
+  software (for example SwiftShader or llvmpipe), so start-up can take about half a minute and the globe may
+  draw only a few frames per second; the data are unaffected, and browsers with no WebGL at all get a
+  lightweight fallback page.
+- **Basemap tile gaps.** If OpenFreeMap basemap tiles fail to load (host or network trouble), the missing
+  tiles appear as plain, hard-edged patches on the globe until a retry succeeds; the map reports this with a
+  `BASEMAP INCOMPLETE · N TILES MISSING · RETRYING` chip rather than hiding the gap.
+- **Keyless aircraft freshness.** Without keys, aircraft positions come from adsb.lol's per-point API swept
+  over 86 fixed tiles at one request per 1.2 s (at least ~100 s per sweep, longer while adsb.lol answers
+  HTTP 429 to a shared egress IP), so often half or more of the aircraft are over 60 s old: they are drawn
+  frozen and dimmed, each aviation layer row shows `N OLDER THAN 60 S` and turns RECENT/STALE, and areas
+  outside the tiles are not covered. On a host that feeds adsb.lol, `ADSBLOL_REAPI=true` (see the upgrades
+  table) replaces the sweep with one global request every 5 s.
+- **NWS alerts without polygons.** US National Weather Service alerts that carry no polygon are drawn from
+  their zone outlines, which api.weather.gov serves one zone per request, so after a cold start with an
+  empty cache at most 120 zones are fetched per 2.5-minute refresh and the alerts still waiting are counted
+  as `unplacedAlerts` in `/api/weather` instead of being drawn at a guessed position.
+- **SkylineWebcams.** Its cameras are not listed because its terms of use forbid downloading or extracting
+  any of its content, text included, and its pages publish no camera coordinates, so a catalogue could only
+  be built by scraping and guessing positions.
+- **DeepStateMap frontlines** are off by default: DeepState allows non-commercial use with attribution and
+  requires its prior approval for commercial API use, so an operator must opt in with `NONCOMMERCIAL=true`
+  (always off when `COMMERCIAL_DEPLOYMENT=true`); until then the Frontlines layer is hidden and
+  `/api/frontlines` answers 403 `capability_disabled`.
+- **RECON sweep size.** The passive sweep covers at most a /28 (16 addresses) per request: it reads Shodan
+  InternetDB's existing scan data (non-commercial use only) through this server at no more than 2 lookups
+  per second, so a /24 browser-side sweep is not offered.
+- **Development-only audit findings.** `pnpm audit` without `--prod` reports two high advisories for
+  `extract-zip` 2.0.1 (GHSA-jmr9-qjv8-65gv, GHSA-7pqw-9j4j-h8q3), which has no patched release. It enters
+  only through `@lhci/cli` → `lighthouse` → `puppeteer-core` → `@puppeteer/browsers` and is never executed
+  (Lighthouse CI launches the preinstalled Chromium via `CHROME_PATH` and downloads nothing). The
+  production audit (`pnpm audit --prod`, a CI job) is clean.
+
 ## Credits and licence
 
 GODSEYE is released under the [MIT licence](LICENSE). It is an independent project that replicates the
