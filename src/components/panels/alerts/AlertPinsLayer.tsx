@@ -9,11 +9,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 import { useGeoJsonLayers } from '@/lib/map/use-geojson-layers';
 import type { LayerComponentProps } from '@/lib/feature-module';
-import { useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
+import { useFeedEventStore, useLayerStatusStore, type LayerStatus } from '@/lib/layer-host';
 import { registerNativePick } from '@/lib/map/picking';
 import { readCssColor, type MapToken } from '@/lib/tokens';
-import type { AlertItem, FeedEvent } from '@/lib/types';
+import type { AlertItem, FeedEvent, NewsResponse } from '@/lib/types';
 import { FeedOfflineError, NEWS_QUERY_KEY, fetchNews } from '../intel/client';
+import { queryFailure } from '../intel/query-state';
 
 export const ALERT_SOURCE = 'godseye-alert-pins';
 export const ALERT_CIRCLE = 'godseye-alert-pins-circle';
@@ -58,6 +59,26 @@ export function toFeatures(items: readonly AlertItem[]): GeoJSON.FeatureCollecti
   };
 }
 
+/**
+ * The rail status for the news query. An error wins even while react-query still holds the last
+ * copy (the pins stay drawn from it, and the rail says SOURCE OFFLINE with that copy's fetch time,
+ * matching the ALERTS panel chip); once a refetch succeeds the error and its code are cleared, even
+ * when structural sharing hands back the very same `data` object.
+ */
+export function alertPinsStatus(q: { data: NewsResponse | undefined; error: unknown; isPending: boolean }): Partial<LayerStatus> | null {
+  const failure = queryFailure(q, (d) => d.meta.fetchedAt);
+  if (failure) {
+    const providers = q.error instanceof FeedOfflineError ? q.error.providers : null;
+    const error = failure.status === null ? 'unreachable' : failure.status === 503 ? 'Source offline' : `http_${failure.status}`;
+    return { state: 'offline', error, lastGoodAt: failure.lastGoodAt, ...(providers ? { providers } : {}) };
+  }
+  if (q.data) {
+    const { meta } = q.data;
+    return { state: meta.state, error: undefined, count: q.data.items.filter((it) => it.place).length, fetchedAt: meta.fetchedAt, observedAt: meta.observedAt, lastGoodAt: meta.lastGoodAt, providers: q.data.providers, attribution: meta.attribution };
+  }
+  return q.isPending ? { state: 'loading' } : null;
+}
+
 export default function AlertPinsLayer(_: LayerComponentProps) {
   const q = useQuery({ queryKey: NEWS_QUERY_KEY, queryFn: ({ signal }) => fetchNews({ signal }), refetchInterval: 120_000, refetchIntervalInBackground: false, staleTime: 60_000 });
   const update = useLayerStatusStore((s) => s.update);
@@ -87,26 +108,13 @@ export default function AlertPinsLayer(_: LayerComponentProps) {
     if (!q.data) return;
     byId.current = new Map(q.data.items.map((it) => [it.id, it]));
     push(q.data.items.map(toFeedEvent));
-    update('alert_pins', {
-      state: q.data.meta.state,
-      count: q.data.items.filter((it) => it.place).length,
-      fetchedAt: q.data.meta.fetchedAt,
-      observedAt: q.data.meta.observedAt,
-      lastGoodAt: q.data.meta.lastGoodAt,
-      providers: q.data.providers,
-      attribution: q.data.meta.attribution,
-    });
-  }, [q.data, push, update]);
+  }, [q.data, push]);
 
+  const { data: qData, error: qError, isPending } = q;
   useEffect(() => {
-    if (!q.error) return;
-    const e = q.error instanceof FeedOfflineError ? q.error : null;
-    update('alert_pins', { state: 'offline', error: 'Source offline', lastGoodAt: e?.meta?.lastGoodAt ?? null, ...(e?.providers ? { providers: e.providers } : {}) });
-  }, [q.error, update]);
-
-  useEffect(() => {
-    if (q.isPending) update('alert_pins', { state: 'loading' });
-  }, [q.isPending, update]);
+    const patch = alertPinsStatus({ data: qData, error: qError, isPending });
+    if (patch) update('alert_pins', patch);
+  }, [qData, qError, isPending, update]);
 
   useEffect(
     () =>

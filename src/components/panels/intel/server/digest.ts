@@ -12,12 +12,25 @@ import { leadEligible, sourceRank } from './lead-filter';
 
 export type Bloc = AlertItem['bloc'];
 
+/**
+ * Neutral names for the four digest groups. A group is only how the digest tells whether a story
+ * crosses sides (cross / single / mixed); it is not a source's perspective and is never printed as
+ * one. OSIRIS's names ('Western / Ukrainian', 'Regional (Turkey, Middle East)') put BBC and DW in a
+ * "Ukrainian" perspective and SCMP, CNA and Africanews in a "Turkey, Middle East" one (r8); a name
+ * like "non-aligned" would do the same to Times of Israel or Press TV. Each source's declared
+ * stance is its own `lean`, shown with `sourceWithStance()`.
+ */
 export const BLOC_LABEL: Record<Bloc, string> = {
-  western: 'Western / Ukrainian',
+  western: 'Western',
   russian: 'Russian-aligned',
-  regional: 'Regional (Turkey, Middle East)',
+  regional: 'Regional',
   independent: 'Independent aggregator',
 };
+
+/** "South China Morning Post (Hong Kong newspaper)": a source with its own declared stance. */
+export function sourceWithStance(r: Pick<AlertItem, 'sourceName' | 'lean'>): string {
+  return `${r.sourceName} (${r.lean})`;
+}
 
 export interface DigestQuake {
   magnitude: number;
@@ -70,10 +83,10 @@ export function timeAgo(iso: string | null, now: number): string {
 const channelsOf = (r: AlertItem) => [r.sourceName, ...r.alsoReportedBy.map((a) => a.sourceName)];
 
 export function perspectivePhrase(t: Pick<AlertThread, 'perspective' | 'blocs'>): string {
-  if (t.perspective === 'cross') return 'carried by both Western and Russian-aligned channels';
+  if (t.perspective === 'cross') return `carried by both ${BLOC_LABEL.western} and ${BLOC_LABEL.russian} channels`;
   if (t.perspective === 'single') {
     const b = Object.keys(t.blocs)[0] as Bloc | undefined;
-    return b ? `only ${BLOC_LABEL[b]} channels are carrying it` : 'mixed sourcing';
+    return b ? `only channels in the ${BLOC_LABEL[b]} group are carrying it` : 'mixed sourcing';
   }
   return 'mixed sourcing';
 }

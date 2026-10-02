@@ -11,14 +11,11 @@
  */
 import type { ChipTone } from '@/components/hud/PanelChrome';
 import type { MarketsResponse } from '@/lib/types';
+import { utcLabel } from '../intel/query-state';
+
+export { utcLabel };
 
 type ChipInput = Pick<MarketsResponse, 'meta' | 'sessions' | 'quotes'> & Partial<Pick<MarketsResponse, 'providers'>>;
-
-/** "HH:MM UTC" on the same UTC day as `now`, else "YYYY-MM-DD HH:MM UTC". */
-export function utcLabel(iso: string, now = Date.now()): string {
-  const sameDay = iso.slice(0, 10) === new Date(now).toISOString().slice(0, 10);
-  return `${sameDay ? iso.slice(11, 16) : `${iso.slice(0, 10)} ${iso.slice(11, 16)}`} UTC`;
-}
 
 /** When the exchange-quote source last answered: the newest `lastGoodAt` of the kept Yahoo quotes. */
 export function yahooLastGood(quotes: MarketsResponse['quotes']): string | null {

@@ -15,7 +15,11 @@ import { useUiStore } from '@/lib/store';
 import type { RegionDossierResponse } from '@/lib/types';
 import { AiReadout } from '../intel/AiReadout';
 import { layerValue } from './layer-value';
-import { FeedOfflineError, getJson, safeHref, useNow } from '../intel/client';
+import { getJson, safeHref, useNow } from '../intel/client';
+import { failureChip, failureText, queryFailure } from '../intel/query-state';
+
+/** What a 503 from /api/region-dossier means. */
+const DOSSIER_DOWN = 'no dossier upstream answered and no live layer has data';
 
 const LAYER_LABEL: Record<string, string> = {
   flights: 'Aircraft',
@@ -81,7 +85,16 @@ export function DossierPanel(_: PanelProps) {
     enabled: !!target,
     staleTime: 60_000,
   });
-  usePanelChip(!target ? 'STANDBY' : q.data ? 'COMPILED' : q.isPending ? 'COMPILING' : 'SOURCE OFFLINE', !target ? 'idle' : q.data ? 'live' : q.isPending ? 'busy' : 'error');
+  // A failed refetch keeps the last dossier in q.data: the failure owns the chip, the copy is labelled.
+  const failure = target ? queryFailure(q, (d) => d.timestamp) : null;
+  const chip = !target
+    ? { text: 'STANDBY', tone: 'idle' as const, title: undefined }
+    : failure
+      ? failureChip(failure, DOSSIER_DOWN, now)
+      : q.data
+        ? { text: 'COMPILED', tone: 'live' as const, title: undefined }
+        : { text: q.isPending ? 'COMPILING' : 'SOURCE OFFLINE', tone: q.isPending ? ('busy' as const) : ('error' as const), title: undefined };
+  usePanelChip(chip.text, chip.tone, chip.title);
 
   if (!target) return <p className="font-sans text-[12px] text-[var(--text-secondary)]">Double right-click (or long-press) the map to compile a dossier for that point.</p>;
   const d = q.data;
@@ -91,7 +104,12 @@ export function DossierPanel(_: PanelProps) {
         {target.lat.toFixed(4)}, {target.lng.toFixed(4)}
       </p>
       {!d && q.isPending && <DossierSkeleton />}
-      {!d && !q.isPending && <p className="font-sans text-[12px] text-[var(--text-secondary)]">{q.error instanceof FeedOfflineError ? 'SOURCE OFFLINE — no dossier upstream answered and no live layer has data.' : 'SOURCE OFFLINE.'}</p>}
+      {!d && !q.isPending && <p className="font-sans text-[12px] text-[var(--text-secondary)]">{failure ? failureText(failure, DOSSIER_DOWN, now) : 'SOURCE OFFLINE.'}</p>}
+      {d && failure && (
+        <p role="status" data-testid="dossier-offline" className="font-sans text-[12px] text-[var(--alert-red)]">
+          {failureText(failure, DOSSIER_DOWN, now)}
+        </p>
+      )}
       {d && (
         <>
           <section className="flex flex-col gap-1">

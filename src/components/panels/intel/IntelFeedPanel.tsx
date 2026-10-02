@@ -5,13 +5,15 @@
  * with coordinates flies the map there. Owner: panels-alerts-markets-dossier-graph.
  */
 import { useMemo, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { usePanelChip } from '@/components/hud/PanelChrome';
 import type { PanelProps } from '@/lib/feature-module';
-import { useFeedEventStore } from '@/lib/layer-host';
+import { useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
+import type { LayerId } from '@/lib/layer-registry';
 import { useUiStore } from '@/lib/store';
 import type { FeedEvent } from '@/lib/types';
 import { useNow } from './client';
-import { eventLayerLabel as layerLabel, eventTime } from './event-time';
+import { eventLayerLabel as layerLabel, eventTime, feedChip } from './event-time';
 
 const SEVERITIES: FeedEvent['severity'][] = ['info', 'low', 'medium', 'high', 'critical'];
 const SEV_TOKEN: Record<FeedEvent['severity'], string> = {
@@ -35,7 +37,11 @@ export function IntelFeedPanel(_: PanelProps) {
   const now = useNow(15_000);
   const layers = useMemo(() => [...new Set(events.map((e) => e.layer))].sort(), [events]);
   const shown = useMemo(() => filterEvents(events, layer, minSev).slice(0, 200), [events, layer, minSev]);
-  usePanelChip(events.length ? `${shown.length} RESULTS` : 'STANDBY', events.length ? 'live' : 'idle');
+  // The layers behind the rows on screen, with their rail state (a retained row's layer may be offline).
+  const publishing = layer === 'all' ? layers : layers.filter((l) => l === layer);
+  const states = useLayerStatusStore(useShallow((s) => publishing.map((l) => s.status[l as LayerId]?.state)));
+  const chip = feedChip(shown.length, publishing, (l) => states[publishing.indexOf(l)]);
+  usePanelChip(chip.text, chip.tone, chip.title);
 
   return (
     <div className="flex flex-col gap-3" data-testid="intel-panel">

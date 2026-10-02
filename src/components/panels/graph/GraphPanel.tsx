@@ -14,6 +14,7 @@ import { useSelectionStore } from '@/lib/layer-host';
 import { hudFontFamily } from '@/lib/tokens';
 import type { EntityGraphResponse } from '@/lib/types';
 import { FeedOfflineError, getJson, safeHref } from '../intel/client';
+import { graphChip, graphFailure, type GraphFailure } from './graph-status';
 import { seedPosition, step, type LayoutNode } from './layout';
 
 type Node = EntityGraphResponse['nodes'][number];
@@ -41,13 +42,14 @@ export function GraphPanel(_: PanelProps) {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [links, setLinks] = useState<Link[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [status, setStatus] = useState<{ busy: boolean; error: string | null; providers: EntityGraphResponse['providers'] | null }>({ busy: false, error: null, providers: null });
+  const [status, setStatus] = useState<{ busy: boolean; failure: GraphFailure | null; providers: EntityGraphResponse['providers'] | null }>({ busy: false, failure: null, providers: null });
   const canvas = useRef<HTMLCanvasElement>(null);
   const layout = useRef<LayoutNode[]>([]);
-  usePanelChip(status.busy ? 'PLOTTING' : nodes.length ? `${nodes.length} NODES` : 'STANDBY', status.busy ? 'busy' : status.error ? 'error' : nodes.length ? 'live' : 'idle');
+  const chip = graphChip(status, nodes.length);
+  usePanelChip(chip.text, chip.tone, chip.title);
 
   const expand = useCallback(async (t: Expandable, raw: string, reset = false) => {
-    setStatus((s) => ({ ...s, busy: true, error: null }));
+    setStatus((s) => ({ ...s, busy: true, failure: null }));
     try {
       const g = await getJson<EntityGraphResponse>(`/api/entity/expand?type=${t}&id=${encodeURIComponent(raw)}`);
       setNodes((prev) => {
@@ -62,9 +64,9 @@ export function GraphPanel(_: PanelProps) {
         return [...base, ...g.links.filter((l) => !seen.has(key(l)))];
       });
       setExpanded((prev) => new Set([...(reset ? [] : prev), g.root]));
-      setStatus({ busy: false, error: null, providers: g.providers });
+      setStatus({ busy: false, failure: null, providers: g.providers });
     } catch (e) {
-      setStatus({ busy: false, error: e instanceof FeedOfflineError ? (e.status === 400 ? 'Not a valid identifier for that type.' : 'SOURCE OFFLINE — no entity upstream answered.') : 'Request failed.', providers: e instanceof FeedOfflineError ? e.providers : null });
+      setStatus({ busy: false, failure: graphFailure(e), providers: e instanceof FeedOfflineError ? e.providers : null });
     }
   }, []);
 
@@ -175,7 +177,7 @@ export function GraphPanel(_: PanelProps) {
       )}
       <canvas ref={canvas} onClick={onCanvasClick} className="h-64 w-full rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)]" role="img" aria-label={`Entity graph with ${nodes.length} nodes and ${links.length} links; the list below describes every link.`} />
       <p aria-live="polite" className="font-sans text-[12px] text-[var(--text-secondary)]">
-        {status.busy ? 'Expanding…' : status.error ? status.error : nodes.length ? 'Click a node to expand it.' : 'Enter an identifier to start a graph.'}
+        {status.busy ? 'Expanding…' : status.failure ? status.failure.message : nodes.length ? 'Click a node to expand it.' : 'Enter an identifier to start a graph.'}
       </p>
       {status.providers && (
         <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
