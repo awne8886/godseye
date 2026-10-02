@@ -57,6 +57,8 @@ const JSON_PARSERS: [string, Parser, () => unknown][] = [
   ['nsw', A.parseLiveTrafficNsw, () => json(FX.nsw)],
   ['nsw-livecams', A.parseLiveTrafficNsw, () => json(FX.nswLiveCams)],
   ['vialietuva-layers', (r) => A.parseViaLietuva(r, json(FX.vialietuvaInfo), VL_AT), () => json(FX.vialietuvaVkr)],
+  ['edmonton', A.parseEdmonton, () => json(FX.edmonton)],
+  ['mlit', A.parseMlit, () => json(FX.mlit)],
   ['vialietuva-info', (r) => A.parseViaLietuva(json(FX.vialietuvaVkr), r, VL_AT), () => json(FX.vialietuvaInfo)],
 ];
 

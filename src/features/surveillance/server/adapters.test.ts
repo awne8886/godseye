@@ -116,6 +116,37 @@ describe('camera adapters (fixtures captured 2026-09-30)', () => {
     expect(valid([...nz, ...nsw])).toBe(true);
   });
 
+  it('Edmonton (probed 2026-10-02): Status "1" only, inside the city, link out to the city player, no frame or stream URL', () => {
+    const rows = A.parseEdmonton(json(FX.edmonton));
+    expect(rows).toHaveLength(6);
+    expect(valid(rows)).toBe(true);
+    expect(rows[0]).toEqual(
+      expect.objectContaining({ id: 'edmonton-12', name: '23 Avenue & Gateway Boulevard', lat: 53.4538, lng: -113.493, city: 'Edmonton', country: 'CA', streamType: 'link', stillUrl: null, streamUrl: null, externalUrl: 'https://edmontontrafficcam.com/', observedAt: null }),
+    );
+    // The HLS host never leaves the adapter.
+    expect(JSON.stringify(rows)).not.toContain('winkcdn');
+    const base = (json(FX.edmonton) as { d: Record<string, unknown>[] }).d[0]!;
+    const one = (o: Record<string, unknown>) => A.parseEdmonton({ d: [{ ...base, ...o }] });
+    expect(one({ Status: '0', StatusComment: 'Offline' })).toEqual([]);
+    expect(one({ Latitude: '43.65', Longitude: '-79.38' })).toEqual([]); // outside Edmonton
+    expect(one({ Code: '../x' })).toEqual([]);
+  });
+
+  it('MLIT (probed 2026-10-02): area codes from prefarea.json; sys_id 1 and 3 only, paused cameras dropped, /cam/now/<id>.jpg', () => {
+    const codes = A.parseMlitPrefCodes(json(FX.mlitPrefs));
+    expect(codes).toHaveLength(51);
+    expect(codes.slice(0, 3)).toEqual(['101', '102', '103']);
+    expect(codes).toContain('1301');
+    const rows = A.parseMlit(json(FX.mlit));
+    expect(valid(rows)).toBe(true);
+    expect(rows).toHaveLength(4); // the two sys_id 2 cameras use per-camera file names not in the master
+    expect(rows.find((r) => r.id === 'mlit-303329013')).toMatchObject({ name: '四ノ橋', lat: 35.647244444, lng: 139.731902778, country: 'JP', streamType: 'jpg', stillUrl: 'https://cam.river.go.jp/cam/now/303329013.jpg', observedAt: null });
+    expect(rows.every((r) => r.stillUrl!.startsWith('https://cam.river.go.jp/cam/now/'))).toBe(true);
+    expect(A.parseMlit(json(FX.mlitPaused))).toEqual([]);
+    expect(A.parseMlit({ features: [{ geometry: { type: 'Point', coordinates: [2.35, 48.85] }, properties: { id: 100000001, sys_id: 1, pause: 0, name: 'x' } }] })).toEqual([]); // outside Japan
+    expect(A.parseMlitPrefCodes({ prefs: [{ prefCd: '13' }, { prefCd: 1.5 }, { prefCd: -1 }] })).toEqual([]);
+  });
+
   it('refuses bad coordinates, non-https frames and zone-less times', () => {
     expect(A.parseDgt({ camaras: [{ id: '1', latitud: '0', longitud: '0', imagen: 'https://etraffic.dgt.es/camarasEtraffic/1.jpg' }] })).toEqual([]);
     expect(A.parseDgt({ camaras: [{ id: '1', latitud: '40', longitud: '-3', imagen: 'http://etraffic.dgt.es/camarasEtraffic/1.jpg' }] })).toEqual([]);

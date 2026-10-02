@@ -24,7 +24,10 @@ export interface ProviderDef {
   region: CctvRegion;
   /** Where stills (and, for status probes only, HLS playlists) may be fetched from. */
   rules: readonly AllowRule[];
-  /** Keyed provider: runs only when this capability is on (else skippedProvider). */
+  /**
+   * Gated provider: runs only when this capability is on. Off → skippedProvider('not-configured')
+   * for an operator key, skippedProvider('licence') for a licence gate (LICENCE_CAPABILITIES).
+   */
   capability?: CapabilityId;
   /** IANA zone of timestamps the operator publishes without an offset (TxDOT snapshot times). */
   timeZone?: string;
@@ -34,6 +37,12 @@ export interface ProviderDef {
    * operator's pattern (never a `/` root rule). Probed 2026-09-30.
    */
   fileRules?: (still: URL) => AllowRule[];
+  /**
+   * Image types the operator publishes real frames in. Anything else is its "no image" placeholder
+   * (MLIT answers unknown or offline cameras with a 30 685-byte PNG carrying a fresh Last-Modified),
+   * refused by the stills proxy as `operator_placeholder` instead of being shown as a current frame.
+   */
+  frameTypes?: readonly string[];
 }
 
 const r = (host: string, pathPrefix: string): AllowRule => ({ host, pathPrefix });
@@ -153,6 +162,22 @@ export const PROVIDERS: readonly ProviderDef[] = [
       frame_url_template: null, stream_type: 'link',
       licence: 'Québec 511 (operator terms); video pages refuse non-browser clients, so cameras link out to the operator',
       attribution_string: 'Cameras: Québec 511 — Transports et Mobilité durable Québec', terms_url: 'https://www.quebec511.info/',
+      key_required: false, max_poll_interval: 60, proxy_allowed: false, link_out_only: true,
+    },
+    rules: [],
+  },
+  {
+    region: 'canada',
+    // City conditions of use: "personal, educational or non-commercial purposes" only (probed
+    // 2026-10-02), so the list runs only on non-commercial deployments (nc_sources) and every
+    // camera links out to the city's player. Its HLS host is never proxied, embedded or put in the
+    // CSP (a non-commercial host would need a licence-gated CSP): no rules.
+    capability: 'nc_sources',
+    row: {
+      id: 'edmonton', operator: 'City of Edmonton traffic cameras', region: 'Alberta', country: 'CA',
+      list_endpoint: 'https://edmontontrafficcam.com/Default.aspx/GetCameras', frame_url_template: null, stream_type: 'link',
+      licence: 'City of Edmonton conditions of use: personal, educational or non-commercial use only; shown on non-commercial deployments, linking out to the city player',
+      attribution_string: 'Traffic cameras: City of Edmonton', terms_url: 'https://www.edmonton.ca/conditionsofuse',
       key_required: false, max_poll_interval: 60, proxy_allowed: false, link_out_only: true,
     },
     rules: [],
@@ -302,6 +327,20 @@ export const PROVIDERS: readonly ProviderDef[] = [
     fileRules: (u) => (THB_HOSTS.includes(u.hostname) ? exactFile(u.hostname, /^\/[A-Za-z0-9+()-]{1,48}\/snapshot$/)(u) : []),
   },
   {
+    region: 'japan',
+    row: {
+      id: 'mlit', operator: 'Ministry of Land, Infrastructure, Transport and Tourism (MLIT), 川の防災情報 river cameras', region: 'Japan', country: 'JP',
+      list_endpoint: 'https://www.river.go.jp/kawabou/file/gjson/scam/{prefCd}.json', frame_url_template: 'https://cam.river.go.jp/cam/now/{id}.jpg',
+      stream_type: 'jpg',
+      licence: 'MLIT river disaster-prevention information (river.go.jp publishes no reuse terms; MLIT website content is under the Public Data License 1.0 unless noted; many cameras are owned by prefectures). Source credited, frames never stored',
+      attribution_string: '出典：国土交通省「川の防災情報」 (MLIT river cameras, river.go.jp)', terms_url: 'https://www.mlit.go.jp/link.html',
+      key_required: false, max_poll_interval: 300, proxy_allowed: true, link_out_only: false,
+    },
+    // Current frames only (`/cam/now/<id>.jpg`; cache-control max-age=300, probed 2026-10-02).
+    rules: [r('cam.river.go.jp', '/cam/now/')],
+    frameTypes: ['image/jpeg'],
+  },
+  {
     region: 'oceania',
     row: {
       id: 'nzta', operator: 'NZ Transport Agency Waka Kotahi', region: 'New Zealand', country: 'NZ',
@@ -360,21 +399,12 @@ export const NOT_WIRED_SOURCES: readonly { id: string; operator: string; region:
     probedAt: '2026-10-01',
   },
   {
-    id: 'edmonton',
-    operator: 'City of Edmonton traffic cameras',
-    region: 'Alberta',
-    country: 'CA',
-    reason:
-      'City conditions of use allow personal, educational or non-commercial use only, and the list is an ASP.NET page method (POST Default.aspx/GetCameras) rather than an open-data API. Not wired: needs a non-commercial deployment gate.',
-    probedAt: '2026-10-01',
-  },
-  {
-    id: 'mlit',
-    operator: 'Ministry of Land, Infrastructure, Transport and Tourism (MLIT) river cameras',
-    region: 'Japan',
-    country: 'JP',
-    reason: 'No machine-readable camera catalogue (cam.river.go.jp publishes images only; other tools hard-code a list). Hand-copied camera lists are not shipped.',
-    probedAt: '2026-10-01',
+    id: 'windy',
+    operator: 'Windy.com Webcams',
+    region: 'Global',
+    country: '—',
+    reason: 'Windy Webcams API v3 requires a key (WINDY_WEBCAMS_KEY); not configured, and frames outside the keyed API are excluded.',
+    probedAt: '2026-10-02',
   },
 ];
 
@@ -403,6 +433,14 @@ export function isRemoved(id: string, env: Record<string, string | undefined> = 
   if (REMOVED_CAMERA_IDS.has(id)) return true;
   const extra = env.CCTV_REMOVED_IDS;
   return !!extra && extra.split(',').some((s) => s.trim() === id);
+}
+
+/** Capabilities that are licence gates, not operator keys: an off provider is skipped as 'licence'. */
+export const LICENCE_CAPABILITIES: ReadonlySet<CapabilityId> = new Set<CapabilityId>(['nc_sources']);
+
+/** Why a gated provider whose capability is off was skipped. */
+export function skipReasonOf(def: ProviderDef): 'licence' | 'not-configured' {
+  return def.capability && LICENCE_CAPABILITIES.has(def.capability) ? 'licence' : 'not-configured';
 }
 
 const BY_ID = new Map(PROVIDERS.map((p) => [p.row.id, p]));

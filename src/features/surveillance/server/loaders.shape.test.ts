@@ -65,6 +65,9 @@ describe('list body shapes', () => {
       lta: json(FX.lta),
       thb: json(FX.thb),
       nsw: json(FX.nsw),
+      edmonton: json(FX.edmonton),
+      mlitPrefs: json(FX.mlitPrefs),
+      mlit: json(FX.mlit),
     };
     for (const [id, body] of Object.entries(fx)) expect(jsonKind(body), id).toBe(LIST_SHAPES[id as keyof typeof LIST_SHAPES]);
     expect(LIST_SHAPES.trafikverket).toBe('object'); // documented `{RESPONSE: {RESULT: [...]}}` (keyed; no keyless fixture)

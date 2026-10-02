@@ -40,6 +40,14 @@ export const FX = {
   indot: 'indot-graphql.2026-10-01.json',
   vialietuvaVkr: 'vialietuva-vkr.2026-10-01.json',
   vialietuvaInfo: 'vialietuva-info.2026-10-01.json',
+  /** The first six cameras of City of Edmonton `POST Default.aspx/GetCameras` (58, all Online), probed 2026-10-02T00:32Z. */
+  edmonton: 'edmonton-getcameras.2026-10-02.json',
+  /** MLIT river.go.jp area list (`prefs[]`, 51 codes), probed 2026-10-02. */
+  mlitPrefs: 'mlit-prefarea.2026-10-02.json',
+  /** Tokyo (1301) camera master trimmed to two cameras per `sys_id` (1, 2, 3), probed 2026-10-02T00:36Z. */
+  mlit: 'mlit-scam-1301.2026-10-02.json',
+  /** One paused (`pause: 1`) camera from the Hokkaido area 102 master, probed 2026-10-02. */
+  mlitPaused: 'mlit-scam-paused.2026-10-02.json',
   catalogueStills: 'catalogue-stills.2026-10-01.json.gz',
   /** Still response headers per provider (HK TD, Caltrans, Digitraffic, NSW, Ottawa, THB, Via Lietuva, Toronto). */
   frameHeaders: 'frame-headers.2026-10-01.json',
@@ -54,6 +62,7 @@ export const FX = {
 
 /**
  * Every still URL the keyless adapters produced from the full upstream lists recorded 2026-10-01
- * (provider id → URLs; Caltrans D4 + D7, TxDOT AUS, all other providers complete), gzipped.
+ * (provider id → URLs; Caltrans D4 + D7, TxDOT AUS, all other providers complete; MLIT from all 49
+ * area masters recorded 2026-10-02), gzipped.
  */
 export const catalogueStills = (): Record<string, string[]> => JSON.parse(gunzipSync(readFileSync(at(FX.catalogueStills))).toString('utf8')) as Record<string, string[]>;

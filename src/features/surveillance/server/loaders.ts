@@ -66,6 +66,7 @@ const opts = (signal: AbortSignal, extra: HttpOptions = {}): HttpOptions => ({ s
 // (Caltrans 12, TxDOT 25) are paced so an operator never sees a burst.
 const caltransBucket = () => providerBucket('cctv-caltrans-list', 4, 4);
 const txdotBucket = () => providerBucket('cctv-txdot-list', 4, 4);
+const mlitBucket = () => providerBucket('cctv-mlit-list', 3, 3);
 
 /** Rows from every district that answered; throws only when none did. */
 export async function settledRows(jobs: Promise<Camera[]>[]): Promise<Camera[]> {
@@ -88,6 +89,11 @@ export function tflKeyHeaders(env: Record<string, string | undefined> = process.
   return key ? { app_key: key } : {};
 }
 
+export const EDMONTON_CAMERAS_URL = 'https://edmontontrafficcam.com/Default.aspx/GetCameras';
+
+export const MLIT_PREFS_URL = 'https://www.river.go.jp/kawabou/file/files/map/pref/prefarea.json';
+export const mlitMasterUrl = (prefCd: string) => `https://www.river.go.jp/kawabou/file/gjson/scam/${prefCd}.json`;
+
 export const INDOT_GRAPHQL_URL = 'https://511in.org/api/graphql';
 /** Indiana's bounding box at the zoom where the map lists individual cameras. */
 export const INDOT_QUERY = {
@@ -108,6 +114,7 @@ export const LIST_SHAPES = {
   indot: 'object',
   ottawa: 'array',
   quebec: 'object',
+  edmonton: 'object',
   toronto: 'object',
   drivebc: 'array',
   tfl: 'array',
@@ -120,6 +127,8 @@ export const LIST_SHAPES = {
   vialietuvaInfo: 'array',
   lta: 'object',
   thb: 'array',
+  mlitPrefs: 'object',
+  mlit: 'object',
   nsw: 'array',
 } as const satisfies Record<string, BodyShape>;
 
@@ -151,6 +160,9 @@ export const LOADERS: Record<string, Loader> = {
         LIST_SHAPES.quebec,
       ),
     ),
+  // ASP.NET page method: POST `{}` (probed 2026-10-02: 58 cameras in ~0.8 s). Behind nc_sources.
+  edmonton: async (signal) =>
+    A.parseEdmonton(await getJson(EDMONTON_CAMERAS_URL, opts(signal, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json; charset=utf-8' }, retries: 0 }), LIST_SHAPES.edmonton)),
   // Served as application/octet-stream.
   toronto: async (signal) =>
     A.parseToronto(
@@ -184,6 +196,13 @@ export const LOADERS: Record<string, Loader> = {
   hktd: async (signal) => A.parseHongKong(await getText('https://static.data.gov.hk/td/traffic-snapshot-images/code/Traffic_Camera_Locations_En.xml', opts(signal))),
   lta: async (signal) => A.parseLta(await getJson('https://api.data.gov.sg/v1/transport/traffic-images', opts(signal), LIST_SHAPES.lta)),
   thb: async (signal) => A.parseThb(await getJson('https://thbapp.thb.gov.tw/services/cctv/thb', opts(signal), LIST_SHAPES.thb)),
+  // The area list, then one camera master per area (51 codes, 49 files; codes 101 and 4701 answer
+  // 404 = no cameras), paced at 3/s. Probed 2026-10-02: 3.3 MB, ~1 s per file.
+  mlit: async (signal) => {
+    const codes = A.parseMlitPrefCodes(await getJson(MLIT_PREFS_URL, opts(signal), LIST_SHAPES.mlitPrefs));
+    if (!codes.length) throw new HttpError('No area codes in prefarea.json', 'parse', MLIT_PREFS_URL);
+    return settledRows(codes.map(async (c) => A.parseMlit(await getJson(mlitMasterUrl(c), opts(signal, { limiter: mlitBucket(), retries: 0 }), LIST_SHAPES.mlit))));
+  },
   nzta: async (signal) => A.parseNzta(await getText('https://trafficnz.info/service/traffic/rest/4/cameras/all', opts(signal))),
   nsw: async (signal) => A.parseLiveTrafficNsw(await getJson('https://www.livetraffic.com/datajson/all-feeds-web.json', opts(signal), LIST_SHAPES.nsw)),
 };

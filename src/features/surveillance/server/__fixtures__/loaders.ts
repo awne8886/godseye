@@ -29,6 +29,8 @@ export function fixtureLoaders(): Record<string, (s: AbortSignal) => Promise<Cam
     nzta: async () => A.parseNzta(text(FX.nzta)),
     nsw: async () => A.parseLiveTrafficNsw(json(FX.nsw)),
     indot: async () => A.parseIndot(json(FX.indot)),
+    edmonton: async () => A.parseEdmonton(json(FX.edmonton)),
+    mlit: async () => A.parseMlit(json(FX.mlit)),
     // Recorded at 2026-10-01T02:10Z; parsed against that instant so the 6 h frame-age filter is stable.
     vialietuva: async () => A.parseViaLietuva(json(FX.vialietuvaVkr), json(FX.vialietuvaInfo), Date.parse('2026-10-01T02:10:00Z')),
   };

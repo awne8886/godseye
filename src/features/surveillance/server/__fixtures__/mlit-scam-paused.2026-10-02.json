@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","crs":{"type":"name","properties":{"name":"EPSG:4326"}},"features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[142.373327778,44.223333333]},"properties":{"id":100257215,"name":"新タヨロマ川  1.5Kp","name_kana":"","ofc_cd":81,"sys_id":1,"sys_cam_id":"257215","pause":1,"date_type":2,"cam_kind":4,"own_cd":257}}]}

@@ -22,6 +22,10 @@ beforeAll(async () => {
     if (u.pathname === '/cams/ok.jpg') {
       res.writeHead(200, { 'content-type': 'image/jpeg', 'last-modified': 'Wed, 30 Sep 2026 20:02:17 GMT' });
       res.end(JPEG);
+    } else if (u.pathname === '/cams/placeholder.jpg') {
+      // MLIT's "no image" answer (probed 2026-10-02): 200 image/png with a fresh Last-Modified.
+      res.writeHead(200, { 'content-type': 'image/png', 'last-modified': 'Fri, 02 Oct 2026 00:35:01 GMT' });
+      res.end(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]));
     } else if (u.pathname === '/cams/octet.jpg') {
       res.writeHead(200, { 'content-type': 'application/octet-stream' });
       res.end(JPEG);
@@ -89,6 +93,15 @@ describe('stills-only frame relay', () => {
     expect(acceptImage('image/jpeg', Buffer.from('<html>'))).toBeNull();
     expect(acceptImage('text/html', JPEG)).toBeNull();
     expect(sniffImage(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))).toBe('image/png');
+  });
+
+  it("MLIT: a provider's placeholder type (PNG for a JPEG-only operator) is CAMERA OFFLINE, never a fresh frame", async () => {
+    const jpegOnly: ProviderDef = { ...def(), frameTypes: ['image/jpeg'] };
+    const r = await fetchFrame(cam('/cams/placeholder.jpg'), jpegOnly, deps());
+    expect(r).toMatchObject({ ok: false, status: 502, error: 'operator_placeholder' });
+    expect(await fetchFrame(cam('/cams/ok.jpg'), jpegOnly, deps())).toMatchObject({ ok: true, contentType: 'image/jpeg' });
+    // Without the declaration a PNG is a normal frame.
+    expect(await fetchFrame(cam('/cams/placeholder.jpg'), def(), deps())).toMatchObject({ ok: true, contentType: 'image/png' });
   });
 
   it('caps the size', async () => {

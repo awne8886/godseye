@@ -2,7 +2,8 @@
  * Camera catalogue: one feed per region (`cctv:<region>`, 30-min inventory, 5-min back-off after a
  * failure), each running its providers in parallel through runProvider() so every response carries
  * `providers: {name: {ok, count, ms, age_s}}`. A provider that fails keeps its last-good rows (its
- * status still reports the failure). Keyed providers report skippedProvider('not-configured').
+ * status still reports the failure). Keyed providers report skippedProvider('not-configured'); licence-gated ones (nc_sources off on a
+ * commercial deployment) report skippedProvider('licence').
  * Owner: layers-surveillance. Server-only.
  */
 import 'server-only';
@@ -11,7 +12,7 @@ import { defineFeed, runProvider, skippedProvider, type Feed, type ProviderRun }
 import type { Camera } from '@/lib/types';
 import { CCTV_REGIONS, providerIdOf, type CctvRegion } from '../shared';
 import { LOADERS, type Loader } from './loaders';
-import { isRemoved, providerDef, providersIn, type ProviderDef } from './registry';
+import { isRemoved, providerDef, providersIn, skipReasonOf, type ProviderDef } from './registry';
 
 const MIN = 60_000;
 export const INVENTORY_TTL_MS = 30 * MIN;
@@ -31,7 +32,7 @@ export async function runRegion(
     defs.map(async (d) => {
       const id = d.row.id;
       if (d.capability && !hasCapability(d.capability, env)) {
-        providers[id] = skippedProvider('not-configured');
+        providers[id] = skippedProvider(skipReasonOf(d));
         return;
       }
       const load = loaders[id];
