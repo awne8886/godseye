@@ -12,7 +12,7 @@
  *    buffer built from the GDELT batches this process has seen (meta.note states the span).
  */
 import 'server-only';
-import { defineFeed, type FeedResult } from '@/lib/feeds';
+import { defineFeed, type Feed, type FeedResult } from '@/lib/feeds';
 import { pointInPolygon } from '@/lib/geo';
 import { NEWS_ATTRIBUTION, newsFeed } from '@/components/panels/intel/feeds';
 import type { AlertItem, ConflictEvent, ConflictZone, FreshnessState, GdeltEvent } from '@/lib/types';
@@ -186,6 +186,35 @@ export interface ConflictsData {
   since: string | null;
 }
 
+/** Conflicts run deadline (the feeds.ts default, stated here so the input budget below stays under it). */
+const CONFLICTS_DEADLINE_MS = 25_000;
+/** How long a rebuild waits for an expired GDELT/news snapshot to refresh before using the stale one. */
+export const INPUT_WAIT_MS = 15_000;
+
+/**
+ * Reads an input feed for a rebuild. Past its TTL, `get()` alone serves the previous snapshot and
+ * refreshes in the background, so a rebuild stamped now would fold in GDELT one batch behind (r9:
+ * providers.gdelt age_s 1518 while /api/gdelt-events had a 320 s batch). `waitForFresh` awaits that
+ * refresh; a failed refresh resolves with the last-good snapshot (stale-on-error, error set). The
+ * input's own deadline (GDELT 60 s, news 40 s) exceeds this run's, so a hung refresh is bounded here
+ * by `ms` (and this run's signal): it keeps running in the background and the current snapshot,
+ * stale or empty, is used. Exported for tests.
+ */
+export function readFresh<T>(feed: Pick<Feed<T>, 'get' | 'peek'>, ms: number, signal?: AbortSignal): Promise<FeedResult<T>> {
+  if (signal?.aborted) return Promise.resolve(feed.peek());
+  return new Promise((resolve) => {
+    const fallback = () => finish(feed.peek());
+    const finish = (r: FeedResult<T>) => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', fallback);
+      resolve(r);
+    };
+    const timer = setTimeout(fallback, ms);
+    signal?.addEventListener('abort', fallback, { once: true });
+    feed.get({ waitForFresh: true }).then(finish, fallback);
+  });
+}
+
 export const conflictsFeed = defineFeed<ConflictsData>({
   key: 'conflicts',
   ttlMs: 15 * 60_000,
@@ -205,10 +234,12 @@ export const conflictsFeed = defineFeed<ConflictsData>({
   // Zones are always present; the feed is empty only if the bundled file is missing.
   count: (d) => d.zones.length,
   isEmpty: (d) => d.zones.length === 0,
-  run: async () => {
+  deadlineMs: CONFLICTS_DEADLINE_MS,
+  run: async (ctx) => {
     const zones = loadZones();
     // Both feeds are read in-process (never over HTTP); either may be offline without failing zones.
-    const [g, n] = await Promise.all([gdeltFeed.get(), newsFeed.get()]);
+    // An expired input is refreshed first, so this snapshot holds the current GDELT batch.
+    const [g, n] = await Promise.all([readFresh(gdeltFeed, INPUT_WAIT_MS, ctx.signal), readFresh(newsFeed, INPUT_WAIT_MS, ctx.signal)]);
     const newsOk = n.data !== null && (n.meta.state === 'live' || n.meta.state === 'recent');
     // Last-good GDELT data while GDELT is failing is not a success: only a fresh snapshot counts.
     const gdeltOk = g.data !== null && (g.meta.state === 'live' || g.meta.state === 'recent');
