@@ -19,6 +19,7 @@ import { OBSERVATION_CADENCE_MS } from '@/lib/layer-registry';
 import type { FreshnessState } from '@/lib/types';
 import { draftMessage, pendingSides, setPathsDraft, usePathsDraft, type DraftSuggestion, type MetroChoice, type PathsDraft } from './draft';
 import { obscuredFitText, partialFitText, useFitNotice } from './fit';
+import { useTrackSeq } from './handoff';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
 import { PROVIDER_PENDING } from '../lib/pending';
@@ -148,7 +149,7 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
       {open && search.data?.metro && (
         <div className="mt-1 flex flex-wrap gap-1" aria-label={`${search.data.metro.name} airports`}>
           {search.data.metro.codes.map((c) => (
-            <button key={c} type="button" onClick={() => pick(c)} className="hud-chip hud-text border border-[var(--border-active)] px-1.5 py-0.5 text-[11px] text-[var(--gold-light)]">
+            <button key={c} type="button" onClick={() => pick(c)} className="hud-chip hud-text hud-control min-h-8 border border-[var(--border-active)] px-1.5 py-0.5 text-[11px] text-[var(--gold-light)] phone:min-h-11">
               {c}
             </button>
           ))}
@@ -163,9 +164,10 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
           )}
           {results.slice(0, 8).map((r) => (
             <li key={r.ident} role="option" aria-selected={false}>
-              <button type="button" onClick={() => pick(codeOf(r))} className="flex w-full items-baseline gap-2 px-2 py-1 text-left hover:bg-[var(--glass-2)]">
+              <button type="button" onClick={() => pick(codeOf(r))} className="flex w-full items-baseline gap-2 px-2 py-1 text-left hover:bg-[var(--glass-2)] phone:min-h-11 phone:items-center">
                 <span className="hud-text w-10 text-[11px] text-[var(--gold-light)]">{codeOf(r)}</span>
-                <span className="flex-1 truncate font-sans text-[12px] text-[var(--text-primary)]">{r.name}</span>
+                {/* Phones wrap the name: six "London …" rows must still read Gatwick, Stansted, … (round 11). */}
+                <span className="flex-1 truncate font-sans text-[12px] text-[var(--text-primary)] phone:break-words phone:whitespace-normal">{r.name}</span>
                 {typeof r.distanceKm === 'number' && <span className="hud-micro tabular-nums text-[var(--text-secondary)]">{Math.round(r.distanceKm)} KM</span>}
                 <span className="hud-micro text-[var(--text-muted)]">{r.isoCountry}</span>
               </button>
@@ -743,9 +745,13 @@ export default function PathsPanel(_props: PanelProps) {
       if (mode === 'flight') setMode('route');
     }
   }
+  // Round 11: a hand-off (aircraft card, palette) shows FLIGHT even for the ident already tracked.
+  const trackSeq = useTrackSeq();
   const [seenIdent, setSeenIdent] = useState(ident);
-  if (ident !== seenIdent) {
+  const [seenTrack, setSeenTrack] = useState(trackSeq);
+  if (ident !== seenIdent || trackSeq !== seenTrack) {
     setSeenIdent(ident);
+    setSeenTrack(trackSeq);
     if (ident) {
       setIdentText(ident);
       setMode('flight');

@@ -75,12 +75,15 @@ test('?route=LHR-JFK: the gold arc is on screen on the desktop globe within 30 s
   const t0 = Date.now();
   await expect(status(page)).toHaveAttribute('data-layers', /route-planned-arc/, { timeout: 30_000 });
   // State alone passed while the screen was blank (R4-M1): count gold pixels left of the panel.
+  // Round 11: each sample is timed from when its screenshot was requested — on a loaded CI shard the
+  // screenshot call itself took 47–65 s, so timing from its return measured the probe, not the app.
   let drawnAt = -1;
   const samples: string[] = [];
   while (Date.now() - t0 < 30_000 && drawnAt < 0) {
+    const sampleAt = Date.now() - t0;
     const gold = await tokenPixels(page, '--map-route-planned');
-    samples.push(`${((Date.now() - t0) / 1000).toFixed(1)}s gold=${gold}`);
-    if (gold > 50) drawnAt = Date.now() - t0;
+    samples.push(`requested ${(sampleAt / 1000).toFixed(1)}s, answered ${((Date.now() - t0) / 1000).toFixed(1)}s: gold=${gold}`);
+    if (gold > 50) drawnAt = sampleAt;
   }
   await info.attach('samples', { body: samples.join('\n'), contentType: 'text/plain' });
   expect(drawnAt, samples.join('\n')).toBeGreaterThanOrEqual(0);

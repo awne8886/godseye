@@ -35,10 +35,16 @@ describe('AeroAPI key handling', () => {
 
   it('makes no request without a key or on a commercial deployment', async () => {
     const { aeroSchedule, aeroFiledPlans } = await import('../aeroapi');
-    const a = await aeroSchedule('BAW117', {});
-    const b = await aeroFiledPlans('KJFK', 'KLAX', { AEROAPI_KEY: SECRET, COMMERCIAL_DEPLOYMENT: 'true' });
-    expect(a.run.status.skipped).toBe('not-configured');
-    expect(b.run.status.skipped).toBe('not-configured');
+    const commercial = { AEROAPI_KEY: SECRET, COMMERCIAL_DEPLOYMENT: 'true' };
+    // Round 11: no key is 'not-configured'; a key held back by the licence gate is 'licence'.
+    const runs = [
+      [await aeroSchedule('BAW117', {}), 'not-configured'],
+      [await aeroFiledPlans('KJFK', 'KLAX', {}), 'not-configured'],
+      [await aeroSchedule('BAW117', { AEROAPI_KEY: '  ' }), 'not-configured'],
+      [await aeroSchedule('BAW117', commercial), 'licence'],
+      [await aeroFiledPlans('KJFK', 'KLAX', commercial), 'licence'],
+    ] as const;
+    for (const [r, why] of runs) expect(r.run.status.skipped).toBe(why);
     expect(calls).toHaveLength(0);
   });
 

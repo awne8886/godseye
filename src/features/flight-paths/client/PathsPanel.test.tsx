@@ -332,6 +332,29 @@ describe('PATHS panel', () => {
     expect(screen.getAllByRole('combobox').map((i) => (i as HTMLInputElement).value)).toEqual(['LHR', 'JFK']);
   });
 
+  it('round 11: tracking the same ident again after the visitor picked LIVE or ROUTE brings PATHS back to FLIGHT', async () => {
+    const { trackFlight } = await import('./handoff');
+    await act(async () => {
+      renderPanel();
+    });
+    await act(async () => {
+      trackFlight('UAL60');
+    });
+    const selected = (name: string) => screen.getByRole('tab', { name }).getAttribute('aria-selected');
+    expect(selected('FLIGHT')).toBe('true');
+    for (const tab of ['LIVE', 'ROUTE']) {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('tab', { name: tab }));
+      });
+      expect(selected(tab)).toBe('true');
+      await act(async () => {
+        trackFlight('UAL60');
+      });
+      expect(useUiStore.getState().flightIdent).toBe('UAL60');
+      expect(selected('FLIGHT')).toBe('true');
+    }
+  });
+
   it('round 10 MAJOR 3: a route planned through metro groups lists each group as chips, the planned airport selected; one click re-plans', async () => {
     const { planRoute } = await import('./handoff');
     await act(async () => {
