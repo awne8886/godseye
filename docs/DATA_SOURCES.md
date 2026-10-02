@@ -682,6 +682,14 @@ Both rules are stated in the `/api/gps-interference` `meta.note` and on the card
 | USGS `…/summary/2.5_day.geojson` | 200 · 0.47 s · 27 kB (38 quakes) | `*` | `cache-control: public, max-age=60`, `Last-Modified` set; shape unchanged. |
 | OpenFreeMap `tiles.openfreemap.org/styles/dark` (basemap style, map-engine; checked for the e2e skip rule) | 200 · 0.67 s | n/a | Reachable now. The round-4 e2e failure of `earthquakes.spec.ts:65` was this style failing at the sandbox proxy (`net::ERR_TOO_MANY_RETRIES`, trace): BASEMAP UNAVAILABLE, no map canvas. Map steps now skip with that reason. |
 
+#### Re-probe 2026-10-02 17:20–17:40 UTC (Phase 3 round 10, /api/weather size)
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| NWS `api.weather.gov/zones?type=forecast&area=TX` (listing, 20 states) + `?type=county&area=…` (TX/OK/KS/GA) | 200 · 0.87 s · 519 kB (TX) | `*` | Listing carries **no geometry** even with `include_geometry=true`; 2,666 zone ids. |
+| NWS `api.weather.gov/zones/{forecast,county}/{id}` × 2,666 | 200 (2,657 with polygonal geometry) · ~0.3 s each at 4 req/s | `*` | Recorded rounded to 2 decimals (as the zone cache holds them) into `__fixtures__/nws-zones-busy.2026-10-02.json.gz` (983 kB gz) for the busy-day size test. |
+| NWS `alerts/active` via our `/api/weather` (live) | 200 | `*` | 240 NWS alerts, 126 distinct alert footprints. `/api/weather` was 2,732,652 B (main) → 479,594 B (r10: Douglas-Peucker 0.01°, ≤ 400 vertices per outline, 151 zone outlines sent once in `zones`, alerts reference them by `zoneRefs`). Brotli 217,825 → 77,522 B. |
+
 ## layers-space — probe log
 
 All probes 2026-09-30 18:05–18:10 UTC from the build sandbox with the honest UA

@@ -17,7 +17,7 @@ import { parseRouteParam } from '@/lib/url-state';
 import { entityFreshness } from '@/lib/freshness';
 import { OBSERVATION_CADENCE_MS } from '@/lib/layer-registry';
 import type { FreshnessState } from '@/lib/types';
-import { draftMessage, pendingSides, setPathsDraft, usePathsDraft, type DraftSuggestion } from './draft';
+import { draftMessage, pendingSides, setPathsDraft, usePathsDraft, type DraftSuggestion, type MetroChoice, type PathsDraft } from './draft';
 import { obscuredFitText, partialFitText, useFitNotice } from './fit';
 import { ApiFailure, getJson, searchUrl, useAirportSearch, useFlight, useLive, usePlan, type Flight, type Live, type Plan, type Search as SearchResponse } from './api';
 import { Profile } from './Profile';
@@ -178,6 +178,32 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * Round 10 (§8 chooser): the airports of the metro group a typed name resolved through ("London" →
+ * LHR LGW STN LTN LCY SEN), the planned one selected; one click re-plans with another.
+ */
+function MetroChips({ side, group, selected, onPick }: { side: 'from' | 'to'; group: MetroChoice; selected: string; onPick: (code: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1" data-testid={`paths-metro-${side}`} role="group" aria-label={`${group.name} airports (${side === 'from' ? 'origin' : 'destination'})`}>
+      <span className="hud-micro text-[var(--text-muted)]">
+        {side === 'from' ? 'FROM' : 'TO'} {group.name.toUpperCase()}
+      </span>
+      {group.codes.map((c) => (
+        <button
+          key={c}
+          type="button"
+          aria-pressed={c === selected}
+          onClick={() => c !== selected && onPick(c)}
+          className="hud-chip hud-text hud-control min-h-8 border px-1.5 py-0.5 text-[11px] phone:min-h-11"
+          style={{ borderColor: c === selected ? 'var(--border-active)' : 'var(--border-secondary)', color: c === selected ? 'var(--gold-light)' : 'var(--text-secondary)' }}
+        >
+          {c}
+        </button>
+      ))}
     </div>
   );
 }
@@ -695,13 +721,39 @@ export default function PathsPanel(_props: PanelProps) {
   const [seenDraft, setSeenDraft] = useState(0);
   // Sides whose "Did you mean …?" suggestion was accepted (round 4 M2).
   const [acceptedSides, setAcceptedSides] = useState<DraftSuggestion['side'][]>([]);
+  // Metro groups the typed names resolved through (round 10): chips under FROM/TO.
+  const [metro, setMetro] = useState<PathsDraft['metro'] | null>(null);
   if (draft && draft.seq !== seenDraft) {
     setSeenDraft(draft.seq);
     setFrom(draft.from);
     setTo(draft.to);
+    setMetro(draft.metro ?? null);
     setAcceptedSides([]);
     setMode('route');
   }
+  // Round 10 MAJOR 2: FROM/TO and the ident follow the store (palette, aircraft card, URL), not only
+  // the mount — otherwise PLOT re-plans a stale pair. MAJOR 1: a new tracked flight shows FLIGHT.
+  const routeKey = route ? `${route.from}~${route.to}` : '';
+  const [seenRoute, setSeenRoute] = useState(routeKey);
+  if (routeKey !== seenRoute) {
+    setSeenRoute(routeKey);
+    if (route) {
+      setFrom(route.from);
+      setTo(route.to);
+      if (mode === 'flight') setMode('route');
+    }
+  }
+  const [seenIdent, setSeenIdent] = useState(ident);
+  if (ident !== seenIdent) {
+    setSeenIdent(ident);
+    if (ident) {
+      setIdentText(ident);
+      setMode('flight');
+    }
+  }
+  // A group's chips show while that end is one of its airports (typing another place hides them).
+  const metroFrom = metro?.from?.codes.includes(from) ? metro.from : null;
+  const metroTo = metro?.to?.codes.includes(to) ? metro.to : null;
   const activeDraft = draft && draft.seq === seenDraft ? draft : null;
   const openSuggestions = (activeDraft?.suggestions ?? []).filter((x) => !acceptedSides.includes(x.side));
   const draftNotice = activeDraft
@@ -800,6 +852,7 @@ export default function PathsPanel(_props: PanelProps) {
               onClick={() => {
                 setFrom(to);
                 setTo(from);
+                setMetro((m) => (m ? { from: m.to, to: m.from } : m));
                 if (route) plot(to, from);
               }}
               className="hud-control mb-0.5 grid h-8 w-8 place-items-center border border-[var(--border-secondary)] text-[var(--text-secondary)] hover:text-[var(--gold-light)]"
@@ -808,6 +861,8 @@ export default function PathsPanel(_props: PanelProps) {
             </button>
             <AirportField label="TO" value={to} onPick={setTo} all={all} />
           </div>
+          {metroFrom && <MetroChips side="from" group={metroFrom} selected={from} onPick={(c) => plot(c, to)} />}
+          {metroTo && <MetroChips side="to" group={metroTo} selected={to} onPick={(c) => plot(from, c)} />}
           <div className="flex items-center gap-2">
             <button
               type="button"

@@ -14,7 +14,7 @@ describe('palette names resolve only to airports the name actually means (round 
     const a = await resolvePlace('Atlantis', recorded(atlantis));
     const b = await resolvePlace('London', recorded(london));
     expect(a).toEqual({ kind: 'none', suggestion: { code: 'ACY', label: 'Atlantic City' } });
-    expect(b).toEqual({ kind: 'found', code: 'LHR' });
+    expect(b).toMatchObject({ kind: 'found', code: 'LHR', metro: { name: 'London' } });
     const out = routeOrDraft('Atlantis', 'London', a, b);
     expect(out.route).toBeNull();
     expect(out.draft).toMatchObject({ from: 'Atlantis', to: 'LHR', unresolved: ['Atlantis'], suggestions: [{ side: 'from', text: 'Atlantis', code: 'ACY', label: 'Atlantic City' }] });

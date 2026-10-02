@@ -10,6 +10,7 @@
 import 'server-only';
 import { defineFeed, runProvider, type ProviderRun } from '@/lib/feeds';
 import { httpJson, httpRequest, HttpError } from '@/lib/http';
+import { MAX_RESPONSE_BYTES } from '@/lib/respond';
 import type { WeatherEvent } from '@/lib/types';
 import { newestObservation } from './collected';
 import { normalizeEonet, type EonetResponse } from './eonet-parse';
@@ -26,7 +27,10 @@ import {
   normalizeNhc,
   normalizeNws,
   parseCone,
+  thinGeometry,
   zonesNeeded,
+  MAX_OUTLINE_VERTICES,
+  THIN_TOLERANCE_DEG,
   type GdacsFeature,
   type NhcStorm,
   type NwsCollection,
@@ -35,6 +39,8 @@ import {
 export interface WeatherData {
   items: WeatherEvent[];
   unplacedAlerts: number;
+  /** Shared NWS zone outlines referenced by items' `zoneRefs` (absent in snapshots from before r10). */
+  zones?: Record<string, Geo>;
   answered: boolean;
 }
 
@@ -57,6 +63,42 @@ export function dedupeStorms(eonet: WeatherEvent[], nhc: WeatherEvent[]): Weathe
   return eonet.filter((e) => e.type !== 'severe_storm' || !names.some((n) => new RegExp(`\\b${n}\\b`, 'i').test(e.title)));
 }
 
+/** Room left under the 4 MB cap for the envelope (meta, providers) feedJson adds around the body. */
+export const WEATHER_BODY_BUDGET = MAX_RESPONSE_BYTES - 64 * 1024;
+
+export interface WeatherBody {
+  items: WeatherEvent[];
+  unplacedAlerts: number;
+  zones: Record<string, Geo>;
+}
+
+const BODIES = new WeakMap<WeatherData, WeatherBody>();
+
+/**
+ * The /api/weather body, bounded: every item is kept (no alert is ever dropped); if the outlines
+ * would push the body past `budget` bytes they are thinned again at a coarser tolerance (doubling,
+ * with half the vertex cap) until it fits. Memoised per snapshot.
+ */
+export function weatherBody(d: WeatherData, budget = WEATHER_BODY_BUDGET): WeatherBody {
+  const hit = BODIES.get(d);
+  if (hit) return hit;
+  let body: WeatherBody = { items: d.items, unplacedAlerts: d.unplacedAlerts, zones: d.zones ?? {} };
+  let tol = THIN_TOLERANCE_DEG;
+  let cap = MAX_OUTLINE_VERTICES;
+  for (let pass = 0; pass < 6 && Buffer.byteLength(JSON.stringify(body)) > budget; pass++) {
+    tol *= 2;
+    cap = Math.max(16, cap >> 1);
+    const thin = (g: Geo) => thinGeometry(g, tol, cap);
+    body = {
+      items: d.items.map((e) => (e.geometry ? { ...e, geometry: thin(e.geometry) } : e)),
+      unplacedAlerts: d.unplacedAlerts,
+      zones: Object.fromEntries(Object.entries(d.zones ?? {}).map(([k, g]) => [k, thin(g)])),
+    };
+  }
+  BODIES.set(d, body);
+  return body;
+}
+
 export const weatherFeed = defineFeed<WeatherData>({
   key: 'weather',
   ttlMs: 5 * 60_000,
@@ -70,6 +112,7 @@ export const weatherFeed = defineFeed<WeatherData>({
   run: async ({ signal }) => {
     const providers: Record<string, ProviderRun> = {};
     let unplaced = 0;
+    let zoneShapes: Record<string, Geo> = {};
     const [eonet, nws, gdacs, nhc, gvp] = await Promise.all([
       runProvider(async () => normalizeEonet((await httpJson<EonetResponse>(EONET_URL, { signal, timeoutMs: 20_000 })).data ?? {}, { skip: ['earthquakes', 'wildfires'] }), (r) => r.length),
       runProvider(
@@ -78,6 +121,7 @@ export const weatherFeed = defineFeed<WeatherData>({
           const { zones } = await resolveZones(zonesNeeded(fc), { signal, budget: 120, concurrency: 8 });
           const r = normalizeNws(fc, zones);
           unplaced = r.unplaced;
+          zoneShapes = r.zones;
           return r.items;
         },
         (r) => r.length,
@@ -129,6 +173,6 @@ export const weatherFeed = defineFeed<WeatherData>({
     const items = [...dedupeStorms(eonet.result ?? [], nhcItems), ...(nws.result ?? []), ...(gdacs.result ?? []), ...nhcItems, ...(gvp.result ?? [])];
     // Zero events is only truthful when every provider answered (NHC's "no storms" alone is not).
     const answered = items.length > 0 || [eonet, nws, gdacs, nhc, gvp].every((p) => p.run.status.ok);
-    return { data: { items, unplacedAlerts: unplaced, answered }, providers, observedAt: newestObservation(items) };
+    return { data: { items, unplacedAlerts: unplaced, zones: zoneShapes, answered }, providers, observedAt: newestObservation(items) };
   },
 });

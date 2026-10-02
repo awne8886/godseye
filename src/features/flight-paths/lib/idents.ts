@@ -40,7 +40,8 @@ export function classifyIdent(raw: string): IdentGuess[] {
   if (iata) out.push({ kind: 'iata', value: v, airline: iata[1]!, number: String(Number(iata[2]!.replace(/[A-Z]$/, ''))) + (/[A-Z]$/.test(iata[2]!) ? iata[2]!.slice(-1) : '') });
   if (REG_US.test(v) && !out.some((g) => g.kind === 'registration')) out.push({ kind: 'registration', value: v });
   if (HEX.test(v)) out.push({ kind: 'hex', value: v.toLowerCase() });
-  if (!out.length && /^[A-Z0-9]{2,8}$/.test(v)) out.push({ kind: 'callsign', value: v });
+  // Never a 2-character callsign: "BA" is an airline designator, and adsbdb rejects it (round 10).
+  if (!out.length && /^[A-Z0-9]{3,8}$/.test(v)) out.push({ kind: 'callsign', value: v });
   return out;
 }
 
