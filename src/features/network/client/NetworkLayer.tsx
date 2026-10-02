@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import type { LayerComponentProps } from '@/lib/feature-module';
 import { LAYERS } from '@/lib/layer-registry';
-import { useDeckLayers, useFeedEventStore, useLayerStatusStore } from '@/lib/layer-host';
+import { useDeckLayers, useFeedEventStore, useLayerStatusStore, type LayerStatus } from '@/lib/layer-host';
 import type { DeckPickInfo } from '@/lib/map/picking';
 import { readCssColor, hudFontFamily } from '@/lib/tokens';
 import type { AttackOrigin, AttackOriginsResponse, C2Response, C2Server, CablesResponse, FeedEvent, FeedMeta, KevResponse, LandingPoint, MalwareHost, Outage, OutagesResponse, Providers, ThreatFoxResponse, ThreatIndicator } from '@/lib/types';
@@ -21,7 +21,7 @@ import { GLOBE_POINT_PARAMETERS, lngLatOf, useFacing } from '../../threats/clien
 import { FEED_FETCH_INIT, rgbaCss, useCapabilityGate, useDeckPick, useFeedData, useNativeLayers, useNativePick } from '../../threats/client/hooks';
 import { colocatedRadiusPx, countLabels, groupColocated, type Colocated } from './colocate';
 import { KEV_FEED_LIMIT, kevEvents } from './kev-events';
-import { malwareCount, needsResync, reduceMalware, type MalwareStreamEvent } from './malware-state';
+import { isDegradedStatus, MALWARE_WATCHDOG_MS, malwareCount, needsResync, reduceMalware, type MalwareStatus, type MalwareStreamEvent } from './malware-state';
 
 const zOf = (id: string) => LAYERS.find((l) => l.id === id)!.z;
 const css = (token: Parameters<typeof readCssColor>[0], alpha = 1) => rgbaCss(readCssColor(token, alpha));
@@ -99,6 +99,18 @@ function MalwareStream() {
     let es: EventSource | null = null;
     let current: MalwareHost[] | null = null;
     let lastResync = 0;
+    let lastEventAt = Date.now();
+    // Set when the watchdog downgraded a silent stream: the next event resyncs from a snapshot.
+    let resyncOnEvent = false;
+    /**
+     * Downgrade the row without touching the host set (round 10 BLOCKING 1/2): never better than
+     * `state`, SOURCE OFFLINE when there is nothing to show.
+     */
+    const degrade = (state: 'stale' | 'offline', patch: Partial<LayerStatus>) => {
+      const was = useLayerStatusStore.getState().status.malware?.state;
+      const next = current === null || state === 'offline' || was === 'offline' ? 'offline' : 'stale';
+      update('malware', { ...patch, state: next, ...(next === 'offline' ? { count: null } : {}) });
+    };
     const apply = (ev: MalwareStreamEvent) => {
       current = reduceMalware(current, ev);
       setHosts(current);
@@ -107,34 +119,63 @@ function MalwareStream() {
         open(); // a fresh snapshot replaces the set
       }
     };
+    /** Any frame proves the stream is alive; after a watchdog downgrade it resyncs (true = reopened). */
+    const seen = () => {
+      lastEventAt = Date.now();
+      if (!resyncOnEvent) return false;
+      resyncOnEvent = false;
+      open();
+      return true;
+    };
     const open = () => {
       es?.close();
       const src = new EventSource('/api/malware/stream');
       es = src;
+      lastEventAt = Date.now();
       src.addEventListener('snapshot', (ev) => {
+        lastEventAt = Date.now();
+        resyncOnEvent = false;
         const snap = JSON.parse((ev as MessageEvent<string>).data) as { items: MalwareHost[]; meta: FeedMeta; providers: Providers };
         update('malware', { state: snap.meta.state, fetchedAt: snap.meta.fetchedAt, observedAt: snap.meta.observedAt, lastGoodAt: snap.meta.lastGoodAt, providers: snap.providers, attribution: snap.meta.attribution, error: undefined });
         apply({ type: 'snapshot', items: snap.items });
       });
+      src.addEventListener('heartbeat', () => void seen());
       src.addEventListener('detections', (ev) => {
+        if (seen()) return;
         const added = JSON.parse((ev as MessageEvent<string>).data) as MalwareHost[];
         const now = Date.now();
         setArrivals((prev) => new Map([...prev, ...added.map((h) => [h.ip, now] as const)]));
-        update('malware', { state: 'live', fetchedAt: new Date(now).toISOString() });
         apply({ type: 'detections', items: added });
         push(malwareEvents(added, new Date(now).toISOString()));
       });
       src.addEventListener('status', (ev) => {
-        const st = JSON.parse((ev as MessageEvent<string>).data) as { retired: string[]; total?: number };
+        if (seen()) return;
+        const st = JSON.parse((ev as MessageEvent<string>).data) as MalwareStatus;
+        // A failed server run retires nothing: the hosts stay, badged with their last-good time.
+        if (isDegradedStatus(st)) return degrade(st.state as 'stale' | 'offline', { lastGoodAt: st.lastGoodAt ?? null, error: st.error ?? 'source_offline' });
+        if (st.state) update('malware', { state: st.state, fetchedAt: st.fetchedAt ?? null, lastGoodAt: st.lastGoodAt ?? st.fetchedAt ?? null, error: undefined });
         apply({ type: 'status', retired: st.retired, total: st.total });
       });
       src.onerror = () => {
-        if (src.readyState === EventSource.CLOSED) update('malware', { state: 'offline', error: 'stream_closed' });
+        if (es !== src) return;
+        // CLOSED: the browser gave up. CONNECTING: it is retrying; either way nothing is observed
+        // now, and the snapshot sent on reconnect restores the row.
+        if (src.readyState === EventSource.CLOSED) degrade('offline', { error: 'stream_closed' });
+        else degrade('stale', { error: 'reconnecting' });
       };
     };
+    // A stream that has gone quiet for three server heartbeats is not observed any more.
+    const watchdog = setInterval(() => {
+      if (resyncOnEvent || Date.now() - lastEventAt <= MALWARE_WATCHDOG_MS) return;
+      resyncOnEvent = true;
+      degrade('stale', { error: 'no_heartbeat' });
+    }, 5_000);
     update('malware', { state: 'loading' });
     open();
-    return () => es?.close();
+    return () => {
+      clearInterval(watchdog);
+      es?.close();
+    };
   }, [update, push]);
 
   // The count is derived from the host set here and nowhere else (R3-M2).
