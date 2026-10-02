@@ -8,7 +8,7 @@ import { hasStopTerm, leadEligible } from './lead-filter';
 import { geoparse } from './gazetteer';
 import { WIRE_FEEDS, TELEGRAM_CHANNELS, POSTS_PER_CHANNEL, fromTelegram, fromWire, latestChannelPosts, mergeCrossPosts } from './news';
 import { isOpen, nextChange, sessionsAt, EXCHANGES } from './sessions';
-import { fingerprint, parseChannelPage, parseDuration, parseViews } from './telegram';
+import { FINGERPRINT_WORDS, fingerprint, parseChannelPage, parseDuration, parseViews } from './telegram';
 import { candlesFromChart, quoteFromChart, SYMBOLS, type YahooChart } from './markets';
 import { parseBinance, parseCoinbase, parseKraken } from './crypto';
 import { parseLlama, parseNvd } from './chain';
@@ -93,6 +93,25 @@ describe('wire RSS → AlertItems', () => {
     expect(merged[0]!.id).toBe(base.id);
     expect(merged[0]!.alsoReportedBy.map((a) => a.sourceName)).toEqual(['Rybar']);
     expect(fingerprint('Hello @x https://a.b world').split(' ')).toEqual(['hello', 'world']);
+  });
+
+  it('fingerprints 24 words: posts sharing only their first 12 words stay separate', () => {
+    expect(FINGERPRINT_WORDS).toBe(24);
+    const words = Array.from({ length: 30 }, (_, i) => `word${i}`);
+    expect(fingerprint(words.join(' ')).split(' ')).toEqual(words.slice(0, 24));
+    const base = fromTelegram(parseChannelPage(fixtureText(FX.tgOsint), 'Osintdefender')[0]!, osint);
+    const opening = 'air raid alert declared in the following regions of the country effective immediately until';
+    expect(opening.split(' ')).toHaveLength(14);
+    const a = { ...base, id: 'tg:a/1', title: `${opening} kharkiv sumy poltava chernihiv oblasts with ballistic threat reported`, summary: null };
+    const b = { ...base, id: 'tg:b/1', source: 't.me/rybar_in_english', sourceName: 'Rybar', bloc: 'russian' as const, title: `${opening} odesa mykolaiv kherson zaporizhzhia oblasts with drone threat reported`, summary: null, publishedAt: new Date(Date.parse(base.publishedAt) + 60_000).toISOString() };
+    const merged = mergeCrossPosts([a, b]);
+    expect(merged.map((m) => m.id).sort()).toEqual(['tg:a/1', 'tg:b/1']);
+    expect(merged.every((m) => m.alsoReportedBy.length === 0)).toBe(true);
+    // The same 24-word report from another channel still merges.
+    const c = { ...b, id: 'tg:c/1', title: a.title };
+    const dup = mergeCrossPosts([a, c]);
+    expect(dup).toHaveLength(1);
+    expect(dup[0]!.alsoReportedBy.map((r) => r.sourceName)).toEqual(['Rybar']);
   });
 });
 
