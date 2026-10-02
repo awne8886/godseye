@@ -65,6 +65,14 @@ test('SPACE panel opens with the official NASA stream and the ISS readout', asyn
   await expect(panel.locator('iframe')).toHaveAttribute('src', /^https:\/\/www\.youtube-nocookie\.com\/embed\/awQzjn72bI0\?/);
   await expect(panel.getByRole('link', { name: /YouTube/ })).toHaveAttribute('rel', /noopener/);
   await expect(panel.getByText(/ISS · NORAD 25544/)).toBeVisible();
+  // Round 7: wheretheiss.at computes the position from a TLE; the badge never says LIVE.
+  const badge = panel.getByTestId('iss-badge');
+  await expect(badge).not.toHaveText(/acquiring/i, { timeout: 20_000 });
+  await expect(badge).not.toHaveText(/live/i);
+  if (!/offline|stale/i.test((await badge.textContent()) ?? '')) {
+    await expect(badge).toHaveText(/^Computed/i);
+    await expect(panel.getByText('TLE epoch')).toBeVisible();
+  }
 });
 
 test('satellite card shows the PROPAGATED badge and the element epoch', async ({ page, request, isMobile }) => {

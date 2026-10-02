@@ -144,3 +144,19 @@ retried 20 min later, per-group download times) covers exactly this.
 IconLayer per category over a 6-glyph mask atlas rasterised at runtime). The worker now sorts the
 drawn rows by category and posts `categoryOffsets`; `radii` became `sizes` (glyph px: 8, ISS 14,
 selected 16). No upstream or payload change.
+
+## Re-probe 2026-10-02 07:19 UTC (Phase 3 round 7: ISS provenance)
+
+| URL | Status | Latency | CORS | Auth | Sample |
+|---|---|---|---|---|---|
+| `https://api.wheretheiss.at/v1/satellites/25544` | 200 | 0.48 s | `*` | none | lat −4.14, lng −167.63, alt 417.65 km, `timestamp` 1790925560 (computed-for instant). |
+| `https://api.wheretheiss.at/v1/satellites/25544/tles` | 200 | 0.59 s | `*` | none | `{requested_timestamp, tle_timestamp: 1790800039, id: "25544", header: "ISS (ZARYA)", line1, line2}`; line 1 epoch `26273.85230731` = 2026-09-30T20:27:19.352Z (`tle_timestamp` is the same epoch, rounded to the second). |
+
+wheretheiss.at's position is computed (SGP4) from that TLE, not observed. `/api/iss` now carries
+`position: {method: 'propagated', by: 'wheretheiss.at', elementsEpoch}` (epoch parsed from line 1,
+re-read hourly; null if `/tles` never answered, provider `wheretheiss-tles` in `providers`), and the
+SPACE panel badges the readout COMPUTED (ageing to `COMPUTED · 2m`, then STALE/OFFLINE), never
+LIVE. The upstream `timestamp` was up to 2 s after our receive time in round 7, so
+`meta.observedAt` is clamped to the receive time (never after `fetchedAt`). Fixture:
+`src/features/space/__fixtures__/wheretheiss-tles.json`. Rate cost: one extra request per hour
+against the 350 / 5 min limit.

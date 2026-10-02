@@ -78,6 +78,7 @@ export const issFeed = defineFeed<IssPosition>({
   ttlMs: 5_000,
   kind: 'live',
   attribution: [{ text: 'ISS position: Where the ISS at?', url: 'https://wheretheiss.at/w/developer' }],
+  note: 'The ISS position is computed (SGP4) by wheretheiss.at from NORAD TLEs, not observed; observedAt is the instant it was computed for.',
   count: () => 1,
   isEmpty: () => false,
   retryAfterErrorMs: 30_000,

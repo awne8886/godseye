@@ -1,7 +1,8 @@
 'use client';
 /**
  * SPACE tool panel — "Live from Space": NASA's official ISS stream (youtube-nocookie embed, a
- * FRAME_HOSTS entry) beside the ISS position (wheretheiss.at, with its own timestamp) and a ground
+ * FRAME_HOSTS entry) beside the ISS position (COMPUTED by wheretheiss.at from NORAD 25544's TLE,
+ * badged COMPUTED with that TLE's epoch, never LIVE: it is not an observation) and a ground
  * track PROPAGATED from NORAD 25544's elements. Owner: layers-space.
  *
  * Stream check (2026-09-30): oEmbed for awQzjn72bI0 answers 200 with author "NASA" and title "Live
@@ -16,7 +17,7 @@ import type { PanelProps } from '@/lib/feature-module';
 import { useSelectionStore } from '@/lib/layer-host';
 import { useUiStore } from '@/lib/store';
 import { entityFreshness, formatAge, FRESHNESS_COLOR_TOKEN, freshnessLabel } from '@/lib/freshness';
-import type { IssResponse } from '@/lib/types';
+import type { FreshnessState, IssResponse } from '@/lib/types';
 import { FeedOfflineError, fetchIss, fetchSatelliteById, recordFromResponse, satelliteByIdQueryKey, selectionDataFor, useNow, useSpaceStore } from './client/data';
 
 export const NASA_ISS_VIDEO_ID = 'awQzjn72bI0';
@@ -45,11 +46,22 @@ function GroundTrackMap({ iss }: { iss: IssResponse }) {
       </svg>
       <figcaption className="font-sans text-[12px] text-[var(--text-secondary)]">
         {track
-          ? `Dot: position reported by wheretheiss.at. Line: ground track propagated (SGP4) from NORAD 25544 elements of ${track.elementsEpoch.slice(0, 16).replace('T', ' ')} UTC, −45 to +90 min.`
-          : 'Dot: position reported by wheretheiss.at. Ground track appears once the satellite catalogue has loaded.'}
+          ? `Dot: position computed by wheretheiss.at from TLE elements (SGP4), not observed. Line: ground track propagated (SGP4) from NORAD 25544 elements of ${track.elementsEpoch.slice(0, 16).replace('T', ' ')} UTC, −45 to +90 min.`
+          : 'Dot: position computed by wheretheiss.at from TLE elements (SGP4), not observed. Ground track appears once the satellite catalogue has loaded.'}
       </figcaption>
     </figure>
   );
+}
+
+/**
+ * Badge for the ISS readout. wheretheiss.at propagates a TLE, so a fresh answer is COMPUTED (cyan,
+ * like the satellite card's PROPAGATED), never LIVE; it still ages (COMPUTED · 3m), then follows the
+ * feed to STALE / OFFLINE.
+ */
+export function issBadge(state: FreshnessState, positionAt: number | null, now: number): { label: string; colorToken: string; computed: boolean } {
+  if (state === 'live') return { label: 'Computed', colorToken: '--cyan-primary', computed: true };
+  if (state === 'recent') return { label: `Computed · ${freshnessLabel(state, positionAt, now)}`, colorToken: FRESHNESS_COLOR_TOKEN.recent, computed: true };
+  return { label: freshnessLabel(state, positionAt, now), colorToken: FRESHNESS_COLOR_TOKEN[state], computed: false };
 }
 
 /** How long the embed may take before the panel says it did not load (the link-out stays). */
@@ -73,7 +85,9 @@ export function SpacePanel(_props: PanelProps) {
   const iss = useQuery({ queryKey: ['space', 'iss'], queryFn: fetchIss, refetchInterval: 5_000, staleTime: 4_000 });
   const d = iss.data;
   const offline = iss.error instanceof FeedOfflineError ? iss.error : null;
-  const state = d ? entityFreshness({ kind: 'live', at: d.meta.observedAt ? Date.parse(d.meta.observedAt) : null, observationCadenceMs: 60_000, feedState: d.meta.state, now }) : 'offline';
+  const positionAt = d?.meta.observedAt ? Date.parse(d.meta.observedAt) : null;
+  const state = d ? entityFreshness({ kind: 'live', at: positionAt, observationCadenceMs: 60_000, feedState: d.meta.state, now }) : 'offline';
+  const badge = d ? issBadge(state, positionAt, now) : null;
   const issRecord = useMemo(() => recordFromResponse(sats.data, ISS_NORAD_ID), [sats.data]);
 
   const embed = `https://www.youtube-nocookie.com/embed/${NASA_ISS_VIDEO_ID}?${new URLSearchParams({ autoplay: autoplay ? '1' : '0', mute: '1', playsinline: '1', rel: '0' })}`;
@@ -128,9 +142,11 @@ export function SpacePanel(_props: PanelProps) {
           <h3 className="font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-heading)]">ISS · NORAD 25544</h3>
           <span
             className="ml-auto rounded-sm border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em]"
-            style={{ color: `var(${FRESHNESS_COLOR_TOKEN[state]})`, borderColor: `var(${FRESHNESS_COLOR_TOKEN[state]})` }}
+            style={{ color: `var(${badge?.colorToken ?? FRESHNESS_COLOR_TOKEN[state]})`, borderColor: `var(${badge?.colorToken ?? FRESHNESS_COLOR_TOKEN[state]})` }}
+            title={badge?.computed ? 'Computed (SGP4) by wheretheiss.at from published TLE elements, not observed' : undefined}
+            data-testid="iss-badge"
           >
-            {d ? freshnessLabel(state, d.meta.observedAt ? Date.parse(d.meta.observedAt) : null, now) : iss.isPending ? 'Acquiring' : 'Source offline'}
+            {badge ? badge.label : iss.isPending ? 'Acquiring' : 'Source offline'}
           </span>
         </div>
         {d ? (
@@ -142,9 +158,10 @@ export function SpacePanel(_props: PanelProps) {
                 ['Alt', `${Math.round(d.altKm)} km`],
                 ['Speed', `${Math.round(d.velocityKmH).toLocaleString('en-US')} km/h`],
                 ['Sun', d.visibility === 'eclipsed' ? 'Eclipsed' : d.visibility === 'daylight' ? 'Daylight' : '—'],
-                ['Seen', d.meta.observedAt ? `${formatAge(now - Date.parse(d.meta.observedAt))} ago` : '—'],
+                ['Computed', positionAt !== null ? `${formatAge(now - positionAt)} ago` : '—'],
+                ['TLE epoch', d.position?.elementsEpoch ? `${d.position.elementsEpoch.slice(0, 16).replace('T', ' ')} UTC` : 'Unknown'],
               ].map(([k, v]) => (
-                <div key={k} className="min-w-0">
+                <div key={k} className={k === 'TLE epoch' ? 'col-span-3 min-w-0' : 'min-w-0'}>
                   <dt className="text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">{k}</dt>
                   <dd className="truncate text-[var(--text-primary)]">{v}</dd>
                 </div>

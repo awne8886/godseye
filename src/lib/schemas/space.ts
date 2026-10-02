@@ -121,13 +121,25 @@ export const SpaceWeatherResponse = Envelope.extend({
   alerts: z.array(z.object({ id: z.string(), issuedAt: IsoTime, message: z.string() })),
 });
 
-/** GET /api/iss — wheretheiss.at position (the Space Cam also propagates NORAD 25544 locally). */
+/** GET /api/iss — ISS position computed by wheretheiss.at from TLEs (the Space Cam also propagates NORAD 25544 locally). */
 export const IssResponse = Envelope.extend({
   lat: Lat,
   lng: Lng,
   altKm: z.number(),
   velocityKmH: z.number(),
   visibility: z.enum(['daylight', 'eclipsed']).nullable(),
+  /**
+   * How the position was obtained: wheretheiss.at COMPUTES it (SGP4) from NORAD 25544's TLE; it is
+   * not an observation. `meta.observedAt` is the instant it was computed for; `elementsEpoch` is the
+   * epoch of the TLE used (null while wheretheiss.at's `/tles` has not answered). (layers-space)
+   */
+  position: z
+    .object({
+      method: z.literal('propagated'),
+      by: z.literal('wheretheiss.at'),
+      elementsEpoch: IsoTime.nullable(),
+    })
+    .optional(),
   /**
    * Ground track PROPAGATED (SGP4) from NORAD 25544's published elements, not observed: from 45 min
    * before to 90 min after `anchoredAt`, split at the antimeridian. Null when the catalogue has no
