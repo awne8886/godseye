@@ -8,7 +8,12 @@ import type * as HttpModule from '@/lib/http';
 import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { useUiStore } from '@/lib/store';
 import { newMode, upstreamBody } from '../__fixtures__/upstreams';
+import photonAeroZermatt from '../__fixtures__/r6/photon-aerodrome-Zermatt.json';
+import photonPlaceZermatt from '../__fixtures__/r6/photon-place-Zermatt.json';
 import { greatCircle } from '../lib/geometry';
+
+/** Nearest scheduled-service airport to the geocoded town of Zermatt (Milan Malpensa, 87 km). */
+const ZERMATT_NEAREST = 'MXP';
 
 // The panel's fetch() is served in-process by the real route handlers; their upstreams are the
 // recorded fixtures (2026-09-30) through the mocked http layer. No network.
@@ -232,14 +237,21 @@ describe('PATHS panel', () => {
     await act(async () => {
       renderPanel();
     });
+    // Round 6: Photon's fuzzy aerodrome hit (In-Amenas, Algeria) does not carry "Zermatt" and is
+    // dropped; the place fallback answers with the nearest scheduled airport to the town.
+    // The field mirrors the draft in upper case, so the query may reach Photon as either spelling.
+    for (const q of ['Zermatt', 'ZERMATT']) {
+      mode.current.override.set(photonAeroZermatt._url.replace('Zermatt', q), photonAeroZermatt.body);
+      mode.current.override.set(photonPlaceZermatt._url.replace('Zermatt', q), photonPlaceZermatt.body);
+    }
     const [, toInput] = screen.getAllByRole('combobox');
     await act(async () => {
-      fireEvent.change(toInput!, { target: { value: 'qqheathrowairfieldqq' } });
+      fireEvent.change(toInput!, { target: { value: 'Zermatt' } });
     });
     await act(async () => {
       fireEvent.keyDown(toInput!, { key: 'Enter' });
     });
-    await waitFor(() => expect((toInput as HTMLInputElement).value).toBe('LHR'), { timeout: 5000 });
+    await waitFor(() => expect((toInput as HTMLInputElement).value).toBe(ZERMATT_NEAREST), { timeout: 5000 });
     const calls = (fetch as unknown as { mock: { calls: [string][] } }).mock.calls.map((c) => String(c[0]));
     expect(calls.some((c) => c.includes('submit=1'))).toBe(true);
   });
@@ -293,5 +305,40 @@ describe('FLIGHT chip freshness (round 4 M3)', () => {
     expect(flightChip({ status: 'airborne', position: at(5), feedState: 'stale' }, NOW)).toEqual(['STALE', 'warn']);
     expect(flightChip({ status: 'airborne', position: at(5) }, NOW)).toEqual(['RECENT', 'idle']);
     expect(flightChip({ status: 'landed', position: null, feedState: null }, NOW)).toEqual(['LANDED', 'idle']);
+  });
+});
+
+describe('round 6: known-service badges, winds grid cell, OSM aerodrome disclosure', () => {
+  const NOW = Date.parse('2026-10-02T02:49:00Z');
+
+  it('service badge: LIVE only for a fresh own observation in a LIVE snapshot; never LIVE from a stale or unknown feed', async () => {
+    const { serviceBadge, flightsUsable } = await import('./PathsPanel');
+    expect(serviceBadge({ observedAt: '2026-10-02T02:48:40Z' }, 'live', NOW)).toBe('LIVE');
+    expect(serviceBadge({ observedAt: '2026-10-02T02:45:00Z' }, 'live', NOW)).toBe('RECENT');
+    expect(serviceBadge({ observedAt: '2026-10-02T02:48:40Z' }, 'recent', NOW)).toBe('RECENT');
+    expect(serviceBadge({ observedAt: '2026-10-02T02:30:00Z' }, 'live', NOW)).toBe('STALE');
+    expect(serviceBadge({ observedAt: '2026-10-02T02:48:40Z' }, undefined, NOW)).toBe('RECENT');
+    expect(serviceBadge({ observedAt: null }, 'live', NOW)).toBeNull();
+    expect(serviceBadge({}, 'live', NOW)).toBeNull();
+    const ok = { ok: true, count: 3, ms: 0, age_s: 0 };
+    expect(flightsUsable({ providers: { flights: ok }, flightsState: 'live' })).toBe(true);
+    // The round-6 repro: ok:true from a frozen snapshot no longer passes.
+    expect(flightsUsable({ providers: { flights: ok }, flightsState: 'stale' })).toBe(false);
+    expect(flightsUsable({ providers: { flights: ok } })).toBe(false);
+    expect(flightsUsable({ providers: { flights: { ...ok, ok: false, error: 'stale_snapshot' } }, flightsState: 'stale' })).toBe(false);
+  });
+
+  it('winds name the model grid point and the forecast hour', async () => {
+    const { windCellText, windsNote } = await import('./PathsPanel');
+    const w = { fraction: 0.5, lat: 55.21, lng: -30.12, cellLat: 55.99, cellLng: -30, validAt: '2026-10-02T03:00:00.000Z', speedKt: 59, dirDeg: 300, level: '250hPa' as const };
+    expect(windCellText(w)).toBe('GRID 56.0, -30.0');
+    expect(windCellText({ ...w, cellLat: undefined, cellLng: undefined })).toBe('55.2, -30.1');
+    expect(windsNote([w])).toContain('valid 2026-10-02 03:00Z');
+    expect(windsNote([{ ...w, validAt: null }])).toContain('for the current hour');
+  });
+
+  it('a Photon aerodrome hit is disclosed by its OSM name', async () => {
+    const { osmMatchText } = await import('./PathsPanel');
+    expect(osmMatchText('London Heathrow Airport')).toBe('Matched by OSM aerodrome name: London Heathrow Airport');
   });
 });

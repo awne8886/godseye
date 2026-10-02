@@ -169,12 +169,36 @@ function AirportField({ label, value, onPick, all }: { label: string; value: str
                 {typeof r.distanceKm === 'number' && <span className="hud-micro tabular-nums text-[var(--text-secondary)]">{Math.round(r.distanceKm)} KM</span>}
                 <span className="hud-micro text-[var(--text-muted)]">{r.isoCountry}</span>
               </button>
+              {r.osmName && (
+                <p className="hud-micro px-2 pb-1 text-[var(--text-secondary)]" data-testid="osm-aerodrome-match">
+                  {osmMatchText(r.osmName)}
+                </p>
+              )}
             </li>
           ))}
         </ul>
       )}
     </div>
   );
+}
+
+type Wind = Plan['weather']['windsAloft'][number];
+
+/** Round 6: a wind row names the model grid point its values belong to, not the exact route point. */
+export function windCellText(w: Wind): string {
+  return typeof w.cellLat === 'number' && typeof w.cellLng === 'number' ? `GRID ${w.cellLat.toFixed(1)}, ${w.cellLng.toFixed(1)}` : `${w.lat.toFixed(1)}, ${w.lng.toFixed(1)}`;
+}
+
+/** Round 6: the forecast hour the winds are valid for (from Open-Meteo), never implied. */
+export function windsNote(winds: readonly Wind[]): string {
+  const valid = [...new Set(winds.map((w) => w.validAt).filter((v): v is string => typeof v === 'string'))].sort();
+  const when = valid.length ? `valid ${valid.map((v) => `${v.slice(0, 10)} ${fmtUtc(v)}`).join(' / ')}` : 'for the current hour';
+  return `250 hPa (≈ FL340) model forecast ${when}, nearest model grid point (2° cells, cached up to 1 h), Open-Meteo (CC BY 4.0).`;
+}
+
+/** Round 6: a Photon aerodrome hit says what it was matched by (never a plain, unexplained result). */
+export function osmMatchText(osmName: string): string {
+  return `Matched by OSM aerodrome name: ${osmName}`;
 }
 
 /** "Nearest airports to Atlantis, Bahamas (photon)" — the geocoded place a free-text search fell back to (R4 m7). */
@@ -242,11 +266,35 @@ function Sources({ providers }: { providers: Plan['providers'] }) {
   );
 }
 
+/**
+ * Round 6: the known-services observation badge. LIVE only when the callsign's own report is
+ * within the flights observation cadence AND the snapshot is LIVE (`entityFreshness`); RECENT /
+ * STALE otherwise; null when it is not in a current snapshot. A plan from an older server
+ * (no `observedAt`/`flightsState`) never shows LIVE.
+ */
+export function serviceBadge(
+  s: Pick<Plan['knownServices'][number], 'observedAt'>,
+  flightsState: FreshnessState | undefined,
+  now: number,
+): 'LIVE' | 'RECENT' | 'STALE' | null {
+  if (!s.observedAt) return null;
+  const at = Date.parse(s.observedAt);
+  if (!Number.isFinite(at)) return null;
+  const st = entityFreshness({ kind: 'live', at, observationCadenceMs: OBSERVATION_CADENCE_MS.flights, feedState: flightsState ?? 'recent', now });
+  return st === 'live' ? 'LIVE' : st === 'recent' ? 'RECENT' : 'STALE';
+}
+
+/** The flights snapshot can back observation badges: provider ok AND the snapshot LIVE/RECENT. */
+export function flightsUsable(plan: Pick<Plan, 'providers' | 'flightsState'>): boolean {
+  return plan.providers.flights?.ok === true && (plan.flightsState === 'live' || plan.flightsState === 'recent');
+}
+
 export function PlanView({ plan }: { plan: Plan }) {
   const o = plan.origin;
   const d = plan.destination;
   const wide = plan.estimates.byClass.widebody;
-  const flightsOk = plan.providers.flights?.ok === true;
+  const flightsOk = flightsUsable(plan);
+  const now = useClock(15_000, flightsOk);
   return (
     <div className="flex flex-col gap-3">
       <div>
@@ -316,7 +364,13 @@ export function PlanView({ plan }: { plan: Plan }) {
         <Note>{plan.estimates.method}</Note>
       </Section>
       <Section title="KNOWN SERVICES" count={plan.knownServices.length} open={plan.knownServices.length > 0}>
-        {!flightsOk && <Note tone="warn">Live feed offline — LIVE badges unavailable.</Note>}
+        {!flightsOk && (
+          <Note tone="warn">
+            {plan.flightsState === 'stale'
+              ? 'Live flights snapshot is stale — LIVE badges unavailable.'
+              : 'Live feed offline — LIVE badges unavailable.'}
+          </Note>
+        )}
         {plan.knownServices.length === 0 ? (
           <Note>No scheduled service in the standing data — showing great circle only.</Note>
         ) : (
@@ -326,7 +380,7 @@ export function PlanView({ plan }: { plan: Plan }) {
                 <span className="w-16 text-[var(--text-primary)]">{s.callsign}</span>
                 <span className="flex-1 truncate font-sans text-[12px] text-[var(--text-secondary)]">{s.airline.name ?? s.airline.icao ?? ''}</span>
                 {s.airportCodes.length > 2 && <span className="hud-micro text-[var(--text-muted)]">{s.airportCodes.join('-')}</span>}
-                {s.live && <span className="hud-chip hud-micro border border-[var(--alert-green)] px-1 text-[var(--alert-green)]">LIVE</span>}
+                <ServiceBadge badge={flightsOk ? serviceBadge(s, plan.flightsState, now) : null} observedAt={s.observedAt ?? null} />
               </li>
             ))}
           </ul>
@@ -383,15 +437,15 @@ export function PlanView({ plan }: { plan: Plan }) {
             {plan.weather.windsAloft.map((w) => (
               <li key={w.fraction} className="flex gap-2">
                 <span className="w-10">{Math.round(w.fraction * 100)} %</span>
-                <span className="flex-1">
-                  {w.lat.toFixed(1)}, {w.lng.toFixed(1)}
+                <span className="flex-1" title={`Route point ${w.lat.toFixed(2)}, ${w.lng.toFixed(2)}`}>
+                  {windCellText(w)}
                 </span>
                 <span>{w.dirDeg !== null && w.speedKt !== null ? `${Math.round(w.dirDeg)}° / ${Math.round(w.speedKt)} KT` : '—'}</span>
               </li>
             ))}
           </ul>
         )}
-        <Note>250 hPa (≈ FL340) model forecast for the current hour, Open-Meteo (CC BY 4.0).</Note>
+        <Note>{windsNote(plan.weather.windsAloft)}</Note>
       </Section>
       <Sources providers={plan.providers} />
       <Note>Airports: OurAirports (public domain) + mwgg/Airports time zones (MIT). METAR/TAF: aviationweather.gov. Planning aid only — not for navigation.</Note>
@@ -572,6 +626,21 @@ export function flightChip(flight: Pick<Flight, 'status' | 'position' | 'feedSta
   if (state === 'live') return ['LIVE', 'live'];
   if (state === 'recent') return ['RECENT', 'idle'];
   return ['STALE', 'warn'];
+}
+
+function ServiceBadge({ badge, observedAt }: { badge: ReturnType<typeof serviceBadge>; observedAt: string | null }) {
+  if (!badge) return null;
+  const tone = badge === 'LIVE' ? 'var(--alert-green)' : badge === 'RECENT' ? 'var(--text-secondary)' : 'var(--alert-orange)';
+  return (
+    <span
+      className="hud-chip hud-micro border px-1"
+      style={{ borderColor: tone, color: tone }}
+      title={observedAt ? `Observed ${fmtUtc(observedAt)}` : undefined}
+      data-testid="paths-service-badge"
+    >
+      {badge}
+    </span>
+  );
 }
 
 /** Wall clock that advances every `ms` while `enabled` (re-evaluates freshness between refetches). */

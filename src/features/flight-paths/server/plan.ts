@@ -8,7 +8,11 @@
  */
 import 'server-only';
 import type { z } from 'zod';
-import { getFeed, type ProviderRun } from '@/lib/feeds';
+import { getFeed, type Feed, type ProviderRun } from '@/lib/feeds';
+import { entityFreshness } from '@/lib/freshness';
+import { OBSERVATION_CADENCE_MS } from '@/lib/layer-registry';
+import type { FreshnessState } from '@/lib/types';
+import { honestFlights } from '@/features/aviation/server/view';
 import type { LngLatTuple } from '@/lib/geo';
 import type { Providers } from '@/lib/types';
 import type { KnownService, RouteEndpoint, RoutePlanResponse } from '@/lib/schemas/flight-paths';
@@ -42,28 +46,74 @@ export function airlineFor(callsign: string): Service['airline'] {
   return { icao: code, iata: al?.[0] ?? null, name: al?.[1] ?? null };
 }
 
-/** Callsigns currently in the live flights snapshot (read in-process; never fetched for this). */
-export function liveCallsigns(): { set: Set<string>; run: ProviderRun } {
-  const feed = getFeed('flights');
-  if (!feed) return { set: new Set(), run: { status: { ok: false, count: 0, ms: 0, age_s: null, error: 'no_flights_feed' }, okAt: null } };
-  const snap = feed.peek();
-  const records = (snap.data as { records?: { callsign: string | null }[] } | null)?.records;
-  if (!records) return { set: new Set(), run: { status: { ok: false, count: 0, ms: 0, age_s: null, error: 'no_flights_snapshot' }, okAt: null } };
-  const set = new Set<string>();
-  for (const r of records) if (r.callsign) set.add(r.callsign);
-  const at = snap.meta.fetchedAt ? Date.parse(snap.meta.fetchedAt) : null;
-  return { set, run: { status: { ok: true, count: set.size, ms: 0, age_s: 0 }, okAt: at } };
+export interface LiveCallsigns {
+  /** callsign → its newest own observation (ms epoch) in a LIVE/RECENT snapshot. */
+  seen: Map<string, number>;
+  /** honestFlights-capped state of the snapshot ('offline' when there is none). */
+  state: FreshnessState;
+  run: ProviderRun;
 }
 
-export function knownServices(o: AirportRecord, d: AirportRecord, live: ReadonlySet<string>): Service[] {
+/**
+ * Callsigns in the in-process flights snapshot (read with peek(); never fetched for this).
+ * Round 6: the snapshot is not eager — it freezes ~10 min after the aviation layer stops reading
+ * it, and records live up to the sweep's prune age — so a callsign is only reported from a
+ * snapshot whose honest state (`honestFlights`) is LIVE or RECENT, with its own `seenAt`; a
+ * frozen/stale/failed snapshot is `ok: false, error: 'stale_snapshot'` and marks nothing.
+ */
+export function liveCallsigns(feed: Pick<Feed<unknown>, 'peek'> | undefined, now = Date.now()): LiveCallsigns {
+  const none = (error: string, state: FreshnessState = 'offline', ageS: number | null = null): LiveCallsigns => ({
+    seen: new Map(),
+    state,
+    run: { status: { ok: false, count: 0, ms: 0, age_s: ageS, error }, okAt: null },
+  });
+  if (!feed) return none('no_flights_feed');
+  const snap = honestFlights(feed.peek());
+  const records = (snap.data as { records?: { callsign: string | null; seenAt?: number | null }[] } | null)?.records;
+  if (!records) return none('no_flights_snapshot');
+  const fetched = snap.meta.fetchedAt ? Date.parse(snap.meta.fetchedAt) : NaN;
+  const okAt = Number.isFinite(fetched) ? fetched : null;
+  const state = snap.meta.state;
+  if (state !== 'live' && state !== 'recent') return none('stale_snapshot', state, okAt === null ? null : Math.max(0, Math.round((now - okAt) / 1000)));
+  const seen = new Map<string, number>();
+  for (const r of records) {
+    if (!r.callsign || typeof r.seenAt !== 'number' || !Number.isFinite(r.seenAt)) continue;
+    const at = r.seenAt * 1000;
+    // Never report an observation from the future, nor one older than the RECENT window.
+    if (at - now > 60_000 || now - at > OBSERVATION_CADENCE_MS.flights * 6) continue;
+    const prev = seen.get(r.callsign);
+    if (prev === undefined || at > prev) seen.set(r.callsign, at);
+  }
+  return { seen, state, run: { status: { ok: true, count: seen.size, ms: 0, age_s: 0 }, okAt } };
+}
+
+export function knownServices(o: AirportRecord, d: AirportRecord, live: Pick<LiveCallsigns, 'seen' | 'state'>, now = Date.now()): Service[] {
   const a = icaoOf(o);
   const b = icaoOf(d);
   if (!a || !b) return [];
   const idx = vrsIndex();
   const list = [...new Set(idx.byPair.get(`${a}-${b}`) ?? [])].sort();
   return list
-    .map((callsign) => ({ callsign, airline: airlineFor(callsign), live: live.has(callsign), source: 'vrs' as const, airportCodes: idx.chainOf.get(callsign) ?? [a, b] }))
-    .sort((x, y) => Number(y.live) - Number(x.live) || x.airportCodes.length - y.airportCodes.length || x.callsign.localeCompare(y.callsign))
+    .map((callsign) => {
+      const at = live.seen.get(callsign) ?? null;
+      const isLive =
+        at !== null && entityFreshness({ kind: 'live', at, observationCadenceMs: OBSERVATION_CADENCE_MS.flights, feedState: live.state, now }) === 'live';
+      return {
+        callsign,
+        airline: airlineFor(callsign),
+        live: isLive,
+        observedAt: at === null ? null : new Date(at).toISOString(),
+        source: 'vrs' as const,
+        airportCodes: idx.chainOf.get(callsign) ?? [a, b],
+      };
+    })
+    .sort(
+      (x, y) =>
+        Number(y.live) - Number(x.live) ||
+        Number(y.observedAt !== null) - Number(x.observedAt !== null) ||
+        x.airportCodes.length - y.airportCodes.length ||
+        x.callsign.localeCompare(y.callsign),
+    )
     .slice(0, MAX_SERVICES);
 }
 
@@ -105,8 +155,8 @@ export async function buildPlan(o: AirportRecord, d: AirportRecord, now = Date.n
   const minIdx = airportIndex('min');
   const vrs = vrsIndex();
   const of = openFlights();
-  const live = liveCallsigns();
-  const services = knownServices(o, d, live.set);
+  const live = liveCallsigns(getFeed('flights'), now);
+  const services = knownServices(o, d, live, now);
   const historical = historicalRoutes(o, d);
   const exclude = new Set([o.iata, o.icao, o.ident, d.iata, d.icao, d.ident].filter((c): c is string => !!c));
   const diversions = selectDiversions(A, B, diversionCandidates(), exclude);
@@ -150,6 +200,7 @@ export async function buildPlan(o: AirportRecord, d: AirportRecord, now = Date.n
     daylight: daylightSamples(A, B, now),
     daylightMethod: DAYLIGHT_METHOD,
     knownServices: services,
+    flightsState: live.state,
     historicalRoutes: historical,
     ...(airways.run.status.ok ? { airways: airways.airways } : {}),
     ...(airways.run.status.ok && airways.source && airways.airways.length ? { airwaysSource: airways.source } : {}),

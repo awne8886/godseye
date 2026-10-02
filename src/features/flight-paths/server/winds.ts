@@ -4,11 +4,14 @@
  * COMMERCIAL_DEPLOYMENT=true → `skipped: 'licence'`). Samples snap to a 2° grid; grid cells are
  * cached 1 h and every uncached cell of a route goes out in ONE multi-coordinate request. A
  * process-wide hourly request budget protects the shared free tier (`skipped: 'budget'`).
- * Values are the model forecast for the current hour, labelled as such in the UI. Server-only.
+ * Values are the model forecast for the current hour, labelled as such in the UI. Each sample
+ * carries the model grid point that answered (`cellLat`/`cellLng`, up to ~150 km from the route
+ * point) and the forecast hour (`validAt`, Open-Meteo `hourly.time[0]`, GMT). Server-only.
  */
 import 'server-only';
 import { hasCapability } from '@/lib/capabilities';
 import { runProvider, skippedProvider, type ProviderRun } from '@/lib/feeds';
+import { normalizeUtc } from '@/lib/freshness';
 import { httpJson } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import type { LngLatTuple } from '@/lib/geo';
@@ -22,12 +25,20 @@ export interface WindSample {
   fraction: number;
   lat: number;
   lng: number;
+  /** The model grid point the values belong to (Open-Meteo's answered coordinates, else the 2° cell). */
+  cellLat: number;
+  cellLng: number;
+  /** Model forecast hour the values are valid for (ISO-8601 Z), null when the upstream gave none. */
+  validAt: string | null;
   speedKt: number | null;
   dirDeg: number | null;
   level: '250hPa';
 }
 
 interface Cell {
+  lat: number;
+  lng: number;
+  validAt: string | null;
   speedKt: number | null;
   dirDeg: number | null;
   at: number;
@@ -36,7 +47,7 @@ interface Cell {
 interface OpenMeteoPoint {
   latitude?: number;
   longitude?: number;
-  hourly?: { wind_speed_250hPa?: (number | null)[]; wind_direction_250hPa?: (number | null)[] };
+  hourly?: { time?: string[]; wind_speed_250hPa?: (number | null)[]; wind_direction_250hPa?: (number | null)[] };
 }
 
 const G = globalThis as unknown as { __godseyeWinds?: { cells: Map<string, Cell>; window: { start: number; used: number } } };
@@ -93,11 +104,36 @@ export async function windsAloft(
       if (r.result) run = { status: { ...run.status, ok: false, count: 0, error: 'parse' }, okAt: null };
       return { winds: [], run };
     }
-    r.result.forEach((p, i) => state.cells.set(keys[i]!, { speedKt: num(p.hourly?.wind_speed_250hPa?.[0]), dirDeg: num(p.hourly?.wind_direction_250hPa?.[0]), at: now }));
+    r.result.forEach((p, i) => {
+      const [reqLat, reqLng] = cells[i]!;
+      const lat = num(p.latitude);
+      const lng = num(p.longitude);
+      // timezone=GMT: hourly times are zone-less UTC ("2026-10-02T03:00").
+      const t = p.hourly?.time?.[0];
+      state.cells.set(keys[i]!, {
+        lat: Math.round((lat ?? reqLat) * 100) / 100,
+        lng: Math.round((lng ?? reqLng) * 100) / 100,
+        validAt: typeof t === 'string' ? normalizeUtc(t) : null,
+        speedKt: num(p.hourly?.wind_speed_250hPa?.[0]),
+        dirDeg: num(p.hourly?.wind_direction_250hPa?.[0]),
+        at: now,
+      });
+    });
   }
-  const winds = samples.map((s) => {
+  const winds = samples.map((s): WindSample => {
     const c = state.cells.get(cellKey(s.point[1], s.point[0]));
-    return { fraction: s.fraction, lat: Math.round(s.point[1] * 1e4) / 1e4, lng: Math.round(s.point[0] * 1e4) / 1e4, speedKt: c?.speedKt ?? null, dirDeg: c?.dirDeg ?? null, level: '250hPa' as const };
+    const cellLng = snap(s.point[0]) === 180 ? -180 : snap(s.point[0]);
+    return {
+      fraction: s.fraction,
+      lat: Math.round(s.point[1] * 1e4) / 1e4,
+      lng: Math.round(s.point[0] * 1e4) / 1e4,
+      cellLat: c?.lat ?? snap(s.point[1]),
+      cellLng: c?.lng ?? cellLng,
+      validAt: c?.validAt ?? null,
+      speedKt: c?.speedKt ?? null,
+      dirDeg: c?.dirDeg ?? null,
+      level: '250hPa',
+    };
   });
   return { winds, run: { ...run, status: { ...run.status, count: winds.filter((w) => w.speedKt !== null).length } } };
 }
