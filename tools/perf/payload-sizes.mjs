@@ -5,15 +5,23 @@
  * Contract §10: every /api response must stay < 4 MB (checked on the *decoded* body, which is what a
  * client without compression receives and what the browser has to parse).
  *
- *   node tools/perf/payload-sizes.mjs [--base http://127.0.0.1:3000] [--json out.json]
+ *   node tools/perf/payload-sizes.mjs [--base http://127.0.0.1:3000] [--dist .next] [--json out.json]
  *
  * Exit code 1 when any response is >= 4 MB decoded, or answers a status other than 2xx, 503 (SOURCE
  * OFFLINE) or, on a capability-gated route, 403 `capability_disabled`: a 404 or 500 means the route
  * was never measured, which must not read as "within budget".
+ *
+ * Exit code 2 (nothing measured) when the server at --base is not serving the build in --dist
+ * (default `.next` in the current directory): a next-server left over from an older build still
+ * answers /api with the old code, so its figures would be a false green. The check loads `/`, takes
+ * every /_next/static/chunks/* asset it references and requires each to exist in <dist>/static/chunks,
+ * requires every build id the page names to equal <dist>/BUILD_ID, and requires the server to
+ * actually serve one of those chunks with 200.
  */
 import http from 'node:http';
 import zlib from 'node:zlib';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const LIMIT = 4 * 1024 * 1024;
@@ -84,6 +92,91 @@ function get(BASE, path, encoding) {
   });
 }
 
+/** Every /_next/static/chunks/<file> the HTML references (deduplicated, query/hash stripped, URL-decoded). */
+export function chunkAssets(html) {
+  const out = new Set();
+  for (const m of html.matchAll(/\/_next\/static\/chunks\/([^"'\s?#\\)]+)/g)) out.add(decodeURIComponent(m[1]));
+  return [...out];
+}
+
+/**
+ * Build ids the HTML names: the App Router flight payload's `"b":"<buildId>"` (JSON-escaped inside
+ * the inline `self.__next_f.push` scripts) and any /_next/static/<buildId>/_buildManifest path.
+ */
+export function buildIdsIn(html) {
+  const out = new Set();
+  for (const m of html.matchAll(/\\*"b\\*":\\*"([A-Za-z0-9_-]{6,})\\*"/g)) out.add(m[1]);
+  for (const m of html.matchAll(/\/_next\/static\/([A-Za-z0-9_-]{6,})\/_(?:buildManifest|ssgManifest|clientMiddlewareManifest)/g)) out.add(m[1]);
+  return [...out];
+}
+
+/**
+ * Why the page the server returned for `/` does not belong to the local build, or null when it does.
+ * `localChunks` is the set of file paths under <dist>/static/chunks ('/'-separated, relative).
+ */
+export function staleBuildProblem({ status, html, localChunks, localBuildId }) {
+  if (status !== 200) return `GET / answered ${status || 'no response'}, cannot tell which build the server runs`;
+  const chunks = chunkAssets(html);
+  if (chunks.length === 0) return 'GET / references no /_next/static/chunks assets, cannot tell which build the server runs';
+  const missing = chunks.filter((c) => !localChunks.has(c));
+  if (missing.length) return `server is not serving this build: ${missing.length}/${chunks.length} chunk(s) its page references are not in the local build (e.g. ${missing[0]})`;
+  const ids = buildIdsIn(html);
+  if (!ids.includes(localBuildId)) {
+    return ids.length
+      ? `server is not serving this build: its page names build id ${ids[0]}, local BUILD_ID is ${localBuildId}`
+      : `GET / names no build id, cannot confirm the server runs build ${localBuildId}`;
+  }
+  return null;
+}
+
+function listFiles(dir, prefix = '') {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${e.name}` : e.name;
+    if (e.isDirectory()) out.push(...listFiles(join(dir, e.name), rel));
+    else out.push(rel);
+  }
+  return out;
+}
+
+/** The local build: its chunk file set and BUILD_ID. Throws when `dist` holds no production build. */
+export function readLocalBuild(dist) {
+  const chunksDir = join(dist, 'static', 'chunks');
+  const idFile = join(dist, 'BUILD_ID');
+  if (!existsSync(chunksDir) || !existsSync(idFile)) throw new Error(`no production build in ${dist} (run pnpm build, or pass --dist <dir>)`);
+  return { localChunks: new Set(listFiles(chunksDir)), localBuildId: readFileSync(idFile, 'utf8').trim() };
+}
+
+function getRaw(url, accept) {
+  return new Promise((done) => {
+    const req = http.get(url, { headers: { 'user-agent': 'godseye-perf-auditor', accept }, timeout: 120_000 }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => done({ status: res.statusCode ?? 0, html: Buffer.concat(chunks).toString('utf8') }));
+    });
+    req.on('error', () => done({ status: 0, html: '' }));
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+  });
+}
+
+/** Exit-2 reason when the server at BASE is not running the build in DIST, else null. */
+export async function verifyServedBuild(BASE, DIST) {
+  let local;
+  try {
+    local = readLocalBuild(DIST);
+  } catch (e) {
+    return e.message;
+  }
+  const page = await getRaw(`${BASE}/`, 'text/html');
+  const stale = staleBuildProblem({ ...page, ...local });
+  if (stale) return stale;
+  // The page can come from a cache in front of a dead server; the assets must load from this one.
+  const first = chunkAssets(page.html)[0];
+  const asset = await getRaw(`${BASE}/_next/static/chunks/${first}`, '*/*');
+  if (asset.status !== 200) return `server is not serving this build: /_next/static/chunks/${first} answered ${asset.status || 'no response'}`;
+  return null;
+}
+
 const kb = (n) => (n / 1024).toFixed(1);
 
 async function main() {
@@ -94,6 +187,13 @@ async function main() {
   };
   const BASE = opt('--base', 'http://127.0.0.1:3000');
   const OUT = opt('--json', null);
+  const DIST = resolve(opt('--dist', '.next'));
+  const stale = await verifyServedBuild(BASE, DIST);
+  if (stale) {
+    console.error(`payload-sizes: ${stale} (base ${BASE}, dist ${DIST}). Stop the old server and start this build; nothing measured.`);
+    process.exit(2);
+  }
+  console.log(`build ${readFileSync(join(DIST, 'BUILD_ID'), 'utf8').trim()} verified at ${BASE}`);
   const rows = [];
   let over = 0;
   let broken = 0;
