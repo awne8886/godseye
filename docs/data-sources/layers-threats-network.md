@@ -74,3 +74,13 @@ Probe 2026-10-02 00:35–00:40 UTC (Phase 3 round-6, alert pins counted in confl
 | Al Jazeera `xml/rss/all.xml` | 200 · 0.48 s | none | Wire RSS; server-side only. |
 
 Round-6 verification fix 2026-10-02 (no new upstream; the conflicts feed still reads `newsFeed.get()` in-process): only AlertItems with `kind` `rocket` or `event` become conflict events; `kind=news` headlines are dropped even inside a zone (in the recorded fixture this removes the Africanews Khartoum item and a TASS Kyiv item classed news). In-zone alert events now carry the AlertItem's `source` (as `sourceHandle`), `sourceName`, `lean`, `bloc` and `alertKind`; the card selection source is that handle (e.g. `t.me/rybar_in_english`) and the card shows a Channel · stance row.
+
+Re-probe 2026-10-02 11:40 UTC (Phase 3 round-8 fixes; UA `GODSEYE/0.1 (+https://github.com/godseye; probe)`, `Origin: https://example.org`, IPv4):
+
+| Upstream | Status · latency · size | CORS | Notes |
+|---|---|---|---|
+| GDELT `lastupdate.txt` (https) | 200 · 0.40 s · 3 lines | `*` | Named batch `20261002114500`; Last-Modified 11:36:01 (label again ahead of publication). Plain `http://` answers 301 → https from this sandbox; we fetch https. |
+| GDELT `…/20261002114500.export.CSV.zip` | 200 · 0.15 s · 66 kB | `*` | 989 rows, all 61 columns; 185 QuadClass 3/4 rows with ActionGeo_Type ≥ 2. Unchanged format. |
+| `/api/conflicts` on a local `next start` (GDELT + news in-process) | 200 · 3.1 s | n/a | `live` with `gdelt {ok, count 67}` and `alerts {ok, count 12}`: every counted alert carries weapon/combat language (strikes, drones, explosions, attacks). |
+
+Round-8 verification fixes (no new upstream): (1) the alert classifier's `kind=event` also matches `earthquake` and `fire`, so the conflicts feed now also requires kinetic text (`isKineticAlertText`: weapon/combat terms, or explosion/casualty/siren terms with no hazard, fire or accident named; idioms such as "hunger strike" and "heart attack" removed first). A deterministic keyword test, never called AI; it errs towards not counting. (2) When GDELT has never answered (no last-good pull) the conflicts state is capped at RECENT (it read LIVE from in-zone alerts alone); `providers.gdelt.age_s` is then `null`. Zones with no in-zone event stay REFERENCE.
