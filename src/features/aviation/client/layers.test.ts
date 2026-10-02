@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { TripsLayer } from '@deck.gl/geo-layers';
 import type { FlightRecord } from '../adsb';
 import { FROZEN_DIM, advanceFrame, aggregateH3, buildLayers, newFrame, syncColors } from './layers';
 import type { Rgba } from '@/lib/tokens';
@@ -39,15 +40,19 @@ describe('aviation frame', () => {
     const f = newFrame([...records, rec('bbbbb1', 0, 51, { emergency: '7700', squawk: '7700' })]);
     advanceFrame(f, 1000_000, new Set(['commercial']), null);
     const layers = buildLayers({
-      frame: f, view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 1, dataVersion: 1, colorMode: 'altitude', theme: 'HORUS',
-      watched: ['aaaaa1'], tracks: new Map([['aaaaa1', [{ t: '2026-09-30T18:00:00Z', lat: 50, lng: -1, altFt: 1000, onGround: false, gsKt: 200, trackDeg: 90 }]]]),
+      frame: f, now: 1000_000, camera: null, view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 1, dataVersion: 1, colorMode: 'altitude', theme: 'HORUS',
+      watched: ['aaaaa1'], tracks: new Map([['aaaaa1', [{ t: '1970-01-01T00:16:00Z', lat: 50, lng: -1, altFt: 1000, onGround: false, gsKt: 200, trackDeg: 90 }]]]),
       selectedId: null, cells: [{ hex: '831f1dfffffffff', count: 3 }], toSelection: aircraftSelection,
     }) as { id: string }[];
     expect(layers.map((l) => l.id)).toEqual(['aviation-trails', 'aviation-h3', 'aviation-emergency', 'aviation-highlight']);
-    const trails = layers[0] as unknown as { props: { antialiasing?: boolean; parameters?: { cullMode?: string } } };
+    expect(layers[0]).toBeInstanceOf(TripsLayer);
+    const trails = layers[0] as unknown as { props: { antialiasing?: boolean; parameters?: { cullMode?: string; depthCompare?: string }; currentTime: number; trailLength: number } };
     expect(trails.props.antialiasing).toBe(true);
-    expect(trails.props.parameters?.cullMode).toBe('none');
-    expect(buildLayers({ frame: newFrame([]), view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 0, dataVersion: 0, colorMode: 'bucket', theme: 'HORUS', watched: [], tracks: new Map(), selectedId: null, cells: null, toSelection: aircraftSelection })).toBeNull();
+    expect(trails.props.parameters).toEqual({ cullMode: 'none', depthCompare: 'always' });
+    expect(trails.props.trailLength).toBe(1800); // 30 min
+    // Track sample at t=960 s, live record seen at 1000 s and drawn at now=1000 s: head 40 s later.
+    expect(trails.props.currentTime).toBe(40);
+    expect(buildLayers({ frame: newFrame([]), now: 0, camera: null, view: { center: [0, 0], zoom: 2, bearing: 0 }, tick: 0, dataVersion: 0, colorMode: 'bucket', theme: 'HORUS', watched: [], tracks: new Map(), selectedId: null, cells: null, toSelection: aircraftSelection })).toBeNull();
   });
 
   it('ticks without re-running per-aircraft accessors: stable data, versions bump only on change (perf M4)', () => {

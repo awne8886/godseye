@@ -84,6 +84,8 @@ export default function AviationLayer({ active }: LayerComponentProps) {
   const cells = useRef<H3Cell[] | null>(null);
   const [layers, setLayers] = useState<LayersList | null>(null);
   const [drawn, setDrawn] = useState(0);
+  /** Vertices of the watched-flight trails currently drawn (TripsLayer; exposed for e2e/QA). */
+  const [trailVertices, setTrailVertices] = useState(0);
   const [cameraAttr, setCameraAttr] = useState('');
   /** Drawn aircraft past the 60 s dead-reckoning cap (frozen, dimmed): exposed for tests/QA. */
   const [stale, setStale] = useState(0);
@@ -106,7 +108,8 @@ export default function AviationLayer({ active }: LayerComponentProps) {
       // The camera's ground point and altitude (pitch-aware), the same value the map host
       // publishes for isFacing(); null in mercator. Hides AND unpicks aircraft behind the limb.
       const camera = globe ? (map ? cameraFromMap(map) : getFarSideCamera()) : null;
-      advanceFrame(f, Date.now(), buckets, camera);
+      const now = Date.now();
+      advanceFrame(f, now, buckets, camera);
       const aggregate = globe && f.count > AGGREGATE_ABOVE && view.current.zoom < AGGREGATE_BELOW_ZOOM;
       if (!aggregate) cells.current = null;
       else if (kind === 'data' || !cells.current) cells.current = aggregateH3(f);
@@ -124,12 +127,15 @@ export default function AviationLayer({ active }: LayerComponentProps) {
           watched,
           tracks,
           selectedId,
+          now,
+          camera,
           cells: cells.current,
           toSelection: aircraftSelection,
         }),
       );
       if (kind === 'camera') return; // counts reach React on settled changes only
       setDrawn(f.count);
+      setTrailVertices(f.trailVertices);
       // The far-side camera (ground lng, lat, altitude m) the drawn count was filtered with (e2e).
       setCameraAttr(camera ? `${camera.lng.toFixed(3)},${camera.lat.toFixed(3)},${Math.round(camera.altitude)}` : '');
       setStale(f.staleVisible);
@@ -260,7 +266,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
 
   // Announces only the selection (not the per-second count); counts are data attributes for tests.
   return (
-    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-map-ready={map ? '1' : '0'} data-drawn={drawn} data-camera={cameraAttr} data-stale={stale} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
+    <p className="sr-only" aria-live="polite" data-testid="aviation-status" data-map-ready={map ? '1' : '0'} data-drawn={drawn} data-trail-vertices={trailVertices} data-camera={cameraAttr} data-stale={stale} data-total={data?.counts.total ?? 0} data-offline={data?.offline ? '1' : '0'}>
       {selectedLabel !== null ? `Selected aircraft ${selectedLabel}` : ''}
     </p>
   );

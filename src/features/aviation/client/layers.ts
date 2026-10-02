@@ -3,12 +3,12 @@
  * far-side/bucket visibility filter, the H3 aggregate, and the layer list itself. The React
  * component only schedules these (1 Hz, on camera moves, on new data). Client-only.
  */
-import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
-import { H3HexagonLayer } from '@deck.gl/geo-layers';
+import { ScatterplotLayer } from '@deck.gl/layers';
+import { H3HexagonLayer, TripsLayer } from '@deck.gl/geo-layers';
 import type { LayersList, PickingInfo } from '@deck.gl/core';
 import { latLngToCell } from 'h3-js';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
-import { splitAtAntimeridian, type LngLatTuple } from '@/lib/geo';
+import type { LngLatTuple } from '@/lib/geo';
 import { horizonAngleDeg, type FarSideCamera } from '@/lib/map/far-side';
 import { readCssColor, type MapToken, type Rgba } from '@/lib/tokens';
 import type { Selection } from '@/lib/layer-host';
@@ -20,6 +20,7 @@ import { aircraftAtlas } from './icons';
 import { SdfIconLayer } from './SdfIconLayer';
 import { BUCKET_LAYER } from './useFlights';
 import { altitudeRamp, iconFor } from './format';
+import { TRAIL_LENGTH_S, buildTrips, type Trip } from './trails';
 
 export const AGGREGATE_ABOVE = 20_000;
 export const AGGREGATE_BELOW_ZOOM = 4;
@@ -33,6 +34,8 @@ const H3_RES = 3;
  * `depthCompare: 'always'` keeps the flat billboard from being half-clipped by the globe surface.
  */
 export const ICON_PARAMETERS = { cullMode: 'none', depthCompare: 'always' } as const;
+/** Watched trails: same globe state as the icons (their far side is cut by `buildTrips`). */
+export const TRAIL_PARAMETERS = ICON_PARAMETERS;
 
 export interface View {
   center: LngLatTuple;
@@ -80,6 +83,8 @@ export interface Frame {
   idIndex: Map<string, number> | null;
   /** Cached ring indices, keyed by visVersion + watched + selection. */
   rings: { key: string; emergencies: number[]; highlighted: number[] } | null;
+  /** Vertices in the last built watched-trail TripsLayer (0 = none drawn; exposed for e2e/QA). */
+  trailVertices: number;
 }
 
 /** A deck binary attribute: one RGBA (unorm8) per instance. A new object = re-upload this buffer only. */
@@ -121,6 +126,7 @@ export function newFrame(records: FlightRecord[]): Frame {
     settled: new Uint8Array(n),
     idIndex: null,
     rings: null,
+    trailVertices: 0,
   };
   for (let i = 0; i < n; i++) {
     const r = records[i]!;
@@ -318,6 +324,10 @@ export interface BuildOptions {
   watched: readonly string[];
   tracks: ReadonlyMap<string, readonly TrackPoint[]>;
   selectedId: string | null;
+  /** Wall clock (epoch ms) the frame was advanced to: the watched trails' dead-reckoned head. */
+  now: number;
+  /** The far-side camera the frame was filtered with (null in mercator): cuts trails at the limb. */
+  camera: FarSideCamera | null;
   /** H3 cells when the aggregate replaces icons. */
   cells: H3Cell[] | null;
   /** Selection for a picked aircraft (the map's click router opens it; see select.ts). */
@@ -431,32 +441,42 @@ export function buildLayers(o: BuildOptions): LayersList | null {
   if (emergencies.length) out.push(ring('aviation-emergency', emergencies, emergency, 17, 2.5));
   if (highlighted.length) out.push(ring('aviation-highlight', highlighted, watchColor, 21, 1.5));
 
-  // Trails for watched aircraft: current leg of the flown track + the live dead-reckoned head.
-  const paths: { path: LngLatTuple[] }[] = [];
-  for (const hex of o.watched) {
-    const track = o.tracks.get(hex);
-    if (!track?.length) continue;
-    const pts: LngLatTuple[] = track.map((p) => [p.lng, p.lat]);
-    f.idIndex ??= new Map(f.records.map((r, i) => [r.id, i]));
-    const live = f.idIndex.get(hex) ?? -1;
-    if (live >= 0) pts.push([f.pos[live * 2]!, f.pos[live * 2 + 1]!]);
-    for (const seg of splitAtAntimeridian(pts)) paths.push({ path: seg });
-  }
-  if (paths.length) {
+  // Trails for watched aircraft (§7): a TripsLayer over the flown track with per-vertex observed
+  // times, its clock at the dead-reckoned head, showing the last 30 min (see trails.ts).
+  const trips = o.watched.length
+    ? buildTrips(
+        o.watched,
+        o.tracks,
+        (hex) => {
+          f.idIndex ??= new Map(f.records.map((r, i) => [r.id, i]));
+          const i = f.idIndex.get(hex);
+          return i === undefined ? undefined : f.records[i];
+        },
+        o.now,
+        o.camera,
+      )
+    : null;
+  f.trailVertices = trips ? trips.trips.reduce((n, t) => n + t.path.length, 0) : 0;
+  if (trips) {
     out.unshift(
-      new PathLayer<{ path: LngLatTuple[] }>({
+      new TripsLayer<Trip>({
         id: 'aviation-trails',
-        data: paths,
+        data: trips.trips,
         getPath: (d) => d.path,
+        getTimestamps: (d) => d.timestamps,
+        currentTime: trips.currentTime,
+        trailLength: TRAIL_LENGTH_S,
+        fadeTrail: true,
         getColor: watchColor,
         getWidth: 2,
         widthUnits: 'pixels',
         capRounded: true,
         jointRounded: true,
-        // Globe rules: no culling, analytic AA (MapLibre's context has antialias off; R1 m8).
+        // Globe rules: no culling, analytic AA (MapLibre's context has antialias off; R1 m8). Drawn
+        // over the globe like the icons; the far side is cut on the CPU (buildTrips + isFacing).
         antialiasing: true,
-        parameters: { cullMode: 'none' },
-        updateTriggers: { getPath: [o.tick], getColor: [o.theme] },
+        parameters: TRAIL_PARAMETERS,
+        updateTriggers: { getColor: [o.theme] },
       }),
     );
   }
