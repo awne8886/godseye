@@ -4,6 +4,7 @@
  * camera as `link_out_only` without contacting TxDOT — and /api/cctv/texas/snapshot must do the same.
  * Upstream calls are recorded through a stubbed allowListedFetch (recorded TxDOT fixture body).
  */
+import type * as Catalog from '@/features/surveillance/server/catalog';
 import type * as Ssrf from '@/lib/ssrf';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Camera } from '@/lib/types';
@@ -28,7 +29,7 @@ const TX_ID = 'txdot-ABL-ABL-FM707 @ SH89';
 const TX_STILL = 'https://its.txdot.gov/its/DistrictIts/GetCctvSnapshotByIcdId?districtCode=ABL&icdId=ABL-FM707%20%40%20SH89';
 
 vi.mock('@/features/surveillance/server/catalog', async (orig) => {
-  const real = await orig<typeof import('@/features/surveillance/server/catalog')>();
+  const real = await orig<typeof Catalog>();
   const { providerDef } = await import('@/features/surveillance/server/registry');
   const camera = {
     id: TX_ID, lat: 32.35, lng: -99.79, name: 'ABL-FM707 @ SH89', providerId: 'txdot', city: null, country: 'US', streamType: 'jpg',
