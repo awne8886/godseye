@@ -1544,6 +1544,23 @@ Honest UA `GODSEYE/0.1.0 (+https://github.com/awne8886/godseye; contact …/issu
 | `POST <OLLAMA_URL>/api/chat` (`stream:true`) | not probed | — | — | operator host | NDJSON, `message.content` per line, last line `done:true`; fixture `stream-ollama.documented.ndjson` (documented format; no Ollama host in the build sandbox) |
 | `https://www.1823.gov.hk/common/ical/en.json` | 200 | 1.21 s | none | none | HKSAR general holidays (HK government open data). 2026: 17 events, 14 on weekdays = the HKEX full-day closures in `sessions.ts`; recorded as `hk-1823-holidays-2026.2026-10-02.json` (2026 events only). Half days not modelled |
 
+#### Round 8 (probed 2026-10-02 10:26 UTC): wire feeds whose stance labels changed
+
+The digest groups (`bloc`) are no longer printed as a source's perspective: per-source lines show the
+source's own declared stance (`lean`), and the groups have neutral names (Western, Russian-aligned,
+Regional, Independent aggregator). OSIRIS's 'Regional (Turkey, Middle East)' had been printed for SCMP,
+CNA and Africanews, and 'Western / Ukrainian' for BBC, France 24 and DW. One request each, honest UA,
+`Origin: http://localhost:3000`.
+
+| URL | Status | Latency | CORS | Auth | Notes |
+|---|---|---|---|---|---|
+| `https://www.scmp.com/rss/91/feed/` | 200 | 0.63 s | none | none | 84 kB, 50 items, newest `pubDate` Fri, 02 Oct 2026 10:00:48 +0000. Stance "Hong Kong newspaper", group Regional. First 4 items recorded as `scmp-world.2026-10-02.xml` |
+| `https://www.africanews.com/feed/rss` | 200 | 0.49 s | none | none | 48 kB, 50 items, newest Fri, 02 Oct 2026 10:03:02 +0000. Stance "Pan-African broadcaster", group Regional. First 4 items recorded as `africanews.2026-10-02.xml` |
+| `https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6311` | 200 | 0.25 s | `*` | none | 19 kB, 20 items, newest Fri, 02 Oct 2026 17:39:00 +0800. Stance "Singapore broadcaster" |
+| `https://feeds.bbci.co.uk/news/world/rss.xml` | 200 | 0.23 s | none | none | 22 kB, 29 items, newest Fri, 02 Oct 2026 09:08:06 GMT. Stance "UK public broadcaster", group Western |
+| `https://rss.dw.com/rdf/rss-en-world` | 200 | 0.34 s | `*` | none | 12 kB, RDF, 13 items, newest `dc:date` 2026-10-02T10:23:12Z. Stance "German public broadcaster" |
+| `https://www.france24.com/en/rss` | 200 | 0.24 s | none | none | 31 kB, 24 items, newest Fri, 02 Oct 2026 09:49:33 GMT. Stance "French public broadcaster" |
+
 ### panels-recon
 
 RECON, SEARCH, ROUTE, DRAW, ARCGIS and WORLD REMOTE. Every upstream is called by this server
