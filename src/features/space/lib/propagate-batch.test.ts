@@ -122,6 +122,21 @@ describe('far-side filter: camera horizon + the satellite display altitude', () 
     expect(navOnly.count + navOnly.hidden + navOnly.failed).toBe(recs.length);
   });
 
+  it('r10 MAJOR 1: mercator (`flat`) draws every marker on its sub-satellite point (z = 0), the globe at its display altitude', () => {
+    const flat = compactFrame(input, prop, { palette, visible: all, camera: null, selectedId: null, flat: true });
+    const raised = compactFrame(input, prop, { palette, visible: all, camera: null, selectedId: null });
+    expect(flat.flat).toBe(true);
+    expect(raised.flat).toBe(false);
+    expect(flat.count).toBe(raised.count);
+    expect(flat.count).toBeGreaterThan(0);
+    for (let k = 0; k < flat.count; k++) {
+      expect(flat.positions[k * 3 + 2]).toBe(0);
+      expect(flat.positions[k * 3]).toBe(raised.positions[k * 3]);
+      expect(flat.positions[k * 3 + 1]).toBe(raised.positions[k * 3 + 1]);
+      expect(raised.positions[k * 3 + 2]).toBeGreaterThan(0);
+    }
+  });
+
   it('the selected satellite keeps its telemetry when it is behind the globe, but is not drawn there', () => {
     const cam = cameraAt(-98, 39, 6);
     // Find a satellite behind the globe for this camera and select it.
@@ -216,17 +231,30 @@ describe('category-sorted output for the per-mission IconLayers (L105)', () => {
       noradIds: Array.from({ length: reps }, () => input.noradIds).flat(),
       categories: Array.from({ length: reps }, () => input.categories).flat(),
     };
-    const p = propagateVisible(big, { at: AT, visible: all, selectedId: null });
+    // Wall-clock on a shared CI runner swings 2–3× with load (r10 MINOR 3: a 40 ms bound read
+    // 66.6 ms), so the check is twofold. Relative: the re-filter is timed against the SGP4 pass on
+    // the same machine in the same moment, and must stay a small fraction of it — the regression
+    // that matters (SGP4 or a per-row allocation creeping into the camera path) costs as much as
+    // the SGP4 pass itself, whatever the load. Absolute: the fastest of 9 runs (load only ever adds
+    // time) must stay far inside the 1 s tick.
+    const sgp4: number[] = [];
+    let p = propagateVisible(big, { at: AT, visible: all, selectedId: null });
+    for (let r = 0; r < 3; r++) {
+      const t0 = performance.now();
+      p = propagateVisible(big, { at: AT, visible: all, selectedId: null }, p);
+      sgp4.push(performance.now() - t0);
+    }
     expect(p.n).toBeGreaterThanOrEqual(19_000);
     const cam = cameraAt(-98, 39, 3);
     compactFrame(big, p, { palette, visible: all, camera: cam, selectedId: null }); // warm-up
     const runs: number[] = [];
-    for (let r = 0; r < 5; r++) {
+    for (let r = 0; r < 9; r++) {
       const t0 = performance.now();
       compactFrame(big, p, { palette, visible: all, camera: cam, selectedId: null });
       runs.push(performance.now() - t0);
     }
-    runs.sort((a, b) => a - b);
-    expect(runs[2]!).toBeLessThan(40);
+    const fastest = Math.min(...runs);
+    expect(fastest).toBeLessThan(Math.min(...sgp4) / 3);
+    expect(fastest).toBeLessThan(150);
   });
 });

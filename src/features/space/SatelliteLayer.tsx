@@ -4,7 +4,9 @@
  * (the main thread never parses or clones it) and posts typed arrays; this component publishes
  * deck.gl layers from them (binary attributes, no per-frame React state beyond the layer list). Mission colours come from `--map-sat-*` tokens; satellites in
  * Earth's shadow are dimmed; the ISS and the selected satellite are enlarged; the selected
- * satellite's orbit (±½ period) is drawn at the same compressed altitude as the markers.
+ * satellite's orbit (±½ period) is drawn at the same compressed altitude as the markers. In
+ * mercator markers, orbit and ISS label lie flat on the sub-satellite points (z = 0): a raised
+ * marker under the perspective camera drifts off its ground point (round 10 MAJOR 1).
  * Owner: layers-space.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -186,11 +188,14 @@ export function visibleCategories(active: ReadonlySet<LayerId>): number[] {
 
 type Rgba = [number, number, number, number];
 
-/** The selected satellite's orbit (±½ period) at the markers' compressed altitude; antialiased, never culled. */
-export function orbitLayer(segments: readonly (readonly (readonly [number, number, number])[])[], color: Rgba): PathLayer<{ path: [number, number, number][] }> {
+/**
+ * The selected satellite's orbit (±½ period) at the markers' compressed altitude — on the ground
+ * track (z = 0) when `flat` (mercator), like the markers; antialiased, never culled.
+ */
+export function orbitLayer(segments: readonly (readonly (readonly [number, number, number])[])[], color: Rgba, flat = false): PathLayer<{ path: [number, number, number][] }> {
   return new PathLayer<{ path: [number, number, number][] }>({
     id: 'space-orbit',
-    data: segments.map((seg) => ({ path: seg.map(([lng, lat, alt]) => [lng, lat, displayAltM(alt)] as [number, number, number]) })),
+    data: segments.map((seg) => ({ path: seg.map(([lng, lat, alt]) => [lng, lat, flat ? 0 : displayAltM(alt)] as [number, number, number]) })),
     getPath: (d) => d.path,
     getColor: color,
     getWidth: 1.5,
@@ -405,7 +410,7 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     const w = workerRef.current;
     if (!w) return;
     const camera = projection === 'globe' ? (map ? cameraFromMap(map) : getFarSideCamera()) : null;
-    w.postMessage({ type: 'view', camera, visible, palette: palette(), selectedId } satisfies WorkerIn);
+    w.postMessage({ type: 'view', camera, visible, palette: palette(), selectedId, flat: projection !== 'globe' } satisfies WorkerIn);
   }, [map, projection, visible, selectedId, theme, styleVersion, catalogueVersion]);
 
   // Far-side camera → worker while the map moves (at most every CAMERA_POST_MS, and once when it
@@ -472,10 +477,11 @@ export default function SatelliteLayer({ active }: LayerComponentProps) {
     if (!frame) return null;
     const out: LayersList = [];
     if (orbit.data && selData && orbit.data.noradId === selData.noradId) {
-      out.push(orbitLayer(orbit.data.segments, readCssColor(CATEGORY_TOKEN[selData.category], 0.85)));
+      out.push(orbitLayer(orbit.data.segments, readCssColor(CATEGORY_TOKEN[selData.category], 0.85), frame.flat));
     }
     out.push(...satelliteIconLayers(frame, glyphAtlas()));
-    // ISS highlight: a label beside its (enlarged) marker when it is on the visible hemisphere.
+    // ISS highlight: a label beside its (enlarged) marker when it is on the visible hemisphere
+    // (at the marker's own z: 0 in mercator).
     const issIdx = indexOfId(ISS_NORAD_ID);
     const k = issIdx === undefined ? -1 : frame.index.indexOf(issIdx);
     if (k >= 0) {

@@ -6,6 +6,13 @@
  *  - `latestPosition`: the GPU pick's catalogue index mapped onto the newest frame, so the card
  *    opens where the marker is now, not where it was when the picking buffer was drawn.
  *
+ * Only what is drawn is hit (verification round 10, MAJOR 1). The hit-test used to accept the
+ * sub-satellite GROUND point as well as the drawn marker, so a click on bare map under a GEO
+ * satellite opened its card (≈ 200 px from its marker on the globe at z5). Now a row is hit only at
+ * the point its marker is drawn: in mercator the worker draws it flat (z = 0, so drawn = ground);
+ * on the globe at its display altitude, projected through the same perspective fit as the ground
+ * points (`k · unit vector`, exact for a perspective camera), or by radial lift without a fit.
+ *
  * Far side (§3): MapLibre's globe `project()` has no occlusion test, so a satellite behind the
  * globe projects inside the disk. Every candidate is re-checked with
  * `isFacing(p, camera, displayAltitudeM)` for the CURRENT camera (the frame may be up to one
@@ -218,17 +225,19 @@ export function fitGlobeProjection(map: ProjectMap, view: PickView): Float64Arra
 }
 
 /**
- * Screen table for one frame and one camera: [elevatedX, elevatedY, groundX, groundY] per row,
- * NaN for a row behind the globe (never hit). On the globe the ground points come from the fitted
- * projection (`fitGlobeProjection`, verified against `project()`); without a fit, one `project()`
- * per facing row. The globe centre is projected once per pass. The far-side test runs only when
- * the worker filtered the frame with another camera (`frame.camera`).
+ * Screen table for one frame and one camera: [drawnX, drawnY, groundX, groundY] per row, NaN for
+ * a row behind the globe (never hit). Only the drawn point is hit-tested (`nearestInTable`); the
+ * ground point is kept for diagnostics and tests. On the globe the ground points come from the
+ * fitted projection (`fitGlobeProjection`, verified against `project()`) and the drawn point from
+ * the same matrix at radius 1 + altitude / R; without a fit, one `project()` per facing row and a
+ * radial lift from the globe centre. The globe centre is projected once per pass. The far-side
+ * test runs only when the worker filtered the frame with another camera (`frame.camera`).
  */
 export function projectFrame(frame: PickFrame, map: ProjectMap, view: PickView): Float32Array {
   const xy = new Float32Array(frame.count * 4);
   const testFacing = view.globe && !sameCamera(frame.camera, view.camera);
   const origin = view.globe ? globeOrigin(map) : null;
-  const fitted = view.globe && frame.count > 32 ? fitGlobeProjection(map, view) : null;
+  const fitted = view.globe && frame.count > 0 ? fitGlobeProjection(map, view) : null;
   const pos = frame.positions;
   for (let k = 0; k < frame.count; k++) {
     const o = k * 4;
@@ -239,8 +248,13 @@ export function projectFrame(frame: PickFrame, map: ProjectMap, view: PickView):
     const altM = pos[k * 3 + 2]!;
     const lng = pos[k * 3]!;
     const lat = pos[k * 3 + 1]!;
-    const g = (fitted && applyFit(fitted, unitVector(lng, lat))) || map.project([lng, lat]);
-    const e = origin && altM > 0 ? lift(g, origin, altM) : g;
+    const v = unitVector(lng, lat);
+    const g = (fitted && applyFit(fitted, v)) || map.project([lng, lat]);
+    let e = g;
+    if (origin && altM > 0) {
+      const k = 1 + altM / EARTH_RADIUS_M;
+      e = (fitted && applyFit(fitted, [v[0] * k, v[1] * k, v[2] * k])) || lift(g, origin, altM);
+    }
     xy[o] = e.x;
     xy[o + 1] = e.y;
     xy[o + 2] = g.x;
@@ -249,7 +263,10 @@ export function projectFrame(frame: PickFrame, map: ProjectMap, view: PickView):
   return xy;
 }
 
-/** Row of the nearest marker within SAT_HIT_PX of `point` in a `projectFrame` table (elevated or ground point), or null. */
+/**
+ * Row of the nearest marker within SAT_HIT_PX of `point` in a `projectFrame` table, or null. Only
+ * the DRAWN point counts: the ground point under a raised marker is bare map (round 10 MAJOR 1).
+ */
 export function nearestInTable(xy: Float32Array, count: number, point: { x: number; y: number }): { k: number; d2: number } | null {
   let best = -1;
   let bestD = SAT_HIT_PX * SAT_HIT_PX;
@@ -258,10 +275,8 @@ export function nearestInTable(xy: Float32Array, count: number, point: { x: numb
     const o = k * 4;
     const ex = xy[o]! - x;
     const ey = xy[o + 1]! - y;
-    const gx = xy[o + 2]! - x;
-    const gy = xy[o + 3]! - y;
     // A row behind the globe is NaN: every comparison with it is false, so it never wins.
-    const d = Math.min(ex * ex + ey * ey, gx * gx + gy * gy);
+    const d = ex * ex + ey * ey;
     if (d < bestD) {
       bestD = d;
       best = k;
@@ -304,9 +319,9 @@ function hitAt(frame: PickFrame, k: number, d2: number): SatelliteHit {
 }
 
 /**
- * Nearest drawn, camera-facing satellite within SAT_HIT_PX of the pointer in the newest frame.
- * Both the ground projection and the elevated one are tested so the hit holds whichever the
- * renderer used. Satellites behind the globe are skipped (not merely ranked lower).
+ * Nearest drawn, camera-facing satellite within SAT_HIT_PX of the pointer in the newest frame, hit
+ * where its marker is drawn (never at the ground point under a raised marker). Satellites behind
+ * the globe are skipped (not merely ranked lower).
  */
 export function nearestSatellite(frame: PickFrame | null, point: { x: number; y: number }, map: ProjectMap, view: PickView): SatelliteHit | null {
   if (!frame || !frame.count) return null;

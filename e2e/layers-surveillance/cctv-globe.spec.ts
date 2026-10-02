@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { isFacing } from '../../src/lib/map/far-side';
-import { gotoMap, tokenPixels, waitForCameraIdle, waitForMapIdle, type CanvasRect } from '../map-engine/helpers';
+import { gotoMap, tokenPixels, waitForAdmissionDrained, waitForCameraIdle, waitForMapIdle, type CanvasRect } from '../map-engine/helpers';
 
 /**
  * Round 5, visual-qa MAJOR-1 (layers-surveillance): flat camera markers on the globe were clipped by
@@ -40,7 +40,9 @@ test.describe('cctv on the globe', () => {
       await expect(page.locator('[data-testid="map-root"]')).toHaveAttribute('data-projection', proj, { timeout: 30_000 });
       await expect(status).toHaveAttribute('data-drawn', /^[1-9]\d*$/, { timeout: 120_000 });
       await waitForCameraIdle(page);
-      await page.waitForTimeout(2_500); // deck uploads + one frame on a software GPU
+      // Count only once deck has admitted and drawn every layer: on SwiftShader the camera dots
+      // reach the canvas ~8 s after data-drawn (r10 MINOR 4: a fixed 2.5 s wait counted 0 px).
+      await waitForAdmissionDrained(page);
       px[proj] = await tokenPixels(page, '--map-cctv', CENTRE, { minAlpha: 0.3 });
     }
     test.info().annotations.push({ type: 'cctv px', description: JSON.stringify(px) });
