@@ -169,12 +169,20 @@ export function GdeltCard({ selection }: CardProps) {
  * An in-zone GDELT event or Live Alert (observed, not REFERENCE). Its selection is attributed to the
  * GDELT events or alert pins layer; the conflict-zone feed that delivered it is restated here when it is stale or offline.
  */
+/** "Rybar · Russian military OSINT (russian bloc)": who made an in-zone alert claim, never blank. */
+function channelStance(e: ConflictEventCardData): string {
+  const name = e.sourceName ?? e.sourceHandle ?? 'Unattributed channel';
+  const stance = e.lean ? `${e.lean}${e.bloc ? ` (${e.bloc} bloc)` : ''}` : e.bloc ? `${e.bloc} bloc` : 'stance not recorded';
+  return `${name} · ${stance}`;
+}
+
 function ConflictEventBody({ e }: { e: ConflictEventCardData }) {
   const feed = useLayerStatus('conflict_zones');
   const degraded = feed.state === 'stale' || feed.state === 'offline';
   const alert = e.source === 'alerts';
   return (
     <Body testId="card-conflict-event" title={e.title} chips={<Chip tone="red">{alert ? 'Live Alert' : 'GDELT event'}</Chip>}>
+      {alert && <Row label="Channel · stance">{channelStance(e)}</Row>}
       <Row label="Zone">{dash(e.zoneLabel)}</Row>
       <Row label="Precision">{e.precision}</Row>
       <Row label={alert ? 'Published' : 'Reported'}>{iso(e.observedAt)}</Row>
@@ -199,7 +207,7 @@ export function ConflictZoneCard({ selection }: CardProps) {
       <Row label="Region">{z.region}</Row>
       <Row label="Live events (≤ 24 h)">{z.liveEventCount}</Row>
       <Note>{z.description}</Note>
-      <Note>The polygon is a curated reference area, not a frontline. Event counts are GDELT material/verbal-conflict reports and geoparsed Live Alerts located inside it (country-level locations excluded).</Note>
+      <Note>The polygon is a curated reference area, not a frontline. Event counts are GDELT material/verbal-conflict reports and geoparsed rocket/event Live Alerts (general news headlines excluded) located inside it (country-level locations excluded).</Note>
       {z.references.map((r) => (
         <div key={r}>
           <Link href={r}>{new URL(r).hostname}</Link>

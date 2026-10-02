@@ -74,13 +74,17 @@ const DAY_MS = 24 * 60 * 60_000;
 
 /**
  * Live Alerts whose pin falls inside a zone, as conflict events at the pin's own coordinates.
- * Only settlement/region pins count (a country-level pin is a centroid, the same rule as GDELT
+ * Only rocket/event alerts count: a kind=news alert is a general headline (a box-office story, a
+ * budget vote, a hospitalisation) and is not a conflict event, the same reason GDELT rows are limited
+ * to QuadClass 3/4. Only settlement/region pins count (a country-level pin is a centroid, the same rule as GDELT
  * ActionGeo_Type 1); items without a place, outside every zone, with an unparseable time or older
- * than 24 h are dropped. observedAt is the author's publication time, capped at now. Pure.
+ * than 24 h are dropped. observedAt is the author's publication time, capped at now. Each event keeps
+ * the claim's attribution (source handle, channel name, stance and bloc) so the card can label it. Pure.
  */
 export function alertsToConflictEvents(items: readonly AlertItem[], zones: readonly ZoneRef[], boxes: readonly BBox[] = zones.map((z) => bboxOf(z.polygon)), now = Date.now()): ConflictEvent[] {
   const out: ConflictEvent[] = [];
   for (const it of items) {
+    if (it.kind !== 'rocket' && it.kind !== 'event') continue;
     const p = it.place;
     if (!p || (p.precision !== 'settlement' && p.precision !== 'region')) continue;
     const published = Date.parse(it.publishedAt);
@@ -97,6 +101,11 @@ export function alertsToConflictEvents(items: readonly AlertItem[], zones: reado
       observedAt: published > now ? new Date(now).toISOString() : new Date(published).toISOString(),
       url: it.link,
       precision: p.precision,
+      sourceHandle: it.source,
+      sourceName: it.sourceName,
+      lean: it.lean,
+      bloc: it.bloc,
+      alertKind: it.kind,
     });
   }
   return out;

@@ -120,13 +120,34 @@ describe('card headers name curated records, never their minted ids (visual-qa r
     const news = JSON.parse(fixture(FX.news).toString('utf8')) as { _meta: { capturedAt: string }; items: AlertItem[] };
     const ev = alertsToConflictEvents(news.items, loadZones(), undefined, Date.parse(news._meta.capturedAt)).find((e) => e.zoneId === 'ukraine')!;
     const sel = conflictEventSelection(ev, byId.get('ukraine'));
-    expect(sel).toMatchObject({ id: ev.id, layer: 'alert_pins', source: 'alerts', observedAt: ev.observedAt });
+    // The selection source is the alert's own channel, not the generic 'alerts' (r6 MAJOR).
+    expect(sel).toMatchObject({ id: ev.id, layer: 'alert_pins', source: ev.sourceHandle, observedAt: ev.observedAt });
+    expect(sel.source).not.toBe('alerts');
+    expect(sel.source).toMatch(/^t\.me\/|^[a-z0-9]+$/);
     const { container } = render(<ConflictZoneCard selection={sel} />);
+    expect(within(container).getByText('Channel · stance')).toBeTruthy();
+    expect(container.textContent).toContain(`${ev.sourceName} · ${ev.lean} (${ev.bloc} bloc)`);
     expect(within(container).getByText('Live Alert')).toBeTruthy();
     expect(within(container).queryByText('GDELT event')).toBeNull();
     expect(within(container).getByText('Published')).toBeTruthy();
     expect(container.textContent).toContain('keyword-geoparsed place');
     expect(within(container).getByText('Source post').closest('a')!.getAttribute('href')).toBe(ev.url);
+  });
+
+  it('labels the Russian-aligned Rybar claim in the Ukraine zone with its channel and stance', () => {
+    const news = JSON.parse(fixture(FX.news).toString('utf8')) as { _meta: { capturedAt: string }; items: AlertItem[] };
+    const ev = alertsToConflictEvents(news.items, loadZones(), undefined, Date.parse(news._meta.capturedAt)).find((e) => e.id === 'alert:tg:rybar_in_english/34727')!;
+    const sel = conflictEventSelection(ev, byId.get('ukraine'));
+    expect(sel.source).toBe('t.me/rybar_in_english');
+    const { container } = render(<ConflictZoneCard selection={sel} />);
+    expect(container.textContent).toContain('Rybar · Russian military OSINT (russian bloc)');
+  });
+
+  it('a GDELT in-zone event has no Channel row and keeps source gdelt', () => {
+    const ev = { id: '1', lat: 50.45, lng: 30.52, title: 't', source: 'gdelt' as const, zoneId: 'ukraine', observedAt: '2026-10-01T00:00:00.000Z', url: null, precision: 'settlement' as const };
+    const sel = conflictEventSelection(ev, byId.get('ukraine'));
+    expect(sel.source).toBe('gdelt');
+    expect(within(render(<ConflictZoneCard selection={sel} />).container).queryByText('Channel · stance')).toBeNull();
   });
 
   it('chokepoints and curated ports are headed by their names; WPI / Natural Earth ports keep the upstream index', () => {
