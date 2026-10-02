@@ -12,8 +12,6 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
   - [ ] map-engine + aviation + surveillance: initial JS on / is 688.9 KB gz until idle (budget 350 KB,
         measured by tools/perf/bundle-size.mjs); remaining client zod imports are aviation/codec.ts and
         surveillance/client/rows.ts. Add the CI step once the budget holds.
-  - [ ] map-engine: Trips baselines in e2e/visual/deck-baselines.spec.ts now that watched-flight trails
-        are a TripsLayer (globe + mercator)
   - [ ] layers-space: reuse transferred frame buffers (ping-pong) instead of allocating per re-filter;
         re-run e2e/layers-space/far-side.spec.ts against the mission glyphs
   - [ ] panels-alerts: AlertPinsLayer onto the shared `useGeoJsonLayers`; a chat UI that shows
@@ -25,7 +23,8 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
         a known service is live
   - [ ] pages-docs-privacy-ops: re-capture the mislabelled Style Studio shots and the README hero shots;
         replace the stale "re-capture on a GPU machine" note with the capture environment
-- [ ] Verification rounds: round 6 had 2 BLOCKING / 8 MAJOR (fixed); need rounds 7 and 8 clean
+- [ ] Verification rounds: round 6 had 2 BLOCKING / 8 MAJOR (fixed); round 7 clean (0 BLOCKING, 0 MAJOR,
+      12 MINOR being fixed); need round 8 clean
 
 ## Repository owner actions (cannot be done from the codebase)
 - [ ] Provision a hardware-GPU Actions runner and set the repository variable `LIGHTHOUSE_GPU_RUNNER`
