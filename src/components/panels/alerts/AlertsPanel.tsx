@@ -63,7 +63,7 @@ export function AlertRow({ it, now, onLocate }: { it: AlertItem; now: number; on
         )}
         {it.alsoReportedBy.length > 0 && <span>Also: {it.alsoReportedBy.map((a) => a.sourceName).join(', ')}</span>}
         {it.place && onLocate && (
-          <button type="button" onClick={() => onLocate(it)} className="inline-flex min-h-11 md:min-h-6 items-center gap-1 text-[var(--cyan-primary)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]">
+          <button type="button" onClick={() => onLocate(it)} className="inline-flex min-h-6 phone:min-h-11 items-center gap-1 text-[var(--cyan-primary)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]">
             <MapPin aria-hidden className="h-3 w-3" /> {it.place.name} ({it.place.precision})
           </button>
         )}
@@ -110,7 +110,7 @@ export function AlertsPanel(_: PanelProps) {
                 type="button"
                 aria-pressed={value === o}
                 onClick={() => (set as (v: string) => void)(o)}
-                className="min-h-11 md:min-h-7 rounded-sm border px-1.5 font-mono text-[10px] uppercase tracking-[0.16em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+                className="min-h-7 phone:min-h-11 rounded-sm border px-1.5 font-mono text-[10px] uppercase tracking-[0.16em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
                 style={{ borderColor: value === o ? 'var(--gold-primary)' : 'var(--border-secondary)', color: value === o ? 'var(--gold-primary)' : 'var(--text-secondary)' }}
               >
                 {o === 'all' ? 'All' : (BLOC_SHORT[o] ?? o)}

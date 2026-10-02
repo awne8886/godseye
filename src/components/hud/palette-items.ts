@@ -235,6 +235,12 @@ function typedCode(s: string): boolean {
   return U.length !== 4 || /\d/.test(U) || s === U;
 }
 
+/**
+ * A side typed as a code, except a lower-case speech word that only spells one ("way to paris",
+ * "map to rome" are speech, not WAY/MAP); in capitals it stays a code ("WAY to JFK").
+ */
+const codeSide = (s: string) => typedCode(s) && !(s !== s.toUpperCase() && NOT_A_PLACE.has(s.toLowerCase()));
+
 /** A place name the airport search can resolve: letters (any script), spaces, . ' -; ≥ 3 letters. */
 export function looksLikePlace(s: string): boolean {
   const v = s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -260,10 +266,10 @@ export function parseRouteQuery(query: string): RouteQuery | null {
     const from = originOf(words[1]!);
     const to = destinationOf(words[2]!);
     if (!from || !to || from.toLowerCase() === to.toLowerCase()) return null;
-    if (typedCode(from) && typedCode(to)) return { kind: 'codes', from: from.toUpperCase(), to: to.toUpperCase() };
+    if (codeSide(from) && codeSide(to)) return { kind: 'codes', from: from.toUpperCase(), to: to.toUpperCase() };
     if (from.length > 60 || to.length > 60) return null;
-    const fromOk = typedCode(from) || looksLikePlace(from);
-    const toOk = typedCode(to) || looksLikePlace(to);
+    const fromOk = codeSide(from) || looksLikePlace(from);
+    const toOk = codeSide(to) || looksLikePlace(to);
     return fromOk && toOk ? { kind: 'names', from, to } : null;
   }
   const r = parseRouteParam(q);

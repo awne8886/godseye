@@ -61,7 +61,7 @@ export default function MarketChart({ symbol, name }: { symbol: string; name: st
               type="button"
               aria-pressed={range === r}
               onClick={() => setRange(r)}
-              className="min-h-11 md:min-h-6 rounded-sm px-1 font-mono text-[10px] uppercase tracking-[0.16em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+              className="min-h-6 phone:min-h-11 rounded-sm px-1 font-mono text-[10px] uppercase tracking-[0.16em] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
               style={{ color: range === r ? 'var(--gold-primary)' : 'var(--text-secondary)' }}
             >
               {r}

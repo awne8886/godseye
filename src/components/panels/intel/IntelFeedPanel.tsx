@@ -45,7 +45,7 @@ export function IntelFeedPanel(_: PanelProps) {
           <select
             value={layer}
             onChange={(e) => setLayer(e.target.value)}
-            className="min-h-11 md:min-h-8 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] uppercase tracking-[.08em] tabular-nums text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+            className="min-h-8 phone:min-h-11 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] uppercase tracking-[.08em] tabular-nums text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
           >
             <option value="all">ALL LAYERS</option>
             {layers.map((l) => (
@@ -60,7 +60,7 @@ export function IntelFeedPanel(_: PanelProps) {
           <select
             value={minSev}
             onChange={(e) => setMinSev(e.target.value as FeedEvent['severity'])}
-            className="min-h-11 md:min-h-8 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] uppercase tracking-[.08em] tabular-nums text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
+            className="min-h-8 phone:min-h-11 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] uppercase tracking-[.08em] tabular-nums text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]"
           >
             {SEVERITIES.map((s) => (
               <option key={s} value={s}>

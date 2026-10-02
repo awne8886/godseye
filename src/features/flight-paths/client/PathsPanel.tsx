@@ -700,7 +700,7 @@ export default function PathsPanel(_props: PanelProps) {
               type="button"
               aria-pressed={all}
               onClick={() => setAll((v) => !v)}
-              className="hud-micro inline-flex min-h-11 items-center gap-2 whitespace-nowrap text-[var(--text-secondary)] md:min-h-8"
+              className="hud-micro inline-flex min-h-8 items-center gap-2 whitespace-nowrap text-[var(--text-secondary)] phone:min-h-11"
             >
               <span aria-hidden className="hud-toggle" data-on={all}>
                 <span className="h-2.5 w-2.5 rounded-full bg-current" />

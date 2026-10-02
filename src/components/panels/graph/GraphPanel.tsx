@@ -152,7 +152,7 @@ export function GraphPanel(_: PanelProps) {
       >
         <label className="flex flex-col gap-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
           Type
-          <select value={type} onChange={(e) => setType(e.target.value as Expandable)} className="min-h-11 md:min-h-9 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]">
+          <select value={type} onChange={(e) => setType(e.target.value as Expandable)} className="min-h-9 phone:min-h-11 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-1 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]">
             {EXPANDABLE.map((t) => (
               <option key={t} value={t} className="uppercase">
                 {t}
@@ -162,9 +162,9 @@ export function GraphPanel(_: PanelProps) {
         </label>
         <label className="flex min-w-0 flex-1 flex-col gap-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--text-muted)]">
           Identifier
-          <input value={id} onChange={(e) => setId(e.target.value)} spellCheck={false} placeholder="Q95 · UA · 8.8.8.8 · AS15169" className="min-h-11 md:min-h-9 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-2 font-mono text-[11px] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]" />
+          <input value={id} onChange={(e) => setId(e.target.value)} spellCheck={false} placeholder="Q95 · UA · 8.8.8.8 · AS15169" className="min-h-9 phone:min-h-11 rounded-md border border-[var(--border-secondary)] bg-[var(--bg-void)] px-2 font-mono text-[11px] text-[var(--text-primary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)]" />
         </label>
-        <button type="submit" disabled={status.busy} className="inline-flex min-h-11 md:min-h-9 items-center gap-1 rounded-md border border-[var(--border-secondary)] px-2 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--gold-primary)] hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] disabled:opacity-60">
+        <button type="submit" disabled={status.busy} className="inline-flex min-h-9 phone:min-h-11 items-center gap-1 rounded-md border border-[var(--border-secondary)] px-2 font-mono text-[11px] uppercase tracking-[0.08em] text-[var(--gold-primary)] hover:bg-[var(--bg-tertiary)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--gold-primary)] disabled:opacity-60">
           <Network aria-hidden className="h-3.5 w-3.5" /> Graph
         </button>
       </form>

@@ -157,8 +157,9 @@ describe('DrawPanel FINISH / CANCEL / DONE', () => {
     panel();
     fireEvent.click(screen.getByRole('button', { name: 'Line' }));
     for (const b of screen.getByRole('group', { name: 'Sketch actions' }).querySelectorAll('button')) {
-      expect(b.className).toContain('max-md:min-h-11');
-      expect(b.className).toContain('[@media(max-height:499px)_and_(orientation:landscape)]:min-h-11');
+      // `phone:` is exactly PHONE_LAYOUT_QUERY: portrait (< 768 px) and landscape (≤ 499 px tall) phones.
+      expect(b.className).toContain('phone:min-h-11');
+      expect(b.className).not.toMatch(/(?:^|\s)(?:max-)?md:/);
     }
   });
 
