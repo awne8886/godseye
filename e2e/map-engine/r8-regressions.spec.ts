@@ -29,7 +29,10 @@ test.describe('map engine · round-8 regressions', () => {
       await page.waitForTimeout(800);
       await page.mouse.click(x, y, { button: 'right' });
       await page.mouse.click(x + 3, y + 2, { button: 'right' });
-      await expect(page, `pair ${i + 1} of 5`).toHaveURL(/dossier=-?\d+\.\d+(%2C|,)-?\d+\.\d+/, { timeout: 10_000 });
+      // Assert what the user sees first: the dossier mounts 300-450 ms after the pair, while the URL
+      // write can trail by 5-6 s when long tasks land right after the mount (SwiftShader, R9-A).
+      await expect(page.getByTestId('dossier-panel').or(page.getByTestId('dossier-skeleton')).first(), `pair ${i + 1} of 5`).toBeVisible({ timeout: 10_000 });
+      await expect(page, `pair ${i + 1} of 5`).toHaveURL(/dossier=-?\d+\.\d+(%2C|,)-?\d+\.\d+/, { timeout: 20_000 });
     }
   });
 
