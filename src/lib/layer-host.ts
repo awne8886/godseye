@@ -99,6 +99,8 @@ export interface LayerStatus {
   attribution?: Attribution[];
   /** Drawn entities past their dead-reckoning cap (aviation: > 60 s), shown in the rail. */
   staleCount?: number;
+  /** Rows the feed received but cannot place yet (weather: NWS alerts waiting for zone outlines). */
+  unplacedCount?: number;
 }
 
 const IDLE: LayerStatus = { state: 'idle', count: null, fetchedAt: null, observedAt: null, lastGoodAt: null };
