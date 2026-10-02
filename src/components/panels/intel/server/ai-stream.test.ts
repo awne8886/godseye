@@ -1,8 +1,8 @@
 import type * as Http from '@/lib/http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fixtureBuffer, STREAM_FX, type Call, type Route } from '../__fixtures__';
+import { ERROR_FX, fixtureBuffer, fixtureText, STREAM_FX, type Call, type Route } from '../__fixtures__';
 import { answerStream, streamModel, type ChatEvent, type ProviderChoice } from './ai';
-import { CitationGate, claudeDelta, splitLines, streamRecords } from './ai-stream';
+import { CitationGate, claudeDelta, geminiDelta, splitLines, streamRecords } from './ai-stream';
 
 const state = vi.hoisted(() => ({ routes: [] as Route[], calls: [] as Call[] }));
 vi.mock('@/lib/http', async (importOriginal) => {
@@ -137,5 +137,28 @@ describe('answerStream', () => {
     const ev = await collect(answerStream({ provider: 'analyst', key: null, keySource: 'none', reason: 'no AI provider configured' }, prompt, ENV, undefined, NOW));
     expect(ev[0]).toMatchObject({ generatedBy: 'analyst', fallbackReason: 'no AI provider configured' });
     expect(state.calls).toHaveLength(0);
+  });
+});
+
+describe('recorded keyless error responses (2026-10-02)', () => {
+  it('Claude 401 (invalid x-api-key): ANALYST fallback, the upstream body never reaches the answer', async () => {
+    expect(fixtureText(ERROR_FX.claude401)).toContain('authentication_error');
+    state.routes = [['api.anthropic.com/v1/messages', { status: 401, body: ERROR_FX.claude401 }]];
+    const ev = await collect(answerStream(claude, prompt, ENV, undefined, NOW));
+    expect(ev[0]).toEqual({ type: 'meta', generatedBy: 'analyst', model: null, fallbackReason: 'claude unavailable (http_401)', keySource: 'none' });
+    expect(text(ev)).toBe(prompt.analystText);
+    expect(JSON.stringify(ev)).not.toMatch(/authentication_error|invalid x-api-key|req_/);
+  });
+  it('Gemini 403 (no key, PERMISSION_DENIED): ANALYST fallback with the status as reason', async () => {
+    state.routes = [['generativelanguage.googleapis.com', { status: 403, body: ERROR_FX.gemini403 }]];
+    const ev = await collect(answerStream(gemini, prompt, ENV, undefined, NOW));
+    expect(ev[0]).toMatchObject({ type: 'meta', generatedBy: 'analyst', model: null, fallbackReason: 'gemini unavailable (http_403)' });
+    expect(text(ev)).toBe(prompt.analystText);
+    expect(JSON.stringify(ev)).not.toMatch(/PERMISSION_DENIED|unregistered callers/);
+  });
+  it('the Gemini 403 body (sent as text/event-stream) parses to no SSE record, so it can never become answer text', async () => {
+    const recs = await collect(streamRecords(chunked(fixtureBuffer(ERROR_FX.gemini403), 5), 'sse'));
+    expect(recs).toEqual([]);
+    expect(recs.map(geminiDelta)).toEqual([]);
   });
 });

@@ -9,7 +9,7 @@ import { getFeed } from '@/lib/feeds';
 import { distanceKm } from '@/lib/geo';
 import { earthquakeFeed } from '@/features/hazards/server/usgs';
 import type { AlertItem, Earthquake, Quote } from '@/lib/types';
-import { chainFeed, marketsFeed, newsFeed } from '../feeds';
+import { chainFeed, getNews, marketsFeed } from '../feeds';
 import { SYSTEM_BASE, type ChatTurn, type CitableRow } from './ai';
 import { buildAlertBrief, timeAgo, type AlertBrief, BLOC_LABEL } from './digest';
 import type { ChainData } from './chain';
@@ -33,7 +33,7 @@ export interface Snapshot {
 
 export async function readSnapshot(): Promise<Snapshot> {
   const [n, q, m, c] = await Promise.all([
-    newsFeed.get().catch(() => null),
+    getNews().catch(() => null),
     earthquakeFeed().get().catch(() => null),
     marketsFeed.get().catch(() => null),
     chainFeed.get().catch(() => null),

@@ -5,7 +5,7 @@
  * Owner: panels-alerts-markets-dossier-graph.
  */
 import { z } from 'zod';
-import { newsFeed } from '@/components/panels/intel/feeds';
+import { getNews } from '@/components/panels/intel/feeds';
 import { feedJson, parseQuery, withRoute } from '@/lib/respond';
 import { AlertKind, Bloc } from '@/lib/schemas/intel';
 
@@ -16,7 +16,7 @@ const Query = z.object({ kind: AlertKind.optional(), bloc: Bloc.optional() });
 export const GET = withRoute('/api/news', async (req) => {
   const q = parseQuery(req, Query);
   if (!q.ok) return q.response;
-  return feedJson(req, await newsFeed.get(), (d) => ({
+  return feedJson(req, await getNews(), (d) => ({
     items: d.items.filter((it) => (!q.data.kind || it.kind === q.data.kind) && (!q.data.bloc || it.bloc === q.data.bloc)),
     sources: d.sources,
   }));

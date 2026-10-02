@@ -32,8 +32,21 @@ export const newsFeed = defineFeed<NewsData>({
   eager: true,
   retryAfterErrorMs: MIN,
   deadlineMs: 40_000,
-  run: (ctx) => runNews(ctx),
+  run: (ctx) => runNews(ctx, Date.now(), recordAttempt('news')),
 });
+
+/**
+ * /api/news: when every source is down the feed serves its last-good posts as STALE → OFFLINE; the
+ * latest attempt's failures are overlaid on `providers` and on each source's `ok` flag.
+ */
+export async function getNews(now = Date.now()): Promise<FeedResult<NewsData>> {
+  const r = withLatestAttempt('news', await newsFeed.get(), now);
+  const a = attempts.get('news');
+  if (!r.data || (r.meta.state !== 'stale' && r.meta.state !== 'offline') || !a) return r;
+  if (r.meta.fetchedAt && a.at < Date.parse(r.meta.fetchedAt)) return r;
+  const failed = new Set(Object.entries(a.providers).filter(([, p]) => !p.status.ok).map(([k]) => k.slice(k.indexOf(':') + 1)));
+  return { ...r, data: { ...r.data, sources: r.data.sources.map((s) => (failed.has(s.handle) ? { ...s, ok: false } : s)) } };
+}
 
 export const cryptoFeed = defineFeed<CryptoData>({
   key: 'crypto',

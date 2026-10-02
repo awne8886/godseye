@@ -48,7 +48,8 @@ export const FX = {
  * Model token streams. No provider key or Ollama host is available to the build, so these are NOT
  * recordings: they are written to each provider's documented wire format (Anthropic Messages
  * streaming SSE, Gemini `streamGenerateContent?alt=sse` with CRLF framing, Ollama /api/chat NDJSON),
- * re-read 2026-10-02. Replace with captures when a keyed probe is run.
+ * re-read 2026-10-02. Replace with captures when a keyed probe is run (tracked in TODO.md). The
+ * keyless error responses ARE recorded: see ERROR_FX.
  */
 export const STREAM_FX = {
   claude: 'stream-claude.documented.sse',
@@ -57,12 +58,28 @@ export const STREAM_FX = {
   ollama: 'stream-ollama.documented.ndjson',
 } as const;
 
+/**
+ * Recorded keyless error responses (probed 2026-10-02 ~01:40 UTC with the GODSEYE UA): Anthropic
+ * `POST /v1/messages` with an invalid key → 401 application/json; Gemini `streamGenerateContent?alt=sse`
+ * without a key → 403 JSON served as `text/event-stream`. Replay them as `{status, body}` routes.
+ */
+export const ERROR_FX = {
+  claude401: 'anthropic-messages-401.2026-10-02.json',
+  gemini403: 'gemini-stream-403.2026-10-02.json',
+} as const;
+
 const STREAM_CHUNK = 7;
 
 /** Fixture capture time (the probes ran 2026-09-30 ~20:03 UTC); tests pin Date.now near it. */
 export const CAPTURED_AT = Date.parse('2026-09-30T20:05:00Z');
 
-export type Route = [string, string | Buffer | number];
+/** A recorded non-2xx response: the status and the body file the upstream sent with it. */
+export interface RecordedError {
+  status: number;
+  body: string;
+}
+
+export type Route = [string, string | Buffer | number | RecordedError];
 
 type ErrorCtor = new (message: string, code: 'http' | 'network', url: string, status?: number) => Error;
 
@@ -84,6 +101,12 @@ export function httpMock(routes: () => Route[], HttpError: ErrorCtor, calls: Cal
     const hit = find(url);
     if (hit === undefined) throw new HttpError('network', 'network', url);
     if (typeof hit === 'number') throw new HttpError(`HTTP ${hit}`, 'http', url, hit);
+    // Like http.ts, a non-2xx response is an HttpError carrying only the status: the recorded body
+    // is read (so the fixture must exist) and then discarded, never surfaced to callers.
+    if (!Buffer.isBuffer(hit) && typeof hit === 'object') {
+      fixtureBuffer(hit.body);
+      throw new HttpError(`HTTP ${hit.status}`, 'http', url, hit.status);
+    }
     const body = typeof hit === 'string' ? fixtureBuffer(hit) : hit;
     return { status: 200, ok: true, notModified: false, headers: {}, body, url, etag: null, lastModified: null, ms: 1, attempts: 1 };
   };

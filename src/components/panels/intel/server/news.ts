@@ -212,12 +212,27 @@ function sourceCacheFor(src: NewsSource): SourceCache<SourcePosts> {
   return c;
 }
 
+/** Every source's latest refresh failed: the run fails so the feed keeps its last-good time. */
+export class NewsSourcesDown extends Error {
+  constructor(readonly total: number) {
+    super(`all ${total} news sources failed`);
+    this.name = 'NewsSourcesDown';
+  }
+}
+
 /**
  * Feed run (every 60 s): read every source through its cache, then merge, dedupe and geoparse.
  * `providers['tg:<handle>' | 'rss:<handle>']` reports the source cache: `age_s` is the age of the
  * cached page (from `okAt` = its fetch time), `ok:false` + `error` when the last refresh failed.
+ * When no source refreshed successfully the run throws `NewsSourcesDown` (after `onAttempt`), so
+ * last-good posts from the per-source caches are never re-stamped as a LIVE rebuild: the feed goes
+ * STALE → OFFLINE with its last-good time.
  */
-export async function runNews(_ctx?: Pick<FeedContext<NewsData>, 'signal'>, now = Date.now()): Promise<FeedData<NewsData>> {
+export async function runNews(
+  _ctx?: Pick<FeedContext<NewsData>, 'signal'>,
+  now = Date.now(),
+  onAttempt?: (providers: Record<string, ProviderRun>) => void,
+): Promise<FeedData<NewsData>> {
   const providers: Record<string, ProviderRun> = {};
   const sources: NewsSourceStatus[] = [];
   const all: AlertItem[] = [];
@@ -252,6 +267,8 @@ export async function runNews(_ctx?: Pick<FeedContext<NewsData>, 'signal'>, now 
   );
   const order = new Map(ALL_SOURCES.map((s, i) => [s.handle, i]));
   sources.sort((a, b) => order.get(a.handle)! - order.get(b.handle)!);
+  onAttempt?.(providers);
+  if (!Object.values(providers).some((p) => p.status.ok)) throw new NewsSourcesDown(ALL_SOURCES.length);
   const items = mergeCrossPosts(all);
   const newest = items.length ? Date.parse(items[0]!.publishedAt) : null;
   return { data: { items, sources }, providers, observedAt: newest };

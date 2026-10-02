@@ -2,8 +2,8 @@ import type * as Http from '@/lib/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAPTURED_AT, HAPPY, type Call, type Route } from '../__fixtures__';
 import { freshCache, resetCache } from '../__fixtures__/routes';
-import { newsFeed } from '../feeds';
-import { runNews, TG_CHANNEL_TTL_MS, TELEGRAM_CHANNELS, WIRE_TTL_MS } from './news';
+import { getNews, newsFeed } from '../feeds';
+import { NewsSourcesDown, runNews, TG_CHANNEL_TTL_MS, TELEGRAM_CHANNELS, WIRE_TTL_MS } from './news';
 
 const state = vi.hoisted(() => ({ routes: [] as Route[], calls: [] as Call[] }));
 vi.mock('@/lib/http', async (importOriginal) => {
@@ -77,5 +77,38 @@ describe('news per-source caches (Telegram 3 min, wire 2 min, feed rebuild 60 s)
     const r = await newsFeed.refresh({ force: true });
     expect(calls('t.me/s/Osintdefender')).toBe(1);
     expect(r.providers['tg:Osintdefender']).toMatchObject({ ok: true, age_s: 70 });
+  });
+
+  it('every source returning 503 after a good run never shows LIVE: last-good time kept, STALE then OFFLINE', async () => {
+    const good = await newsFeed.refresh({ force: true });
+    expect(good.meta.state).toBe('live');
+    expect(good.data!.items.length).toBeGreaterThan(0);
+    const goodAt = good.meta.fetchedAt;
+
+    state.routes = [['', 503]];
+    const t1 = CAPTURED_AT + TG_CHANNEL_TTL_MS + 1000;
+    vi.setSystemTime(t1);
+    await expect(runNews(undefined, Date.now())).rejects.toBeInstanceOf(NewsSourcesDown);
+
+    const r = await newsFeed.refresh({ force: true });
+    expect(r.meta.state).not.toBe('live');
+    expect(r.meta.state).not.toBe('recent');
+    expect(r.meta.fetchedAt).toBe(goodAt);
+    expect(r.meta.lastGoodAt).toBe(goodAt);
+
+    const served = await getNews(t1);
+    expect(served.meta.state).not.toBe('live');
+    expect(served.providers['tg:Osintdefender']).toMatchObject({ ok: false, error: 'http_503' });
+    expect(served.providers['rss:bbc']).toMatchObject({ ok: false, error: 'http_503' });
+    expect(Object.values(served.providers).every((p) => !p.ok)).toBe(true);
+    expect(served.data!.sources.every((s) => !s.ok)).toBe(true);
+
+    // Every later 60 s rebuild keeps failing: the feed never returns to LIVE on the cached posts.
+    for (let i = 1; i <= 5; i++) {
+      vi.setSystemTime(t1 + i * 61_000);
+      const again = await newsFeed.refresh({ force: true });
+      expect(again.meta.state).not.toBe('live');
+      expect(again.meta.fetchedAt).toBe(goodAt);
+    }
   });
 });
