@@ -155,6 +155,8 @@ test.describe('/privacy', () => {
     for (const name of ['Your location', 'AI analyst and your keys', 'Cookies, analytics and browser storage', 'What the server keeps', 'Responsible use']) {
       await expect(page.getByRole('heading', { level: 2, name })).toBeAttached();
     }
+    // The aircraft card's photo is a plain <img> from airport-data.com: the built page must say so.
+    await expect(page.getByText(/Aircraft photos on the aircraft card load directly from airport-data\.com in your browser, with no referrer sent/)).toBeAttached();
     expect(await hasNoHorizontalOverflow(page)).toBe(true);
     expect(errors).toEqual([]);
   });
