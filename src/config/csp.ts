@@ -56,6 +56,7 @@ export function securityHeaders(dev: boolean): { key: string; value: string }[] 
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
     // Geolocation is consent-based (one-click prompt). Web Bluetooth has no Permissions-Policy token in Chrome.
-    { key: 'Permissions-Policy', value: 'camera=(), microphone=(), payment=(), usb=(), geolocation=(self), fullscreen=(self)' },
+    // Fullscreen is delegated to the youtube-nocookie players (SPACE, LIVE NEWS), whose iframes request it.
+    { key: 'Permissions-Policy', value: 'camera=(), microphone=(), payment=(), usb=(), geolocation=(self), fullscreen=(self "https://www.youtube-nocookie.com")' },
   ];
 }

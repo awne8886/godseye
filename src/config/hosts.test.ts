@@ -45,3 +45,11 @@ describe('browser host allow-lists', () => {
     expect(buildCsp({ dev: true })).toContain("'unsafe-eval'");
   });
 });
+
+describe('image optimiser scope (r10 security)', () => {
+  it('only the Sentinel quicklook host is optimised server-side, and it is an img-src host', async () => {
+    const { OPTIMISED_IMAGE_HOSTS } = await import('./hosts');
+    expect([...OPTIMISED_IMAGE_HOSTS]).toEqual(['https://zipper.creodias.eu/odata/v1/']);
+    for (const h of OPTIMISED_IMAGE_HOSTS) expect(IMAGE_HOSTS as readonly string[]).toContain(h);
+  });
+});

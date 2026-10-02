@@ -58,12 +58,21 @@ export function classify(text: string): { theatres: string[]; topics: string[] }
   return { theatres: THEATRES.filter((t) => t.re.test(text)).map((t) => t.id), topics: TOPICS.filter((t) => t.re.test(text)).map((t) => t.id) };
 }
 
-const ROCKET = compile(['rocket', 'missile', 'sirens$', 'air raid', 'ballistic', 'interceptor', 'intercepted', 'red alert', 'incoming']);
+/** Alarm language: always a rocket alert. */
+const ROCKET_ALARM = compile(['sirens$', 'air raid', 'red alert', 'incoming', 'interceptor', 'intercepted', 'intercept']);
+/** Weapon nouns: a rocket alert when used, not when bought (r10: a Standard Missile-6 contract read ROCKET). */
+const WEAPON = compile(['rocket', 'missile', 'ballistic']);
+const WEAPON_USE = compile(['launch', 'fired', 'strike', 'struck', 'hit$', 'hits$', 'barrage', 'salvo', 'attack', 'shot down', 'impact', 'targeted', 'toward', 'towards']);
+const PROCUREMENT = compile(['contract', 'awarded', 'procure', 'purchase', 'order$', 'orders$', 'deal$', 'sale$', 'sales$', 'budget', 'billion', 'million', 'manufactur', 'production', 'acquisition', 'supplier']);
 const EVENT = compile(['explosion', 'blast', 'strike', 'attack', 'drone', 'shelling', 'clashes', 'fire$', 'earthquake', 'killed', 'shot', 'raid']);
 
-/** rocket (missile/siren language) > event (kinetic or incident language) > news. */
+/**
+ * rocket (siren/intercept language, or a rocket/missile being used) > event (kinetic or incident
+ * language) > news. A weapon named only in procurement wording (contract, order, billion…) is news.
+ */
 export function alertKind(text: string): AlertItem['kind'] {
-  if (ROCKET.test(text)) return 'rocket';
+  if (ROCKET_ALARM.test(text)) return 'rocket';
+  if (WEAPON.test(text) && (WEAPON_USE.test(text) || !PROCUREMENT.test(text))) return 'rocket';
   if (EVENT.test(text)) return 'event';
   return 'news';
 }

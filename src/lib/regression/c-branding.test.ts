@@ -29,7 +29,6 @@ const ALLOWED = [
   /\bosiris: (?:true|false|boolean)/g,
   /EXCLUDED_OSIRIS_ROUTES/g,
   /'osiris-curated'/g,
-  /'OSIRIS curated lists'/g,
   /\(OSIRIS, MIT\)/g,
 ];
 

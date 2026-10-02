@@ -283,6 +283,10 @@ export function txdotSnippet(json: unknown): string | null {
  * all is the operator's fault (`parse`, 502).
  */
 export async function fetchTxdotSnapshot(camera: Camera, def: ProviderDef, deps: FrameDeps = {}): Promise<FrameResult> {
+  // The provider gate holds on every frame path (r10 security: /api/cctv/texas/snapshot called this
+  // directly and fetched TxDOT under CCTV_LINK_OUT_ONLY=texas).
+  const row = providerRow(def, deps.env);
+  if (row.link_out_only || !row.proxy_allowed) return failed(404, 'link_out_only');
   const parts = parseTxdotId(camera.id);
   if (!parts || !camera.stillUrl) return failed(404, 'no_still');
   const f = frameFetchOpts('txdot', deps, { maxBytes: (8 * MAX_FRAME_BYTES) / 3, headers: { accept: 'application/json' } });

@@ -74,6 +74,18 @@ Turbopack). Run lint + typecheck + test before every commit.
   MapLibre heatmap); big circles as geodesic polygons; never pass a view with id `maplibre`;
   projection only `{type:'globe'|'mercator'}`.
 
+## Deployment (Vercel)
+Live on Vercel: project `godseye-f8wc` (`prj_99ro30bWnLsz5mIiNmDB2GEtF3Pp`), production
+https://godseye-f8wc.vercel.app (public), auto-deployed on every merge to `main`; each PR branch gets an
+SSO-protected preview. `vercel.json`: region `iad1`, `maxDuration` 300 s for `src/app/api/**`. The user's
+Vercel account is reachable through a Vercel connector (`mcp__Vercel__*`, ToolSearch "vercel"): omit
+`teamId`/`slug` (naming the team returns 403; the default scope is that team). Use it read-only to check
+your change: `list_deployments` (projectId + branch), `get_deployment`, `get_runtime_logs`,
+`get_runtime_errors`, `get_access_to_vercel_url` / `web_fetch_vercel_url` for previews. Never change project
+settings, env vars, domains or protection, and never buy anything, without the lead. Serverless: in-memory
+caches are per instance, the filesystem SnapshotStore does not persist, SSE streams end at `maxDuration`;
+docker-compose (Caddy + Node) stays the reference self-host.
+
 ## Design tokens (theme HORUS — `src/styles/tokens.css`, mirrored in `src/lib/tokens.ts`)
 bg-void #04040A · bg-primary #06060C · panel rgba(8,10,20,.88) · gold #D4AF37 / light #F0D060 / dim
 #8B7325 · cyan #00E5FF · red #FF3D3D · orange #FF9500 · green #00E676 · blue #448AFF · text #E8E6E0 /

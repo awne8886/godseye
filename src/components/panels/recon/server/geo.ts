@@ -9,7 +9,7 @@ import { OSM_ATTRIBUTION, nominatimReverse, nominatimSearch, parseLatLng, photon
 import { HttpError, httpJson } from '@/lib/http';
 import { providerBucket } from '@/lib/ratelimit';
 import type { Place, Providers } from '@/lib/types';
-import { probe, skipped } from './lookup';
+import { type Probe, type ProbeOptions, probe, skipped } from './lookup';
 
 export const GEO_ATTRIBUTION = `Geocoding: Photon by komoot · Nominatim · ${OSM_ATTRIBUTION}`;
 
@@ -102,6 +102,46 @@ interface FreeIpApiBody {
 }
 
 export const ipwhoBucket = () => providerBucket('ipwho.is', 1, 2);
+
+/** ipwho.is free endpoint: 1,000 requests a day (ipwhois.io/pricing, 2026-10-02), counted per UTC day in this process. */
+export const IPWHO_DAILY_LIMIT = 1000;
+let ipwhoDay = { day: '', used: 0 };
+
+/** Takes one request from today's ipwho.is budget; false once it is spent. */
+export function takeIpwhoQuota(now = Date.now()): boolean {
+  const day = new Date(now).toISOString().slice(0, 10);
+  if (ipwhoDay.day !== day) ipwhoDay = { day, used: 0 };
+  if (ipwhoDay.used >= IPWHO_DAILY_LIMIT) return false;
+  ipwhoDay.used += 1;
+  return true;
+}
+
+/** Test hook. */
+export function resetIpwhoQuota(): void {
+  ipwhoDay = { day: '', used: 0 };
+}
+
+/**
+ * probe() for ipwho.is under the daily budget: a cached answer costs nothing; a real request takes
+ * one unit, and once the day's budget is spent the provider reports skipped 'budget' (callers then
+ * fall back to FreeIPAPI) instead of sending requests ipwho.is would refuse.
+ */
+export async function ipwhoProbe<T>(key: string, ttlMs: number, fn: () => Promise<T>, opts?: ProbeOptions<T>): Promise<Probe<T>> {
+  let spent = false;
+  const r = await probe(
+    key,
+    ttlMs,
+    async () => {
+      if (!takeIpwhoQuota()) {
+        spent = true;
+        throw new Error('ipwho.is daily budget spent');
+      }
+      return fn();
+    },
+    opts,
+  );
+  return spent ? { value: null, status: skipped('budget'), fetchedAt: null } : r;
+}
 const freeipapiBucket = () => providerBucket('free.freeipapi.com', 1, 1);
 
 /** Region-level only: coordinates rounded to 0.1° so the answer is a region, never a street. */
@@ -136,7 +176,7 @@ export async function freeipapiRegion(ip: string): Promise<Place | null> {
 /** Visitor region for "centre on my region": ipwho.is, then freeipapi. Not cached (per visitor). */
 export async function visitorRegion(ip: string): Promise<GeoLookup> {
   const providers: Providers = {};
-  const a = await probe(`ip-region:${ip}`, 0, () => ipwhoRegion(ip), { count: (p) => (p ? 1 : 0), noCache: true });
+  const a = await ipwhoProbe(`ip-region:${ip}`, 0, () => ipwhoRegion(ip), { count: (p) => (p ? 1 : 0), noCache: true });
   providers['ipwho.is'] = a.status;
   if (a.value) return { results: [a.value], providers };
   const b = await probe(`ip-region2:${ip}`, 0, () => freeipapiRegion(ip), { count: (p) => (p ? 1 : 0), noCache: true });
