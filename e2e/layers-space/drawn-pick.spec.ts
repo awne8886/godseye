@@ -139,8 +139,14 @@ const card = (page: Page) => page.getByTestId('satellite-card').first();
 
 /** Click at (x, y) and report the NORAD id of the card that opens within `ms`, or null. */
 async function clickOpens(page: Page, p: { x: number; y: number }, ms = 3_500): Promise<number | null> {
-  await page.getByRole('button', { name: 'Close card' }).first().click({ timeout: 1_000 }).catch(() => undefined);
-  await expect(card(page)).toBeHidden({ timeout: 5_000 });
+  // Close a card left open by the previous click. Under load the close button can take seconds to
+  // become actionable, so wait for it (default action timeout) instead of swallowing a 1 s miss.
+  if (await card(page).isVisible()) {
+    const close = page.getByRole('button', { name: 'Close card' }).first();
+    await expect(close).toBeVisible({ timeout: 10_000 });
+    await close.click({ timeout: 15_000 });
+  }
+  await expect(card(page)).toBeHidden({ timeout: 10_000 });
   await page.mouse.click(p.x, p.y);
   const shown = await card(page)
     .waitFor({ state: 'visible', timeout: ms })

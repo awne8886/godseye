@@ -86,7 +86,7 @@ describe('hazards cards', () => {
     expect(container.querySelector('b')).toBeNull();
     expect(screen.getByText('<b>Flood Warning</b>')).toBeTruthy();
     expect(screen.queryByText('Source report')).toBeNull();
-    expect(screen.getByText(/centre of an affected NWS zone/)).toBeTruthy();
+    expect(screen.getByText(/inside an affected NWS zone/)).toBeTruthy();
   });
 
   it('weather card lists the alert zones (shared-outline alerts carry zoneRefs, no inline geometry)', () => {

@@ -13,6 +13,7 @@ describe('nextPass (predicted, over a chosen ground point)', () => {
     expect(r.kind).toBe('pass');
     if (r.kind !== 'pass') return;
     const p = r.pass;
+    if (p.aosMs === null) throw new Error('expected a predicted AOS');
     expect(p.aosMs).toBeGreaterThanOrEqual(FIXTURE_CAPTURED_AT);
     expect(p.aosMs).toBeLessThan(FIXTURE_CAPTURED_AT + 24 * 3_600_000);
     expect(p.aosMs).toBeLessThanOrEqual(p.maxMs);
@@ -26,6 +27,32 @@ describe('nextPass (predicted, over a chosen ground point)', () => {
     if (!r.inProgress) expect(lookAt(iss, LONDON, p.aosMs - 30_000)!.el).toBeLessThan(10);
     expect(lookAt(iss, LONDON, p.losMs! + 30_000)!.el).toBeLessThan(10);
     expect(lookAt(iss, LONDON, p.maxMs)!.el).toBeCloseTo(p.maxElevationDeg, 6);
+  });
+
+  it('reports the predicted rise of a pass already in progress, not the request time', () => {
+    const first = nextPass(iss, LONDON, FIXTURE_CAPTURED_AT);
+    if (first.kind !== 'pass' || first.pass.aosMs === null) throw new Error('expected a pass');
+    const aos = first.pass.aosMs;
+    // Ask two minutes after the rise (on the same 30 s grid): the pass is in progress.
+    const r = nextPass(iss, LONDON, aos + 120_000);
+    expect(r.kind).toBe('pass');
+    if (r.kind !== 'pass') return;
+    expect(r.inProgress).toBe(true);
+    expect(r.pass.aosMs).toBe(aos);
+    expect(r.pass.aosAzimuthDeg).toBeCloseTo(first.pass.aosAzimuthDeg!, 6);
+    expect(lookAt(iss, LONDON, aos - 30_000)!.el).toBeLessThan(10);
+    expect(r.pass.losMs).toBe(first.pass.losMs);
+    expect(r.pass.maxElevationDeg).toBeCloseTo(first.pass.maxElevationDeg, 6);
+  });
+
+  it('leaves the rise out when the satellite was already up the whole look-back before the request', () => {
+    const first = nextPass(iss, LONDON, FIXTURE_CAPTURED_AT);
+    if (first.kind !== 'pass' || first.pass.aosMs === null) throw new Error('expected a pass');
+    const r = nextPass(iss, LONDON, first.pass.aosMs + 120_000, { lookbackMinutes: 1 });
+    if (r.kind !== 'pass') throw new Error(`expected a pass, got ${r.kind}`);
+    expect(r.inProgress).toBe(true);
+    expect(r.pass.aosMs).toBeNull();
+    expect(r.pass.aosAzimuthDeg).toBeNull();
   });
 
   it('reports no pass where the orbit never climbs above the mask (ISS from the North Pole)', () => {

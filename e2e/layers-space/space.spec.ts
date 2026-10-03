@@ -58,6 +58,8 @@ test('satellites: the catalogue loads, propagates and is counted per category wh
 });
 
 test('SPACE panel opens with the official NASA stream and the ISS readout', async ({ page, isMobile }) => {
+  // Boot + panel + ISS readout can exceed the 60 s default under a loaded runner (r11).
+  test.setTimeout(120_000);
   await bootGlobe(page, '/');
   test.skip(!(await openSpace(page, isMobile)), 'the HUD tool strip (design-system-hud) is not mounted in this build');
   const panel = page.getByTestId('space-panel');
@@ -76,6 +78,8 @@ test('SPACE panel opens with the official NASA stream and the ISS readout', asyn
 });
 
 test('round 8: a blocked YouTube embed never opens the player box, and the header chip reports the ISS state', async ({ page, isMobile }) => {
+  // Boot + panel + ISS readout can exceed the 60 s default under a loaded runner (r11).
+  test.setTimeout(120_000);
   // A blocking network: Chrome commits its own error page in the frame and fires `load` for it.
   // Before round 8 that `load` marked the player ready (a grey sad-page box instead of the note).
   await page.route(/^https:\/\/www\.youtube-nocookie\.com\//, (r) => r.abort('blockedbyclient'));

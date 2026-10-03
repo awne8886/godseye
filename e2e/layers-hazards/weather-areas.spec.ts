@@ -72,6 +72,9 @@ test.describe('weather alert areas', () => {
     await page.waitForTimeout(3000);
     const vp = page.viewportSize()!;
     const card = page.getByTestId('hazard-card').filter({ visible: true }).first();
+    // UGC codes of the target's zones (`fire/CAZ211` → `CAZ211`), as the card's Zones row lists them.
+    const codes = (target!.zoneRefs ?? target!.zones!).map((k) => k.split('/').pop()!);
+    const zonesRow = card.locator('dt', { hasText: /^Zones$/ }).locator('xpath=following-sibling::dd[1]');
     // Off the marker (its hit radius is ≤ ~22 px) but within ~10 km of the zone centroid.
     let opened = false;
     for (const [dx, dy] of [[0, 40], [40, 0], [0, -40], [-40, 0]] as const) {
@@ -80,12 +83,14 @@ test.describe('weather alert areas', () => {
         () => true,
         () => false,
       );
-      if (opened && (await card.getByText(target!.title, { exact: false }).count())) break;
+      // Overlapping alerts can share the zone (e.g. two Small Craft Advisories on PKZ642/643): any
+      // card whose Zones row lists one of the target's zones proves the area pick.
+      const zonesText = opened ? ((await zonesRow.textContent({ timeout: 2_000 }).catch(() => null)) ?? '') : '';
+      if (opened && codes.some((c) => zonesText.includes(c))) break;
       opened = false;
       await page.keyboard.press('Escape');
     }
     expect(opened, 'clicking inside the zone area opened the alert card').toBe(true);
-    await expect(card).toContainText('Zones');
-    await expect(card).toContainText(target!.zones![0]!);
+    await expect(zonesRow).toHaveText(new RegExp(codes.map((c) => c.replace(/[^\w]/g, '')).join('|')));
   });
 });

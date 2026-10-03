@@ -21,6 +21,7 @@ import {
   coneQueryUrl,
   decodeXml,
   geometryCentroid,
+  pointInPolygon,
   normalizeGdacs,
   normalizeGvp,
   normalizeNhc,
@@ -186,7 +187,10 @@ describe('NWS alerts + zone geometry', () => {
     expect(poly.length).toBe(2);
     const zoned = items.filter((e) => e.positionBasis === 'zone-centroid');
     expect(zoned.length).toBeGreaterThan(0);
-    expect(zoned[0]!.lat).toBeCloseTo(zone.centroid[1], 4);
+    // The marker is the centroid of the drawn (thinned) outline when that lies on the zone.
+    expect(zoned[0]!.lat).toBeCloseTo(zone.centroid[1], 1);
+    const ilc = shapes.ILC007!;
+    expect((ilc.type === 'Polygon' ? [ilc.coordinates] : ilc.coordinates).some((p) => pointInPolygon([zoned[0]!.lng, zoned[0]!.lat], p))).toBe(true);
     expect(zoned[0]!.zones).toContain('ILC007');
     // The outline is sent once in the shared map; the alert references it by UGC.
     expect(zoned[0]!.geometry).toBeNull();
