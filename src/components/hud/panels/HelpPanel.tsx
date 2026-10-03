@@ -1,35 +1,59 @@
 'use client';
 /**
  * Keyboard shortcuts overlay: renders KEY_BINDINGS verbatim (the same list the key handler reads),
- * so the overlay and the keys cannot disagree. Owner: design-system-hud.
+ * so the overlay and the keys cannot disagree, then the 24 h timeline slider's keys (TIMELINE_KEYS,
+ * active while the slider has focus). Owner: design-system-hud.
  */
 import { X } from 'lucide-react';
-import { KEY_BINDINGS } from '@/lib/keyboard';
+import { KEY_BINDINGS, TIMELINE_KEYS } from '@/lib/keyboard';
 import type { PanelProps } from '@/lib/feature-module';
 import ModalShell from '../ModalShell';
 
+const KBD =
+  'hud-text inline-block min-w-[28px] rounded-[var(--radius-chip)] border border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.06)] px-1.5 py-0.5 text-center text-[11px] text-[var(--gold-light)]';
+
+function Row({ display, description, action }: { display: string; description: string; action?: string }) {
+  return (
+    <tr data-action={action}>
+      <td className="w-[132px] pr-3 align-top">
+        <kbd className={KBD}>{display}</kbd>
+      </td>
+      <td className="font-sans text-[13px] text-[var(--text-primary)]">{description}</td>
+    </tr>
+  );
+}
+
 export function ShortcutTable() {
   return (
-    <table className="w-full border-separate border-spacing-y-1" data-testid="shortcut-table">
-      <thead className="sr-only">
-        <tr>
-          <th scope="col">Key</th>
-          <th scope="col">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {KEY_BINDINGS.map((b) => (
-          <tr key={`${b.action}-${b.display}`} data-action={b.action}>
-            <td className="w-[132px] pr-3 align-top">
-              <kbd className="hud-text inline-block min-w-[28px] rounded-[var(--radius-chip)] border border-[var(--border-active)] bg-[rgba(var(--gold-rgb),0.06)] px-1.5 py-0.5 text-center text-[11px] text-[var(--gold-light)]">
-                {b.display}
-              </kbd>
-            </td>
-            <td className="font-sans text-[13px] text-[var(--text-primary)]">{b.description}</td>
+    <>
+      <table className="w-full border-separate border-spacing-y-1" data-testid="shortcut-table">
+        <thead className="sr-only">
+          <tr>
+            <th scope="col">Key</th>
+            <th scope="col">Action</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {KEY_BINDINGS.map((b) => (
+            <Row key={`${b.action}-${b.display}`} action={b.action} display={b.display} description={b.description} />
+          ))}
+        </tbody>
+      </table>
+      <table className="mt-3 w-full border-separate border-spacing-y-1" data-testid="timeline-shortcut-table">
+        <caption className="hud-micro pb-1 text-left text-[var(--text-secondary)]">Timeline (slider focused)</caption>
+        <thead className="sr-only">
+          <tr>
+            <th scope="col">Key</th>
+            <th scope="col">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {TIMELINE_KEYS.map((k) => (
+            <Row key={k.display} display={k.display} description={k.description} />
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
 

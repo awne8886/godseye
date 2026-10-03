@@ -7,16 +7,19 @@
  * actually holds; the rest of the 24 h is hatched as NOT HELD. The cursor's UTC time is the strip's
  * headline; while scrubbing it reads REPLAY hh:mm UTC, never LIVE. Keyboard (slider focused):
  * ←/→ 15 min, Shift+←/→ or PageUp/PageDown 1 h, Home = 24 h ago, End or Escape = live.
- * Loaded with next/dynamic after hydration (HudRoot), so it costs nothing on first paint.
+ * Loaded with next/dynamic after hydration (HudRoot), so it costs nothing on first paint. On desktops the
+ * strip is placed clear of MapLibre's bottom-right stack (imagery chips + credits; timeline-layout.ts).
+ * The strip owns the one clamped cursor every reader uses (useCursorClamp).
  * Owner: design-system-hud.
  */
 import { Radio } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import type { LayerId } from '@/lib/layer-registry';
 import { useUiStore } from '@/lib/store';
 import { useIsMobile, useVisibleLayers } from './hooks';
 import {
   TIMELINE_BIG_STEP_MS,
+  TIMELINE_CLOCK_MS,
   TIMELINE_LABEL,
   TIMELINE_LAYERS,
   TIMELINE_SPAN_MS,
@@ -27,9 +30,12 @@ import {
   fractionOf,
   hhmmUtc,
   stepCursor,
+  stepsBackAtFraction,
+  useCursorClamp,
   useTimelineCoverage,
   type TimelineLayer,
 } from './timeline';
+import { useStripPlacement } from './timeline-layout';
 
 const LANE_TOKEN: Record<TimelineLayer, string> = {
   earthquakes: 'var(--map-seismic)',
@@ -46,11 +52,11 @@ const wallClock = () => Date.now();
 /** Hour marks (hours before now) labelled under the track. */
 const MARKS = [24, 18, 12, 6, 0] as const;
 
-/** Wall clock for the track (minute resolution is plenty for a 24 h strip with 15 min steps). */
+/** Wall clock for the track and the cursor clamp (30 s is plenty for a 24 h strip with 15 min steps). */
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30_000);
+    const t = setInterval(() => setNow(Date.now()), TIMELINE_CLOCK_MS);
     return () => clearInterval(t);
   }, []);
   return now;
@@ -101,6 +107,8 @@ export default function TimelineScrubber() {
   const now = useNow();
   const track = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
+  /** The 15 min step last published by this drag (null = none yet): moves inside it publish nothing. */
+  const dragStep = useRef<number | null>(null);
 
   const lanes = useMemo(() => {
     const ids = new Set(visible.map((l) => l.id));
@@ -108,8 +116,10 @@ export default function TimelineScrubber() {
   }, [visible, active]);
   const shown = lanes.length > 0;
   usePhoneStripFlag(shown && phone);
+  const placement = useStripPlacement(shown && !phone);
+  // A cursor that time has carried out of the strip sits at its left edge, in the store too.
+  useCursorClamp(now);
 
-  // A cursor that time has carried out of the strip is shown at its left edge.
   const cursor = clampCursor(rawCursor, now);
   const replaying = cursor !== null;
 
@@ -126,11 +136,16 @@ export default function TimelineScrubber() {
   const fromPointer = (e: PointerEvent<HTMLDivElement>) => {
     const r = track.current?.getBoundingClientRect();
     if (!r || r.width <= 0) return;
-    setCursor(cursorAtFraction((e.clientX - r.left) / r.width, wallClock()));
+    const fraction = (e.clientX - r.left) / r.width;
+    const step = stepsBackAtFraction(fraction);
+    if (step === dragStep.current) return;
+    dragStep.current = step;
+    setCursor(cursorAtFraction(fraction, wallClock()));
   };
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     dragging.current = true;
+    dragStep.current = null;
     e.currentTarget.setPointerCapture?.(e.pointerId);
     e.currentTarget.focus();
     fromPointer(e);
@@ -140,6 +155,7 @@ export default function TimelineScrubber() {
   };
   const endDrag = () => {
     dragging.current = false;
+    dragStep.current = null;
   };
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const next = cursorForKey(e.key, e.shiftKey, cursor, wallClock());
@@ -150,49 +166,56 @@ export default function TimelineScrubber() {
   };
 
   const headline = replaying ? `REPLAY ${hhmmUtc(cursor)} UTC` : `NOW ${hhmmUtc(now)} UTC`;
+  const place: CSSProperties | undefined = placement ? { left: placement.left, bottom: placement.bottom, width: placement.width } : undefined;
   return (
     <section
       aria-label="Timeline, last 24 hours"
       data-testid="timeline-scrubber"
       data-replay={replaying ? 'true' : 'false'}
       data-map-inset="timeline"
+      data-placement={placement?.mode ?? 'default'}
+      style={place}
       className="glass-panel hud-timeline fixed bottom-[56px] left-[512px] z-[var(--z-hud)] flex w-[min(620px,calc(100vw-592px))] flex-col gap-1 px-3 py-1.5 max-lg:bottom-[148px] max-lg:left-[120px] max-lg:w-[min(560px,calc(100vw-200px))] phone:left-2 phone:flex-row phone:items-center phone:gap-2 phone:bottom-[calc(57px+env(safe-area-inset-bottom)+4px)] phone:w-[calc(100vw-16px)] phone:px-2 phone:py-1"
     >
-      <div className="flex items-center gap-3 phone:contents">
-        <span className="hud-micro text-[var(--text-secondary)] phone:hidden">TIMELINE · 24 H</span>
+      {/* Desktop: header row (label, time, LIVE), then the lane counts on their own row in fixed
+          columns, so the strip is the same height live and in replay. Phones: one row (contents). */}
+      <div className="flex min-w-0 items-center gap-3 phone:contents">
+        <span className="hud-micro shrink-0 whitespace-nowrap text-[var(--text-secondary)] phone:hidden">TIMELINE · 24 H</span>
         {/* Fixed width on phones: NOW → REPLAY must not move the track under a dragging finger. */}
         <span
           data-testid="timeline-time"
           aria-live="polite"
-          className="whitespace-nowrap font-mono text-[13px] font-bold uppercase tabular-nums tracking-[0.08em] phone:order-1 phone:w-[18ch] phone:text-[11px]"
+          className="shrink-0 whitespace-nowrap font-mono text-[13px] font-bold uppercase tabular-nums tracking-[0.08em] phone:order-1 phone:w-[18ch] phone:text-[11px]"
           style={{ color: replaying ? 'var(--gold-light)' : 'var(--cyan-primary)' }}
         >
           {headline}
         </span>
-        <span className="flex-1 phone:hidden" />
-        <ul className="flex items-center gap-2 phone:hidden" aria-label="Items drawn at the cursor">
-          {lanes.map((id) => {
-            const c = coverage[id];
-            return (
-              <li key={id} data-testid={`timeline-count-${id}`} data-shown={c?.shown ?? ''} data-total={c?.total ?? ''} className="hud-micro tabular-nums text-[var(--text-secondary)]">
-                <span aria-hidden className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: LANE_TOKEN[id] }} />
-                {TIMELINE_LABEL[id]} {c ? (replaying ? `${c.shown.toLocaleString('en-US')}/${c.total.toLocaleString('en-US')}` : c.total.toLocaleString('en-US')) : '—'}
-              </li>
-            );
-          })}
-        </ul>
+        <span className="min-w-0 flex-1 phone:hidden" />
         <button
           type="button"
           aria-pressed={!replaying}
           onClick={() => setCursor(null)}
           title={replaying ? 'Return to live (End or Escape)' : 'Showing live data'}
-          className="hud-control hud-micro flex min-h-[24px] items-center gap-1 rounded-[var(--radius-chip)] border px-2 phone:order-3 phone:min-h-11 phone:min-w-11 phone:justify-center"
+          data-testid="timeline-live"
+          className="hud-control hud-micro flex min-h-[24px] shrink-0 items-center gap-1 whitespace-nowrap rounded-[var(--radius-chip)] border px-2 phone:order-3 phone:min-h-11 phone:min-w-11 phone:justify-center"
           style={{ borderColor: replaying ? 'var(--border-active)' : 'var(--alert-green)', color: replaying ? 'var(--gold-light)' : 'var(--alert-green)' }}
         >
           <Radio size={12} aria-hidden />
           LIVE
         </button>
       </div>
+      <ul className="hud-timeline-counts grid gap-x-3 phone:hidden" aria-label="Items drawn at the cursor">
+        {lanes.map((id) => {
+          const c = coverage[id];
+          const text = `${TIMELINE_LABEL[id]} ${c ? (replaying ? `${c.shown.toLocaleString('en-US')}/${c.total.toLocaleString('en-US')}` : c.total.toLocaleString('en-US')) : '—'}`;
+          return (
+            <li key={id} data-testid={`timeline-count-${id}`} data-shown={c?.shown ?? ''} data-total={c?.total ?? ''} title={text} className="hud-micro min-w-0 overflow-hidden text-ellipsis whitespace-nowrap tabular-nums text-[var(--text-secondary)]">
+              <span aria-hidden className="mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: LANE_TOKEN[id] }} />
+              {text}
+            </li>
+          );
+        })}
+      </ul>
       <div
         ref={track}
         role="slider"

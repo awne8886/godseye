@@ -81,3 +81,14 @@ export function matchBinding(e: KeyEventLike, inTextField: boolean): KeyAction |
   }
   return null;
 }
+
+/**
+ * Keys of the 24 h timeline slider (TimelineScrubber's `cursorForKey`), active only while the slider
+ * has focus; listed here so the Help panel shows them next to the global map. Not global bindings.
+ */
+export const TIMELINE_KEYS = [
+  { display: '← / →', description: 'Step the timeline 15 min back / forward' },
+  { display: 'Shift+← / → · PgUp / PgDn', description: 'Step the timeline 1 h' },
+  { display: 'Home', description: 'Replay from 24 h ago' },
+  { display: 'End / ESC', description: 'Back to live' },
+] as const satisfies readonly { display: string; description: string }[];

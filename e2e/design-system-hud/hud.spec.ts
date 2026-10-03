@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { KEY_BINDINGS } from '../../src/lib/keyboard';
+import { KEY_BINDINGS, TIMELINE_KEYS } from '../../src/lib/keyboard';
 import { TOOLS } from '../../src/lib/tool-registry';
 
 /**
@@ -21,8 +21,12 @@ test.describe('desktop HUD', () => {
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAttribute('aria-modal', 'true');
-    const rows = dialog.locator('tbody tr');
+    const rows = dialog.getByTestId('shortcut-table').locator('tbody tr');
     await expect(rows).toHaveCount(KEY_BINDINGS.length);
+    // The timeline slider's keys are their own group (r11 F), from the same keyboard map.
+    const timeline = dialog.getByTestId('timeline-shortcut-table');
+    await expect(timeline).toContainText('Timeline (slider focused)');
+    await expect(timeline.locator('tbody tr')).toHaveCount(TIMELINE_KEYS.length);
     for (let i = 0; i < KEY_BINDINGS.length; i++) {
       const b = KEY_BINDINGS[i]!;
       await expect(rows.nth(i).locator('kbd')).toHaveText(b.display);

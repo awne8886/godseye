@@ -133,9 +133,9 @@ describe('global key handler', () => {
 
 describe('help overlay', () => {
   afterEach(cleanup);
-  it('lists exactly KEY_BINDINGS, in order', () => {
+  it('lists exactly KEY_BINDINGS, in order (the timeline slider keys are a separate table)', () => {
     const { container } = render(<ShortcutTable />);
-    const rows = [...container.querySelectorAll('tbody tr')];
+    const rows = [...container.querySelectorAll('[data-testid="shortcut-table"] tbody tr')];
     expect(rows.map((r) => r.getAttribute('data-action'))).toEqual(KEY_BINDINGS.map((b) => b.action));
     expect(rows.map((r) => r.querySelector('kbd')?.textContent)).toEqual(KEY_BINDINGS.map((b) => b.display));
     expect(rows.map((r) => r.querySelectorAll('td')[1]?.textContent)).toEqual(KEY_BINDINGS.map((b) => b.description));

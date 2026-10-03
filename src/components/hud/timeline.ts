@@ -54,10 +54,19 @@ export function stepCursor(cursor: number | null, now: number, deltaMs: number):
   return clampCursor((cursor ?? now) + deltaMs, now);
 }
 
-/** The cursor for a pointer at `fraction` (0 = 24 h ago, 1 = now) of the track, snapped to 15 min back from now. */
+/**
+ * The 15 min step a pointer at `fraction` (0 = 24 h ago, 1 = now) of the track lands on, counted back
+ * from now (0 = live). It does not depend on the wall clock, so a drag publishes a new cursor only
+ * when this changes (r11 m: every pointermove inside one step re-filtered every replayed layer).
+ */
+export function stepsBackAtFraction(fraction: number): number {
+  const f = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 1;
+  return Math.round(((1 - f) * TIMELINE_SPAN_MS) / TIMELINE_STEP_MS);
+}
+
+/** The cursor for a pointer at `fraction` of the track, snapped to 15 min back from now. */
 export function cursorAtFraction(fraction: number, now: number): number | null {
-  const f = Math.min(1, Math.max(0, fraction));
-  const back = Math.round(((1 - f) * TIMELINE_SPAN_MS) / TIMELINE_STEP_MS) * TIMELINE_STEP_MS;
+  const back = stepsBackAtFraction(fraction) * TIMELINE_STEP_MS;
   return back === 0 ? null : clampCursor(now - back, now);
 }
 
@@ -125,8 +134,28 @@ export function useReportCoverage(layer: TimelineLayer, c: Coverage | null): voi
   useEffect(() => () => report(layer, null), [report, layer]);
 }
 
-/** The scrubber cursor (null = live). */
+/**
+ * The scrubber cursor (null = live). The store holds the one clamped value every reader uses: the
+ * scrubber writes the clamp back as time carries the cursor out of the 24 h strip
+ * (`useCursorClamp`), so the strip, the telemetry, the layer rows and the layer filters agree.
+ */
 export const useTimeCursor = () => useUiStore((s) => s.timeCursor);
+
+/** Wall-clock period of the clamp (and of the scrubber's track). */
+export const TIMELINE_CLOCK_MS = 30_000;
+
+/**
+ * Writes `clampCursor(cursor, now)` back to the store whenever it differs (r11 m: Home, then ten
+ * minutes later the strip read 22:10 while the telemetry, the rail and the map filters used 22:00).
+ */
+export function useCursorClamp(now: number): void {
+  const cursor = useUiStore((s) => s.timeCursor);
+  const setCursor = useUiStore((s) => s.setTimeCursor);
+  useEffect(() => {
+    const clamped = clampCursor(cursor, now);
+    if (clamped !== cursor) setCursor(clamped);
+  }, [cursor, now, setCursor]);
+}
 
 /**
  * The span a feed holds: its declared window ending at the fetch (`windowMs`), or, when the feed
