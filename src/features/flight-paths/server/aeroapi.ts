@@ -15,7 +15,9 @@
  *  - A flight's schedule (/api/flight/{ident}): /flights/{ident} (one page) → the leg in progress,
  *    else the next scheduled one, else the latest. Cached 10 min per ident.
  *
- * Without a key no request is made (`skipped: not-configured`); a keyless probe answers 401.
+ * Without a key no request is made (`skipped: not-configured`); a keyless probe answers 401. With a
+ * key on a commercial deployment no request is made either, and the provider says why (`skipped:
+ * licence`, round 11 — the personal tier's licence, not missing configuration).
  * Server-only.
  */
 import 'server-only';
@@ -227,12 +229,17 @@ async function admitted<T>(cache: Cached<T>, deps: AeroDeps, fallback: (run: Pro
   return now.data ?? fallback(failed(now.error ?? 'error'));
 }
 
+/** Why AeroAPI is off: the licence gate when a key is set (COMMERCIAL_DEPLOYMENT=true), else no key. */
+export function aeroSkipReason(env: Env = process.env): 'licence' | 'not-configured' {
+  return env.AEROAPI_KEY?.trim() ? 'licence' : 'not-configured';
+}
+
 /** How long /api/route/plan waits for a new pair's filed route before answering `pending`. */
 export const PLAN_WAIT_MS = 2_500;
 
 /** /api/route/plan: AeroAPI filed route for an ICAO pair, cached 24 h; skipped without the capability; never blocks the plan longer than `waitMs`. */
 export async function aeroFiledPlans(from: string, to: string, env: Env = process.env, deps?: AeroDeps, waitMs = PLAN_WAIT_MS): Promise<{ plans: FiledPlan[]; run: ProviderRun }> {
-  if (!hasCapability('aeroapi', env)) return { plans: [], run: skippedProvider('not-configured') };
+  if (!hasCapability('aeroapi', env)) return { plans: [], run: skippedProvider(aeroSkipReason(env)) };
   const d = deps ?? liveDeps(env.AEROAPI_KEY ?? '');
   const cache = sourceCache<{ plans: FiledPlan[]; run: ProviderRun }>(
     `fp:aeroapi:route:${from}-${to}`,
@@ -248,7 +255,7 @@ export async function aeroFiledPlans(from: string, to: string, env: Env = proces
 
 /** /api/flight/{ident}: AeroAPI schedule for a callsign (one result set), cached 10 min; skipped without the capability. */
 export async function aeroSchedule(ident: string, env: Env = process.env, deps?: AeroDeps, now = Date.now(), waitMs = 15_000): Promise<{ schedule: AeroSchedule | null; run: ProviderRun }> {
-  if (!hasCapability('aeroapi', env)) return { schedule: null, run: skippedProvider('not-configured') };
+  if (!hasCapability('aeroapi', env)) return { schedule: null, run: skippedProvider(aeroSkipReason(env)) };
   const d = deps ?? liveDeps(env.AEROAPI_KEY ?? '');
   const cache = sourceCache<{ schedule: AeroSchedule | null; run: ProviderRun }>(
     `fp:aeroapi:flight:${ident}`,
