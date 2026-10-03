@@ -53,16 +53,35 @@ function headlineLines(news: readonly AlertItem[], now: number, max = 40): strin
     .join('\n');
 }
 
+const sign = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
+
+/** Equity indices only: ^VIX moves against them and FX/commodities have no up-is-good direction (r11). */
+const equityIndices = (quotes: readonly Quote[]) => quotes.filter((q) => q.group === 'indices' && q.symbol !== '^VIX' && q.changePct !== null);
+
+/** One plain line on equity indices, or null when none is priced. Never a risk-on/off label from mixed instruments. */
+function equityLine(quotes: readonly Quote[]): string | null {
+  const eq = equityIndices(quotes);
+  if (!eq.length) return null;
+  const up = eq.filter((q) => q.changePct! > 0).length;
+  const down = eq.filter((q) => q.changePct! < 0).length;
+  return up > down ? 'Equity indices are mostly higher.' : down > up ? 'Equity indices are mostly lower.' : 'Equity indices are mixed.';
+}
+
 function marketFacts(quotes: readonly Quote[], kp: number | null): string[] {
   const priced = quotes.filter((q) => q.changePct !== null);
   if (!priced.length) return ['No live market instruments available in the current feed.'];
   const up = priced.filter((q) => q.changePct! > 0).length;
   const down = priced.filter((q) => q.changePct! < 0).length;
   const sorted = [...priced].sort((a, b) => b.changePct! - a.changePct!);
-  const f = [`${priced.length} instruments tracked — ${up} up / ${down} down (${up >= down ? 'risk-on' : 'risk-off'} breadth).`];
+  // Counts across indices, the VIX, FX and commodities are not a risk read: no label is derived from them.
+  const f = [`${priced.length} instruments tracked — ${up} up / ${down} down.`];
+  const eq = equityIndices(quotes);
+  if (eq.length) f.push(`Equity indices: ${eq.filter((q) => q.changePct! > 0).length} of ${eq.length} up (${eq.map((q) => `${q.name} ${sign(q.changePct!)}`).join(', ')}).`);
+  const vix = priced.find((q) => q.symbol === '^VIX');
+  if (vix) f.push(`VIX ${sign(vix.changePct!)}.`);
   const top = sorted[0]!;
   const worst = sorted.at(-1)!;
-  f.push(`Top gainer: ${top.name} ${top.changePct! >= 0 ? '+' : ''}${top.changePct!.toFixed(2)}%.`, `Worst performer: ${worst.name} ${worst.changePct!.toFixed(2)}%.`);
+  f.push(`Top gainer: ${top.name} ${sign(top.changePct!)}.`, `Worst performer: ${worst.name} ${sign(worst.changePct!)}.`);
   const btc = quotes.find((q) => q.symbol === 'BTC');
   if (btc?.price && btc.changePct !== null) f.push(`Bitcoin ${btc.changePct >= 0 ? 'up' : 'down'} ${Math.abs(btc.changePct).toFixed(2)}% at $${Math.round(btc.price).toLocaleString('en-US')} (${btc.source}).`);
   if (kp !== null) f.push(`Space weather: Kp ${kp} (${kp >= 5 ? 'geomagnetic storm conditions' : 'quiet to unsettled geomagnetic field'}).`);
@@ -99,7 +118,7 @@ export type Scope = 'alerts' | 'markets' | 'chain';
 export function overviewPrompt(scope: Scope, s: Snapshot, now = Date.now()): Prompt {
   if (scope === 'markets') {
     const facts = marketFacts(s.quotes, s.kp);
-    const summary = facts.length > 1 ? (s.quotes.filter((q) => (q.changePct ?? 0) > 0).length >= s.quotes.filter((q) => (q.changePct ?? 0) < 0).length ? 'Global tape is broadly bid.' : 'Global tape is under pressure.') : 'Market feed is thin right now.';
+    const summary = facts.length > 1 ? (equityLine(s.quotes) ?? 'No equity index is priced right now.') : 'Market feed is thin right now.';
     return { system: `${SYSTEM_BASE} Write 2–4 sentences.`, turns: [{ role: 'user', content: `MODE: MARKETS\n\nBOTTOM LINE: ${summary}\n\nFACTS:\n${facts.map((f) => `- ${f}`).join('\n')}\n\nWrite the read-out now.` }], allowed: [], analystText: `${summary}\n\n${facts.map((f) => `• ${f}`).join('\n')}`, analystCitations: [] };
   }
   if (scope === 'chain') {

@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { parseFeed } from '@/lib/rss';
-import type { AlertItem } from '@/lib/types';
+import type { AlertItem, Quote } from '@/lib/types';
 import { FX, fixtureText } from '../__fixtures__';
 import { briefingPrompt, chatPrompt, overviewPrompt, type Snapshot } from './ai-context';
 import { BLOC_LABEL, itemCorroboration, perspectivePhrase, sourceWithStance, threadMixPhrase } from './digest';
@@ -122,5 +122,35 @@ describe('per-item corroboration in briefings (r10)', () => {
     expect(threadMixPhrase({ perspective: 'single', blocs: { russian: 2 } })).toBe('lead of a thread carried by one side only so far');
     expect(threadMixPhrase({ perspective: 'mixed', blocs: { regional: 1 } })).toBe('lead of a thread with mixed sourcing');
     expect(itemCorroboration({ source: 'TASS', alsoReportedBy: [] })).toBe('reported by TASS only so far');
+  });
+});
+
+/**
+ * r11 MINOR: the ANALYST called a risk-on day "risk-off breadth" by counting every instrument's sign
+ * alike — the VIX falling 6.59 % was a 'down' vote. Values are the live build's 2026-10-02 quotes.
+ */
+describe('market read-out never labels risk from mixed instruments (r11)', () => {
+  const q = (symbol: string, name: string, group: Quote['group'], changePct: number): Quote => ({ symbol, name, group, price: 100, changePct, currency: 'USD', spark: [], marketOpen: true, observedAt: '2026-10-02T15:00:00.000Z', source: 'yahoo', unofficial: true });
+  const quotes: Quote[] = [
+    q('^GSPC', 'S&P 500', 'indices', 0.73), q('^IXIC', 'Nasdaq Comp', 'indices', 1.19), q('^DJI', 'Dow Jones', 'indices', 0.41), q('^VIX', 'VIX', 'indices', -6.59),
+    q('EURUSD=X', 'EUR/USD', 'fx', -0.2), q('GBPUSD=X', 'GBP/USD', 'fx', -0.3), q('USDJPY=X', 'USD/JPY', 'fx', -0.1), q('DX-Y.NYB', 'US Dollar Index', 'fx', -0.15),
+    q('GC=F', 'Gold', 'commodities', -0.8), q('SI=F', 'Silver', 'commodities', -1.1), q('CL=F', 'WTI Crude', 'energy', -0.5),
+  ];
+  const s: Snapshot = { news: [], quakes: [], quotes, chain: null, kp: null };
+
+  it('briefing MARKETS keeps the counts, drops the label and reads equities on their own', () => {
+    const p = briefingPrompt('24h', s, NOW);
+    expect(p.analystText).toContain('11 instruments tracked — 3 up / 8 down.');
+    expect(p.analystText).toContain('Equity indices: 3 of 3 up (S&P 500 +0.73%, Nasdaq Comp +1.19%, Dow Jones +0.41%).');
+    expect(p.analystText).toContain('VIX -6.59%.');
+    for (const text of [p.analystText, p.turns[0]!.content]) expect(text).not.toMatch(/risk-o(?:n|ff)|breadth/i);
+  });
+
+  it('markets overview bottom line is about equity indices, not the whole tape', () => {
+    const p = overviewPrompt('markets', s, NOW);
+    expect(p.analystText.split('\n')[0]).toBe('Equity indices are mostly higher.');
+    expect(p.analystText).not.toMatch(/tape is|risk-o(?:n|ff)/i);
+    const noEq = overviewPrompt('markets', { ...s, quotes: quotes.filter((x) => x.group !== 'indices') }, NOW);
+    expect(noEq.analystText.split('\n')[0]).toBe('No equity index is priced right now.');
   });
 });

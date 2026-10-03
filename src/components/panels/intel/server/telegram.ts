@@ -12,6 +12,7 @@
  * Owner: panels-alerts-markets-dossier-graph. Isomorphic (pure).
  */
 import { decodeEntities } from '@/lib/rss';
+import { GAZETTEER } from './gazetteer';
 
 export interface TelegramMedia {
   type: 'photo' | 'video';
@@ -96,22 +97,42 @@ function stripSignOff(text: string): string {
   return lines.join('\n').trim();
 }
 
+/** A channel's own "Fwd from @…" stamp (Rybar opens forwarded posts with `<i>Fwd from @</i>`). */
+const FORWARD_LINE = /^(?:fwd\.?|forwarded) from @?\S*$/iu;
+const HASHTAGS_ONLY = /^(?:#[\p{L}\p{N}_]+[\s,]*)+$/u;
+/** Gazetteer countries plus the bare region/country tags channels open posts with but the pin gazetteer does not place. */
+const COUNTRY_TERMS = new Set([
+  ...GAZETTEER.filter((e) => e.precision === 'country').flatMap((e) => e.terms),
+  ...['usa', 'us', 'united states', 'uk', 'united kingdom', 'britain', 'eu', 'europe', 'nato', 'germany', 'france', 'italy', 'spain', 'canada', 'australia', 'norway', 'sweden', 'finland', 'romania', 'hungary', 'serbia', 'nk', 'dprk', 'gaza', 'middle east'],
+]);
+
+/** Lines that label a post rather than say anything: a forward stamp, a run of #tags, a bare country name. */
+const hashtagsOnly = (raw: string) => HASHTAGS_ONLY.test(raw.normalize('NFKC').replace(PICTOGRAPHS, '').replace(/^[^\p{L}\p{N}#]+/u, '').trim());
+
+function isLabelLine(raw: string, tidied: string): boolean {
+  return FORWARD_LINE.test(tidied) || hashtagsOnly(raw) || (tidied.split(/\s+/).length < 3 && COUNTRY_TERMS.has(tidied.toLowerCase()));
+}
+
 /** First meaningful line becomes the headline (≤ 140 chars); the rest is the summary. */
 export function splitHeadline(text: string): { headline: string; summary: string; breaking: boolean } {
   const lines = text.split('\n');
-  let i = 0;
   let breaking = false;
-  let headline = '';
-  for (; i < lines.length; i++) {
-    const t = tidy(lines[i]!);
+  let first = -1;
+  let found = -1;
+  for (let j = 0; j < lines.length; j++) {
+    const t = tidy(lines[j]!);
     breaking ||= t.breaking;
-    if (t.text.length >= 3) {
-      headline = t.text;
-      i++;
+    if (t.text.length < 3 && !hashtagsOnly(lines[j]!)) continue;
+    if (first < 0) first = j;
+    if (!isLabelLine(lines[j]!, t.text)) {
+      found = j;
       break;
     }
   }
-  let summary = lines.slice(i).join('\n').trim();
+  // A post made only of label lines keeps its first one rather than going untitled.
+  const at = found >= 0 ? found : first;
+  let headline = at >= 0 ? tidy(lines[at]!).text : '';
+  let summary = at >= 0 ? lines.slice(at + 1).join('\n').trim() : '';
   if (headline.length > HEADLINE_MAX) {
     const sentence = headline.match(/^(.{20,}?[.!?])\s+(?=\S)/u);
     if (sentence && sentence[1]!.length <= HEADLINE_MAX) {

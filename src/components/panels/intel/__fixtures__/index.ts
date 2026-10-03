@@ -17,6 +17,8 @@ export const FX = {
   tgOsint: 'tg-Osintdefender.2026-09-30.html',
   tgRybar: 'tg-rybar_in_english.2026-09-30.html',
   tgKyiv: 'tg-KyivIndependent_official.2026-09-30.html',
+  /** Round 11 (untrimmed, captured 2026-10-02 23:24 UTC): posts 34736/34737/34744/34745/34747 open with the channel's own `<i>Fwd from @</i>` line. */
+  tgRybarFwd: 'tg-rybar_in_english.2026-10-02.html',
   /** Untrimmed page (20 posts), captured 2026-09-30 22:47 UTC. */
   tgOsintFull: 'tg-Osintdefender-full.2026-09-30.html',
   bbc: 'bbc-world.2026-09-30.xml',

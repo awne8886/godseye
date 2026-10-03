@@ -8,7 +8,7 @@ import { hasStopTerm, leadEligible } from './lead-filter';
 import { geoparse } from './gazetteer';
 import { WIRE_FEEDS, TELEGRAM_CHANNELS, POSTS_PER_CHANNEL, fromTelegram, fromWire, latestChannelPosts, mergeCrossPosts } from './news';
 import { isOpen, nextChange, sessionsAt, EXCHANGES } from './sessions';
-import { FINGERPRINT_WORDS, fingerprint, parseChannelPage, parseDuration, parseViews } from './telegram';
+import { FINGERPRINT_WORDS, fingerprint, parseChannelPage, parseDuration, parseViews, splitHeadline } from './telegram';
 import { candlesFromChart, quoteFromChart, SYMBOLS, type YahooChart } from './markets';
 import { parseBinance, parseCoinbase, parseKraken } from './crypto';
 import { parseLlama, parseNvd } from './chain';
@@ -19,6 +19,35 @@ import { assess } from './scm';
 
 const osint = TELEGRAM_CHANNELS.find((c) => c.handle === 'Osintdefender')!;
 const bbc = WIRE_FEEDS.find((w) => w.handle === 'bbc')!;
+
+describe('Telegram headline skips label lines (r11)', () => {
+  it("never titles a Rybar post with the channel's own 'Fwd from @' line", () => {
+    const posts = parseChannelPage(fixtureText(FX.tgRybarFwd), 'rybar_in_english');
+    const byId = new Map(posts.map((p) => [p.id, p]));
+    expect(byId.get('rybar_in_english/34747')!.text).toMatch(/^Fwd from @\n/);
+    expect(byId.get('rybar_in_english/34747')!.headline).toBe('A Parting Gift');
+    expect(byId.get('rybar_in_english/34745')!.headline).toBe('War is getting closer');
+    expect(byId.get('rybar_in_english/34744')!.headline).toBe('Following the Europeans');
+    expect(byId.get('rybar_in_english/34747')!.summary).toMatch(/^Japanese left Kyiv with drones/);
+    for (const p of posts) expect(p.headline).not.toMatch(/^fwd/i);
+    // The Kyiv pin now comes from the post's own words, not from a 'Fwd from @' title.
+    expect(fromTelegram(byId.get('rybar_in_english/34747')!, TELEGRAM_CHANNELS.find((c) => c.handle === 'rybar_in_english')!).title).toBe('A Parting Gift');
+  });
+
+  it('skips #tag and bare-country lines so OSINTdefender headlines are the report itself', () => {
+    const posts = parseChannelPage(fixtureText(FX.tgOsintFull), 'Osintdefender');
+    expect(posts.find((p) => p.id === 'OSINTdefender/20353')!.headline).toMatch(/^Russia has revived the Dead Hand/);
+    expect(posts.find((p) => p.id === 'OSINTdefender/20364')!.headline).toMatch(/^Ukraine has received a new NASAMS/);
+    for (const p of posts) expect(p.headline.split(/\s+/).length).toBeGreaterThanOrEqual(3);
+    expect(splitHeadline('Germany\nBerlin police closed the central station after a bomb threat').headline).toBe('Berlin police closed the central station after a bomb threat');
+    expect(splitHeadline('• Forwarded from @someone\n#USA #China\nTalks resume in Geneva').headline).toBe('Talks resume in Geneva');
+    expect(splitHeadline('Fwd. from @x\nShort note').headline).toBe('Short note');
+    // A sentence that merely starts with a country is not a label.
+    expect(splitHeadline('Germany votes on a new budget\nmore').headline).toBe('Germany votes on a new budget');
+    // A post made only of label lines keeps its first one rather than going untitled.
+    expect(splitHeadline('Fwd from @').headline).toBe('Fwd from @');
+  });
+});
 
 describe('Telegram preview parser (fixtures captured 2026-09-30)', () => {
   const posts = parseChannelPage(fixtureText(FX.tgOsint), 'Osintdefender');
