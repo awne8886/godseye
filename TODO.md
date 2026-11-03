@@ -25,7 +25,7 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
         /api/iss envelope stops saying kind/state live; the SPACE panel already badges COMPUTED
   - [ ] pages-docs-privacy-ops: re-capture the mislabelled Style Studio shots and the README hero shots;
         replace the stale "re-capture on a GPU machine" note with the capture environment
-  - [ ] layers-aviation: on the globe every 100 ms camera rebuild during a drag swaps the visible set, so
+  - [x] layers-aviation: on the globe every 100 ms camera rebuild during a drag swaps the visible set, so
         deck regenerates every attribute for ~9k aircraft (~14 ms of deck CPU per rebuild frame on a
         4-vCPU SwiftShader box, round 10 perf). Keep the data stable across camera moves (GPU far-side
         discard or a DataFilterExtension filter attribute); acceptance: luma _animationFrame ≤ 4 ms

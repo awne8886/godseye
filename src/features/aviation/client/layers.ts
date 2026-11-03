@@ -5,6 +5,7 @@
  */
 import { ScatterplotLayer } from '@deck.gl/layers';
 import { H3HexagonLayer, TripsLayer } from '@deck.gl/geo-layers';
+import { DataFilterExtension } from '@deck.gl/extensions';
 import type { LayersList, PickingInfo } from '@deck.gl/core';
 import { latLngToCell } from 'h3-js';
 import { getLayer, type LayerId } from '@/lib/layer-registry';
@@ -37,6 +38,8 @@ export const ICON_PARAMETERS = { cullMode: 'none', depthCompare: 'always' } as c
 /** Watched trails: same globe state as the icons (their far side is cut by `buildTrips`). */
 export const TRAIL_PARAMETERS = ICON_PARAMETERS;
 
+export const DATA_FILTER_EXTENSION = new DataFilterExtension({ filterSize: 1 });
+
 export interface View {
   center: LngLatTuple;
   zoom: number;
@@ -51,20 +54,26 @@ export interface Frame {
   /** Indices (into records) currently drawn. */
   visible: Uint32Array;
   count: number;
+  /** Visible aircraft facing the camera on the globe. */
+  facingCount: number;
   /** Visible aircraft past the dead-reckoning cap (drawn frozen and dimmed). */
   staleVisible: number;
   /** Bumped whenever the visible index list changes (per-index accessors must re-run). */
   visVersion: number;
   /**
    * Stable deck `data` for the icon layer; replaced only when the visible list changes. Its
-   * `attributes.getColor` is the binary colour buffer (`syncColors`).
+   * `attributes.getColor` is the binary colour buffer (`syncColors`), and `attributes.getFilterValue`
+   * is the binary far-side filter attribute for DataFilterExtension.
    */
-  data: { length: number; attributes?: { getColor: ColorAttribute } };
+  data: { length: number; attributes?: { getColor?: ColorAttribute; getFilterValue?: FilterAttribute } };
   /** RGBA per visible row (visible order), the 60 s dim baked in; the backing store of `colorAttr`. */
   colors: Uint8Array;
   /** What `colors` was last fully built for (snapshot, visible list, colour mode, theme). */
   colorKey: string;
   colorAttr: ColorAttribute | null;
+  /** 1.0 (facing) or 0.0 (far side) per visible row for DataFilterExtension. */
+  filterValues: Float32Array;
+  filterAttr: FilterAttribute | null;
   /** Visible rows whose aircraft crossed the 60 s cap since the last `syncColors` (patched alone). */
   newlyFrozen: Uint32Array;
   newlyFrozenCount: number;
@@ -93,6 +102,12 @@ export interface ColorAttribute {
   size: 4;
 }
 
+/** A deck binary attribute for DataFilterExtension: 1 float per instance. */
+export interface FilterAttribute {
+  value: Float32Array;
+  size: 1;
+}
+
 const BUCKET_INDEX = Object.fromEntries(BUCKETS.map((b, i) => [b, i])) as Record<Bucket, number>;
 /** Scratch bucket mask, reused every tick. */
 const WANT = new Uint8Array(BUCKETS.length);
@@ -110,12 +125,15 @@ export function newFrame(records: FlightRecord[]): Frame {
     frozen: new Uint8Array(n),
     visible: new Uint32Array(n),
     count: 0,
+    facingCount: 0,
     staleVisible: 0,
     visVersion: 0,
     data: { length: 0 },
     colors: new Uint8Array(n * 4),
     colorKey: '',
     colorAttr: null,
+    filterValues: new Float32Array(n),
+    filterAttr: null,
     newlyFrozen: new Uint32Array(n),
     newlyFrozenCount: 0,
     bucket: new Uint8Array(n),
@@ -206,15 +224,19 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
   let n = 0;
   let changed = false;
   let stale = 0;
+  let facing = 0;
   for (let i = 0; i < f.records.length; i++) {
     const b = f.bucket[i]!;
     if (!want[b]) continue;
-    if (globe && f.unit[i * 3]! * cx + f.unit[i * 3 + 1]! * cy + f.unit[i * 3 + 2]! * cz < cosCam * f.lift[i * 2]! - sinCam * f.lift[i * 2 + 1]!) continue;
     const slot = n++;
     if (f.visible[slot] !== i) {
       f.visible[slot] = i;
       changed = true;
     }
+    const isVisible = !globe || f.unit[i * 3]! * cx + f.unit[i * 3 + 1]! * cy + f.unit[i * 3 + 2]! * cz >= cosCam * f.lift[i * 2]! - sinCam * f.lift[i * 2 + 1]!;
+    f.filterValues[slot] = isVisible ? 1 : 0;
+    if (isVisible) facing++;
+
     if (f.settled[i]) {
       if (f.frozen[i]) stale++;
       continue;
@@ -230,13 +252,17 @@ export function advanceFrame(f: Frame, now: number, buckets: ReadonlySet<Bucket>
     }
   }
   f.staleVisible = stale;
+  f.facingCount = facing;
   if (n !== f.count || changed) {
     f.count = n;
     f.visVersion++;
     f.data = { length: n };
     // The rows moved: the next `syncColors` rebuilds every colour from `frozen`.
     f.newlyFrozenCount = 0;
+    f.colorAttr = null;
   }
+  f.filterAttr = { value: f.filterValues.subarray(0, f.count), size: 1 };
+  f.data.attributes = { ...f.data.attributes, getFilterValue: f.filterAttr };
 }
 
 /** Past the 60 s dead-reckoning cap an aircraft is frozen and drawn at this brightness (stale). */
@@ -273,7 +299,7 @@ export function syncColors(f: Frame, key: string, colorOf: (r: FlightRecord) => 
     f.colorKey = key;
     f.newlyFrozenCount = 0;
     f.colorAttr = { value: f.colors.subarray(0, f.count * 4), size: 4 };
-    f.data.attributes = { getColor: f.colorAttr };
+    f.data.attributes = { ...f.data.attributes, getColor: f.colorAttr };
     return f.count;
   }
   const n = f.newlyFrozenCount;
@@ -281,7 +307,7 @@ export function syncColors(f: Frame, key: string, colorOf: (r: FlightRecord) => 
   for (let j = 0; j < n; j++) writeColor(f, f.newlyFrozen[j]!, colorOf);
   f.newlyFrozenCount = 0;
   f.colorAttr = { value: f.colorAttr.value, size: 4 };
-  f.data.attributes = { getColor: f.colorAttr };
+  f.data.attributes = { ...f.data.attributes, getColor: f.colorAttr };
   return n;
 }
 
@@ -293,6 +319,7 @@ export interface H3Cell {
 export function aggregateH3(f: Frame): H3Cell[] {
   const counts = new Map<string, number>();
   for (let k = 0; k < f.count; k++) {
+    if (f.filterValues[k]! < 0.5) continue;
     const i = f.visible[k]!;
     const cell = latLngToCell(f.pos[i * 2 + 1]!, f.pos[i * 2]!, H3_RES);
     counts.set(cell, (counts.get(cell) ?? 0) + 1);
@@ -380,6 +407,8 @@ export function buildLayers(o: BuildOptions): LayersList | null {
         new SdfIconLayer({
           id: 'aviation-icons',
           data: f.data,
+          extensions: [DATA_FILTER_EXTENSION],
+          filterRange: [0.5, 1.5],
           iconAtlas: atlas.canvas as unknown as string,
           iconMapping: atlas.mapping,
           getIcon: (_: unknown, { index }: { index: number }) => iconFor(rec(index)),
@@ -409,11 +438,13 @@ export function buildLayers(o: BuildOptions): LayersList | null {
     }
   }
 
-  const ringKey = `${o.dataVersion}|${f.visVersion}|${o.selectedId ?? ''}|${o.watched.join(',')}`;
+  const camKey = o.camera ? `${o.camera.lng.toFixed(1)},${o.camera.lat.toFixed(1)}` : '';
+  const ringKey = `${o.dataVersion}|${f.visVersion}|${o.selectedId ?? ''}|${o.watched.join(',')}|${camKey}`;
   if (f.rings?.key !== ringKey) {
     const emergencies: number[] = [];
     const highlighted: number[] = [];
     for (let k = 0; k < f.count; k++) {
+      if (f.filterValues && f.filterValues[k]! < 0.5) continue;
       const r = f.records[f.visible[k]!]!;
       if (r.emergency) emergencies.push(k);
       if (r.id === o.selectedId || o.watched.includes(r.id)) highlighted.push(k);

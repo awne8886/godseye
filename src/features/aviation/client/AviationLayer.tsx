@@ -134,7 +134,7 @@ export default function AviationLayer({ active }: LayerComponentProps) {
         }),
       );
       if (kind === 'camera') return; // counts reach React on settled changes only
-      setDrawn(f.count);
+      setDrawn(projection === 'globe' ? f.facingCount : f.count);
       setTrailVertices(f.trailVertices);
       // The far-side camera (ground lng, lat, altitude m) the drawn count was filtered with (e2e).
       setCameraAttr(camera ? `${camera.lng.toFixed(3)},${camera.lat.toFixed(3)},${Math.round(camera.altitude)}` : '');

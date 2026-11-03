@@ -8,7 +8,11 @@
  * Owner: lead. Server-only.
  */
 import { createHash } from 'node:crypto';
+import { promisify } from 'node:util';
 import zlib from 'node:zlib';
+
+const brotliCompressAsync = promisify(zlib.brotliCompress);
+const gzipAsync = promisify(zlib.gzip);
 import type { z } from 'zod';
 import { catalogEntry } from './api-catalog';
 import type { FeedResult } from './feeds';
@@ -76,7 +80,7 @@ function notModified(req: Request, etag: string, headers: Record<string, string>
  * `variant` distinguishes filtered views of one feed in the ETag; it defaults to the request's
  * query string so two filters never share an ETag. Bodies ≥ 1 KB are sent br/gzip when accepted.
  */
-export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T) => Record<string, unknown>, variant = new URL(req.url).search): Response {
+export async function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T) => Record<string, unknown>, variant = new URL(req.url).search): Promise<Response> {
   const ttl = result.meta.ttlSeconds;
   if (result.data === null) {
     // Never CDN-cached: an outage must not be pinned at the edge (Retry-After paces clients).
@@ -92,7 +96,7 @@ export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T)
   const nm = notModified(req, etag, headers);
   if (nm) return nm;
   const raw = Buffer.from(JSON.stringify({ ...body(result.data), meta: result.meta, providers: result.providers }));
-  const { bytes, enc } = encodeFor(req, etag, raw);
+  const { bytes, enc } = await encodeFor(req, etag, raw);
   return new Response(new Uint8Array(bytes), {
     status: 200,
     headers: {
@@ -108,11 +112,22 @@ export function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T)
 // Route-handler Responses are not compressed by the Next server, so a 700 KB feed went out as-is.
 // Encoded bodies are cached by (encoding, ETag) under a byte budget: one compression per snapshot.
 const ENCODED = new Map<string, Buffer>();
+const IN_FLIGHT = new Map<string, Promise<Buffer>>();
 let encodedBytes = 0;
 const ENCODED_MAX_BYTES = 32 * 1024 * 1024;
 const MIN_COMPRESS_BYTES = 1024;
 
-function encodeFor(req: Request, etag: string, raw: Buffer): { bytes: Buffer; enc: 'br' | 'gzip' | null } {
+export function getEncodedCacheBytes(): number {
+  return encodedBytes;
+}
+
+export function clearEncodedCache(): void {
+  ENCODED.clear();
+  IN_FLIGHT.clear();
+  encodedBytes = 0;
+}
+
+async function encodeFor(req: Request, etag: string, raw: Buffer): Promise<{ bytes: Buffer; enc: 'br' | 'gzip' | null }> {
   if (raw.length < MIN_COMPRESS_BYTES) return { bytes: raw, enc: null };
   const accepted = acceptedEncodings(req.headers.get('accept-encoding'));
   const enc = accepted.has('br') ? 'br' : accepted.has('gzip') ? 'gzip' : null;
@@ -125,12 +140,36 @@ function encodeFor(req: Request, etag: string, raw: Buffer): { bytes: Buffer; en
     ENCODED.set(key, hit);
     return { bytes: hit, enc };
   }
-  const bytes = enc === 'br' ? zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }) : zlib.gzipSync(raw, { level: 6 });
+
+  let promise = IN_FLIGHT.get(key);
+  if (!promise) {
+    promise = (async () => {
+      return enc === 'br'
+        ? await brotliCompressAsync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } })
+        : await gzipAsync(raw, { level: 6 });
+    })();
+    IN_FLIGHT.set(key, promise);
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = await promise;
+  } finally {
+    IN_FLIGHT.delete(key);
+  }
+
   if (bytes.length <= ENCODED_MAX_BYTES) {
+    const existing = ENCODED.get(key);
+    if (existing) {
+      encodedBytes -= existing.length;
+      ENCODED.delete(key);
+    }
     ENCODED.set(key, bytes);
     encodedBytes += bytes.length;
-    while (encodedBytes > ENCODED_MAX_BYTES) {
-      const [k, v] = ENCODED.entries().next().value!;
+    while (encodedBytes > ENCODED_MAX_BYTES && ENCODED.size > 0) {
+      const oldest = ENCODED.entries().next().value;
+      if (!oldest) break;
+      const [k, v] = oldest;
       ENCODED.delete(k);
       encodedBytes -= v.length;
     }

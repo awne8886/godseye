@@ -111,6 +111,24 @@ describe('http client', () => {
     expect(second.data).toBeUndefined();
   });
 
+  it('pools connections across multiple requests', async () => {
+    let connectionCount = 0;
+    const poolServer = http.createServer((req, res) => {
+      res.end('ok');
+    });
+    poolServer.on('connection', () => connectionCount++);
+    await new Promise<void>((r) => poolServer.listen(0, '127.0.0.1', r));
+    const poolBase = `http://127.0.0.1:${(poolServer.address() as AddressInfo).port}`;
+    try {
+      await httpRequest(`${poolBase}/1`);
+      await httpRequest(`${poolBase}/2`);
+      await httpRequest(`${poolBase}/3`);
+      expect(connectionCount).toBe(1);
+    } finally {
+      await new Promise<void>((r) => poolServer.close(() => r()));
+    }
+  });
+
   it('caps body size and times out', async () => {
     await expect(httpText(`${base}/big`, { maxBytes: 100 })).rejects.toMatchObject({ code: 'too_large' });
     await expect(httpText(`${base}/slow`, { timeoutMs: 50, retries: 0 })).rejects.toMatchObject({ code: 'timeout' });

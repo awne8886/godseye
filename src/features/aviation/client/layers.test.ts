@@ -21,7 +21,8 @@ describe('aviation frame', () => {
   it('dead-reckons (≤ 60 s) and filters by bucket and the camera-facing hemisphere', () => {
     const f = newFrame(records);
     advanceFrame(f, 1030_000, new Set(['commercial']), cam(0, 50));
-    expect([...f.visible.slice(0, f.count)]).toEqual([0, 3]); // far-side and military dropped
+    const facing = [...f.visible.slice(0, f.count)].filter((_, k) => f.filterValues[k]! > 0.5);
+    expect(facing).toEqual([0, 3]); // far-side dropped by GPU filter, military dropped by bucket
     expect(f.pos[0]).toBeGreaterThan(0); // moved east along track 090
     expect(f.pos[6]).toBe(1); // on the ground: not moved
     advanceFrame(f, 2000_000, new Set(['commercial', 'military']), null);
@@ -74,9 +75,9 @@ describe('aviation frame', () => {
     expect(f.pos[0]).toBe(settled);
     expect(f.frozen[0]).toBe(1);
     expect(f.staleVisible).toBe(f.count); // every drawn aircraft is now past the cap
-    // A camera move that changes the visible set swaps the data object.
+    // A camera move keeps data stable (GPU far-side filter attribute via DataFilterExtension)
     advanceFrame(f, 1200_000, new Set(['commercial']), cam(180, -50));
-    expect(f.data).not.toBe(data);
+    expect(f.data).toBe(data);
   });
 
   it('colours are patched only for the aircraft that just crossed the 60 s cap (perf m-j)', () => {
@@ -121,7 +122,8 @@ describe('aviation frame', () => {
     const f = newFrame([frankfurt]);
     advanceFrame(f, 1000_000, new Set(['commercial']), camera);
     expect(isFacing([8.57, 50.03], camera, 35000 * 0.3048)).toBe(false);
-    expect(f.count).toBe(0);
+    expect(f.facingCount).toBe(0);
+    expect(f.filterValues[0]).toBe(0);
   });
 
   it('agrees with isFacing() for every aircraft at several cameras (altitude lifts over the limb)', () => {
@@ -130,10 +132,10 @@ describe('aviation frame', () => {
     for (const c of [cam(-100, 30, 1.2 * EARTH_RADIUS_M), cam(10, 45, 2.1 * EARTH_RADIUS_M), cam(110, 15), cam(0, 89, 20 * EARTH_RADIUS_M), cam(179, -10, 0.3 * EARTH_RADIUS_M)]) {
       const f = newFrame(many);
       advanceFrame(f, 1000_000, new Set(['commercial']), c);
-      const drawn = new Set([...f.visible.slice(0, f.count)]);
+      const drawn = new Set([...f.visible.slice(0, f.count)].filter((_, k) => f.filterValues[k]! > 0.5));
       const expected = many.map((r, i) => (isFacing([r.lng, r.lat], c, r.onGround ? 0 : (r.altFt ?? 0) * 0.3048) ? i : -1)).filter((i) => i >= 0);
       expect([...drawn].sort((a, b) => a - b)).toEqual(expected);
-      expect(f.count).toBeLessThan(many.length);
+      expect(f.facingCount).toBeLessThan(many.length);
     }
   });
 

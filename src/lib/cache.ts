@@ -57,10 +57,69 @@ export interface SnapshotStore {
 // ── Memory ──────────────────────────────────────────────────────────────────────
 type Entry = { v: StoredSnapshot<unknown>; expires: number; bytes: number };
 
-/** Rough in-memory cost of a snapshot (its JSON length); unserialisable data counts as 1 KB. */
+function estimateSize(val: unknown, depth = 0, seen?: Set<unknown>): number {
+  if (val === null || val === undefined) return 0;
+  switch (typeof val) {
+    case 'string':
+      return val.length;
+    case 'number':
+      return 8;
+    case 'boolean':
+      return 4;
+    case 'bigint':
+      return 8;
+    case 'symbol':
+      return 8;
+  }
+  if (Buffer.isBuffer(val)) return val.length;
+  if (ArrayBuffer.isView(val)) return val.byteLength;
+  if (typeof val !== 'object') return 16;
+  if (depth > 8) return 32;
+  seen ??= new Set();
+  if (seen.has(val)) return 0;
+  seen.add(val);
+
+  if (Array.isArray(val)) {
+    const len = val.length;
+    if (len === 0) return 32;
+    if (len <= 32) {
+      let sum = 32;
+      for (let i = 0; i < len; i++) sum += estimateSize(val[i], depth + 1, seen);
+      return sum;
+    }
+    let sampleSum = 0;
+    const step = len / 32;
+    for (let i = 0; i < 32; i++) {
+      sampleSum += estimateSize(val[Math.floor(i * step)], depth + 1, seen);
+    }
+    return 32 + Math.round((sampleSum / 32) * len);
+  }
+
+  const obj = val as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  const numKeys = keys.length;
+  if (numKeys === 0) return 32;
+  if (numKeys <= 32) {
+    let sum = 32;
+    for (let i = 0; i < numKeys; i++) {
+      const k = keys[i]!;
+      sum += k.length + estimateSize(obj[k], depth + 1, seen);
+    }
+    return sum;
+  }
+  let sampleSum = 0;
+  const step = numKeys / 32;
+  for (let i = 0; i < 32; i++) {
+    const k = keys[Math.floor(i * step)]!;
+    sampleSum += k.length + estimateSize(obj[k], depth + 1, seen);
+  }
+  return 32 + Math.round((sampleSum / 32) * numKeys);
+}
+
+/** Rough in-memory cost of a snapshot without full serialisation; unserialisable data counts as 1 KB. */
 function sizeOf(v: unknown): number {
   try {
-    return JSON.stringify(v)?.length ?? 0;
+    return estimateSize(v);
   } catch {
     return 1024;
   }

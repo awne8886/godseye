@@ -21,7 +21,7 @@ export function firesBody(d: FiresData) {
   };
 }
 
-export function firesResponse(req: Request, result: FeedResult<FiresData>): Response {
+export function firesResponse(req: Request, result: FeedResult<FiresData>): Response | Promise<Response> {
   if (result.data === null) return feedJson(req, result, firesBody);
   const data = result.data;
   // Rebuilt when the snapshot or its state changes, and at most once a minute so `age_s` stays honest.

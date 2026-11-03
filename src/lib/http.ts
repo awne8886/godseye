@@ -42,6 +42,8 @@ export interface HttpOptions {
   /** Overall deadline in ms across every attempt and redirect hop (default: none). */
   deadlineMs?: number;
   signal?: AbortSignal;
+  /** Custom agent or boolean. If not provided, defaults to shared keepAlive agent. */
+  agent?: http.Agent | https.Agent | boolean;
 }
 
 export interface HttpResult {
@@ -173,6 +175,9 @@ function raceSignal<T>(p: Promise<T> | T, signal: AbortSignal | undefined, url: 
   });
 }
 
+const defaultHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 64, maxFreeSockets: 32, timeout: 60_000 });
+const defaultHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 64, maxFreeSockets: 32, timeout: 60_000 });
+
 interface AttemptResult {
   status: number;
   headers: http.IncomingHttpHeaders;
@@ -183,6 +188,8 @@ function attempt(url: URL, opts: HttpOptions, headers: Record<string, string>): 
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
   const mod = url.protocol === 'https:' ? https : http;
+  const defaultAgent = url.protocol === 'https:' ? defaultHttpsAgent : defaultHttpAgent;
+  const agent = opts.agent !== undefined ? opts.agent : (opts.lookup ? false : defaultAgent);
   return new Promise((resolve, reject) => {
     if (opts.signal?.aborted) {
       reject(new HttpError('Aborted', 'aborted', url.toString()));
@@ -203,8 +210,7 @@ function attempt(url: URL, opts: HttpOptions, headers: Record<string, string>): 
         headers,
         family: opts.family,
         lookup: opts.lookup,
-        // Keep sockets short-lived; upstreams are many and varied.
-        agent: false,
+        agent,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -409,10 +415,12 @@ export async function httpStream(input: string | URL, opts: HttpOptions = {}): P
   const timeoutMs = opts.timeoutMs ?? 15_000;
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
   const mod = url.protocol === 'https:' ? https : http;
+  const defaultAgent = url.protocol === 'https:' ? defaultHttpsAgent : defaultHttpAgent;
+  const agent = opts.agent !== undefined ? opts.agent : (opts.lookup ? false : defaultAgent);
 
   return new Promise<StreamResult>((resolve, reject) => {
     if (signal?.aborted) return reject(new HttpError('Aborted', 'aborted', url.toString()));
-    const req = mod.request(url, { method: opts.method ?? 'GET', headers, family: opts.family, lookup: opts.lookup, agent: false });
+    const req = mod.request(url, { method: opts.method ?? 'GET', headers, family: opts.family, lookup: opts.lookup, agent });
     const timer = setTimeout(() => req.destroy(new HttpError(`Timed out after ${timeoutMs} ms`, 'timeout', url.toString())), timeoutMs);
     const onAbort = () => req.destroy(new HttpError(deadline?.aborted ? `Deadline of ${opts.deadlineMs} ms exceeded` : 'Aborted', deadline?.aborted ? 'timeout' : 'aborted', url.toString()));
     signal?.addEventListener('abort', onAbort, { once: true });

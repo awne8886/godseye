@@ -28,6 +28,7 @@ export function hitTestAircraft(f: Frame, point: { x: number; y: number }, map: 
   let best = -1;
   let bestD = HIT_PX * HIT_PX;
   for (let k = 0; k < f.count; k++) {
+    if (f.filterValues && f.filterValues[k]! < 0.5) continue;
     const i = f.visible[k]!;
     const lng = f.pos[i * 2]!;
     const lat = f.pos[i * 2 + 1]!;

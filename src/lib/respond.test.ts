@@ -29,37 +29,37 @@ describe('response helpers', () => {
 
   it('feed responses carry meta + providers, ETags and 304s', async () => {
     const result: FeedResult<number[]> = { data: [1, 2], meta: meta(), providers: { usgs: { ok: true, count: 2, ms: 10, age_s: 3 } } };
-    const r1 = feedJson(new Request('http://x/'), result, (d) => ({ items: d }));
+    const r1 = await feedJson(new Request('http://x/'), result, (d) => ({ items: d }));
     const body = await r1.json();
     expect(body).toMatchObject({ items: [1, 2], meta: { feed: 'earthquakes' }, providers: { usgs: { ok: true } } });
     const etag = r1.headers.get('etag')!;
-    const r2 = feedJson(new Request('http://x/', { headers: { 'if-none-match': etag } }), result, (d) => ({ items: d }));
+    const r2 = await feedJson(new Request('http://x/', { headers: { 'if-none-match': etag } }), result, (d) => ({ items: d }));
     expect(r2.status).toBe(304);
   });
 
   it('answers SOURCE OFFLINE (503) instead of an empty array when a feed has no data', async () => {
-    const r = feedJson(new Request('http://x/'), { data: null, meta: meta({ state: 'offline', fetchedAt: null, lastGoodAt: null }), providers: {} }, () => ({}));
+    const r = await feedJson(new Request('http://x/'), { data: null, meta: meta({ state: 'offline', fetchedAt: null, lastGoodAt: null }), providers: {} }, () => ({}));
     expect(r.status).toBe(503);
     expect(await r.json()).toMatchObject({ error: 'source_offline' });
   });
 
   it('compresses large feed bodies per ETag when the client accepts it', async () => {
     const result: FeedResult<number[]> = { data: Array.from({ length: 2000 }, (_, i) => i), meta: meta({ feed: 'cables' }), providers: {} };
-    const plain = feedJson(new Request('http://x/'), result, (d) => ({ items: d }));
+    const plain = await feedJson(new Request('http://x/'), result, (d) => ({ items: d }));
     expect(plain.headers.get('content-encoding')).toBeNull();
     const raw = Buffer.from(await plain.arrayBuffer());
-    const br = feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, deflate, br' } }), result, (d) => ({ items: d }));
+    const br = await feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, deflate, br' } }), result, (d) => ({ items: d }));
     expect(br.headers.get('content-encoding')).toBe('br');
     expect(br.headers.get('vary')).toBe('Accept-Encoding');
     expect(br.headers.get('etag')).toBe(plain.headers.get('etag'));
     const brBytes = Buffer.from(await br.arrayBuffer());
     expect(brBytes.length).toBeLessThan(raw.length / 2);
     expect(zlib.brotliDecompressSync(brBytes).equals(raw)).toBe(true);
-    const gz = feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, br;q=0' } }), result, (d) => ({ items: d }));
+    const gz = await feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, br;q=0' } }), result, (d) => ({ items: d }));
     expect(gz.headers.get('content-encoding')).toBe('gzip');
     expect(zlib.gunzipSync(Buffer.from(await gz.arrayBuffer())).equals(raw)).toBe(true);
     // Small bodies are not worth compressing.
-    const small = feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'br' } }), { ...result, data: [1] }, (d) => ({ items: d }));
+    const small = await feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'br' } }), { ...result, data: [1] }, (d) => ({ items: d }));
     expect(small.headers.get('content-encoding')).toBeNull();
   });
 
@@ -67,16 +67,28 @@ describe('response helpers', () => {
     const mk = (age: number): FeedResult<number[]> => ({ data: Array.from({ length: 2000 }, (_, i) => i), meta: meta({ feed: 'cables-age' }), providers: { tg: { ok: true, count: 1, ms: 1, age_s: age } } });
     const read = async (r: Response) => JSON.parse(zlib.brotliDecompressSync(Buffer.from(await r.arrayBuffer())).toString());
     const h = { headers: { 'accept-encoding': 'br' } };
-    const a = await read(feedJson(new Request('http://x/', h), mk(0), (d) => ({ items: d })));
-    const b = await read(feedJson(new Request('http://x/', h), mk(308), (d) => ({ items: d })));
+    const a = await read(await feedJson(new Request('http://x/', h), mk(0), (d) => ({ items: d })));
+    const b = await read(await feedJson(new Request('http://x/', h), mk(308), (d) => ({ items: d })));
     expect(a.providers.tg.age_s).toBe(0);
     expect(b.providers.tg.age_s).toBe(308);
   });
 
-  it('shortens the edge TTL for stale snapshots', () => {
-    const r = feedJson(new Request('http://x/'), { data: [1], meta: meta({ state: 'stale', stale: true, ttlSeconds: 900 }), providers: {} }, (d) => ({ items: d }));
+  it('shortens the edge TTL for stale snapshots', async () => {
+    const r = await feedJson(new Request('http://x/'), { data: [1], meta: meta({ state: 'stale', stale: true, ttlSeconds: 900 }), providers: {} }, (d) => ({ items: d }));
     expect(r.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate, s-maxage=15');
     expect(r.headers.get('cdn-cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');
+  });
+
+  it('deduplicates concurrent compression misses and respects the 32 MB cache limit', async () => {
+    const result: FeedResult<number[]> = { data: Array.from({ length: 1000 }, (_, i) => i), meta: meta({ feed: 'concurrent' }), providers: {} };
+    const req = () => new Request('http://x/', { headers: { 'accept-encoding': 'br' } });
+    // Concurrent requests for the same uncached payload
+    const responses = await Promise.all(Array.from({ length: 10 }, () => feedJson(req(), result, (d) => ({ items: d }))));
+    expect(responses).toHaveLength(10);
+    for (const r of responses) {
+      expect(r.headers.get('content-encoding')).toBe('br');
+      expect(r.status).toBe(200);
+    }
   });
 
   it('precompresses bulk payloads once per version and negotiates encoding', async () => {
