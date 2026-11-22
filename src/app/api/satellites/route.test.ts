@@ -1,6 +1,5 @@
 import type * as Respond from '@/lib/respond';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import zlib from 'node:zlib';
 import { MemoryStore, clearL1, setStore } from '@/lib/cache';
 import { resetFeeds } from '@/lib/feeds';
 import { httpJson } from '@/lib/http';
@@ -52,7 +51,8 @@ async function rawBody(rows: number): Promise<Buffer> {
   vi.mocked(httpJson).mockImplementation(upstreamRouter(routes).impl as never);
   const res = await GET(req('', { 'accept-encoding': 'gzip' }), undefined);
   expect(res.status).toBe(200);
-  return zlib.gunzipSync(Buffer.from(await res.arrayBuffer()));
+  expect(res.headers.get('content-encoding')).toBeNull();
+  return Buffer.from(await res.arrayBuffer());
 }
 
 describe('GET /api/satellites', () => {
@@ -144,11 +144,11 @@ describe('GET /api/satellites', () => {
     expect(legacy.status).toBe(200);
   });
 
-  it('negotiates brotli/gzip and stays under the 4 MB cap', async () => {
+  it('sends plain JSON whatever the client accepts and stays under the 4 MB cap', async () => {
     vi.mocked(httpJson).mockImplementation(upstreamRouter(celestrakRoutes()).impl as never);
     const res = await GET(req('', { 'accept-encoding': 'gzip' }), undefined);
-    expect(res.headers.get('content-encoding')).toBe('gzip');
-    const raw = zlib.gunzipSync(Buffer.from(await res.arrayBuffer()));
+    expect(res.headers.get('content-encoding')).toBeNull();
+    const raw = Buffer.from(await res.arrayBuffer());
     expect(raw.length).toBeLessThan(MAX_RESPONSE_BYTES);
     expect(SatellitesResponse.safeParse(JSON.parse(raw.toString('utf8'))).success).toBe(true);
   });

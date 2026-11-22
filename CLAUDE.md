@@ -6,11 +6,11 @@ honest data, better visuals, and a Flight Path Planner. The contract is
 instructions). OSIRIS source (MIT, read-only reference): `../reference/osiris`.
 
 ## Stack (pinned — do not bump without the lead)
-next 16.3.7 (App Router, Turbopack, `proxy.ts` not middleware, async params) · react 19.3.0 ·
+next 16.4.6 (App Router, Turbopack, `proxy.ts` not middleware, async params) · react 19.3.0 ·
 typescript 6.0.3 (TS 7 breaks typescript-eslint) · eslint 10 flat config · tailwindcss 4.3 (CSS-first
 `@theme`) · maplibre-gl ^6.11.2 (ESM-only, WebGL2) via react-map-gl 8.1.3 `react-map-gl/maplibre` ·
 @deck.gl/* 9.4.0 with `MapLibreOverlay` interleaved · zustand 5 (UI state only) · @tanstack/react-query 5 ·
-nuqs 2 · motion 13 (`motion/react`) · satellite.js 7.1 (OMM JSON + `json2satrec`) · zod 4 · vitest 5 ·
+nuqs 2 · motion 13 (`motion/react`) · satellite.js 7.1 (OMM JSON + `json2satrec`) · zod 4.6.7 · vitest 5 ·
 @playwright/test 1.63 · Node ≥ 22.12 · pnpm.
 
 ## Commands

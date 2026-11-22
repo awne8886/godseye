@@ -32,8 +32,15 @@ Limitations that follow from upstream terms, quotas or hardware are documented i
         during drag with the recorded snapshots
 - [ ] Verification rounds (a round is clean with no BLOCKING or MAJOR finding; MINORs are fixed alongside):
       round 6 had 2 BLOCKING / 8 MAJOR; round 7 clean; round 8 had 4 BLOCKING / 5 MAJOR; round 9 clean
-      (7 MINOR, fixed in #5–#8); round 10 had 4 BLOCKING / 9 MAJOR (fix PRs #9–#12 and the cloud fix
-      sessions in flight). Need rounds 11 and 12 clean.
+      (7 MINOR, fixed in #5–#8); round 10 had 4 BLOCKING / 9 MAJOR (fixed in #9–#18); round 11 had
+      2 MAJOR / ~18 MINOR (fixed in #19–#23); round 12 had 2 MAJOR (timeline strip placement flips
+      mid-drag; off-topic briefing leads) / 10 MINOR (fixes on claude/r12-*). Need rounds 13 and 14
+      clean. Round 13 also covers b9640a3 (perf: async compression, cache sizeOf, aviation
+      DataFilterExtension, keep-alive pooling) and the next 16.4.6 bump.
+- [ ] Stack: next 16.3.7 → 16.4.6, zod 4.6.5 → 4.6.7, fast-xml-parser override 5.12.1 (critical/high
+      advisories: Next image-optimizer and `use cache` RCE, zod memory exhaustion). Next ≥ 16.4 drops
+      `Content-Encoding` from route-handler Responses, so feedJson/compressedJson send plain JSON and
+      compression is downstream (Next `compress`, Caddy, Vercel CDN).
 
 ## Repository owner actions (cannot be done from the codebase)
 - [ ] Provision a hardware-GPU Actions runner and set the repository variable `LIGHTHOUSE_GPU_RUNNER`

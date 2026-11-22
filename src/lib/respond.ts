@@ -3,16 +3,12 @@
  *  - JSON with `Cache-Control: public, s-maxage=<ttl>, stale-while-revalidate=<2×ttl>`
  *  - errors as `{error, detail}` with no-store
  *  - feed responses carrying `meta` + `providers`, weak ETags and 304s
- *  - pre-serialised, precompressed (brotli/gzip) bulk payloads with weak ETags
+ *  - bulk payloads serialised once per version, with weak ETags (sent as plain JSON: compression is
+ *    done downstream, see `feedJson`)
  *  - `withRoute()` wrapper: per-route rate limit + uniform 500s (no stack traces to clients)
  * Owner: lead. Server-only.
  */
 import { createHash } from 'node:crypto';
-import { promisify } from 'node:util';
-import zlib from 'node:zlib';
-
-const brotliCompressAsync = promisify(zlib.brotliCompress);
-const gzipAsync = promisify(zlib.gzip);
 import type { z } from 'zod';
 import { catalogEntry } from './api-catalog';
 import type { FeedResult } from './feeds';
@@ -78,7 +74,13 @@ function notModified(req: Request, etag: string, headers: Record<string, string>
  * Respond with a feed snapshot. `body` gets `meta` and `providers` merged in. A feed with no data
  * returns 503 with SOURCE OFFLINE semantics (never an empty array pretending to be truth).
  * `variant` distinguishes filtered views of one feed in the ETag; it defaults to the request's
- * query string so two filters never share an ETag. Bodies ≥ 1 KB are sent br/gzip when accepted.
+ * query string so two filters never share an ETag.
+ *
+ * Bodies go out as plain JSON. Next ≥ 16.4 drops `Content-Encoding` from route-handler Responses
+ * (send-response.ts FORBIDDEN_HEADERS), so a body this module compressed itself would reach the
+ * browser as brotli bytes labelled JSON. Compression happens downstream: the Next server
+ * (`compress`, gzip) on a self-host, Caddy (`encode zstd gzip`) in docker-compose, and the CDN on
+ * Vercel.
  */
 export async function feedJson<T>(req: Request, result: FeedResult<T>, body: (data: T) => Record<string, unknown>, variant = new URL(req.url).search): Promise<Response> {
   const ttl = result.meta.ttlSeconds;
@@ -92,152 +94,52 @@ export async function feedJson<T>(req: Request, result: FeedResult<T>, body: (da
   // Stale/failed snapshots get a short edge TTL so a CDN never pins an outage.
   const edgeTtl = result.meta.state === 'live' || result.meta.state === 'reference' || result.meta.state === 'recent' ? ttl : Math.min(ttl, 15);
   const etag = weakEtag(result.meta.feed, result.meta.fetchedAt, result.meta.state, variant);
-  const headers = { 'Cache-Control': cacheControl(edgeTtl), ...cdnCacheControl(edgeTtl), ETag: etag, Vary: 'Accept-Encoding' };
+  const headers = { 'Cache-Control': cacheControl(edgeTtl), ...cdnCacheControl(edgeTtl), ETag: etag };
   const nm = notModified(req, etag, headers);
   if (nm) return nm;
-  const raw = Buffer.from(JSON.stringify({ ...body(result.data), meta: result.meta, providers: result.providers }));
-  const { bytes, enc } = await encodeFor(req, etag, raw);
-  return new Response(new Uint8Array(bytes), {
+  return new Response(JSON.stringify({ ...body(result.data), meta: result.meta, providers: result.providers }), {
     status: 200,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      ...headers,
-      Vary: 'Accept-Encoding',
-      ...(enc ? { 'Content-Encoding': enc } : {}),
-    },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers },
   });
 }
 
-// ── Per-ETag compression for feed responses ─────────────────────────────────────
-// Route-handler Responses are not compressed by the Next server, so a 700 KB feed went out as-is.
-// Encoded bodies are cached by (encoding, ETag) under a byte budget: one compression per snapshot.
-const ENCODED = new Map<string, Buffer>();
-const IN_FLIGHT = new Map<string, Promise<Buffer>>();
-let encodedBytes = 0;
-const ENCODED_MAX_BYTES = 32 * 1024 * 1024;
-const MIN_COMPRESS_BYTES = 1024;
-
-export function getEncodedCacheBytes(): number {
-  return encodedBytes;
-}
-
-export function clearEncodedCache(): void {
-  ENCODED.clear();
-  IN_FLIGHT.clear();
-  encodedBytes = 0;
-}
-
-async function encodeFor(req: Request, etag: string, raw: Buffer): Promise<{ bytes: Buffer; enc: 'br' | 'gzip' | null }> {
-  if (raw.length < MIN_COMPRESS_BYTES) return { bytes: raw, enc: null };
-  const accepted = acceptedEncodings(req.headers.get('accept-encoding'));
-  const enc = accepted.has('br') ? 'br' : accepted.has('gzip') ? 'gzip' : null;
-  if (!enc) return { bytes: raw, enc: null };
-  // Keyed by the body itself: per-request fields (providers' age_s) differ within one ETag.
-  const key = `${enc}|${createHash('sha1').update(raw).digest('base64')}`; // body-only: junk query strings share it
-  const hit = ENCODED.get(key);
-  if (hit) {
-    ENCODED.delete(key);
-    ENCODED.set(key, hit);
-    return { bytes: hit, enc };
-  }
-
-  let promise = IN_FLIGHT.get(key);
-  if (!promise) {
-    promise = (async () => {
-      return enc === 'br'
-        ? await brotliCompressAsync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } })
-        : await gzipAsync(raw, { level: 6 });
-    })();
-    IN_FLIGHT.set(key, promise);
-  }
-
-  let bytes: Buffer;
-  try {
-    bytes = await promise;
-  } finally {
-    IN_FLIGHT.delete(key);
-  }
-
-  if (bytes.length <= ENCODED_MAX_BYTES) {
-    const existing = ENCODED.get(key);
-    if (existing) {
-      encodedBytes -= existing.length;
-      ENCODED.delete(key);
-    }
-    ENCODED.set(key, bytes);
-    encodedBytes += bytes.length;
-    while (encodedBytes > ENCODED_MAX_BYTES && ENCODED.size > 0) {
-      const oldest = ENCODED.entries().next().value;
-      if (!oldest) break;
-      const [k, v] = oldest;
-      ENCODED.delete(k);
-      encodedBytes -= v.length;
-    }
-  }
-  return { bytes, enc };
-}
-
-// ── Precompressed bulk payloads ─────────────────────────────────────────────────
-interface Compressed {
+// ── Bulk payloads serialised once per version ───────────────────────────────────
+interface Serialised {
   version: string;
   etag: string;
   raw: Buffer;
-  gzip: Buffer;
-  br: Buffer;
 }
 
-const COMPRESSED = new Map<string, Compressed>();
-const MAX_COMPRESSED = 64;
+const SERIALISED = new Map<string, Serialised>();
+const MAX_SERIALISED = 64;
 
 /** Hard cap from §4: every /api response stays under 4 MB uncompressed. */
 export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
-function compress(key: string, version: string, build: () => unknown): Compressed {
-  const hit = COMPRESSED.get(key);
+function serialise(key: string, version: string, build: () => unknown): Serialised {
+  const hit = SERIALISED.get(key);
   if (hit && hit.version === version) return hit;
   const raw = Buffer.from(JSON.stringify(build()));
-  const entry: Compressed = {
-    version,
-    etag: weakEtag(key, version, raw.length),
-    raw,
-    gzip: zlib.gzipSync(raw, { level: 6 }),
-    br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }),
-  };
-  COMPRESSED.delete(key);
-  COMPRESSED.set(key, entry);
-  while (COMPRESSED.size > MAX_COMPRESSED) COMPRESSED.delete(COMPRESSED.keys().next().value!);
+  const entry: Serialised = { version, etag: weakEtag(key, version, raw.length), raw };
+  SERIALISED.delete(key);
+  SERIALISED.set(key, entry);
+  while (SERIALISED.size > MAX_SERIALISED) SERIALISED.delete(SERIALISED.keys().next().value!);
   return entry;
 }
 
 /**
- * Serve a large JSON payload serialised and compressed once per `version` (e.g. the feed's
- * fetchedAt). Negotiates br > gzip > identity and answers If-None-Match with 304.
+ * Serve a large JSON payload serialised once per `version` (e.g. the feed's fetchedAt) and answer
+ * If-None-Match with 304. Sent as plain JSON; compression happens downstream (see `feedJson`).
  */
-/** Encodings the client accepts with q > 0 (`br;q=0` means "not brotli"). */
-export function acceptedEncodings(header: string | null): Set<string> {
-  const out = new Set<string>();
-  for (const part of (header ?? '').split(',')) {
-    const [name = '', ...params] = part.trim().toLowerCase().split(';');
-    const q = params.map((p) => p.trim()).find((p) => p.startsWith('q='));
-    if (name && (q === undefined || Number(q.slice(2)) > 0)) out.add(name.trim());
-  }
-  return out;
-}
-
 export function compressedJson(req: Request, key: string, version: string, build: () => unknown, ttl: number): Response {
-  const c = compress(key, version, build);
-  if (c.raw.length > MAX_RESPONSE_BYTES) {
+  const s = serialise(key, version, build);
+  if (s.raw.length > MAX_RESPONSE_BYTES) {
     return apiError(500, 'payload_too_large', `${key} exceeds the 4 MB response cap; split it by region/group.`);
   }
-  const base = { 'Cache-Control': cacheControl(ttl), ...cdnCacheControl(ttl), ETag: c.etag, Vary: 'Accept-Encoding' };
-  const nm = notModified(req, c.etag, base);
+  const base = { 'Cache-Control': cacheControl(ttl), ...cdnCacheControl(ttl), ETag: s.etag };
+  const nm = notModified(req, s.etag, base);
   if (nm) return nm;
-  const accepted = acceptedEncodings(req.headers.get('accept-encoding'));
-  const [body, enc] = accepted.has('br') ? [c.br, 'br'] : accepted.has('gzip') ? [c.gzip, 'gzip'] : [c.raw, null];
-  return new Response(new Uint8Array(body), {
-    status: 200,
-    headers: { ...base, 'Content-Type': 'application/json; charset=utf-8', ...(enc ? { 'Content-Encoding': enc } : {}) },
-  });
+  return new Response(new Uint8Array(s.raw), { status: 200, headers: { ...base, 'Content-Type': 'application/json; charset=utf-8' } });
 }
 
 // ── Query parsing and route wrapper ─────────────────────────────────────────────

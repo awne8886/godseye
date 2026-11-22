@@ -11,7 +11,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import zlib from 'node:zlib';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { done, req } from '@/features/surveillance/server/__fixtures__/helpers';
 import { resetRegionFeeds } from '@/features/surveillance/server/catalog';
@@ -45,9 +44,9 @@ const PROVIDER = CAMERA_FIELDS.indexOf('providerId');
 let dir = '';
 
 async function body(res: Response) {
-  const buf = Buffer.from(await res.arrayBuffer());
-  const enc = res.headers.get('content-encoding');
-  const raw = enc === 'br' ? zlib.brotliDecompressSync(buf) : enc === 'gzip' ? zlib.gunzipSync(buf) : buf;
+  // Plain JSON: compression is done downstream of the route (src/lib/respond.ts).
+  expect(res.headers.get('content-encoding')).toBeNull();
+  const raw = Buffer.from(await res.arrayBuffer());
   return JSON.parse(raw.toString('utf8'));
 }
 

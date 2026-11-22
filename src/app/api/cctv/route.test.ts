@@ -1,4 +1,3 @@
-import zlib from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { done, fixtureLoaders, fresh, req } from '@/features/surveillance/server/__fixtures__/helpers';
 import { CCTV_REGIONS } from '@/features/surveillance/shared';
@@ -31,9 +30,9 @@ beforeEach(() => {
 afterEach(done);
 
 async function body(res: Response) {
-  const buf = Buffer.from(await res.arrayBuffer());
-  const enc = res.headers.get('content-encoding');
-  const raw = enc === 'br' ? zlib.brotliDecompressSync(buf) : enc === 'gzip' ? zlib.gunzipSync(buf) : buf;
+  // Plain JSON: compression is done downstream of the route (src/lib/respond.ts).
+  expect(res.headers.get('content-encoding')).toBeNull();
+  const raw = Buffer.from(await res.arrayBuffer());
   return { json: JSON.parse(raw.toString('utf8')), bytes: raw.length };
 }
 
@@ -41,7 +40,6 @@ describe('GET /api/cctv', () => {
   it('serves one region as columnar CAMERA_FIELDS with meta, providers, counts and an ETag', async () => {
     const res = await GET(req('/api/cctv?region=us-west', { 'accept-encoding': 'gzip' }), undefined);
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-encoding')).toBe('gzip');
     const { json: b } = await body(res);
     expect(CctvResponse.safeParse(b).success).toBe(true);
     expect(b.fields).toEqual([...CAMERA_FIELDS]);

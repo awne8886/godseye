@@ -23,8 +23,8 @@
 	}
 
 	# Compress JSON and pages on the wire (feed JSON is 5-10x smaller gzipped). An explicit list, so
-	# Server-Sent Events (text/event-stream) are never buffered by an encoder; responses the app
-	# already precompressed (bulk layers, Content-Encoding set) are passed through untouched.
+	# Server-Sent Events (text/event-stream) are never buffered by an encoder; responses already
+	# encoded upstream (the Next server's own gzip) are passed through untouched.
 	encode zstd gzip {
 		minimum_length 1024
 		match {
