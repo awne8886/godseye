@@ -4,7 +4,6 @@
  * with an HTML page, /api/cctv answers SOURCE OFFLINE (503, per-provider `parse`/`empty`) — never a
  * 500 and never an empty catalogue presented as truth.
  */
-import zlib from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Http from '@/lib/http';
 import { done, fresh, req } from '@/features/surveillance/server/__fixtures__/helpers';
@@ -27,9 +26,9 @@ beforeEach(fresh);
 afterEach(done);
 
 async function read(res: Response): Promise<Record<string, unknown>> {
-  const buf = Buffer.from(await res.arrayBuffer());
-  const enc = res.headers.get('content-encoding');
-  const raw = enc === 'br' ? zlib.brotliDecompressSync(buf) : enc === 'gzip' ? zlib.gunzipSync(buf) : buf;
+  // Plain JSON: compression is done downstream of the route (src/lib/respond.ts).
+  expect(res.headers.get('content-encoding')).toBeNull();
+  const raw = Buffer.from(await res.arrayBuffer());
   return JSON.parse(raw.toString('utf8')) as Record<string, unknown>;
 }
 

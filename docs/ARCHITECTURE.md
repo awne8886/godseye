@@ -68,8 +68,10 @@ a failing source is shown as stale with its last-good time rather than as empty.
 - `observedAt` comes from the upstream record and is kept separate from `fetchedAt`; freshness badges
   (`src/lib/freshness.ts`) derive LIVE / age / STALE / OFFLINE / REFERENCE from observation time, never
   show LIVE for a failed or future-dated observation, and label reference layers REFERENCE.
-- `compressedJson()` serves bulk payloads pre-serialised and precompressed (brotli, gzip) and refuses
-  anything over 4 MB uncompressed.
+- `compressedJson()` serves bulk payloads serialised once per version (weak ETag, 304s) and refuses
+  anything over 4 MB uncompressed. Route responses are plain JSON: Next ≥ 16.4 drops `Content-Encoding`
+  from route-handler Responses, so compression is done downstream (the Next server's `compress` on a
+  self-host, Caddy `encode zstd gzip` in docker-compose, the CDN on Vercel).
 - `withRoute(path, handler)` applies the per-route rate limit from the catalogue and turns exceptions into
   a uniform `500 internal_error` (details only in the server log).
 

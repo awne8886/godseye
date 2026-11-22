@@ -1,4 +1,3 @@
-import zlib from 'node:zlib';
 import type * as Http from '@/lib/http';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FX, type Route } from '@/features/hazards/server/__fixtures__';
@@ -55,12 +54,11 @@ describe('GET /api/fires', () => {
     expect(body.providers.firms_viirs_snpp).toMatchObject({ ok: true, count: 150 });
   });
 
-  it('negotiates brotli and answers If-None-Match with 304', async () => {
+  it('sends plain JSON whatever the client accepts and answers If-None-Match with 304', async () => {
     state.routes = ALL;
     const res = await GET(req('/api/fires', { 'accept-encoding': 'gzip, br' }), undefined);
-    expect(res.headers.get('content-encoding')).toBe('br');
-    const raw = zlib.brotliDecompressSync(Buffer.from(await res.arrayBuffer()));
-    expect(JSON.parse(raw.toString('utf8')).rows).toHaveLength(600);
+    expect(res.headers.get('content-encoding')).toBeNull();
+    expect((await res.clone().json()).rows).toHaveLength(600);
     const again = await GET(req('/api/fires', { 'if-none-match': res.headers.get('etag')! }), undefined);
     expect(again.status).toBe(304);
   });

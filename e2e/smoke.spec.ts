@@ -25,6 +25,20 @@ test('globe boots with HUD and honest health', async ({ page, request }) => {
   expect(errors).toEqual([]);
 });
 
+test('API bodies decode as JSON whatever encoding the client accepts', async ({ request }) => {
+  // Next >= 16.4 drops Content-Encoding from route-handler Responses: a body the app compressed
+  // itself reached the browser as brotli bytes labelled JSON and crashed the map (cables: feedJson;
+  // cctv/providers: compressedJson). Both are local reference data, so this needs no upstream.
+  for (const path of ['/api/cables', '/api/cctv/providers']) {
+    for (const enc of ['br, gzip', 'gzip', 'br', 'identity']) {
+      const res = await request.get(path, { headers: { 'accept-encoding': enc } });
+      expect(res.status(), `${path} (${enc})`).toBe(200);
+      const text = (await res.body()).toString('utf8');
+      expect(() => JSON.parse(text), `${path} (${enc})`).not.toThrow();
+    }
+  }
+});
+
 test('2D toggle switches projection and is shareable', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('canvas.maplibregl-canvas')).toBeVisible({ timeout: 30_000 });

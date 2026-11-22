@@ -31,7 +31,7 @@ Findings (BLOCKING / MAJOR / MINOR) with file:line, evidence and fix; tests adde
   `setHTML`/`dangerouslySetInnerHTML` with upstream strings; per-route rate limits via `withRoute`;
   no secrets in `NEXT_PUBLIC_*`, URLs or logs.
 - **No placeholders, TODO stubs or mocked data in shipped code.** Tests use recorded fixtures.
-- **Stack:** Next 16.3.7 App Router · React 19.3 · TS 6.0.3 strict · Tailwind 4 tokens · MapLibre 6 globe
+- **Stack:** Next 16.4.6 App Router · React 19.3 · TS 6.0.3 strict · Tailwind 4 tokens · MapLibre 6 globe
   + deck.gl 9.4 interleaved · zustand (UI only) · react-query · zod contracts in `src/lib/schemas`.
 - **Tokens (HORUS):** bg #04040A/#06060C, panel rgba(8,10,20,.88), gold #D4AF37, cyan #00E5FF,
   text #E8E6E0/#9B978E/muted #848178; map classes via `--map-*` tokens — never hard-code colours.

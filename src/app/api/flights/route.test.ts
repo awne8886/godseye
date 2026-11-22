@@ -115,9 +115,9 @@ describe('GET /api/flights', () => {
     expect((await call('?bbox=1,2,3')).status).toBe(400);
   });
 
-  it('negotiates brotli and answers If-None-Match with 304', async () => {
+  it('sends plain JSON whatever the client accepts and answers If-None-Match with 304', async () => {
     const first = await GET(new Request('http://localhost/api/flights', { headers: { 'accept-encoding': 'br' } }), undefined);
-    expect(first.headers.get('content-encoding')).toBe('br');
+    expect(first.headers.get('content-encoding')).toBeNull();
     const etag = first.headers.get('etag')!;
     const again = await GET(new Request('http://localhost/api/flights', { headers: { 'if-none-match': etag } }), undefined);
     expect(again.status).toBe(304);

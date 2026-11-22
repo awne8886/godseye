@@ -237,7 +237,7 @@ export default function DocsPage() {
               </li>
               <li>
                 Bulk layers (aircraft, satellites, cameras) are columnar <code className="font-mono">{'{fields, rows}'}</code>,
-                precompressed with brotli or gzip, and every default response stays under 4 MB.
+                serialised once per snapshot, compressed on the way out, and every default response stays under 4 MB.
               </li>
               <li>
                 Rate limits are per route and per client IP as verified by the deployment&apos;s proxy; AI routes share one bucket.

@@ -1,4 +1,3 @@
-import zlib from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import type { FeedResult } from './feeds';
 import { apiError, cacheControl, compressedJson, feedJson, json, parseQuery, withRoute } from './respond';
@@ -43,32 +42,22 @@ describe('response helpers', () => {
     expect(await r.json()).toMatchObject({ error: 'source_offline' });
   });
 
-  it('compresses large feed bodies per ETag when the client accepts it', async () => {
+  it('sends feed bodies as plain JSON with no Content-Encoding, whatever the client accepts', async () => {
+    // Next >= 16.4 drops Content-Encoding from route-handler Responses: a body compressed here would
+    // reach the browser as brotli bytes labelled JSON. Compression is done downstream.
     const result: FeedResult<number[]> = { data: Array.from({ length: 2000 }, (_, i) => i), meta: meta({ feed: 'cables' }), providers: {} };
-    const plain = await feedJson(new Request('http://x/'), result, (d) => ({ items: d }));
-    expect(plain.headers.get('content-encoding')).toBeNull();
-    const raw = Buffer.from(await plain.arrayBuffer());
-    const br = await feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, deflate, br' } }), result, (d) => ({ items: d }));
-    expect(br.headers.get('content-encoding')).toBe('br');
-    expect(br.headers.get('vary')).toBe('Accept-Encoding');
-    expect(br.headers.get('etag')).toBe(plain.headers.get('etag'));
-    const brBytes = Buffer.from(await br.arrayBuffer());
-    expect(brBytes.length).toBeLessThan(raw.length / 2);
-    expect(zlib.brotliDecompressSync(brBytes).equals(raw)).toBe(true);
-    const gz = await feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, br;q=0' } }), result, (d) => ({ items: d }));
-    expect(gz.headers.get('content-encoding')).toBe('gzip');
-    expect(zlib.gunzipSync(Buffer.from(await gz.arrayBuffer())).equals(raw)).toBe(true);
-    // Small bodies are not worth compressing.
-    const small = await feedJson(new Request('http://x/', { headers: { 'accept-encoding': 'br' } }), { ...result, data: [1] }, (d) => ({ items: d }));
-    expect(small.headers.get('content-encoding')).toBeNull();
+    for (const accept of [undefined, 'gzip, deflate, br', 'br', 'gzip', 'zstd']) {
+      const r = await feedJson(new Request('http://x/', accept ? { headers: { 'accept-encoding': accept } } : {}), result, (d) => ({ items: d }));
+      expect(r.headers.get('content-encoding')).toBeNull();
+      expect((await r.json()).items).toHaveLength(2000);
+    }
   });
 
-  it('never serves a stale compressed body when per-request fields change within one ETag', async () => {
+  it('never serves a stale body when per-request fields change within one ETag', async () => {
     const mk = (age: number): FeedResult<number[]> => ({ data: Array.from({ length: 2000 }, (_, i) => i), meta: meta({ feed: 'cables-age' }), providers: { tg: { ok: true, count: 1, ms: 1, age_s: age } } });
-    const read = async (r: Response) => JSON.parse(zlib.brotliDecompressSync(Buffer.from(await r.arrayBuffer())).toString());
     const h = { headers: { 'accept-encoding': 'br' } };
-    const a = await read(await feedJson(new Request('http://x/', h), mk(0), (d) => ({ items: d })));
-    const b = await read(await feedJson(new Request('http://x/', h), mk(308), (d) => ({ items: d })));
+    const a = await (await feedJson(new Request('http://x/', h), mk(0), (d) => ({ items: d }))).json();
+    const b = await (await feedJson(new Request('http://x/', h), mk(308), (d) => ({ items: d }))).json();
     expect(a.providers.tg.age_s).toBe(0);
     expect(b.providers.tg.age_s).toBe(308);
   });
@@ -79,32 +68,19 @@ describe('response helpers', () => {
     expect(r.headers.get('cdn-cache-control')).toBe('public, s-maxage=15, stale-while-revalidate=30');
   });
 
-  it('deduplicates concurrent compression misses and respects the 32 MB cache limit', async () => {
-    const result: FeedResult<number[]> = { data: Array.from({ length: 1000 }, (_, i) => i), meta: meta({ feed: 'concurrent' }), providers: {} };
-    const req = () => new Request('http://x/', { headers: { 'accept-encoding': 'br' } });
-    // Concurrent requests for the same uncached payload
-    const responses = await Promise.all(Array.from({ length: 10 }, () => feedJson(req(), result, (d) => ({ items: d }))));
-    expect(responses).toHaveLength(10);
-    for (const r of responses) {
-      expect(r.headers.get('content-encoding')).toBe('br');
-      expect(r.status).toBe(200);
-    }
-  });
-
-  it('precompresses bulk payloads once per version and negotiates encoding', async () => {
+  it('serialises bulk payloads once per version, sends them as plain JSON and answers 304', async () => {
     let builds = 0;
     const build = () => (builds++, { rows: Array.from({ length: 1000 }, (_, i) => [i, 'x']) });
-    const br = compressedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, br' } }), 'k', 'v1', build, 15);
-    expect(br.headers.get('content-encoding')).toBe('br');
-    expect(JSON.parse(zlib.brotliDecompressSync(Buffer.from(await br.arrayBuffer())).toString()).rows).toHaveLength(1000);
-    const gz = compressedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip' } }), 'k', 'v1', build, 15);
-    expect(gz.headers.get('content-encoding')).toBe('gzip');
+    const first = compressedJson(new Request('http://x/', { headers: { 'accept-encoding': 'gzip, br' } }), 'k', 'v1', build, 15);
+    expect(first.headers.get('content-encoding')).toBeNull();
+    expect((await first.json()).rows).toHaveLength(1000);
     const plain = compressedJson(new Request('http://x/'), 'k', 'v1', build, 15);
-    expect(plain.headers.get('content-encoding')).toBeNull();
+    expect(plain.headers.get('etag')).toBe(first.headers.get('etag'));
     expect(builds).toBe(1);
     const nm = compressedJson(new Request('http://x/', { headers: { 'if-none-match': plain.headers.get('etag')! } }), 'k', 'v1', build, 15);
     expect(nm.status).toBe(304);
-    expect(plain.headers.get('vary')).toBe('Accept-Encoding');
+    compressedJson(new Request('http://x/'), 'k', 'v2', build, 15);
+    expect(builds).toBe(2);
   });
 
   it('refuses payloads over the 4 MB cap', () => {
@@ -149,14 +125,5 @@ describe('withRoute takes limits from the API catalogue', () => {
     }
     expect(statuses).toEqual([200, 200, 200, 200, 200, 429]);
     setRateLimitStore(undefined);
-  });
-});
-
-describe('acceptedEncodings', () => {
-  it('honours q=0 and parameters', async () => {
-    const { acceptedEncodings } = await import('./respond');
-    expect([...acceptedEncodings('br;q=0, gzip;q=0.8, identity')]).toEqual(['gzip', 'identity']);
-    expect(acceptedEncodings(null).size).toBe(0);
-    expect(acceptedEncodings('gzip, br').has('br')).toBe(true);
   });
 });
